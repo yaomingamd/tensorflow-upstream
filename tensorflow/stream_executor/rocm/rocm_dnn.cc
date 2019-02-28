@@ -41,7 +41,23 @@ limitations under the License.
 #include "tensorflow/core/lib/hash/hash.h"
 // clang-format off
 #include "rocm/include/miopen/miopen.h"
+#include "rocm/include/miopen/version.h"
 // clang-format on
+
+
+#if (MIOPEN_VERSION_MAJOR < 2) && (MIOPEN_VERSION_MINOR < 8) 
+// If we are building with MIopen evrsion 1.7 or below, then we need to
+// declare miopenConvolutionBwdWeightsAlgoWinograd as a macro whose value resolves to 3
+//
+// This is because miopenConvolutionBwdWeightsAlgoWinograd is an enum literal introduced in MIOpen version 1.8,
+// and it is a potential return value from miopenFindConvolutionBackwardWeightsAlgorithm.
+//
+// If we run TF (which is built with MIOpen v1.7 headers) with MIOpen 1.8 or above,
+// it will lead to a crash in the routine ToConvBackwardFilterAlgo, in the case when
+// the *Find* routine return this algo
+#define miopenConvolutionBwdWeightsAlgoWinograd  (static_cast<miopenConvBwdWeightsAlgorithm_t>(3))
+
+#endif
 
 
 namespace {
@@ -405,6 +421,7 @@ miopenConvBwdWeightsAlgorithm_t ToConvBackwardFilterAlgo(
   switch (algo) {
     case miopenConvolutionBwdWeightsAlgoGEMM:
     case miopenConvolutionBwdWeightsAlgoDirect:
+    case miopenConvolutionBwdWeightsAlgoWinograd:
       return algo;
     default:
       LOG(FATAL)
