@@ -7,6 +7,10 @@
 * Support for Python3.7 on all operating systems.
 * Moved NCCL to core.
 
+## ROCm Features and Improvements
+* MIOpen v1.7.1 integration
+* Tensorflow VERBS support is enabled, details in: [TensorFlow Verbs Quick-Start](https://github.com/ROCmSoftwarePlatform/tensorflow-upstream/blob/r1.13-rocm/rocm_docs/tensorflow-verbs.md)
+
 ## Behavioral changes
 
 * Disallow conversion of python floating types to uint32/64 (matching behavior of other integer types) in `tf.constant`.
