@@ -62,6 +62,7 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
     git_configure(name = "local_config_git")
     sycl_configure(name = "local_config_sycl")
     syslibs_configure(name = "local_config_syslibs")
+    rocm_configure(name="local_config_rocm")
     python_configure(name = "local_config_python")
     rocm_configure(name = "local_config_rocm")
     remote_execution_configure(name = "local_config_remote_execution")
@@ -140,7 +141,7 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "eigen_archive",
         build_file = clean_dep("//third_party:eigen.BUILD"),
-        patch_file = clean_dep("//third_party/eigen3:gpu_packet_math.patch"),
+        patch_file = clean_dep("//third_party/eigen3:eigen_fix_compilation.patch"),
         sha256 = "61f0017318a24cf940db14e57febecc524b24a9faa8ff4fa7f9f91630c4cd09d",
         strip_prefix = "eigen-eigen-5a4931dafc1c",
         urls = [
@@ -704,7 +705,16 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
             "https://github.com/NVlabs/cub/archive/1.8.0.zip",
         ],
     )
-
+    tf_http_archive(
+        name = "rocprim_archive",
+        urls = [ 
+            "https://mirror.bazel.build/github.com/ROCmSoftwarePlatform/rocPRIM/archive/eff7d0687baf57db2507a31663a3dea72eed9093.tar.gz",
+            "https://github.com/ROCmSoftwarePlatform/rocPRIM/archive/eff7d0687baf57db2507a31663a3dea72eed9093.tar.gz",
+        ],      
+        sha256 = "12adf5bf3641d73c92915f102b17951f978704551fdcb9ed7f6311ed299b1d80",
+        strip_prefix = "rocPRIM-eff7d0687baf57db2507a31663a3dea72eed9093",
+        build_file = clean_dep("//third_party:rocprim.BUILD"),
+    )
     tf_http_archive(
         name = "cython",
         build_file = clean_dep("//third_party:cython.BUILD"),
@@ -874,6 +884,17 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
         urls = [
             "https://mirror.bazel.build/github.com/NervanaSystems/ngraph-tf/archive/v0.9.0.zip",
             "https://github.com/NervanaSystems/ngraph-tf/archive/v0.9.0.zip",
+        ],
+    )
+
+    tf_http_archive(
+        name = "rccl_archive",
+        build_file = clean_dep("//third_party:rccl.BUILD"),
+        sha256 = "f8e35d256f3044f07fa03d4b3c54ab273c729ea25a617f4cf52384e56bb111df",
+        strip_prefix = "rccl-0.7.5",
+        urls = [
+            "https://mirror.bazel.build/github.com/ROCmSoftwarePlatform/rccl/archive/0.7.5.tar.gz",
+            "https://github.com/ROCmSoftwarePlatform/rccl/archive/0.7.5.tar.gz",
         ],
     )
 

@@ -3746,6 +3746,7 @@ cuda_py_test(
     ],
     tags = ["no_windows"],
     xla_enable_strict_auto_jit = True,
+    flaky = True,
 )
 
 cuda_py_test(

@@ -15,15 +15,14 @@ limitations under the License.
 
 #include "tensorflow/stream_executor/rocm/rocm_platform.h"
 
-#include "absl/strings/str_format.h"
-#include "tensorflow/stream_executor/gpu/gpu_driver.h"
-#include "tensorflow/stream_executor/gpu/gpu_executor.h"
+#include "tensorflow/stream_executor/rocm/rocm_driver.h"
+#include "tensorflow/stream_executor/rocm/rocm_gpu_executor.h"
+#include "tensorflow/stream_executor/rocm/rocm_platform_id.h"
 #include "tensorflow/stream_executor/lib/error.h"
 #include "tensorflow/stream_executor/lib/initialize.h"
 #include "tensorflow/stream_executor/lib/ptr_util.h"
 #include "tensorflow/stream_executor/lib/status.h"
 #include "tensorflow/stream_executor/lib/stringprintf.h"
-#include "tensorflow/stream_executor/rocm/rocm_platform_id.h"
 
 namespace stream_executor {
 namespace gpu {
@@ -91,7 +90,7 @@ port::StatusOr<StreamExecutor*> ROCmPlatform::FirstExecutorForBus(
 
   return port::Status{
       port::error::NOT_FOUND,
-      absl::StrFormat("Executor for bus %d not found.", bus_ordinal)};
+      port::Printf("Executor for bus %d not found.", bus_ordinal)};
 }
 
 Platform::Id ROCmPlatform::id() const { return rocm::kROCmPlatformId; }
@@ -140,7 +139,7 @@ ROCmPlatform::GetUncachedExecutor(const StreamExecutorConfig& config) {
   if (!init_status.ok()) {
     return port::Status{
         port::error::INTERNAL,
-        absl::StrFormat(
+        port::Printf(
             "failed initializing StreamExecutor for ROCM device ordinal %d: %s",
             config.ordinal, init_status.ToString().c_str())};
   }
@@ -174,7 +173,6 @@ static void InitializeROCmPlatform() {
 REGISTER_MODULE_INITIALIZER(rocm_platform,
                             stream_executor::InitializeROCmPlatform());
 
-DECLARE_MODULE_INITIALIZER(multi_platform_manager);
 // Note that module initialization sequencing is not supported in the
 // open-source project, so this will be a no-op there.
 REGISTER_MODULE_INITIALIZER_SEQUENCE(rocm_platform, multi_platform_manager);

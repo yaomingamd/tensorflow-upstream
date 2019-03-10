@@ -144,6 +144,10 @@ class Pooling3DTest(test.TestCase):
 
   @tf_test_util.run_in_graph_and_eager_modes
   def test_maxpooling_3d(self):
+
+    if test.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
     pool_size = (3, 3, 3)
     testing_utils.layer_test(
         keras.layers.MaxPooling3D,
@@ -163,6 +167,10 @@ class Pooling3DTest(test.TestCase):
 
   @tf_test_util.run_in_graph_and_eager_modes
   def test_averagepooling_3d(self):
+
+    if test.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
     pool_size = (3, 3, 3)
     testing_utils.layer_test(
         keras.layers.AveragePooling3D,
@@ -192,7 +200,11 @@ class Pooling1DTest(test.TestCase):
             kwargs={'strides': stride,
                     'padding': padding},
             input_shape=(3, 5, 4))
-    testing_utils.layer_test(
+        
+    # This part of the test can only run on GPU but doesn't appear
+    # to be properly assigned to a GPU when running in eager mode.
+    if not context.executing_eagerly():
+      testing_utils.layer_test(
         keras.layers.MaxPooling1D,
         kwargs={'data_format': 'channels_first'},
         input_shape=(3, 2, 6))
@@ -207,7 +219,10 @@ class Pooling1DTest(test.TestCase):
                     'padding': padding},
             input_shape=(3, 5, 4))
 
-    testing_utils.layer_test(
+    # This part of the test can only run on GPU but doesn't appear
+    # to be properly assigned to a GPU when running in eager mode.
+    if not context.executing_eagerly():
+      testing_utils.layer_test(
         keras.layers.AveragePooling1D,
         kwargs={'data_format': 'channels_first'},
         input_shape=(3, 2, 6))

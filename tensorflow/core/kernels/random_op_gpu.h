@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_RANDOM_OP_GPU_H_
 #define TENSORFLOW_CORE_KERNELS_RANDOM_OP_GPU_H_
 
-#if defined(__CUDACC__)
+#if defined(__CUDACC__) || TENSORFLOW_USE_ROCM
 
 #include "tensorflow/core/lib/random/philox_random.h"
 #include "tensorflow/core/lib/random/random_distributions.h"
@@ -201,6 +201,6 @@ PHILOX_DEVICE_FUNC void FillPhiloxRandomKernel<Distribution, true>::Run(
 }  // namespace functor
 }  // namespace tensorflow
 
-#endif  // defined(__CUDACC__)
+#endif  // defined(__CUDACC__) || TENSORFLOW_USE_ROCM
 
 #endif  // TENSORFLOW_CORE_KERNELS_RANDOM_OP_GPU_H_

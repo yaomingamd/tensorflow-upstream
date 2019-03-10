@@ -194,6 +194,10 @@ def _rocm_include_path(repository_ctx, rocm_config):
     inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/8.0.0/include/")
     inc_dirs.append("/opt/rocm/hcc/lib/clang/8.0.0/include")
 
+    # Support hcc based off clang 9.0.0.
+    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/9.0.0/include/")
+    inc_dirs.append("/opt/rocm/hcc/lib/clang/9.0.0/include")
+
     inc_entries = []
     for inc_dir in inc_dirs:
         inc_entries.append("  cxx_builtin_include_directory: \"%s\"" % inc_dir)
@@ -242,13 +246,10 @@ def _hipcc_env(repository_ctx):
         A string containing environment variables for hipcc.
     """
     hipcc_env = ""
-    for name in [
-        "HIP_CLANG_PATH",
-        "DEVICE_LIB_PATH",
-        "HIP_VDI_HOME",
-        "HIPCC_VERBOSE",
-        "HIPCC_COMPILE_FLAGS_APPEND",
-    ]:
+    for name in ["HIP_CLANG_PATH", "DEVICE_LIB_PATH", "HIP_VDI_HOME",\
+                 "HIPCC_VERBOSE", "HIPCC_COMPILE_FLAGS_APPEND", \
+                 "HIPPCC_LINK_FLAGS_APPEND", "HCC_AMDGPU_TARGET", \
+                 "HIP_PLATFORM"]:
         if name in repository_ctx.os.environ:
             hipcc_env = (hipcc_env + " " + name + "=\"" +
                          repository_ctx.os.environ[name].strip() + "\";")
@@ -692,6 +693,8 @@ def _create_local_rocm_repository(repository_ctx):
             "%{cpu_compiler}": str(cc),
             "%{hipcc_path}": "/opt/rocm/bin/hipcc",
             "%{hipcc_env}": _hipcc_env(repository_ctx),
+            "%{rocr_runtime_path}": "/opt/rocm/lib",
+            "%{rocr_runtime_library}": "hsa-runtime64",
             "%{hip_runtime_path}": "/opt/rocm/hip/lib",
             "%{hip_runtime_library}": "hip_hcc",
             "%{hcc_runtime_path}": "/opt/rocm/hcc/lib",

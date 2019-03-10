@@ -35,6 +35,8 @@ HIP_RUNTIME_PATH = '%{hip_runtime_path}'
 HIP_RUNTIME_LIBRARY = '%{hip_runtime_library}'
 HCC_RUNTIME_PATH = '%{hcc_runtime_path}'
 HCC_RUNTIME_LIBRARY = '%{hcc_runtime_library}'
+ROCR_RUNTIME_PATH = '%{rocr_runtime_path}'
+ROCR_RUNTIME_LIBRARY = '%{rocr_runtime_library}'
 VERBOSE = '%{crosstool_verbose}'=='1'
 
 def Log(s):
@@ -200,8 +202,11 @@ def InvokeHipcc(argv, log=False):
 
   # TODO(zhengxq): for some reason, 'gcc' needs this help to find 'as'.
   # Need to investigate and fix.
-  cmd = 'PATH=' + PREFIX_DIR + ':$PATH ' + cmd
+  cmd = 'PATH=' + PREFIX_DIR + ':$PATH '\
+        + HIPCC_ENV.replace(';', ' ') + ' '\
+        + cmd
   if log: Log(cmd)
+  if VERBOSE: print(cmd)
   return os.system(cmd)
 
 
@@ -215,6 +220,9 @@ def main():
   parser.add_argument('-pass-exit-codes', action='store_true')
   args, leftover = parser.parse_known_args(sys.argv[1:])
 
+  if VERBOSE: print('PWD=' + os.getcwd())
+  if VERBOSE: print('HIPCC_ENV=' + HIPCC_ENV)
+  
   if args.x and args.x[0] == 'rocm':
     # compilation for GPU objects
     if args.rocm_log: Log('-x rocm')
@@ -231,6 +239,9 @@ def main():
     gpu_linker_flags = [flag for flag in sys.argv[1:]
                                if not flag.startswith(('--rocm_log'))]
 
+    gpu_linker_flags.append('-L' + ROCR_RUNTIME_PATH)
+    gpu_linker_flags.append('-Wl,-rpath=' + ROCR_RUNTIME_PATH)
+    gpu_linker_flags.append('-l' + ROCR_RUNTIME_LIBRARY)
     gpu_linker_flags.append('-L' + HCC_RUNTIME_PATH)
     gpu_linker_flags.append('-Wl,-rpath=' + HCC_RUNTIME_PATH)
     gpu_linker_flags.append('-l' + HCC_RUNTIME_LIBRARY)
