@@ -1812,7 +1812,6 @@ xla_test(
 tf_cc_test(
     name = "llvm_compiler_test",
     srcs = ["llvm_compiler_test.cc"],
-    tags = tf_cuda_tests_tags(),
     deps = [
         "//tensorflow/compiler/xla:literal_util",
         "//tensorflow/compiler/xla:test_helpers",
@@ -1826,7 +1825,7 @@ tf_cc_test(
         "//tensorflow/compiler/xla/service/gpu:gpu_compiler",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/stream_executor",
+        "//tensorflow/core:stream_executor_no_cuda",
         "@com_google_absl//absl/memory",
         "@llvm//:core",
     ],
