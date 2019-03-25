@@ -1600,7 +1600,8 @@ cuda_py_test(
         "//tensorflow/python:while_v2",
     ],
     shard_count = 16,
-    tags = ["no_gpu"],  # TODO(b/117928656)
+    tags = ["no_cuda",], # fails on CUDA, but not on ROCm, do not upstream tag
+    xla_enable_strict_auto_jit = True,
 )
 
 tf_py_test(
@@ -3100,7 +3101,11 @@ cuda_py_test(
     ],
     data = ["//tensorflow/python/kernel_tests/testdata:self_adjoint_eig_op_test_files"],
     shard_count = 20,
-    tags = ["no_windows"],
+    flaky = 1,  # test fails on rocm (on rare occasions) 
+    tags = [
+        "no_windows",
+    ],
+    # b/127344411: xla_enable_strict_auto_jit = True,
 )
 
 cuda_py_test(

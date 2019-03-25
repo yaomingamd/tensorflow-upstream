@@ -1239,5 +1239,251 @@ class DataFormatVectorPermuteTest(test_lib.TestCase):
       self.assertAllEqual(y_val, [[7, 4], [4, 5], [5, 1], [9, 3]])
 
 
+@test_util.run_all_in_graph_and_eager_modes
+class AvgPoolTest(test_lib.TestCase):
+
+  def test1DTensor(self):
+    x = array_ops.ones([3, 6, 5])
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.avg_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.avg_pool1d(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test1DNumpy(self):
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = np.ones([3, 6, 5], dtype=dtype)
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.avg_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.avg_pool1d(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test2DTensor(self):
+    x = array_ops.ones([3, 6, 6, 5])
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.avg_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.avg_pool(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test2DNumpy(self):
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = np.ones([3, 6, 6, 5], dtype=dtype)
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.avg_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.avg_pool(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test3DTensor(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
+    x = array_ops.ones([3, 7, 6, 6, 5])
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.avg_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.avg_pool3d(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test3DNumpy(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
+    x = np.ones([3, 7, 6, 6, 5], dtype=np.float32)
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.avg_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.avg_pool3d(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+
+@test_util.run_all_in_graph_and_eager_modes
+class MaxPoolTest(test_lib.TestCase):
+
+  def test1DTensor(self):
+    x = array_ops.ones([3, 6, 5])
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.max_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.max_pool1d(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test1DNumpy(self):
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = np.ones([3, 6, 5], dtype=dtype)
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.max_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.max_pool1d(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test2DTensor(self):
+    x = array_ops.ones([3, 6, 6, 5])
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.max_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.max_pool(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test2DNumpy(self):
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = np.ones([3, 6, 6, 5], dtype=dtype)
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.max_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.max_pool(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test3DTensor(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
+    x = array_ops.ones([3, 7, 6, 6, 5])
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.max_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.max_pool3d(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test3DNumpy(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
+    x = np.ones([3, 7, 6, 6, 5], dtype=np.float32)
+    ksize = 2
+    strides = 2
+
+    y1 = nn_ops.max_pool_v2(x, ksize, strides, "SAME")
+    y2 = nn_ops.max_pool3d(x, ksize, strides, "SAME")
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def testIncorrectSizeInputSmall(self):
+    x = array_ops.ones([3, 4])
+    with self.assertRaisesRegex(
+        ValueError, "Input tensor must be of rank 3, 4 or 5 but was 2."):
+      nn_ops.max_pool_v2(x, 2, 2, "SAME")
+
+  def testIncorrectSizeInput(self):
+    x = array_ops.ones([3, 4, 1, 2, 1, 2])
+    with self.assertRaisesRegex(
+        ValueError, "Input tensor must be of rank 3, 4 or 5 but was 6."):
+      nn_ops.max_pool_v2(x, 2, 2, "SAME")
+
+
+@test_util.run_all_in_graph_and_eager_modes
+class ConvolutionTest(test_lib.TestCase):
+
+  def testUnknownSize(self):
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = tensor_spec.TensorSpec(None, dtypes.float32, name="x")
+    k = np.ones([3, 6, 6, 5], dtype=dtype)
+
+    @def_function.function
+    def F(value):
+      return nn_ops.convolution(value, k, "SAME")
+
+    F.get_concrete_function(x)
+
+
+class ConvTransposeTest(test_lib.TestCase):
+
+  def test1DTensor(self):
+    t = array_ops.ones([2, 4, 3])
+    v = array_ops.ones([2, 5, 3])
+    strides = 2
+
+    y1 = nn_ops.conv1d_transpose(t, v, [2, 8, 5], strides)
+    y2 = nn_ops.conv_transpose(t, v, [2, 8, 5], strides)
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test2DTensor(self):
+    t = array_ops.ones([2, 4, 4, 3])
+    v = array_ops.ones([2, 2, 5, 3])
+    strides = 2
+
+    y1 = nn_ops.conv2d_transpose_v2(t, v, [2, 8, 8, 5], strides)
+    y2 = nn_ops.conv_transpose(t, v, [2, 8, 8, 5], strides)
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def test3DTensor(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
+    t = array_ops.ones([2, 4, 4, 4, 3])
+    v = array_ops.ones([2, 2, 2, 5, 3])
+    strides = 2
+
+    y1 = nn_ops.conv3d_transpose_v2(t, v, [2, 8, 8, 8, 5], strides)
+    y2 = nn_ops.conv_transpose(t, v, [2, 8, 8, 8, 5], strides)
+
+    self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
+
+  def testIncorrectSizeInputSmall(self):
+    with self.assertRaisesRegex(
+        ValueError, "output_shape must be of length 3, 4 or 5 but was 2."):
+      nn_ops.conv_transpose(None, 2, [2, 3], "SAME")
+
+  def testIncorrectSizeInput(self):
+    with self.assertRaisesRegex(
+        ValueError, "output_shape must be of length 3, 4 or 5 but was 6."):
+      nn_ops.conv_transpose(None, 2, [2, 3, 4, 2, 5, 1], "SAME")
+
+  def testTensorsNoShape(self):
+    with self.assertRaisesRegex(ValueError, "output_shape cannot be None"):
+      nn_ops.conv_transpose(None, None, None, None)
+
+
 if __name__ == "__main__":
   test_lib.main()

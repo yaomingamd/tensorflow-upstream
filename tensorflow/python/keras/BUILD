@@ -843,6 +843,11 @@ py_test(
         "//third_party/py/numpy",
         "@absl_py//absl/testing:parameterized",
     ],
+    tags = [
+            "notsan",
+            "no_rocm",
+            "no_cuda",
+           ],
 )
 
 py_test(
@@ -900,6 +905,11 @@ py_test(
         "//tensorflow/python:client_testlib",
         "//third_party/py/numpy",
         "@absl_py//absl/testing:parameterized",
+    ],
+    shard_count = 8,
+    tags = [
+            "no_rocm",
+            "no_cuda",
     ],
 )
 
