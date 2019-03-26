@@ -32,6 +32,37 @@ typedef Eigen::GpuDevice GPUDevice;
 
 namespace {
 
+template <typename T>
+__global__ void ResizeNearestNeighborNHWC(
+    const int nthreads, const T* bottom_data, const int in_height,
+    const int in_width, const int channels, const int out_height,
+    const int out_width, const float height_scale, const float width_scale,
+    T* top_data) {
+  GPU_1D_KERNEL_LOOP(index, nthreads) {
+    int n = index;
+    int c = n % channels;
+    n /= channels;
+    int out_x = n % out_width;
+    n /= out_width;
+    int out_y = n % out_height;
+    n /= out_height;
+
+    const T* bottom_data_n = bottom_data + n * channels * in_height * in_width;
+    const int in_y =
+        max(min(static_cast<int>(
+                    floorf((static_cast<float>(out_y) + 0.5f) * height_scale)),
+                in_height - 1),
+            0);
+    const int in_x =
+        max(min(static_cast<int>(
+                    floorf((static_cast<float>(out_x) + 0.5f) * width_scale)),
+                in_width - 1),
+            0);
+    const int idx = (in_y * in_width + in_x) * channels + c;
+    top_data[index] = ldg(bottom_data_n + idx);
+  }
+}
+
 template <typename T, bool align_corners>
 __global__ void ResizeNearestNeighborNHWC(
     const int nthreads, const T* bottom_data, const int in_height,
@@ -58,6 +89,37 @@ __global__ void ResizeNearestNeighborNHWC(
             in_width - 1);
     const int idx = (in_y * in_width + in_x) * channels + c;
     top_data[index] = ldg(bottom_data_n + idx);
+  }
+}
+
+template <typename T>
+__global__ void ResizeNearestNeighborBackwardNHWC(
+    const int nthreads, const T* top_diff, const int in_height,
+    const int in_width, const int channels, const int out_height,
+    const int out_width, const float height_scale, const float width_scale,
+    T* bottom_diff) {
+  GPU_1D_KERNEL_LOOP(index, nthreads) {
+    int n = index;
+    int c = n % channels;
+    n /= channels;
+    int in_x = n % in_width;
+    n /= in_width;
+    int in_y = n % in_height;
+    n /= in_height;
+
+    T* bottom_diff_n = bottom_diff + n * channels * out_height * out_width;
+    const int out_y =
+        max(min(static_cast<int>(
+                    floorf((static_cast<float>(in_y) + 0.5f) * height_scale)),
+                out_height - 1),
+            0);
+    const int out_x =
+        max(min(static_cast<int>(
+                    floorf((static_cast<float>(in_x) + 0.5f) * width_scale)),
+                out_width - 1),
+            0);
+    const int idx = (out_y * out_width + out_x) * channels + c;
+    GpuAtomicAdd(bottom_diff_n + idx, ldg(top_diff + index));
   }
 }
 
@@ -112,7 +174,8 @@ struct ResizeNearestNeighbor<GPUDevice, T, align_corners> {
     if (output_size == 0) return true;
 
     GpuLaunchConfig config = GetGpuLaunchConfig(output_size, d);
-    GPU_LAUNCH_KERNEL((ResizeNearestNeighborNHWC<T, align_corners>),
+    if (half_pixel_centers) {
+      GPU_LAUNCH_KERNEL((ResizeNearestNeighborNHWC<T>),
         dim3(config.block_count), dim3(config.thread_per_block), 0, d.stream(),
         output_size, input.data(),
         static_cast<int>(in_height),
@@ -121,6 +184,18 @@ struct ResizeNearestNeighbor<GPUDevice, T, align_corners> {
         static_cast<int>(out_height),
         static_cast<int>(out_width),
         height_scale, width_scale, output.data());
+      return d.ok();
+    } else {
+      GPU_LAUNCH_KERNEL((LegacyResizeNearestNeighborNHWC<T, align_corners>),
+        dim3(config.block_count), dim3(config.thread_per_block), 0, d.stream(),
+        output_size, input.data(),
+        static_cast<int>(in_height),
+        static_cast<int>(in_width),
+        channels,
+        static_cast<int>(out_height),
+        static_cast<int>(out_width),
+        height_scale, width_scale, output.data());
+    }
     return d.ok();
   }
 };
@@ -160,7 +235,8 @@ struct ResizeNearestNeighborGrad<GPUDevice, T, align_corners> {
     if (input_size == 0) return true;
 
     GpuLaunchConfig input_config = GetGpuLaunchConfig(input_size, d);
-    GPU_LAUNCH_KERNEL((ResizeNearestNeighborBackwardNHWC<T, align_corners>),
+    if (half_pixel_centers) {
+      GPU_LAUNCH_KERNEL((ResizeNearestNeighborBackwardNHWC<T>),
         dim3(input_config.block_count), dim3(input_config.thread_per_block), 0,
         d.stream(),
         input_config.virtual_thread_count, input.data(),
@@ -171,7 +247,23 @@ struct ResizeNearestNeighborGrad<GPUDevice, T, align_corners> {
         static_cast<int>(out_width),
         height_scale, width_scale,
         output.data());
-    return d.ok();
+      return d.ok();
+    } else {
+      GPU_LAUNCH_KERNEL((
+        LegacyResizeNearestNeighborBackwardNHWC<T, align_corners>),
+        dim3(input_config.block_count), dim3(input_config.thread_per_block), 0,
+        d.stream(),
+        input_config.virtual_thread_count, input.data(),
+        static_cast<int>(in_height),
+        static_cast<int>(in_width),
+        channels,
+        static_cast<int>(out_height),
+        static_cast<int>(out_width),
+        height_scale, width_scale,
+        output.data());
+      return d.ok();
+    }
+
   }
 };
 
