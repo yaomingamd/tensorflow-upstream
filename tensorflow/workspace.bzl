@@ -888,14 +888,14 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
-        name = "rccl_archive",
-        build_file = clean_dep("//third_party:rccl.BUILD"),
-        sha256 = "f8e35d256f3044f07fa03d4b3c54ab273c729ea25a617f4cf52384e56bb111df",
-        strip_prefix = "rccl-0.7.5",
+        name = "pybind11",
         urls = [
-            "https://mirror.bazel.build/github.com/ROCmSoftwarePlatform/rccl/archive/0.7.5.tar.gz",
-            "https://github.com/ROCmSoftwarePlatform/rccl/archive/0.7.5.tar.gz",
+            "https://mirror.bazel.build/github.com/pybind/pybind11/archive/v2.2.4.tar.gz",
+            "https://github.com/pybind/pybind11/archive/v2.2.4.tar.gz",
         ],
+        sha256 = "b69e83658513215b8d1443544d0549b7d231b9f201f6fc787a2b2218b408181e",
+        strip_prefix = "pybind11-2.2.4",
+        build_file = clean_dep("//third_party:pybind11.BUILD"),
     )
 
     ##############################################################################
