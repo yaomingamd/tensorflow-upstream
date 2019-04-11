@@ -144,6 +144,7 @@ py_library(
         "engine/sequential.py",
         "engine/training.py",
         "engine/training_arrays.py",
+        "engine/training_distributed.py",
         "engine/training_eager.py",
         "engine/training_generator.py",
         "engine/training_utils.py",
@@ -1168,7 +1169,7 @@ tf_py_test(
         "//third_party/py/numpy",
         "//tensorflow/python:client_testlib",
     ],
-    shard_count = 16,
+    shard_count = 20,
     tags = ["notsan"],
 )
 

@@ -344,6 +344,7 @@ class _EagerDefinedFunction(object):
     function_def.ParseFromString(compat.as_bytes(proto_data))
     with ops.init_scope():
       if context.executing_eagerly():
+        context.ensure_initialized()
         context.add_function(fn)
     self.definition = function_def
     self.name = compat.as_bytes(function_def.signature.name)

@@ -14,10 +14,10 @@ py_library(
     name = "distribute",
     srcs = [
         "distributed_training_utils.py",
-        "training_distributed.py",
     ],
     srcs_version = "PY2AND3",
     deps = [
+        "//tensorflow/python:client_testlib",
         "//tensorflow/python/data",
         "//tensorflow/python/distribute:distribute_coordinator",
         "//tensorflow/python/distribute:distribute_lib",
@@ -76,6 +76,20 @@ distribute_py_test(
     ],
     deps = [
         ":distribute_strategy_test_lib",
+    ],
+)
+
+distribute_py_test(
+    name = "distributed_training_utils_test",
+    srcs = ["distributed_training_utils_test.py"],
+    full_precision = True,
+    main = "distributed_training_utils_test.py",
+    deps = [
+        ":distribute",
+        ":distribute_strategy_test_lib",
+        "//tensorflow/python:platform",
+        "//tensorflow/python:stateless_random_ops",
+        "//tensorflow/python/keras:callbacks",
     ],
 )
 
@@ -308,5 +322,24 @@ py_library(
         "//tensorflow/python/distribute:strategy_combinations",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/keras",
+    ],
+)
+
+cuda_py_test(
+    name = "multi_worker_callback_test",
+    srcs = ["multi_worker_callback_test.py"],
+    additional_deps = [
+        "//tensorflow/python/distribute:collective_all_reduce_strategy",
+        "//tensorflow/python/distribute:combinations",
+        "//tensorflow/python/keras/distribute:multi_worker_test_main_lib",
+        "//tensorflow/python/distribute:multi_worker_test_base",
+        "//tensorflow/python:platform",
+        "//tensorflow/python/distribute:distribute_config",
+        "//tensorflow/python/distribute:distribute_coordinator",
+        "//tensorflow/python/keras",
+    ],
+    shard_count = 12,
+    tags = [
+        "multi_and_single_gpu",
     ],
 )
