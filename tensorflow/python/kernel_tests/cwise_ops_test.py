@@ -1109,5 +1109,59 @@ class PolyvalTest(test.TestCase):
       self.assertAllClose(np_val, self.evaluate(tf_val))
 
 
+class SingularGradientOpTest(test.TestCase):
+
+  @test_util.run_deprecated_v1
+  def testGradientAtSingularity(self):
+    if not compat.forward_compatible(2019, 5, 14):
+      self.skipTest("Skipping test for future functionality.")
+
+    ops_and_singularity = [
+        (gen_math_ops.reciprocal, (0.,)),
+        (gen_math_ops.rsqrt, (0.,)),
+        (gen_math_ops.sqrt, (0.,)),
+        (gen_math_ops.sqrt_grad, (
+            0.,
+            0.,
+        )),
+        (gen_math_ops.reciprocal_grad, (
+            1.,
+            0.,
+        )),
+        (gen_math_ops.tan, (np.pi / 2,)),
+        (gen_math_ops.log, (0.,)),
+        (gen_math_ops.log1p, (-1.,)),
+        (gen_math_ops.acosh, (0.,)),
+        (gen_math_ops.asin, (1.,)),
+        (gen_math_ops.acos, (1.,)),
+        (gen_math_ops.atan2, (0., 0.)),
+        (gen_math_ops.div, (1., 0.)),
+        (gen_math_ops.div_no_nan, (1., 0.)),
+        (gen_math_ops.real_div, (1., 0.)),
+        (math_ops.pow, (0., -1.)),
+    ]
+    for op, singularity in ops_and_singularity:
+      for dtype in (dtypes_lib.half, dtypes_lib.float32, dtypes_lib.float64,
+                    dtypes_lib.complex64, dtypes_lib.complex128):
+        if dtype.is_complex and op in [
+            gen_math_ops.asin, gen_math_ops.acos, gen_math_ops.atan2
+        ]:
+          continue
+        if dtype == dtypes_lib.half and op in [
+            gen_math_ops.acosh, gen_math_ops.asin, gen_math_ops.acos,
+            gen_math_ops.atan2
+        ]:
+          continue
+        with self.cached_session():
+          print("op = ", op, ", singularity = ", singularity, ", type = ",
+                dtype)
+          args = [constant_op.constant(s, dtype=dtype) for s in singularity]
+          grad_y = constant_op.constant(0, dtype=dtype)
+          y = op(*args)
+          g = gradients_impl.gradients(y, args, grad_ys=grad_y)
+          g_val = self.evaluate(g)
+          self.assertAllEqual(g_val, np.zeros(len(singularity)))
+
+
 if __name__ == "__main__":
   test.main()

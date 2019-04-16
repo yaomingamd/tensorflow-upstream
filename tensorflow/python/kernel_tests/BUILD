@@ -226,7 +226,8 @@ cuda_py_test(
         "//tensorflow/python/ops/linalg",
     ],
     shard_count = 5,
-    tags = ["no_windows_gpu"],
+    tags = ["no_gpu"],
+    xla_enable_strict_auto_jit = True,
 )
 
 tf_py_test(
@@ -2671,8 +2672,6 @@ cuda_py_test(
     ],
     shard_count = 4,
     tags = [
-        # TODO(b/118887316): Re-enable this test in Kokoro.
-        "no_oss",
         "optonly",  # times out
     ],
 )
@@ -2970,6 +2969,7 @@ cuda_py_test(
         "//tensorflow/python:nn_ops",
     ],
     shard_count = 30,
+    xla_enable_strict_auto_jit = True,
 )
 
 cuda_py_test(
@@ -3101,7 +3101,7 @@ cuda_py_test(
     ],
     data = ["//tensorflow/python/kernel_tests/testdata:self_adjoint_eig_op_test_files"],
     shard_count = 20,
-    flaky = 1,  # test fails on rocm (on rare occasions) 
+    flaky = 1,  # test fails on rocm (on rare occasions)
     tags = [
         "no_windows",
     ],
