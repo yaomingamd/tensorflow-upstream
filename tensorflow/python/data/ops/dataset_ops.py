@@ -626,6 +626,9 @@ class DatasetV2(object):
   def prefetch(self, buffer_size):
     """Creates a `Dataset` that prefetches elements from this dataset.
 
+    Note that if the dataset was batched using `Dataset.batch`, each element is
+    a batch and this operation will prefetch `buffer_size` batches.
+
     Args:
       buffer_size: A `tf.int64` scalar `tf.Tensor`, representing the
         maximum number of elements that will be buffered when prefetching.
@@ -1778,6 +1781,9 @@ class DatasetV1Adapter(DatasetV1):
   def _inputs(self):
     return self._dataset._inputs()  # pylint: disable=protected-access
 
+  def _functions(self):
+    return self._dataset._functions()  # pylint: disable=protected-access
+
   def options(self):
     return self._dataset.options()
 
@@ -2070,13 +2076,7 @@ class TensorDataset(DatasetSource):
 
   def __init__(self, tensors):
     """See `Dataset.from_tensors()` for details."""
-    with ops.name_scope("tensors"):
-      tensors = nest.pack_sequence_as(tensors, [
-          sparse_tensor_lib.SparseTensor.from_value(t)
-          if sparse_tensor_lib.is_sparse(t) else ops.convert_to_tensor(
-              t, name="component_%d" % i)
-          for i, t in enumerate(nest.flatten(tensors))
-      ])
+    tensors = structure_lib.normalize_tensors(tensors)
     self._structure = structure_lib.Structure.from_value(tensors)
     self._tensors = self._structure._to_tensor_list(tensors)  # pylint: disable=protected-access
 
