@@ -256,8 +256,12 @@ def IsGoogleCudaEnabled():
   return pywrap_tensorflow.IsGoogleCudaEnabled()
 
 
-def CudaSupportsHalfMatMulAndConv():
-  return pywrap_tensorflow.CudaSupportsHalfMatMulAndConv()
+def IsBuiltWithROCm():
+  return pywrap_tensorflow.IsBuiltWithROCm()
+
+
+def GpuSupportsHalfMatMulAndConv():
+  return pywrap_tensorflow.GpuSupportsHalfMatMulAndConv()
 
 
 def IsMklEnabled():
@@ -1333,13 +1337,17 @@ def run_cuda_only(func=None):
 def is_gpu_available(cuda_only=False, min_cuda_compute_capability=None):
   """Returns whether TensorFlow can access a GPU.
 
+  Warning: if not GPU version of the package is installed, the function would
+  also, return False. Use `tf.test.is_built_with_cuda` to validate if TensorFlow
+  was build with CUDA support.
+
   Args:
-    cuda_only: limit the search to CUDA gpus.
+    cuda_only: limit the search to CUDA GPUs.
     min_cuda_compute_capability: a (major,minor) pair that indicates the minimum
       CUDA compute capability required, or None if no requirement.
 
   Returns:
-    True if a gpu device of the requested kind is available.
+    True if a GPU device of the requested kind is available.
   """
 
   def compute_capability_from_device_desc(device_desc):
@@ -1546,20 +1554,56 @@ def disable_xla(description):
   return disable_xla_impl
 
 
-# The description is just for documentation purposes.
-def disable_all_xla(description):
+def for_all_test_methods(decorator, *args, **kwargs):
+  """Generate class-level decorator from given method-level decorator.
 
-  def disable_all_impl(cls):
-    """Execute all test methods in this class only if xla is not enabled."""
-    base_decorator = disable_xla
+  It is expected for the given decorator to take some arguments and return
+  a method that is then called on the test method to produce a decorated
+  method.
+
+  Args:
+    decorator: The decorator to apply.
+    *args: Positional arguments
+    **kwargs: Keyword arguments
+  Returns: Function that will decorate a given classes test methods with the
+    decorator.
+  """
+
+  def all_test_methods_impl(cls):
+    """Apply decorator to all test methods in class."""
     for name in dir(cls):
       value = getattr(cls, name)
       if callable(value) and name.startswith(
-          "test") and not name == "test_session":
-        setattr(cls, name, base_decorator(description)(value))
+          "test") and (name != "test_session"):
+        setattr(cls, name, decorator(*args, **kwargs)(value))
     return cls
 
-  return disable_all_impl
+  return all_test_methods_impl
+
+
+# The description is just for documentation purposes.
+def no_xla_auto_jit(description):  # pylint: disable=unused-argument
+
+  def no_xla_auto_jit_impl(func):
+    """This test is not intended to be run with XLA auto jit enabled."""
+
+    def decorator(func):
+
+      def decorated(self, *args, **kwargs):
+        if is_xla_enabled():
+          # Skip test if using XLA is forced.
+          return
+        else:
+          return func(self, *args, **kwargs)
+
+      return decorated
+
+    if func is not None:
+      return decorator(func)
+
+    return decorator
+
+  return no_xla_auto_jit_impl
 
 
 class EagerSessionWarner(object):

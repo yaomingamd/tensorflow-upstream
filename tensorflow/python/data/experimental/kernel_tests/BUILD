@@ -620,6 +620,24 @@ py_test(
 )
 
 py_test(
+    name = "snapshot_test",
+    srcs = ["snapshot_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":reader_dataset_ops_test_base",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:io_ops",
+        "//tensorflow/python:util",
+        "//tensorflow/python/data/experimental/ops:readers",
+        "//tensorflow/python/data/experimental/ops:snapshot",
+        "//tensorflow/python/data/kernel_tests:test_base",
+        "//tensorflow/python/data/ops:dataset_ops",
+    ],
+)
+
+py_test(
     name = "stats_dataset_ops_test",
     size = "large",
     srcs = ["stats_dataset_ops_test.py"],

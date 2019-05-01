@@ -339,6 +339,7 @@ Status CapturedFunction::Instantiate(
       inst_opts.input_devices.push_back(inst_opts.target);
     }
     // Compute devices of captured inputs.
+    // TODO(jsimsa): Correctly handle tensors on devices other than CPU:0.
     Device* cpu_device;
     TF_RETURN_IF_ERROR(lib->device_mgr()->LookupDevice("CPU:0", &cpu_device));
     for (auto& input : captured_inputs_) {
@@ -347,12 +348,15 @@ Status CapturedFunction::Instantiate(
         const ResourceHandle& handle = input.flat<ResourceHandle>()(0);
         inst_opts.input_devices.push_back(handle.device());
       } else if (MTypeFromDType(dtype) == HOST_MEMORY) {
-        // TODO(jsimsa): Correctly handle tensors on devices other than CPU:0.
         inst_opts.input_devices.push_back(cpu_device->name());
       } else {
         // Fall back to using the function library runtime device.
         inst_opts.input_devices.push_back(inst_opts.target);
       }
+    }
+
+    for (size_t i = 0; i < fdef->signature().output_arg_size(); ++i) {
+      inst_opts.output_devices.push_back(inst_opts.target);
     }
   }
 
@@ -633,8 +637,14 @@ void InstantiatedCapturedFunction::RunAsync(
     FunctionLibraryRuntime::DoneCallback done, const string& prefix) const {
   auto& info = captured_func_->short_circuit_info();
   if (!info.indices.empty()) {
-    done(RunShortCircuit(info, std::move(args),
-                         captured_func_->captured_inputs(), rets));
+    // Run the `done` callback on a threadpool thread, because it will
+    // potentially do a non-trivial amount of (e.g. copying) work, and we may
+    // want to run that concurrently with the next invocation.
+    Status s = RunShortCircuit(info, std::move(args),
+                               captured_func_->captured_inputs(), rets);
+    (*ctx->runner())(
+        std::bind([s](FunctionLibraryRuntime::DoneCallback& done) { done(s); },
+                  std::move(done)));
     return;
   }
 

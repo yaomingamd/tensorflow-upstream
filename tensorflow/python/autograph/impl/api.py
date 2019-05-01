@@ -29,11 +29,6 @@ import textwrap
 
 from enum import Enum
 
-# pylint:disable=g-bad-import-order
-import six
-# pylint:enable=g-bad-import-order
-
-
 from tensorflow.python.autograph.core import converter
 from tensorflow.python.autograph.impl import conversion
 from tensorflow.python.autograph.operators import py_builtins
@@ -192,7 +187,6 @@ def _is_known_loaded_type(f, module_name, entity_name):
     return True
   # Note: inspect is required here, to avoid unpacking tf.function decorators.
   if inspect.ismethod(f):
-    f = six.get_unbound_function(f)
     # The the unbound method if of this type. Example:
     #
     # class ClassType:
@@ -201,7 +195,7 @@ def _is_known_loaded_type(f, module_name, entity_name):
     #     ...
     # o = ClassType()
     # o.method()
-    if isinstance(f, type_entity):
+    if isinstance(f.__func__, type_entity):
       return True
   return False
 
@@ -362,10 +356,17 @@ def converted_call(f, owner, options, args, kwargs):
 
     return _call_unconverted(f, args, kwargs)
 
-  if kwargs is not None:
-    result = converted_f(*effective_args, **kwargs)
-  else:
-    result = converted_f(*effective_args)
+  try:
+    if kwargs is not None:
+      result = converted_f(*effective_args, **kwargs)
+    else:
+      result = converted_f(*effective_args)
+  except errors.StagingError as e:
+    target_origin = errors.extract_origin_info(converted_f)
+    raise errors.StagingError((target_origin,) + e.user_trace, e.original_error)
+  except errors.AutoGraphError as e:
+    target_origin = errors.extract_origin_info(converted_f)
+    raise errors.StagingError((target_origin,), e)
 
   return result
 

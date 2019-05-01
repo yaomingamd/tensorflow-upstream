@@ -24,9 +24,11 @@ from six import PY3
 
 from google.protobuf import text_format as _text_format
 from google.protobuf.message import DecodeError
+from tensorflow.core.framework import graph_pb2 as _graph_pb2
 from tensorflow.lite.experimental.examples.lstm.rnn import dynamic_rnn  # pylint: disable=unused-import
 from tensorflow.lite.experimental.examples.lstm.rnn_cell import TFLiteLSTMCell  # pylint: disable=unused-import
 from tensorflow.lite.experimental.examples.lstm.rnn_cell import TfLiteRNNCell  # pylint: disable=unused-import
+from tensorflow.lite.experimental.tensorboard.ops_util import get_potentially_supported_ops  # pylint: disable=unused-import
 from tensorflow.lite.python import lite_constants as constants
 from tensorflow.lite.python.convert import build_toco_convert_protos  # pylint: disable=unused-import
 from tensorflow.lite.python.convert import ConverterError  # pylint: disable=unused-import
@@ -47,7 +49,6 @@ from tensorflow.lite.python.util import get_tensors_from_tensor_names as _get_te
 from tensorflow.lite.python.util import is_frozen_graph as _is_frozen_graph
 from tensorflow.lite.python.util import run_graph_optimizations as _run_graph_optimizations
 from tensorflow.lite.python.util import set_tensor_shapes as _set_tensor_shapes
-from tensorflow.core.framework import graph_pb2 as _graph_pb2
 from tensorflow.python import keras as _keras
 from tensorflow.python.client import session as _session
 from tensorflow.python.eager import context
@@ -73,6 +74,14 @@ class Optimize(enum.Enum):
 
   Some optimizations may come at the cost of accuracy.
   """
+
+  # Default optimization strategy.
+  #
+  # Converter will do its best to improve size and latency based on the
+  # information provided.
+  # Enhanced optimizations can be gained by providing a representative_dataset.
+  # Currently this is recommended, and is equivalent to the modes below.
+  DEFAULT = "DEFAULT"
 
   # Optimize for size.
   #
@@ -139,8 +148,55 @@ class TargetSpec(object):
     self.supported_ops = supported_ops
 
 
+class TFLiteConverterBase(object):
+  """Converter subclass to share functionality between V1 and V2 converters."""
+
+  def __init__(self):
+    self.representative_dataset = None
+    self.optimizations = []
+
+  def _grappler_config(self, target_ops):
+    is_only_flex_enabled = set([OpsSet.SELECT_TF_OPS]) == target_ops
+    if is_only_flex_enabled:
+      # The layout optimizer turns NHCW to NCHW. This provides performance
+      # optimizations when Flex mode is enabled. However, this is not compatible
+      # with builtin ops.
+      return _get_grappler_config(["layout"])
+    return None
+
+  def _validate_representative_dataset(self):
+    if self.representative_dataset:
+      if not isinstance(self.representative_dataset, RepresentativeDataset):
+        self.representative_dataset = RepresentativeDataset(
+            self.representative_dataset)
+      if self.representative_dataset.input_gen is None:
+        raise ValueError(
+            "Provide an input generator for representative_dataset")
+
+  def _is_post_training_optimize(self):
+    return bool(
+        set(self.optimizations).intersection([
+            Optimize.OPTIMIZE_FOR_LATENCY, Optimize.OPTIMIZE_FOR_SIZE,
+            Optimize.DEFAULT
+        ]))
+
+  def _is_weight_only_quantize(self):
+    return (self._is_post_training_optimize() and
+            (self.representative_dataset is None))
+
+  def _is_calibration_quantize(self):
+    return self._is_post_training_optimize() and self.representative_dataset
+
+  def _calibrate_quantize_model(self, result, inference_input_type,
+                                inference_output_type):
+    calibrate_quantize = _calibrator.Calibrator(result)
+    return calibrate_quantize.calibrate_and_quantize(
+        self.representative_dataset.input_gen, inference_input_type,
+        inference_output_type)
+
+
 @_tf_export("lite.TFLiteConverter", v1=[])
-class TFLiteConverterV2(object):
+class TFLiteConverterV2(TFLiteConverterBase):
   """Converts a TensorFlow model into TensorFlow Lite model.
 
   Attributes:
@@ -152,12 +208,7 @@ class TFLiteConverterV2(object):
     target_spec: Experimental flag, subject to change. Specification of target
       device.
     optimizations: Experimental flag, subject to change. A list of optimizations
-      to apply when converting the model. The converter applies the
-      optimizations by giving priority to the optimizations specified earlier in
-      the list. E.g. `[optimize.OPTIMIZE_FOR_SIZE,
-      optimize.OPTIMIZE_FOR_LATENCY]` requires the converter to do both size and
-      latency optimizations giving priority to size optimizations over latency
-      optimizations.
+      to apply when converting the model. E.g. `[Optimize.DEFAULT]
     representative_dataset: A representative dataset that can be used to
       generate input and output samples for the model. The converter can use the
       dataset to evaluate different optimizations.
@@ -191,12 +242,11 @@ class TFLiteConverterV2(object):
         Variables. This is only required when the tf.AutoTrackable object is not
         maintained by the user (e.g. `from_saved_model`).
     """
+    super(TFLiteConverterV2, self).__init__()
     self._funcs = funcs
     self._trackable_obj = trackable_obj
     self.allow_custom_ops = False
     self.target_spec = TargetSpec()
-    self.representative_dataset = None
-    self.optimizations = []
 
   @classmethod
   def from_concrete_functions(cls, funcs):
@@ -294,15 +344,15 @@ class TFLiteConverterV2(object):
     output_tensors = frozen_func.outputs
 
     # Run a Grappler pass.
-    is_only_flex_enabled = set(
-        [OpsSet.SELECT_TF_OPS]) == self.target_spec.supported_ops
-    config = _get_grappler_config(enable_layout_optimizer=is_only_flex_enabled)
-    graph_def = _run_graph_optimizations(
-        frozen_func.graph.as_graph_def(),
-        input_tensors,
-        output_tensors,
-        config,
-        graph=frozen_func.graph)
+    graph_def = frozen_func.graph.as_graph_def()
+    config = self._grappler_config(self.target_spec.supported_ops)
+    if config:
+      graph_def = _run_graph_optimizations(
+          graph_def,
+          input_tensors,
+          output_tensors,
+          config,
+          graph=frozen_func.graph)
 
     # Checks dimensions in input tensor.
     for tensor in input_tensors:
@@ -318,29 +368,12 @@ class TFLiteConverterV2(object):
         shape[0] = 1
         tensor.set_shape(shape)
 
-    if self.representative_dataset:
-      if not isinstance(self.representative_dataset, RepresentativeDataset):
-        raise TypeError("`representative_dataset` must be an instance of "
-                        "`RepresentativeDataset`")
-      if self.representative_dataset.input_gen is None:
-        raise ValueError(
-            "Provide an input generator for `representative_dataset`")
-
-    # TODO(shashishekhar): For now use optimizations order is ignored.
-    # Both size and latency optimizations decide whether to apply post
-    # training optimizations.
-    post_training_optimize = bool(
-        len(
-            set(self.optimizations)
-            & set([Optimize.OPTIMIZE_FOR_LATENCY, Optimize.OPTIMIZE_FOR_SIZE])))
-    # Do weights only quantization if there is no dataset for calibration.
-    weights_only_quantize_flag = (
-        post_training_optimize and (self.representative_dataset is None))
+    self._validate_representative_dataset()
 
     converter_kwargs = {
         "input_format": constants.TENSORFLOW_GRAPHDEF,
         "allow_custom_ops": self.allow_custom_ops,
-        "post_training_quantize": weights_only_quantize_flag,
+        "post_training_quantize": self._is_weight_only_quantize(),
         "target_ops": self.target_spec.supported_ops,
     }
 
@@ -351,16 +384,15 @@ class TFLiteConverterV2(object):
         output_tensors=output_tensors,
         **converter_kwargs)
 
-    if self.representative_dataset and post_training_optimize:
-      calibrate_quantize = _calibrator.Calibrator(result)
-      result = calibrate_quantize.calibrate_and_quantize(
-          self.representative_dataset.input_gen)
+    if self._is_calibration_quantize():
+      result = self._calibrate_quantize_model(result, constants.FLOAT,
+                                              constants.FLOAT)
 
     return result
 
 
 @_tf_export(v1=["lite.TFLiteConverter"])
-class TFLiteConverter(object):
+class TFLiteConverter(TFLiteConverterBase):
   """Convert a TensorFlow model into `output_format`.
 
   This is used to convert from a TensorFlow GraphDef or SavedModel into either a
@@ -415,7 +447,7 @@ class TFLiteConverter(object):
       these to the TensorFlow Lite runtime with a custom resolver.
       (default False)
     post_training_quantize: deprecated, please specify
-     `[optimize.OPTIMIZE_FOR_SIZE]` for `optimizations` instead. Boolean
+     `[Optimize.DEFAULT]` for `optimizations` instead. Boolean
      indicating whether to quantize the weights of the converted float model.
      Model size will be reduced and there will be latency improvements
      (at the cost of accuracy). (default False)
@@ -428,13 +460,8 @@ class TFLiteConverter(object):
     target_ops: Experimental flag, subject to change. Set of OpsSet
       options indicating which converter to use.
       (default set([OpsSet.TFLITE_BUILTINS]))
-    optimizations: Experimental flag, subject to change, A list of
-      optimizations to apply when converting the model. The converter applies
-      the optimizations by giving priority to the optimizations specified
-      earlier in the list. E.g.
-      `[optimize.OPTIMIZE_FOR_SIZE, optimize.OPTIMIZE_FOR_LATENCY]` requires
-      the converter to do both size and latency optimizations giving priority
-      to size optimizations over latency optimizations.
+    optimizations: Experimental flag, subject to change. A list of optimizations
+      to apply when converting the model. E.g. `[Optimize.DEFAULT]`
     representative_dataset: A representative dataset that can be used to
       generate input and output samples for the model. The converter can use
       the dataset to evaluate different optimizations.
@@ -488,6 +515,7 @@ class TFLiteConverter(object):
     Raises:
       ValueError: Invalid arguments.
     """
+    super(TFLiteConverter, self).__init__()
     self._graph_def = graph_def
     self._input_tensors = input_tensors
     self._output_tensors = output_tensors
@@ -505,8 +533,6 @@ class TFLiteConverter(object):
     self.dump_graphviz_dir = None
     self.dump_graphviz_video = False
     self.target_ops = set([OpsSet.TFLITE_BUILTINS])
-    self.representative_dataset = None
-    self.optimizations = []
 
     # Attributes are used by models that cannot be loaded into TensorFlow.
     if not self._has_valid_tensors():
@@ -732,11 +758,10 @@ class TFLiteConverter(object):
   def __setattr__(self, name, value):
     if name == "post_training_quantize":
       warnings.warn("Property %s is deprecated, "
-                    "please use optimizations=[Optimize.OPTIMIZE_FOR_SIZE]"
+                    "please use optimizations=[Optimize.DEFAULT]"
                     " instead." % name)
       if value:
-        # Use OPTIMIZE_FOR_SIZE for post training for now.
-        self.optimizations = [Optimize.OPTIMIZE_FOR_SIZE]
+        self.optimizations = [Optimize.DEFAULT]
       else:
         self.optimizations = []
       return
@@ -745,9 +770,9 @@ class TFLiteConverter(object):
   def __getattribute__(self, name):
     if name == "post_training_quantize":
       warnings.warn("Property %s is deprecated, "
-                    "please use optimizations=[Optimize.OPTIMIZE_FOR_SIZE]"
+                    "please use optimizations=[Optimize.DEFAULT]"
                     " instead." % name)
-      return Optimize.OPTIMIZE_FOR_SIZE in set(self.optimizations)
+      return Optimize.DEFAULT in set(self.optimizations)
     return object.__getattribute__(self, name)
 
   def convert(self):
@@ -795,24 +820,13 @@ class TFLiteConverter(object):
                          "tensors '{0}'.".format(",".join(invalid_stats)))
     else:
       quantized_stats = None
-    if self.representative_dataset:
-      if not isinstance(self.representative_dataset, RepresentativeDataset):
-        self.representative_dataset = RepresentativeDataset(
-            self.representative_dataset)
-      if self.representative_dataset.input_gen is None:
-        raise ValueError(
-            "Provide an input generator for representative_dataset")
 
-    post_training_optimize = bool(
-        len(set(self.optimizations) & set([Optimize.OPTIMIZE_FOR_LATENCY,
-                                           Optimize.OPTIMIZE_FOR_SIZE])))
-    # Do weights only quantization if there is no dataset for calibration.
-    weights_only_quantize_flag = (
-        post_training_optimize and (self.representative_dataset is None))
+    self._validate_representative_dataset()
 
     toco_inference_input_type = self.inference_input_type
     inference_input_type = self.inference_input_type
     inference_output_type = self.inference_output_type
+    post_training_optimize = self._is_post_training_optimize()
     if post_training_optimize:
       # Post training optimizations require that TOCO outputs a float model.
       if self.inference_type != constants.FLOAT:
@@ -825,7 +839,8 @@ class TFLiteConverter(object):
       if inference_output_type is None:
         inference_output_type = constants.FLOAT
 
-    if weights_only_quantize_flag:
+    weight_only_quantize = self._is_weight_only_quantize()
+    if weight_only_quantize:
       # Currently, weight only quantization requires float inputs and outputs.
       if (inference_input_type != constants.FLOAT or
           inference_output_type != constants.FLOAT):
@@ -849,22 +864,21 @@ class TFLiteConverter(object):
         "reorder_across_fake_quant": self.reorder_across_fake_quant,
         "change_concat_input_ranges": self.change_concat_input_ranges,
         "allow_custom_ops": self.allow_custom_ops,
-        "post_training_quantize": weights_only_quantize_flag,
+        "post_training_quantize": weight_only_quantize,
         "target_ops": self.target_ops,
         "dump_graphviz_dir": self.dump_graphviz_dir,
         "dump_graphviz_video": self.dump_graphviz_video
     }
 
-    optimized_graph = None
-    if self.inference_type == constants.QUANTIZED_UINT8:
-      optimized_graph = self._graph_def
-    else:
+    optimized_graph = self._graph_def
+    if self.inference_type != constants.QUANTIZED_UINT8:
       try:
-        is_only_flex_enabled = set([OpsSet.SELECT_TF_OPS]) == self.target_ops
-        config = _get_grappler_config(
-            enable_layout_optimizer=is_only_flex_enabled)
-        optimized_graph = _run_graph_optimizations(
-            self._graph_def, self._input_tensors, self._output_tensors, config)
+        config = self._grappler_config(self.target_ops)
+        if config:
+          optimized_graph = _run_graph_optimizations(self._graph_def,
+                                                     self._input_tensors,
+                                                     self._output_tensors,
+                                                     config)
       except Exception:
         optimized_graph = self._graph_def
 
@@ -882,11 +896,9 @@ class TFLiteConverter(object):
           output_arrays=self._output_arrays,
           **converter_kwargs)
 
-    if self.representative_dataset and post_training_optimize:
-      calibrate_quantize = _calibrator.Calibrator(result)
-      result = calibrate_quantize.calibrate_and_quantize(
-          self.representative_dataset.input_gen, inference_input_type,
-          inference_output_type)
+    if self._is_calibration_quantize():
+      result = self._calibrate_quantize_model(result, inference_input_type,
+                                              inference_output_type)
 
     return result
 
