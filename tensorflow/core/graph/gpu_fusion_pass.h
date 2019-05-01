@@ -1,4 +1,4 @@
-/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2018 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,10 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_CORE_UTIL_CUDA_DEVICE_FUNCTIONS_H_
-#define TENSORFLOW_CORE_UTIL_CUDA_DEVICE_FUNCTIONS_H_
+// A graph pass that rewrites graph to FUSE specific operations in ROCm mode.
 
-// Forward to new header.
-#include "tensorflow/core/util/gpu_device_functions.h"
+#ifndef TENSORFLOW_GRAPH_GPU_FUSION_PASS_H_
+#define TENSORFLOW_GRAPH_GPU_FUSION_PASS_H_
 
-#endif  // TENSORFLOW_CORE_UTIL_CUDA_KERNEL_HELPER_H_
+#ifdef TENSORFLOW_USE_ROCM
+
+#include <sys/types.h>
+#include <memory>
+#include "tensorflow/core/graph/graph.h"
+
+#endif  // TENSORFLOW_USE_ROCM
+
+#endif  // TENSORFLOW_GRAPH_GPU_FUSION_PASS_H_

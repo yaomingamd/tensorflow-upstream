@@ -18,14 +18,14 @@ package(
     default_visibility = [":internal"],
 )
 
-load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_test")
+load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_test", "tf_gpu_tests_tags")
 load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 load("//tensorflow/compiler/aot:tfcompile.bzl", "tf_library")
 load("//tensorflow/compiler/tests:build_defs.bzl", "tf_xla_py_test")
 load("//tensorflow/compiler/tests:build_defs.bzl", "generate_backend_suites")
 load(
     "//tensorflow/core:platform/default/build_config_root.bzl",
-    "tf_cuda_tests_tags",
+    "tf_cuda_tests_tags","tf_gpu_tests_tags",
 )
 
 generate_backend_suites()
@@ -247,7 +247,7 @@ tf_xla_py_test(
     name = "cholesky_op_test",
     size = "medium",
     srcs = ["cholesky_op_test.py"],
-    tags = ["optonly"],
+    tags = ["optonly", "no_rocm"],
     deps = [
         ":xla_test",
         "//tensorflow/python:array_ops",
@@ -358,6 +358,7 @@ tf_xla_py_test(
         "//tensorflow/python:math_ops",
         "//tensorflow/python:platform_test",
     ],
+    tags = ["no_rocm"],
 )
 
 tf_xla_py_test(
@@ -392,6 +393,7 @@ tf_xla_py_test(
         "//tensorflow/python:nn_ops_gen",
         "//tensorflow/python:platform_test",
     ],
+    tags = ["no_rocm"],
 )
 
 tf_xla_py_test(
@@ -505,7 +507,7 @@ tf_xla_py_test(
     size = "medium",
     srcs = ["fft_test.py"],
     shard_count = 6,
-    tags = ["optonly"],
+    tags = ["optonly", "no_rocm"],
     deps = [
         ":xla_test",
         "//tensorflow/python:array_ops",
@@ -720,7 +722,10 @@ tf_xla_py_test(
         "cpu_ondemand",
     ],
     shard_count = 5,
-    tags = ["optonly"],
+    tags = [
+        "no_rocm",
+        "optonly",
+    ],
     deps = [
         ":xla_test",
         "//tensorflow/python:array_ops",
@@ -842,6 +847,7 @@ tf_xla_py_test(
         "//tensorflow/python:math_ops_gen",
         "//tensorflow/python:platform_test",
     ],
+    tags = ["no_rocm"],
 )
 
 tf_xla_py_test(
@@ -1000,6 +1006,7 @@ tf_xla_py_test(
         "//tensorflow/python:training",
         "@absl_py//absl/testing:parameterized",
     ],
+    tags = ["no_rocm"],
 )
 
 tf_xla_py_test(
@@ -1058,13 +1065,14 @@ tf_xla_py_test(
         "//tensorflow/python:framework",
         "//tensorflow/python:platform_test",
     ],
+    tags = ["no_rocm"],
 )
 
 tf_xla_py_test(
     name = "scatter_nd_op_test",
     size = "medium",
     srcs = ["scatter_nd_op_test.py"],
-    tags = ["optonly"],
+    tags = ["optonly", "no_rocm"],
     deps = [
         ":xla_test",
         "//tensorflow/python:array_ops",
@@ -1303,4 +1311,5 @@ tf_xla_py_test(
         "//tensorflow/python:platform_test",
         "@absl_py//absl/testing:parameterized",
     ],
+    tags = ["no_rocm"],
 )

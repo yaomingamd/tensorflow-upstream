@@ -167,6 +167,7 @@ struct no_nan_op {
   }
 };
 
+
 template <typename T>
 struct div_no_nan_op : public no_nan_op<T, scalar_quotient_op<T>> {
   EIGEN_EMPTY_STRUCT_CTOR(div_no_nan_op)
@@ -176,7 +177,7 @@ template <typename T>
 struct functor_traits<div_no_nan_op<T>> {
   enum {
     Cost = functor_traits<scalar_quotient_op<T>>::Cost + NumTraits<T>::AddCost,
-    PacketAccess = true,
+    PacketAccess = false,
   };
 };
 
@@ -189,7 +190,11 @@ template <typename T>
 struct functor_traits<mul_no_nan_op<T>> {
   enum {
     Cost = functor_traits<scalar_product_op<T>>::Cost + NumTraits<T>::AddCost,
+#if TENSORFLOW_USE_ROCM
+    PacketAccess = false,
+#else    
     PacketAccess = true,
+#endif // TENSORFLOW_USE_ROCM
   };
 };
 
@@ -227,7 +232,11 @@ template <typename Tout, typename Tin, typename Binary>
 struct functor_traits<scalar_left<Tout, Tin, Binary>> {
   enum {
     Cost = functor_traits<Binary>::Cost,
+#if TENSORFLOW_USE_ROCM
+    PacketAccess = false,
+#else    
     PacketAccess = functor_traits<Binary>::PacketAccess,
+#endif // TENSORFLOW_USE_ROCM
   };
 };
 
@@ -257,7 +266,11 @@ template <typename Tout, typename Tin, typename Binary>
 struct functor_traits<scalar_right<Tout, Tin, Binary>> {
   enum {
     Cost = functor_traits<Binary>::Cost,
+#if TENSORFLOW_USE_ROCM
+    PacketAccess = false,
+#else    
     PacketAccess = functor_traits<Binary>::PacketAccess,
+#endif // TENSORFLOW_USE_ROCM
   };
 };
 
@@ -350,8 +363,13 @@ struct google_floor_div {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const T operator()(const T& x,
                                                            const T& y) const {
     if ((x < T(0)) != (y < T(0))) {
+#if defined(__HIP_DEVICE_COMPILE__)
+      T abs_x = (x < T(0)) ? -x : x;
+      T abs_y = (y < T(0)) ? -y : y;
+#else
       T abs_x = std::abs(x);
       T abs_y = std::abs(y);
+#endif
       return -(abs_x + abs_y - 1) / abs_y;
     } else {
       return x / y;
@@ -392,7 +410,8 @@ struct functor_traits<google_floor_div<Scalar>> {
     Cost = 2 * Eigen::internal::scalar_div_cost<
                    Scalar, packet_traits<Scalar>::HasDiv>::value +
            NumTraits<Scalar>::AddCost,
-    PacketAccess = packet_traits<Scalar>::HasDiv
+    //PacketAccess = packet_traits<Scalar>::HasDiv
+    PacketAccess = false,
   };
 };
 
@@ -415,8 +434,8 @@ struct functor_traits<google_floor_div_real<Scalar>> {
     Cost = 2 * Eigen::internal::scalar_div_cost<
                    Scalar, packet_traits<Scalar>::HasDiv>::value +
            2 * NumTraits<Scalar>::AddCost,
-    PacketAccess =
-        packet_traits<Scalar>::HasDiv && packet_traits<Scalar>::HasFloor
+    PacketAccess = false,
+     //   packet_traits<Scalar>::HasDiv && packet_traits<Scalar>::HasFloor
   };
 };
 
@@ -513,7 +532,8 @@ struct functor_traits<scalar_round_op_google<Scalar>> {
   enum {
     Cost = Eigen::NumTraits<Scalar>::IsInteger ? 0
                                                : 4 * NumTraits<Scalar>::AddCost,
-    PacketAccess = Eigen::NumTraits<Scalar>::IsInteger
+    //PacketAccess = Eigen::NumTraits<Scalar>::IsInteger
+    PacketAccess = false,
   };
 };
 
@@ -551,7 +571,8 @@ template <typename Scalar, bool IsInteger>
 struct functor_traits<scalar_round_up_op<Scalar, IsInteger>> {
   enum {
     Cost = IsInteger ? 0 : 4 * NumTraits<Scalar>::AddCost,
-    PacketAccess = IsInteger || packet_traits<Scalar>::HasFloor
+    //PacketAccess = IsInteger || packet_traits<Scalar>::HasFloor
+    PacketAccess = false,
   };
 };
 
@@ -574,7 +595,12 @@ struct bitwise_xor_op {
 
 template <typename Scalar>
 struct functor_traits<bitwise_xor_op<Scalar>> {
-  enum { Cost = Eigen::NumTraits<Scalar>::AddCost, PacketAccess = true };
+  enum { 
+
+     Cost = Eigen::NumTraits<Scalar>::AddCost,
+    PacketAccess = true,
+
+    };
 };
 
 template <typename Scalar>
@@ -604,7 +630,8 @@ struct functor_traits<xlogy_op<Scalar>> {
   enum {
     Cost = functor_traits<scalar_log_op<Scalar>>::Cost +
            Eigen::NumTraits<Scalar>::MulCost,
-    PacketAccess = functor_traits<scalar_log_op<Scalar>>::PacketAccess
+    //PacketAccess = functor_traits<scalar_log_op<Scalar>>::PacketAccess
+    PacketAccess = false,
   };
 };
 
@@ -635,7 +662,8 @@ struct functor_traits<xdivy_op<Scalar>> {
         Eigen::NumTraits<Scalar>::AddCost +
         Eigen::internal::scalar_div_cost<Scalar,
                                          packet_traits<Scalar>::HasDiv>::value,
-    PacketAccess = packet_traits<Scalar>::HasDiv
+   // PacketAccess = packet_traits<Scalar>::HasDiv
+    PacketAccess = false,
   };
 };
 
@@ -855,7 +883,7 @@ struct scalar_rint_op {
   EIGEN_EMPTY_STRUCT_CTOR(scalar_rint_op)
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Scalar
   operator()(const Scalar& a) const {
-#if defined(__CUDACC__)
+#if defined(__CUDACC__) || defined(__HIPCC__)
     return ::rint(a);
 #elif defined(__ANDROID__)
     return rint(a);
@@ -983,7 +1011,7 @@ struct scalar_atan2_op {
   EIGEN_EMPTY_STRUCT_CTOR(scalar_atan2_op)
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Scalar
   operator()(const Scalar& y, const Scalar& x) const {
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     return ::atan2(y, x);
 #else
     return std::atan2(y, x);

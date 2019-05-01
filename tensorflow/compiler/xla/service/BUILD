@@ -8,6 +8,8 @@ load(
     "tf_proto_library_py",
 )
 load("//tensorflow:tensorflow.bzl", "tf_cc_test")
+load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda_is_configured")
+load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm_is_configured")
 
 licenses(["notice"])  # Apache 2.0
 
@@ -833,10 +835,11 @@ cc_library(
     deps = [
         ":service",
         "//tensorflow/compiler/xla/service/gpu:gpu_transfer_manager",
-        "//tensorflow/compiler/xla/service/gpu:nvptx_compiler",
+        "//tensorflow/compiler/xla/service/gpu:gpu_compiler",
         "//tensorflow/core:stream_executor_no_cuda",
-        "//tensorflow/core/platform/default/build_config:stream_executor_cuda",
-    ],
+    ]
+    + if_cuda_is_configured(["//tensorflow/core/platform/default/build_config:stream_executor_cuda",])
+    + if_rocm_is_configured(["//tensorflow/core/platform/default/build_config:stream_executor_rocm",]),
 )
 
 cc_library(
@@ -3593,6 +3596,7 @@ tf_cc_test(
         "//tensorflow/core:test",
     ],
 )
+
 
 cc_library(
     name = "stable_sort_expander",

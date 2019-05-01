@@ -37,6 +37,7 @@ tf_py_test(
     ],
     tags = [
         "no_pip",  # b/131330719
+        "no_rocm_v2",
     ],
 )
 
@@ -64,6 +65,7 @@ tf_py_test(
     ],
     tags = [
         "no_pip",  # b/131330719
+        "no_rocm_v2",
     ],
 )
 
@@ -99,6 +101,7 @@ tf_py_test(
     ],
     tags = [
         "no_pip",  # b/131330719
+        "no_rocm_v2",
     ],
 )
 
@@ -144,6 +147,7 @@ tf_py_test(
     ],
     tags = [
         "no_pip",  # b/131330719
+        "no_rocm_v2",
     ],
 )
 
@@ -186,6 +190,7 @@ tf_py_test(
     ],
     tags = [
         "no_pip",  # b/131330719
+        "no_rocm_v2",
     ],
 )
 
@@ -228,6 +233,7 @@ tf_py_test(
     ],
     tags = [
         "no_pip",  # b/131330719
+        "no_rocm_v2",
     ],
 )
 
@@ -281,6 +287,7 @@ tf_py_test(
     ],
     tags = [
         "no_pip",  # b/131330719
+        "no_rocm_v2",
     ],
 )
 

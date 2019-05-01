@@ -31,7 +31,7 @@ __global__ void GatherTreeOpKernel(const int32 batch_size, const int32 max_time,
                                    const T* parent_ids,
                                    const int32* max_sequence_lengths,
                                    const T end_token, T* beams) {
-  CUDA_1D_KERNEL_LOOP(i, batch_size * beam_width) {
+  GPU_1D_KERNEL_LOOP(i, batch_size * beam_width) {
     const int32 batch = i / beam_width;
     const int32 beam = i % beam_width;
 
@@ -90,12 +90,12 @@ struct GatherTree<GPUDevice, T> {
     // First kernel launch to "zero" things out
     beams.device(d) = beams.constant(end_token);
 
-    CudaLaunchConfig config = GetCudaLaunchConfig(batch_size * beam_width, d);
-    TF_CHECK_OK(CudaLaunchKernel(
+    GpuLaunchConfig config = GetGpuLaunchConfig(batch_size * beam_width, d);
+    GPU_LAUNCH_KERNEL(
         GatherTreeOpKernel<T>, config.block_count, config.thread_per_block, 0,
         d.stream(), batch_size, max_time, beam_width, step_ids.data(),
         parent_ids.data(), max_sequence_length.data(), end_token,
-        beams.data()));
+        beams.data());
   }
 };
 

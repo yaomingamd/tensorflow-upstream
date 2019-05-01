@@ -45,6 +45,10 @@ class TargetOptions;
 namespace xla {
 namespace llvm_ir {
 
+inline string AsString(const std::string& str) {
+  return string(str.data(), str.length());
+}
+
 // Convert a absl::string_view to a llvm::StringRef. Note: both
 // absl::string_view and llvm::StringRef are non-owning pointers into a
 // string in memory. This method is used to feed strings to LLVM
@@ -312,6 +316,9 @@ llvm::GlobalVariable* GetOrCreateVariableForPhiloxRngState(
 // should rarely produce the same result.
 void IncrementVariableForPhiloxRngState(int64 value, llvm::Module* module,
                                         llvm::IRBuilder<>* b);
+
+constexpr int kAMDGPUGlobalMemoryAddrSpace = 1;
+constexpr int kAMDGPUSharedMemoryAddrSpace = 3;
 }  // namespace llvm_ir
 }  // namespace xla
 

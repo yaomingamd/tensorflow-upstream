@@ -13,13 +13,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+
+#if TENSORFLOW_USE_ROCM
+#include "rocm/include/hip/hip_runtime.h"
+#endif
 
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/kernels/random_op_gpu.h"
 #include "tensorflow/core/kernels/stateful_random_ops_cpu_gpu.h"
 #include "tensorflow/core/util/gpu_launch_config.h"
+#include "tensorflow/core/util/gpu_kernel_helper.h"
 
 namespace tensorflow {
 
@@ -70,14 +75,19 @@ void UpdateVariableAndFill_Philox<GPUDevice, Distribution>::operator()(
   // maximize occupancy
   const int kGroupSize = Distribution::kResultElementCount;
   int work_element_count = (output_size + kGroupSize - 1) / kGroupSize;
-  CudaLaunchConfig cfg = GetCudaLaunchConfig(work_element_count, d,
+  GpuLaunchConfig cfg = GetGpuLaunchConfig(work_element_count, d,
                                              FillKernel<Distribution>, 0, 0);
 
   int zero = 0;
+#if GOOGLE_CUDA  
   cudaMemcpyToSymbol(thread_counter, &zero, sizeof(int));
-  TF_CHECK_OK(CudaLaunchKernel(
-      FillKernel<Distribution>, cfg.block_count, cfg.thread_per_block, 0,
-      d.stream(), dist, state_size, output_size, state_data, output_data));
+#else // TENSORFLOW_USE_ROCM#
+  hipMemcpyToSymbol(HIP_SYMBOL(thread_counter), &zero, sizeof(int));
+#endif
+  GPU_LAUNCH_KERNEL(FillKernel<Distribution>, cfg.block_count,
+                               cfg.thread_per_block, 0, d.stream(),
+                               dist, state_size, output_size,
+                               state_data, output_data);
 }
 
 // Explicit instantiation of the GPU distributions functors.
@@ -128,4 +138,4 @@ template struct UpdateVariableAndFill_Philox<
 
 }  // end namespace tensorflow
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

@@ -300,6 +300,7 @@ cuda_py_test(
     tags = [
         "no_oss",  # TODO(b/130369494): Investigate why it times out on OSS.
         # TODO(b/124344198): Add "multi_and_single_gpu",
+	"no_rocm",  # needs support for "NcclAllReduce" op
     ],
 )
 

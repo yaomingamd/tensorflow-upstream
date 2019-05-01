@@ -283,6 +283,35 @@ std::pair<bool, DimensionVector> GetReductionKindAndContiguousComponents(
       false, DimensionVector{num_kept_major, num_reduced, num_kept_minor});
 }
 
+llvm::Value* EmitDeviceFunctionCall(
+    const string& callee_name, absl::Span<llvm::Value* const> operands,
+    absl::Span<const PrimitiveType> input_types, PrimitiveType output_type,
+    absl::Span<const llvm::Attribute::AttrKind> attributes,
+    llvm::IRBuilder<>* ir_builder, llvm::Module* module) {
+  std::vector<llvm::Type*> ir_input_types;
+  for (PrimitiveType input_type : input_types) {
+    ir_input_types.push_back(
+        llvm_ir::PrimitiveTypeToIrType(input_type, module));
+  }
+  llvm::FunctionType* callee_type = llvm::FunctionType::get(
+      llvm_ir::PrimitiveTypeToIrType(output_type, module),  // Return type.
+      ir_input_types,                                        // Parameter types.
+      false);  // No variadic arguments.
+
+  // Declares the callee if it is not declared already.
+  llvm::Function* callee = llvm::dyn_cast<llvm::Function>(
+      ir_builder->GetInsertBlock()->getModule()->getOrInsertFunction(
+          llvm_ir::AsStringRef(callee_name), callee_type).getCallee());
+
+
+
+  for (auto attribute : attributes) {
+    callee->addFnAttr(attribute);
+  }
+
+  return ir_builder->CreateCall(callee, llvm_ir::AsArrayRef(operands));
+}
+
 // This emits a device-side call to
 // "i32 vprintf(i8* fmt, arguments_type* arguments)" in the driver; see
 // http://docs.nvidia.com/cuda/ptx-writers-guide-to-interoperability/index.html#system-calls
@@ -319,11 +348,13 @@ llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
 
   // Special case for efficiency
   if (value->getType()->isFloatTy() && bit_width == 32) {
-    return EmitCallToTargetIntrinsic(
-        TargetIntrinsicID::kShflDownF32,
-        {all_warps_mask, value, offset, builder->getInt32(kWarpSize - 1)}, {},
+    return EmitCallToTargetFunction(
+        TargetFunctionID::kShflDownF32,
+        {all_warps_mask, value, offset, builder->getInt32(kWarpSize - 1)},
+        {S32, F32, S32, S32}, F32, {},{}, 
         builder);
   }
+
 
   // We must split values wider than 32 bits as the "shfl" instruction operates
   // on 32-bit values.
@@ -336,10 +367,11 @@ llvm::Value* EmitFullWarpShuffleDown(llvm::Value* value, llvm::Value* offset,
   for (int i = 0; i < num_segments; ++i) {
     x = builder->CreateInsertElement(
         x,
-        EmitCallToTargetIntrinsic(
-            TargetIntrinsicID::kShflDownI32,
+        EmitCallToTargetFunction(
+            TargetFunctionID::kShflDownI32,
             {all_warps_mask, builder->CreateExtractElement(x, i), offset,
              builder->getInt32(kWarpSize - 1)},
+             {S32, S32, S32, S32}, S32, {}, 
             {}, builder),
         i);
   }
@@ -385,10 +417,12 @@ llvm::Value* IsBlock0Thread0(llvm::IRBuilder<>* b) {
   return b->CreateAnd(
       b->CreateICmpEQ(
           b->getInt32(0),
-          EmitCallToTargetIntrinsic(TargetIntrinsicID::kThreadIdx, {}, {}, b)),
+          EmitCallToTargetFunction(TargetFunctionID::kThreadIdx, {}, {}, 
+             PRIMITIVE_TYPE_INVALID, {},  {}, b)),
       b->CreateICmpEQ(
           b->getInt32(0),
-          EmitCallToTargetIntrinsic(TargetIntrinsicID::kThreadIdx, {}, {}, b)));
+          EmitCallToTargetFunction(TargetFunctionID::kThreadIdx, {}, 
+              {}, PRIMITIVE_TYPE_INVALID, {}, {}, b)));
 }
 
 }  // namespace gpu

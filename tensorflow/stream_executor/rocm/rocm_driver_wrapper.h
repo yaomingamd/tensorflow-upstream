@@ -27,18 +27,14 @@ limitations under the License.
 #include "tensorflow/stream_executor/platform/dso_loader.h"
 #include "tensorflow/stream_executor/platform/port.h"
 
-#if defined(TENSORFLOW_USE_ROCM)
-
-#endif
-
 namespace tensorflow {
 namespace wrap {
 #ifdef PLATFORM_GOOGLE
 // Use static linked library
-#define STREAM_EXECUTOR_HIP_WRAP(hipSymbolName)                          \
-  template <typename... Args>                                            \
+#define STREAM_EXECUTOR_HIP_WRAP(hipSymbolName)                       \
+  template <typename... Args>                                              \
   auto hipSymbolName(Args... args)->decltype(::hipSymbolName(args...)) { \
-    return ::hipSymbolName(args...);                                     \
+    return ::hipSymbolName(args...);                                      \
   }
 
 // This macro wraps a global identifier, given by hipSymbolName, in a callable
@@ -83,8 +79,8 @@ namespace wrap {
   __macro(hipDeviceTotalMem)                        \
   __macro(hipDriverGetVersion)                      \
   __macro(hipEventCreateWithFlags)                  \
-  __macro(hipEventElapsedTime)                      \
   __macro(hipEventDestroy)                          \
+  __macro(hipEventElapsedTime)                      \
   __macro(hipEventQuery)                            \
   __macro(hipEventRecord)                           \
   __macro(hipEventSynchronize)                      \

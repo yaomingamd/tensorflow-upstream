@@ -126,9 +126,11 @@ Status RunCudnnConvImpl(CudnnConvParams params,
   int64 feature_group_count = params.feature_group_count;
   AlgorithmConfig algorithm = params.algorithm;
 
-  VLOG(3) << "Convolution Algorithm: " << algorithm.algorithm()->algo_id();
-  VLOG(3) << "tensor_ops_enabled: "
+  if (algorithm.algorithm().has_value()){
+    VLOG(3) << "Convolution Algorithm: " << algorithm.algorithm()->algo_id();
+    VLOG(3) << "tensor_ops_enabled: "
           << algorithm.algorithm()->tensor_ops_enabled();
+  }
   VLOG(3) << "Convolution kind: " << CudnnConvKindToString(kind);
   VLOG(3) << "input shape: " << ShapeUtil::HumanStringWithLayout(input_shape);
   VLOG(3) << "filter shape: " << ShapeUtil::HumanStringWithLayout(filter_shape);
@@ -334,8 +336,10 @@ StatusOr<CudnnConvParams> GetCudnnConvParams(
   params.window = &conv->window();
   params.dnums = &conv->convolution_dimension_numbers();
   params.feature_group_count = conv->feature_group_count();
-  params.algorithm = se::dnn::AlgorithmConfig(se::dnn::AlgorithmDesc(
-      backend_config.algorithm(), backend_config.tensor_ops_enabled()));
+  params.algorithm = se::dnn::AlgorithmConfig(
+      se::dnn::AlgorithmDesc(backend_config.algorithm(),
+                             backend_config.tensor_ops_enabled()),
+      backend_config.scratch_size());
   params.conv_result_scale = backend_config.conv_result_scale();
 
   switch (kind) {
@@ -408,7 +412,15 @@ Status RunCudnnConv(const HloCustomCallInstruction* conv,
   TF_ASSIGN_OR_RETURN(CudnnConvParams params,
                       GetCudnnConvParams(conv, operand_buffers, result_buffer));
 
-  if (options.algo_override) {
+  if (options.first_call_from_algorithm_picker) {
+    // in ROCm mode, the first call to run the convolution needs to trigger the
+    // code that calls miopenFind* API. That triggger is implicit, it is based
+    // on whether or not the AlgorithmConfig::algorithm is empty! So for the
+    // first call we need to ensure that the AlgorithmConfig::algorithm is
+    // empty. For all subsequent calls, we should use the value retrieved from
+    // the backend_config
+    params.algorithm = AlgorithmConfig();
+  } else if (options.algo_override) {
     params.algorithm = AlgorithmConfig(*options.algo_override);
   }
 

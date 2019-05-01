@@ -1,4 +1,4 @@
-/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,10 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_CORE_UTIL_CUDA_LAUNCH_CONFIG_H_
-#define TENSORFLOW_CORE_UTIL_CUDA_LAUNCH_CONFIG_H_
+#ifndef TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCM_EVENT_H_
+#define TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCM_EVENT_H_
 
-// Forward to new header.
-#include "tensorflow/core/util/gpu_launch_config.h"
+#include "tensorflow/stream_executor/gpu/gpu_event.h"
 
-#endif  // TENSORFLOW_CORE_UTIL_CUDA_KERNEL_HELPER_H_
+namespace stream_executor {
+namespace rocm {
+
+using ROCMEVent = gpu::GpuEvent;
+
+}  // namespace rocm
+}  // namespace stream_executor
+
+#endif  // TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCM_EVENT_H_

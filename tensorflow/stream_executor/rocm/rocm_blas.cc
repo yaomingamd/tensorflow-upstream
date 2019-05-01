@@ -25,11 +25,6 @@ limitations under the License.
 
 #include "absl/strings/str_cat.h"
 #include "tensorflow/stream_executor/device_memory.h"
-#include "tensorflow/stream_executor/gpu/gpu_activation.h"
-#include "tensorflow/stream_executor/gpu/gpu_executor.h"
-#include "tensorflow/stream_executor/gpu/gpu_helpers.h"
-#include "tensorflow/stream_executor/gpu/gpu_stream.h"
-#include "tensorflow/stream_executor/gpu/gpu_timer.h"
 #include "tensorflow/stream_executor/lib/env.h"
 #include "tensorflow/stream_executor/lib/initialize.h"
 #include "tensorflow/stream_executor/lib/status.h"
@@ -39,7 +34,12 @@ limitations under the License.
 #include "tensorflow/stream_executor/platform/logging.h"
 #include "tensorflow/stream_executor/platform/port.h"
 #include "tensorflow/stream_executor/plugin_registry.h"
+#include "tensorflow/stream_executor/rocm/rocm_activation.h"
+#include "tensorflow/stream_executor/rocm/rocm_gpu_executor.h"
+#include "tensorflow/stream_executor/rocm/rocm_helpers.h"
 #include "tensorflow/stream_executor/rocm/rocm_platform_id.h"
+#include "tensorflow/stream_executor/rocm/rocm_stream.h"
+#include "tensorflow/stream_executor/rocm/rocm_timer.h"
 #include "tensorflow/stream_executor/scratch_allocator.h"
 #include "tensorflow/stream_executor/stream_executor.h"
 
@@ -53,14 +53,14 @@ namespace wrap {
 #ifdef PLATFORM_GOOGLE
 #define STREAM_EXECUTOR_ROCBLAS_WRAP(__name)                       \
   struct WrapperShim__##__name {                                   \
-    static const char *kName;                                      \
+    static const char* kName;                                      \
     template <typename... Args>                                    \
-    rocblas_status operator()(GpuExecutor *parent, Args... args) { \
+    rocblas_status operator()(GpuExecutor* parent, Args... args) { \
       gpu::ScopedActivateExecutorContext sac{parent};              \
       return ::__name(args...);                                    \
     }                                                              \
   } __name;                                                        \
-  const char *WrapperShim__##__name::kName = #__name;
+  const char* WrapperShim__##__name::kName = #__name;
 
 #define STREAM_EXECUTOR_ROCBLAS_V2_WRAP(__name) \
   STREAM_EXECUTOR_ROCBLAS_WRAP(__name)
@@ -69,14 +69,14 @@ namespace wrap {
 
 #define STREAM_EXECUTOR_ROCBLAS_WRAP(__name)                              \
   struct DynLoadShim__##__name {                                          \
-    static const char *kName;                                             \
+    static const char* kName;                                             \
     using FuncPtrT = std::add_pointer<decltype(::__name)>::type;          \
-    static void *GetDsoHandle() {                                         \
+    static void* GetDsoHandle() {                                         \
       auto s = internal::CachedDsoLoader::GetRocblasDsoHandle();          \
       return s.ValueOrDie();                                              \
     }                                                                     \
     static FuncPtrT LoadOrDie() {                                         \
-      void *f;                                                            \
+      void* f;                                                            \
       auto s = port::Env::Default()->GetSymbolFromLibrary(GetDsoHandle(), \
                                                           kName, &f);     \
       CHECK(s.ok()) << "could not find " << kName                         \
@@ -88,173 +88,190 @@ namespace wrap {
       return f;                                                           \
     }                                                                     \
     template <typename... Args>                                           \
-    rocblas_status operator()(GpuExecutor *parent, Args... args) {        \
+    rocblas_status operator()(GpuExecutor* parent, Args... args) {        \
       gpu::ScopedActivateExecutorContext sac{parent};                     \
       return DynLoad()(args...);                                          \
     }                                                                     \
   } __name;                                                               \
-  const char *DynLoadShim__##__name::kName = #__name;
+  const char* DynLoadShim__##__name::kName = #__name;
 
 #define STREAM_EXECUTOR_ROCBLAS_V2_WRAP(__name) \
   STREAM_EXECUTOR_ROCBLAS_WRAP(__name)
 
 #endif
 
-#define ROCBLAS_BLAS_ROUTINE_EACH(__macro)                                     \
-  __macro(rocblas_snrm2) __macro(rocblas_dnrm2) /*  __macro(rocblas_scnrm2)    \
-                                                  __macro(rocblas_dznrm2) */   \
-      __macro(rocblas_sdot)                                                    \
-          __macro(rocblas_ddot) /*  __macro(rocblas_cdotu)                     \
-                                  __macro(rocblas_cdotc)                       \
-                                  __macro(rocblas_zdotu)                       \
-                                  __macro(rocblas_zdotc)                    */ \
-      __macro(rocblas_sscal)                                                   \
-          __macro(rocblas_dscal) /*  __macro(rocblas_cscal)                    \
-                                   __macro(rocblas_csscal)                     \
-                                   __macro(rocblas_zscal)                      \
-                                   __macro(rocblas_zdscal) */                  \
-      __macro(rocblas_saxpy)                                                   \
-          __macro(rocblas_daxpy) /*  __macro(rocblas_caxpy)                    \
-                                   __macro(rocblas_zaxpy) */                   \
-      __macro(rocblas_scopy)                                                   \
-          __macro(rocblas_dcopy) /*  __macro(rocblas_ccopy)                    \
-                                   __macro(rocblas_zcopy) */                   \
-      __macro(rocblas_sswap)                                                   \
-          __macro(rocblas_dswap) /*  __macro(rocblas_cswap)                    \
-                                   __macro(rocblas_zswap) */                   \
-      __macro(rocblas_isamax)                                                  \
-          __macro(rocblas_idamax) /*  __macro(rocblas_icamax)                  \
-                                    __macro(rocblas_izamax) */                 \
-      __macro(rocblas_isamin)                                                  \
-          __macro(rocblas_idamin) /*  __macro(rocblas_icamin)                  \
-                                    __macro(rocblas_izamin) */                 \
-      __macro(rocblas_sasum)                                                   \
-          __macro(rocblas_dasum) /*  __macro(rocblas_scasum)                   \
-                                   __macro(rocblas_dzasum)                     \
-                                   __macro(rocblas_srot)                       \
-                                   __macro(rocblas_drot)                       \
-                                   __macro(rocblas_crot)                       \
-                                   __macro(rocblas_csrot)                      \
-                                   __macro(rocblas_zrot)                       \
-                                   __macro(rocblas_zdrot)                      \
-                                   __macro(rocblas_srotg)                      \
-                                   __macro(rocblas_drotg)                      \
-                                   __macro(rocblas_Crotg)                      \
-                                   __macro(rocblas_crotg)                      \
-                                   __macro(rocblas_zrotm)                      \
-                                   __macro(rocblas_drotm)                      \
-                                   __macro(rocblas_srotmg)                     \
-                                   __macro(rocblas_drotmg) */                  \
-      __macro(rocblas_sgemv)                                                   \
-          __macro(rocblas_dgemv) /*  __macro(rocblas_cgemv)                    \
-                                   __macro(rocblas_zgemv)                      \
-                                   __macro(rocblas_sgbmv)                      \
-                                   __macro(rocblas_dgbmv)                      \
-                                   __macro(rocblas_cgbmv)                      \
-                                   __macro(rocblas_zgbmv)                      \
-                                   __macro(rocblas_strmv)                      \
-                                   __macro(rocblas_dtrmv)                      \
-                                   __macro(rocblas_ctrmv)                      \
-                                   __macro(rocblas_ztrmv)                      \
-                                   __macro(rocblas_stbmv)                      \
-                                   __macro(rocblas_dtbmv)                      \
-                                   __macro(rocblas_ctbmv)                      \
-                                   __macro(rocblas_ztbmv)                      \
-                                   __macro(rocblas_stpmv)                      \
-                                   __macro(rocblas_dtpmv)                      \
-                                   __macro(rocblas_ctpmv)                      \
-                                   __macro(rocblas_ztpmv)                      \
-                                   __macro(rocblas_strsv)                      \
-                                   __macro(rocblas_dtrsv)                      \
-                                   __macro(rocblas_ctrsv)                      \
-                                   __macro(rocblas_ztrsv)                      \
-                                   __macro(rocblas_stpsv)                      \
-                                   __macro(rocblas_dtpsv)                      \
-                                   __macro(rocblas_ctpsv)                      \
-                                   __macro(rocblas_ztpsv)                      \
-                                   __macro(rocblas_stbsv)                      \
-                                   __macro(rocblas_dtbsv)                      \
-                                   __macro(rocblas_ctbsv)                      \
-                                   __macro(rocblas_ztbsv)                      \
-                                   __macro(rocblas_ssymv)                      \
-                                   __macro(rocblas_dsymv)                      \
-                                   __macro(rocblas_csymv)                      \
-                                   __macro(rocblas_zsymv)                      \
-                                   __macro(rocblas_chemv)                      \
-                                   __macro(rocblas_zhemv)                      \
-                                   __macro(rocblas_ssbmv)                      \
-                                   __macro(rocblas_dsbmv)                      \
-                                   __macro(rocblas_chbmv)                      \
-                                   __macro(rocblas_zhbmv)                      \
-                                   __macro(rocblas_sspmv)                      \
-                                   __macro(rocblas_dspmv)                      \
-                                   __macro(rocblas_chpmv)                      \
-                                   __macro(rocblas_zhpmv) */                   \
-      __macro(rocblas_sger)                                                    \
-          __macro(rocblas_dger) /*  __macro(rocblas_cgeru)                     \
-                                  __macro(rocblas_cgerc)                       \
-                                  __macro(rocblas_zgeru)                       \
-                                  __macro(rocblas_zgerc)                    */ \
-      __macro(rocblas_ssyr)                                                    \
-          __macro(rocblas_dsyr) /*  __macro(rocblas_csyr)                      \
-                                  __macro(rocblas_zsyr)                        \
-                                  __macro(rocblas_cher)                        \
-                                  __macro(rocblas_zher)                        \
-                                  __macro(rocblas_sspr)                        \
-                                  __macro(rocblas_dspr)                        \
-                                  __macro(rocblas_chpr)                        \
-                                  __macro(rocblas_zhpr)                        \
-                                  __macro(rocblas_ssyr2)                       \
-                                  __macro(rocblas_dsyr2)                       \
-                                  __macro(rocblas_csyr2)                       \
-                                  __macro(rocblas_zsyr2)                       \
-                                  __macro(rocblas_cher2)                       \
-                                  __macro(rocblas_zher2)                       \
-                                  __macro(rocblas_sspr2)                       \
-                                  __macro(rocblas_dspr2)                       \
-                                  __macro(rocblas_chpr2)                       \
-                                  __macro(rocblas_zhpr2)                    */ \
-      __macro(rocblas_sgemm) __macro(rocblas_dgemm)                            \
-          __macro(rocblas_hgemm) /*  __macro(rocblas_cgemm)                    \
-                                   __macro(rocblas_zgemm)                      \
-                                   __macro(rocblas_ssyrk)                      \
-                                   __macro(rocblas_dsyrk)                      \
-                                   __macro(rocblas_csyrk)                      \
-                                   __macro(rocblas_zsyrk)                      \
-                                   __macro(rocblas_cherk)                      \
-                                   __macro(rocblas_zherk)                      \
-                                   __macro(rocblas_ssyr2k)                     \
-                                   __macro(rocblas_dsyr2k)                     \
-                                   __macro(rocblas_csyr2k)                     \
-                                   __macro(rocblas_zsyr2k)                     \
-                                   __macro(rocblas_cher2k)                     \
-                                   __macro(rocblas_zher2k)                     \
-                                   __macro(rocblas_ssyrkx)                     \
-                                   __macro(rocblas_dsyrkx)                     \
-                                   __macro(rocblas_csyrkx)                     \
-                                   __macro(rocblas_zsyrkx)                     \
-                                   __macro(rocblas_cherkx)                     \
-                                   __macro(rocblas_zherkx)                     \
-                                   __macro(rocblas_ssymm)                      \
-                                   __macro(rocblas_dsymm)                      \
-                                   __macro(rocblas_csymm)                      \
-                                   __macro(rocblas_zsymm)                      \
-                                   __macro(rocblas_chemm)                      \
-                                   __macro(rocblas_zhemm) */                   \
-      __macro(rocblas_strsm)                                                   \
-          __macro(rocblas_dtrsm) /*  __macro(rocblas_ctrsm)                    \
-                                   __macro(rocblas_ztrsm)                      \
-                                   __macro(rocblas_strmm)                      \
-                                   __macro(rocblas_dtrmm)                      \
-                                   __macro(rocblas_ctrmm)                      \
-                                   __macro(rocblas_ztrmm) */                   \
-      __macro(rocblas_sgeam)                                                   \
-          __macro(rocblas_dgeam) /*  __macro(rocblas_cgeam)                    \
-                                   __macro(rocblas_zgeam)                      \
-                                   __macro(rocblas_sdgmm)                      \
-                                   __macro(rocblas_ddgmm)                      \
-                                   __macro(rocblas_cdgmm)                      \
-                                   __macro(rocblas_zdgmm) */
+#define ROCBLAS_BLAS_ROUTINE_EACH(__macro) \
+  __macro(rocblas_snrm2)                    \
+  __macro(rocblas_dnrm2)                    \
+/*  __macro(rocblas_scnrm2)                   \
+  __macro(rocblas_dznrm2)                   */ \
+  __macro(rocblas_sdot)                     \
+  __macro(rocblas_ddot)                     \
+/*  __macro(rocblas_cdotu)                    \
+  __macro(rocblas_cdotc)                    \
+  __macro(rocblas_zdotu)                    \
+  __macro(rocblas_zdotc)                    */ \
+  __macro(rocblas_sscal)                    \
+  __macro(rocblas_dscal)                    \
+/*  __macro(rocblas_cscal)                    \
+  __macro(rocblas_csscal)                   \
+  __macro(rocblas_zscal)                    \
+  __macro(rocblas_zdscal)                   */ \
+  __macro(rocblas_saxpy)                    \
+  __macro(rocblas_daxpy)                    \
+/*  __macro(rocblas_caxpy)                    \
+  __macro(rocblas_zaxpy)                    */ \
+  __macro(rocblas_scopy)                    \
+  __macro(rocblas_dcopy)                    \
+/*  __macro(rocblas_ccopy)                    \
+  __macro(rocblas_zcopy)                    */ \
+  __macro(rocblas_sswap)                    \
+  __macro(rocblas_dswap)                    \
+/*  __macro(rocblas_cswap)                    \
+  __macro(rocblas_zswap)                    */ \
+  __macro(rocblas_isamax)                   \
+  __macro(rocblas_idamax)                   \
+/*  __macro(rocblas_icamax)                   \
+  __macro(rocblas_izamax)                   */ \
+  __macro(rocblas_isamin)                   \
+  __macro(rocblas_idamin)                   \
+/*  __macro(rocblas_icamin)                   \
+  __macro(rocblas_izamin)                   */ \
+  __macro(rocblas_sasum)                    \
+  __macro(rocblas_dasum)                    \
+/*  __macro(rocblas_scasum)                   \
+  __macro(rocblas_dzasum)                   \
+  __macro(rocblas_srot)                     \
+  __macro(rocblas_drot)                     \
+  __macro(rocblas_crot)                     \
+  __macro(rocblas_csrot)                    \
+  __macro(rocblas_zrot)                     \
+  __macro(rocblas_zdrot)                    \
+  __macro(rocblas_srotg)                    \
+  __macro(rocblas_drotg)                    \
+  __macro(rocblas_Crotg)                    \
+  __macro(rocblas_crotg)                    \
+  __macro(rocblas_zrotm)                    \
+  __macro(rocblas_drotm)                    \
+  __macro(rocblas_srotmg)                   \
+  __macro(rocblas_drotmg)                   */ \
+  __macro(rocblas_sgemv)                    \
+  __macro(rocblas_dgemv)                    \
+/*  __macro(rocblas_cgemv)                    \
+  __macro(rocblas_zgemv)                    \
+  __macro(rocblas_sgbmv)                    \
+  __macro(rocblas_dgbmv)                    \
+  __macro(rocblas_cgbmv)                    \
+  __macro(rocblas_zgbmv)                    \
+  __macro(rocblas_strmv)                    \
+  __macro(rocblas_dtrmv)                    \
+  __macro(rocblas_ctrmv)                    \
+  __macro(rocblas_ztrmv)                    \
+  __macro(rocblas_stbmv)                    \
+  __macro(rocblas_dtbmv)                    \
+  __macro(rocblas_ctbmv)                    \
+  __macro(rocblas_ztbmv)                    \
+  __macro(rocblas_stpmv)                    \
+  __macro(rocblas_dtpmv)                    \
+  __macro(rocblas_ctpmv)                    \
+  __macro(rocblas_ztpmv)                    \
+  __macro(rocblas_strsv)                    \
+  __macro(rocblas_dtrsv)                    \
+  __macro(rocblas_ctrsv)                    \
+  __macro(rocblas_ztrsv)                    \
+  __macro(rocblas_stpsv)                    \
+  __macro(rocblas_dtpsv)                    \
+  __macro(rocblas_ctpsv)                    \
+  __macro(rocblas_ztpsv)                    \
+  __macro(rocblas_stbsv)                    \
+  __macro(rocblas_dtbsv)                    \
+  __macro(rocblas_ctbsv)                    \
+  __macro(rocblas_ztbsv)                    \
+  __macro(rocblas_ssymv)                    \
+  __macro(rocblas_dsymv)                    \
+  __macro(rocblas_csymv)                    \
+  __macro(rocblas_zsymv)                    \
+  __macro(rocblas_chemv)                    \
+  __macro(rocblas_zhemv)                    \
+  __macro(rocblas_ssbmv)                    \
+  __macro(rocblas_dsbmv)                    \
+  __macro(rocblas_chbmv)                    \
+  __macro(rocblas_zhbmv)                    \
+  __macro(rocblas_sspmv)                    \
+  __macro(rocblas_dspmv)                    \
+  __macro(rocblas_chpmv)                    \
+  __macro(rocblas_zhpmv)                    */ \
+  __macro(rocblas_sger)                     \
+  __macro(rocblas_dger)                     \
+/*  __macro(rocblas_cgeru)                    \
+  __macro(rocblas_cgerc)                    \
+  __macro(rocblas_zgeru)                    \
+  __macro(rocblas_zgerc)                    */ \
+  __macro(rocblas_ssyr)                     \
+  __macro(rocblas_dsyr)                     \
+/*  __macro(rocblas_csyr)                     \
+  __macro(rocblas_zsyr)                     \
+  __macro(rocblas_cher)                     \
+  __macro(rocblas_zher)                     \
+  __macro(rocblas_sspr)                     \
+  __macro(rocblas_dspr)                     \
+  __macro(rocblas_chpr)                     \
+  __macro(rocblas_zhpr)                     \
+  __macro(rocblas_ssyr2)                    \
+  __macro(rocblas_dsyr2)                    \
+  __macro(rocblas_csyr2)                    \
+  __macro(rocblas_zsyr2)                    \
+  __macro(rocblas_cher2)                    \
+  __macro(rocblas_zher2)                    \
+  __macro(rocblas_sspr2)                    \
+  __macro(rocblas_dspr2)                    \
+  __macro(rocblas_chpr2)                    \
+  __macro(rocblas_zhpr2)                    */ \
+  __macro(rocblas_sgemm)                    \
+  __macro(rocblas_dgemm)                    \
+  __macro(rocblas_hgemm)                    \
+/*  __macro(rocblas_cgemm)                    \
+  __macro(rocblas_zgemm)                    \
+  __macro(rocblas_ssyrk)                    \
+  __macro(rocblas_dsyrk)                    \
+  __macro(rocblas_csyrk)                    \
+  __macro(rocblas_zsyrk)                    \
+  __macro(rocblas_cherk)                    \
+  __macro(rocblas_zherk)                    \
+  __macro(rocblas_ssyr2k)                   \
+  __macro(rocblas_dsyr2k)                   \
+  __macro(rocblas_csyr2k)                   \
+  __macro(rocblas_zsyr2k)                   \
+  __macro(rocblas_cher2k)                   \
+  __macro(rocblas_zher2k)                   \
+  __macro(rocblas_ssyrkx)                   \
+  __macro(rocblas_dsyrkx)                   \
+  __macro(rocblas_csyrkx)                   \
+  __macro(rocblas_zsyrkx)                   \
+  __macro(rocblas_cherkx)                   \
+  __macro(rocblas_zherkx)                   \
+  __macro(rocblas_ssymm)                    \
+  __macro(rocblas_dsymm)                    \
+  __macro(rocblas_csymm)                    \
+  __macro(rocblas_zsymm)                    \
+  __macro(rocblas_chemm)                    \
+  __macro(rocblas_zhemm)                    */ \
+  __macro(rocblas_strsm)                    \
+  __macro(rocblas_dtrsm)                    \
+/*  __macro(rocblas_ctrsm)                    \
+  __macro(rocblas_ztrsm)                    \
+  __macro(rocblas_strmm)                    \
+  __macro(rocblas_dtrmm)                    \
+  __macro(rocblas_ctrmm)                    \
+  __macro(rocblas_ztrmm)                    */ \
+  __macro(rocblas_sgeam)                    \
+  __macro(rocblas_dgeam)                    \
+/*  __macro(rocblas_cgeam)                    \
+  __macro(rocblas_zgeam)                    \
+  __macro(rocblas_sdgmm)                    \
+  __macro(rocblas_ddgmm)                    \
+  __macro(rocblas_cdgmm)                    \
+  __macro(rocblas_zdgmm) */
 
 STREAM_EXECUTOR_ROCBLAS_V2_WRAP(rocblas_create_handle)
 STREAM_EXECUTOR_ROCBLAS_V2_WRAP(rocblas_destroy_handle)
@@ -303,7 +320,7 @@ bool ROCMBlas::Init() {
   return true;
 }
 
-ROCMBlas::ROCMBlas(gpu::GpuExecutor *parent)
+ROCMBlas::ROCMBlas(gpu::GpuExecutor* parent)
     : parent_(CHECK_NOTNULL(parent)), blas_(nullptr) {}
 
 ROCMBlas::~ROCMBlas() {
@@ -1457,11 +1474,11 @@ bool ROCMBlas::DoBlasTrsv(Stream *stream, blas::UpperLower uplo,
   return false;
 }
 
-bool ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
+bool ROCMBlas::DoBlasGemm(Stream* stream, blas::Transpose transa,
                           blas::Transpose transb, uint64 m, uint64 n, uint64 k,
-                          float alpha, const DeviceMemory<Eigen::half> &a,
-                          int lda, const DeviceMemory<Eigen::half> &b, int ldb,
-                          float beta, DeviceMemory<Eigen::half> *c, int ldc) {
+                          float alpha, const DeviceMemory<Eigen::half>& a,
+                          int lda, const DeviceMemory<Eigen::half>& b, int ldb,
+                          float beta, DeviceMemory<Eigen::half>* c, int ldc) {
   VLOG(1) << port::Printf(
       "doing rocBLAS SGEMM: at=%d bt=%d m=%llu n=%llu "
       "k=%llu alpha=%f a=%p lda=%d b=%p ldb=%d beta=%f "
@@ -1495,11 +1512,11 @@ bool ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
   return DoBlasInternal(
       wrap::rocblas_hgemm, stream, true /* = pointer_mode_host */,
       ROCMBlasTranspose(transa), ROCMBlasTranspose(transb), m, n, k,
-      reinterpret_cast<const rocblas_half *>(&alpha_half),
-      reinterpret_cast<const rocblas_half *>(GpuMemory(a)), lda,
-      reinterpret_cast<const rocblas_half *>(GpuMemory(b)), ldb,
-      reinterpret_cast<const rocblas_half *>(&beta_half),
-      reinterpret_cast<rocblas_half *>(GpuMemoryMutable(c)), ldc);
+      reinterpret_cast<const rocblas_half*>(&alpha_half),
+      reinterpret_cast<const rocblas_half*>(GpuMemory(a)), lda,
+      reinterpret_cast<const rocblas_half*>(GpuMemory(b)), ldb,
+      reinterpret_cast<const rocblas_half*>(&beta_half),
+      reinterpret_cast<rocblas_half*>(GpuMemoryMutable(c)), ldc);
 }
 
 bool ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
@@ -1712,12 +1729,12 @@ bool ROCMBlas::GetBlasGemmAlgorithms(
 }
 
 bool ROCMBlas::DoBlasGemmWithAlgorithm(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
-    uint64 n, uint64 k, const HostOrDeviceScalar<int> &alpha,
-    const DeviceMemory<int8> &a, int lda, const DeviceMemory<int8> &b, int ldb,
-    const HostOrDeviceScalar<int> &beta, DeviceMemory<int32> *c, int ldc,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    uint64 n, uint64 k, const HostOrDeviceScalar<int>& alpha,
+    const DeviceMemory<int8>& a, int lda, const DeviceMemory<int8>& b, int ldb,
+    const HostOrDeviceScalar<int>& beta, DeviceMemory<int32>* c, int ldc,
     blas::ComputationType computation_type, blas::AlgorithmType algorithm,
-    blas::ProfileResult *output_profile_result) {
+    blas::ProfileResult* output_profile_result) {
   LOG(ERROR)
       << "rocBLAS does not currently support the GEMMwithAlgorithm operation "
       << "for the \"int8\" dataype";
@@ -1725,13 +1742,13 @@ bool ROCMBlas::DoBlasGemmWithAlgorithm(
 }
 
 bool ROCMBlas::DoBlasGemmWithAlgorithm(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
-    uint64 n, uint64 k, const HostOrDeviceScalar<Eigen::half> &alpha,
-    const DeviceMemory<Eigen::half> &a, int lda,
-    const DeviceMemory<Eigen::half> &b, int ldb,
-    const HostOrDeviceScalar<Eigen::half> &beta, DeviceMemory<Eigen::half> *c,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    uint64 n, uint64 k, const HostOrDeviceScalar<Eigen::half>& alpha,
+    const DeviceMemory<Eigen::half>& a, int lda,
+    const DeviceMemory<Eigen::half>& b, int ldb,
+    const HostOrDeviceScalar<Eigen::half>& beta, DeviceMemory<Eigen::half>* c,
     int ldc, blas::ComputationType computation_type,
-    blas::AlgorithmType algorithm, blas::ProfileResult *output_profile_result) {
+    blas::AlgorithmType algorithm, blas::ProfileResult* output_profile_result) {
   LOG(ERROR)
       << "rocBLAS does not currently support the GEMMwithAlgorithm operation "
       << "for the \"half\" dataype";
@@ -1739,12 +1756,12 @@ bool ROCMBlas::DoBlasGemmWithAlgorithm(
 }
 
 bool ROCMBlas::DoBlasGemmWithAlgorithm(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
-    uint64 n, uint64 k, const HostOrDeviceScalar<float> &alpha,
-    const DeviceMemory<float> &a, int lda, const DeviceMemory<float> &b,
-    int ldb, const HostOrDeviceScalar<float> &beta, DeviceMemory<float> *c,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    uint64 n, uint64 k, const HostOrDeviceScalar<float>& alpha,
+    const DeviceMemory<float>& a, int lda, const DeviceMemory<float>& b,
+    int ldb, const HostOrDeviceScalar<float>& beta, DeviceMemory<float>* c,
     int ldc, blas::ComputationType computation_type,
-    blas::AlgorithmType algorithm, blas::ProfileResult *output_profile_result) {
+    blas::AlgorithmType algorithm, blas::ProfileResult* output_profile_result) {
   LOG(ERROR)
       << "rocBLAS does not currently support the GEMMwithAlgorithm operation "
       << "for the \"float\" dataype";
@@ -1752,12 +1769,12 @@ bool ROCMBlas::DoBlasGemmWithAlgorithm(
 }
 
 bool ROCMBlas::DoBlasGemmWithAlgorithm(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
-    uint64 n, uint64 k, const HostOrDeviceScalar<double> &alpha,
-    const DeviceMemory<double> &a, int lda, const DeviceMemory<double> &b,
-    int ldb, const HostOrDeviceScalar<double> &beta, DeviceMemory<double> *c,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    uint64 n, uint64 k, const HostOrDeviceScalar<double>& alpha,
+    const DeviceMemory<double>& a, int lda, const DeviceMemory<double>& b,
+    int ldb, const HostOrDeviceScalar<double>& beta, DeviceMemory<double>* c,
     int ldc, blas::ComputationType computation_type,
-    blas::AlgorithmType algorithm, blas::ProfileResult *output_profile_result) {
+    blas::AlgorithmType algorithm, blas::ProfileResult* output_profile_result) {
   LOG(ERROR)
       << "rocBLAS does not currently support the GEMMwithAlgorithm operation "
       << "for the \"double\" dataype";
@@ -1806,12 +1823,12 @@ struct EigenHalfToRocBlasHalf<Eigen::half> {
 
 template <typename T, typename FuncT>
 port::Status ROCMBlas::DoBlasGemmBatchedInternal(
-    FuncT rocblas_func, Stream *stream, blas::Transpose transa,
+    FuncT rocblas_func, Stream* stream, blas::Transpose transa,
     blas::Transpose transb, uint64 m, uint64 n, uint64 k, T alpha,
-    const port::ArraySlice<DeviceMemory<T> *> &a_ptrs_to_wrappers, int lda,
-    const port::ArraySlice<DeviceMemory<T> *> &b_ptrs_to_wrappers, int ldb,
-    T beta, const port::ArraySlice<DeviceMemory<T> *> &c_ptrs_to_wrappers,
-    int ldc, int batch_count, ScratchAllocator *scratch_allocator) {
+    const port::ArraySlice<DeviceMemory<T>*>& a_ptrs_to_wrappers, int lda,
+    const port::ArraySlice<DeviceMemory<T>*>& b_ptrs_to_wrappers, int ldb,
+    T beta, const port::ArraySlice<DeviceMemory<T>*>& c_ptrs_to_wrappers,
+    int ldc, int batch_count, ScratchAllocator* scratch_allocator) {
   // MAPPED_T will be same as T for all types except Eigen::Half
   // for T = Eigen::half, MAPPED_T = rocblas_half
   using MAPPED_T = typename EigenHalfToRocBlasHalf<T>::type;
@@ -1822,11 +1839,11 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
     // static_cast does work when converting Eigen::half* to rocblas_half*,
     // hence the use od reinterpret_cast
     a_raw_ptrs.push_back(
-        reinterpret_cast<MAPPED_T *>(a_ptrs_to_wrappers[i]->opaque()));
+        reinterpret_cast<MAPPED_T*>(a_ptrs_to_wrappers[i]->opaque()));
     b_raw_ptrs.push_back(
-        reinterpret_cast<MAPPED_T *>(b_ptrs_to_wrappers[i]->opaque()));
+        reinterpret_cast<MAPPED_T*>(b_ptrs_to_wrappers[i]->opaque()));
     c_raw_ptrs.push_back(
-        reinterpret_cast<MAPPED_T *>(c_ptrs_to_wrappers[i]->opaque()));
+        reinterpret_cast<MAPPED_T*>(c_ptrs_to_wrappers[i]->opaque()));
   }
 
   //  batch_count <= 1 is base case, no definable matrix stride, set it same as
@@ -1870,22 +1887,22 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
     }
   }
 
-  assert(!(ldc < m || bsc < ldc * n));
-
-  if (ROCMBlasTranspose(transa) == rocblas_operation_none)
-    assert(!(lda < m || bsa < lda * k));
-  else
-    assert(!(lda < k || bsa < lda * m));
-
-  if (ROCMBlasTranspose(transb) == rocblas_operation_none)
-    assert(!(ldb < k || bsb < ldb * n));
-  else
-    assert(!(ldb < n || bsc < ldc * k));
-
-  MAPPED_T *alpha_ptr = reinterpret_cast<MAPPED_T *>(&alpha);
-  MAPPED_T *beta_ptr = reinterpret_cast<MAPPED_T *>(&beta);
-
   if (bsa_is_constant && bsb_is_constant && bsc_is_constant) {
+    assert(!(ldc < m || bsc < ldc * n));
+
+    if (ROCMBlasTranspose(transa) == rocblas_operation_none)
+      assert(!(lda < m || bsa < lda * k));
+    else
+      assert(!(lda < k || bsa < lda * m));
+
+    if (ROCMBlasTranspose(transb) == rocblas_operation_none)
+      assert(!(ldb < k || bsb < ldb * n));
+    else
+      assert(!(ldb < n || bsb < ldb * k));
+
+    MAPPED_T *alpha_ptr = reinterpret_cast<MAPPED_T *>(&alpha);
+    MAPPED_T *beta_ptr = reinterpret_cast<MAPPED_T *>(&beta);
+
     bool ok = DoBlasInternal(
         rocblas_func, stream, true /* = pointer_mode_host */,
         ROCMBlasTranspose(transa), ROCMBlasTranspose(transb), m, n, k,
@@ -1895,6 +1912,9 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
     if (ok) {
       return port::Status::OK();
     }
+  } else {
+    LOG(ERROR) << "rocBLAS does not currently support broadcasting for GEMMBatched operation.";
+    assert(false);
   }
 
   return port::Status(port::error::INTERNAL,
@@ -1902,12 +1922,12 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
 }
 
 bool ROCMBlas::DoBlasGemmBatched(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
     uint64 n, uint64 k, float alpha,
-    const port::ArraySlice<DeviceMemory<Eigen::half> *> &a, int lda,
-    const port::ArraySlice<DeviceMemory<Eigen::half> *> &b, int ldb, float beta,
-    const port::ArraySlice<DeviceMemory<Eigen::half> *> &c, int ldc,
-    int batch_count, ScratchAllocator *scratch_allocator) {
+    const port::ArraySlice<DeviceMemory<Eigen::half>*>& a, int lda,
+    const port::ArraySlice<DeviceMemory<Eigen::half>*>& b, int ldb, float beta,
+    const port::ArraySlice<DeviceMemory<Eigen::half>*>& c, int ldc,
+    int batch_count, ScratchAllocator* scratch_allocator) {
   const Eigen::half alpha_half(alpha);
   const Eigen::half beta_half(beta);
 
@@ -2232,7 +2252,7 @@ bool ROCMBlas::DoBlasTrsm(Stream *stream, blas::Side side,
   return DoBlasInternal(
       wrap::rocblas_strsm, stream, true /* = pointer_mode_host */,
       ROCMBlasSide(side), ROCMBlasUpperLower(uplo), ROCMBlasTranspose(transa),
-      ROCMBlasDiagonal(diag), m, n, &alpha, const_cast<float *>(GpuMemory(a)),
+      ROCMBlasDiagonal(diag), m, n, &alpha, const_cast<float*>(GpuMemory(a)),
       lda, GpuMemoryMutable(b), ldb);
 }
 
@@ -2244,7 +2264,7 @@ bool ROCMBlas::DoBlasTrsm(Stream *stream, blas::Side side,
   return DoBlasInternal(
       wrap::rocblas_dtrsm, stream, true /* = pointer_mode_host */,
       ROCMBlasSide(side), ROCMBlasUpperLower(uplo), ROCMBlasTranspose(transa),
-      ROCMBlasDiagonal(diag), m, n, &alpha, const_cast<double *>(GpuMemory(a)),
+      ROCMBlasDiagonal(diag), m, n, &alpha, const_cast<double*>(GpuMemory(a)),
       lda, GpuMemoryMutable(b), ldb);
 }
 
@@ -2275,39 +2295,53 @@ bool ROCMBlas::DoBlasGemmStridedBatched(
     int lda, int64 stride_a, const DeviceMemory<Eigen::half> &b, int ldb,
     int64 stride_b, float beta, DeviceMemory<Eigen::half> *c, int ldc,
     int64 stride_c, int batch_count) {
-  LOG(ERROR) << "rocBLAS does not currently support the "
-                "DoBlasGemmStridedBatched operation "
-             << "for the \"Eigen::half\" dataype";
-  return false;
+  const Eigen::half alpha_half(alpha);
+  const Eigen::half beta_half(beta);
+
+  return DoBlasInternal(
+      wrap::rocblas_hgemm_strided_batched, stream,
+      false, /* pointer_mode_host */
+      ROCMBlasTranspose(transa), ROCMBlasTranspose(transb), m, n, k,
+      reinterpret_cast<const rocblas_half*>(&alpha_half),
+      reinterpret_cast<const rocblas_half*>(GpuMemory(a)), lda, stride_a,
+      reinterpret_cast<const rocblas_half*>(GpuMemory(b)), ldb, stride_b,
+      reinterpret_cast<const rocblas_half*>(&beta_half),
+      reinterpret_cast<rocblas_half*>(GpuMemoryMutable(c)), ldc, stride_c,
+      batch_count);
 }
+
 bool ROCMBlas::DoBlasGemmStridedBatched(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
-    uint64 n, uint64 k, float alpha, const DeviceMemory<float> &a, int lda,
-    int64 stride_a, const DeviceMemory<float> &b, int ldb, int64 stride_b,
-    float beta, DeviceMemory<float> *c, int ldc, int64 stride_c,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    uint64 n, uint64 k, float alpha, const DeviceMemory<float>& a, int lda,
+    int64 stride_a, const DeviceMemory<float>& b, int ldb, int64 stride_b,
+    float beta, DeviceMemory<float>* c, int ldc, int64 stride_c,
     int batch_count) {
-  LOG(ERROR) << "rocBLAS does not currently support the "
-                "DoBlasGemmStridedBatched operation "
-             << "for the \"float\" dataype";
-  return false;
+  return DoBlasInternal(wrap::rocblas_sgemm_strided_batched, stream,
+                        false, /* pointer_mode_host */
+                        ROCMBlasTranspose(transa), ROCMBlasTranspose(transb), m,
+                        n, k, &alpha, GpuMemory(a), lda, stride_a, GpuMemory(b),
+                        ldb, stride_b, &beta, GpuMemoryMutable(c), ldc,
+                        stride_c, batch_count);
 }
 bool ROCMBlas::DoBlasGemmStridedBatched(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
-    uint64 n, uint64 k, double alpha, const DeviceMemory<double> &a, int lda,
-    int64 stride_a, const DeviceMemory<double> &b, int ldb, int64 stride_b,
-    double beta, DeviceMemory<double> *c, int ldc, int64 stride_c,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    uint64 n, uint64 k, double alpha, const DeviceMemory<double>& a, int lda,
+    int64 stride_a, const DeviceMemory<double>& b, int ldb, int64 stride_b,
+    double beta, DeviceMemory<double>* c, int ldc, int64 stride_c,
     int batch_count) {
-  LOG(ERROR) << "rocBLAS does not currently support the "
-                "DoBlasGemmStridedBatched operation "
-             << "for the \"double\" dataype";
-  return false;
+  return DoBlasInternal(wrap::rocblas_dgemm_strided_batched, stream,
+                        false, /* pointer_mode_host */
+                        ROCMBlasTranspose(transa), ROCMBlasTranspose(transb), m,
+                        n, k, &alpha, GpuMemory(a), lda, stride_a, GpuMemory(b),
+                        ldb, stride_b, &beta, GpuMemoryMutable(c), ldc,
+                        stride_c, batch_count);
 }
 bool ROCMBlas::DoBlasGemmStridedBatched(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
     uint64 n, uint64 k, std::complex<float> alpha,
-    const DeviceMemory<std::complex<float>> &a, int lda, int64 stride_a,
-    const DeviceMemory<std::complex<float>> &b, int ldb, int64 stride_b,
-    std::complex<float> beta, DeviceMemory<std::complex<float>> *c, int ldc,
+    const DeviceMemory<std::complex<float>>& a, int lda, int64 stride_a,
+    const DeviceMemory<std::complex<float>>& b, int ldb, int64 stride_b,
+    std::complex<float> beta, DeviceMemory<std::complex<float>>* c, int ldc,
     int64 stride_c, int batch_count) {
   LOG(ERROR) << "rocBLAS does not currently support the "
                 "DoBlasGemmStridedBatched operation "
@@ -2315,11 +2349,11 @@ bool ROCMBlas::DoBlasGemmStridedBatched(
   return false;
 }
 bool ROCMBlas::DoBlasGemmStridedBatched(
-    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
+    Stream* stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
     uint64 n, uint64 k, std::complex<double> alpha,
-    const DeviceMemory<std::complex<double>> &a, int lda, int64 stride_a,
-    const DeviceMemory<std::complex<double>> &b, int ldb, int64 stride_b,
-    std::complex<double> beta, DeviceMemory<std::complex<double>> *c, int ldc,
+    const DeviceMemory<std::complex<double>>& a, int lda, int64 stride_a,
+    const DeviceMemory<std::complex<double>>& b, int ldb, int64 stride_b,
+    std::complex<double> beta, DeviceMemory<std::complex<double>>* c, int ldc,
     int64 stride_c, int batch_count) {
   LOG(ERROR) << "rocBLAS does not currently support the "
                 "DoBlasGemmStridedBatched operation "
@@ -2337,10 +2371,10 @@ void initialize_rocblas() {
         PluginRegistry::Instance()
             ->RegisterFactory<PluginRegistry::BlasFactory>(
                 rocm::kROCmPlatformId, gpu::kRocBlasPlugin, "rocBLAS",
-                [](internal::StreamExecutorInterface *parent)
-                    -> blas::BlasSupport * {
-                  gpu::GpuExecutor *rocm_executor =
-                      dynamic_cast<gpu::GpuExecutor *>(parent);
+                [](internal::StreamExecutorInterface* parent)
+                    -> blas::BlasSupport* {
+                  gpu::GpuExecutor* rocm_executor =
+                      dynamic_cast<gpu::GpuExecutor*>(parent);
                   if (rocm_executor == nullptr) {
                     LOG(ERROR)
                         << "Attempting to initialize an instance of the "
@@ -2349,7 +2383,7 @@ void initialize_rocblas() {
                     return nullptr;
                   }
 
-                  gpu::ROCMBlas *blas = new gpu::ROCMBlas(rocm_executor);
+                  gpu::ROCMBlas* blas = new gpu::ROCMBlas(rocm_executor);
                   if (!blas->Init()) {
                     // Note: Init() will log a more specific error.
                     delete blas;

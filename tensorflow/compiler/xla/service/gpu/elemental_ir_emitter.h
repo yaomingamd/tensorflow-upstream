@@ -24,6 +24,7 @@ limitations under the License.
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Value.h"
 #include "tensorflow/compiler/xla/service/elemental_ir_emitter.h"
+#include "tensorflow/compiler/xla/service/gpu/target_util.h"
 #include "tensorflow/compiler/xla/service/hlo_computation.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
 #include "tensorflow/compiler/xla/service/hlo_module_config.h"
@@ -49,6 +50,7 @@ class GpuElementalIrEmitter : public ElementalIrEmitter {
   llvm_ir::ElementGenerator MakeElementGenerator(
       const HloInstruction* hlo,
       const HloToElementGeneratorMap& operand_to_generator) override;
+
 
  protected:
   StatusOr<llvm::Value*> EmitFloatBinaryOp(const HloInstruction* op,
@@ -107,7 +109,8 @@ class GpuElementalIrEmitter : public ElementalIrEmitter {
   llvm::Value* EmitDeviceFunctionCall(
       const string& callee_name, absl::Span<llvm::Value* const> operands,
       absl::Span<const PrimitiveType> input_type, PrimitiveType output_type,
-      absl::Span<const llvm::Attribute::AttrKind> attributes);
+      absl::Span<const llvm::Attribute::AttrKind> attributes,
+      llvm::IRBuilder<>* ir_builder, llvm::Module* module);
 
   // Emits IR to call an LLVM intrinsic of type [T] -> T.  Adjusts
   // callee_name according to T.  Returns the IR value that represents the
@@ -116,11 +119,11 @@ class GpuElementalIrEmitter : public ElementalIrEmitter {
       const string& callee_name, absl::Span<llvm::Value* const> operands,
       absl::Span<const PrimitiveType> input_types, PrimitiveType output_type);
 
-  // Emits IR to call a libdevice function of type [T] -> T.  Adjusts
+  // Emits IR to call a ROCDL function of type [T] -> T.  Adjusts
   // callee_name according to T.  Returns the IR value that represents the
   // return value of the function.
   StatusOr<llvm::Value*> EmitLibdeviceMathCall(
-      const string& callee_name, absl::Span<llvm::Value* const> operands,
+      TargetFunctionID callee_id, absl::Span<llvm::Value* const> operands,
       absl::Span<const PrimitiveType> input_types, PrimitiveType output_type);
 
   // Emits IR to call a function of type [T] -> T.  Does not munge callee_name.

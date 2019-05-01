@@ -13,10 +13,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_CORE_UTIL_CUDA_KERNEL_HELPER_H_
-#define TENSORFLOW_CORE_UTIL_CUDA_KERNEL_HELPER_H_
+// Defines the ROCMTimer type - the ROCM-specific implementation of the generic
+// StreamExecutor Timer interface.
 
-// Forward to new header.
-#include "tensorflow/core/util/gpu_kernel_helper.h"
+#ifndef TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCM_TIMER_H_
+#define TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCM_TIMER_H_
 
-#endif  // TENSORFLOW_CORE_UTIL_CUDA_KERNEL_HELPER_H_
+#include "tensorflow/stream_executor/gpu/gpu_timer.h"
+
+namespace stream_executor {
+namespace rocm {
+
+using ROCMTimer = gpu::GpuTimer;
+
+}  // namespace rocm
+}  // namespace stream_executor
+
+#endif  // TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCM_TIMER_H_

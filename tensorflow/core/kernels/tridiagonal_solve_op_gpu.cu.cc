@@ -46,7 +46,7 @@ __global__ void SolveForSizeOneOrTwoKernel(const int m, const Scalar* diags,
       *not_invertible = true;
       return;
     }
-    for (int i : CudaGridRangeX(num_rhs)) {
+    for (int i : GpuGridRangeX(num_rhs)) {
       x[i] = rhs[i] / diags[1];
     }
   } else {
@@ -55,7 +55,7 @@ __global__ void SolveForSizeOneOrTwoKernel(const int m, const Scalar* diags,
       *not_invertible = true;
       return;
     }
-    for (int i : CudaGridRangeX(num_rhs)) {
+    for (int i : GpuGridRangeX(num_rhs)) {
       x[i] = (diags[3] * rhs[i] - diags[0] * rhs[i + num_rhs]) / det;
       x[i + num_rhs] = (diags[2] * rhs[i + num_rhs] - diags[5] * rhs[i]) / det;
     }
@@ -198,7 +198,7 @@ class TridiagonalSolveOpGpu : public LinearAlgebraOp<Scalar> {
   void SolveForSizeOneOrTwo(OpKernelContext* context, const Scalar* diagonals,
                             const Scalar* rhs, Scalar* output, int m, int k) {
     const Eigen::GpuDevice& device = context->eigen_device<Eigen::GpuDevice>();
-    CudaLaunchConfig cfg = GetCudaLaunchConfig(1, device);
+    GpuLaunchConfig cfg = GetGpuLaunchConfig(1, device);
     bool* not_invertible_dev;
     cudaMalloc(&not_invertible_dev, sizeof(bool));
     TF_CHECK_OK(CudaLaunchKernel(SolveForSizeOneOrTwoKernel<Scalar>,

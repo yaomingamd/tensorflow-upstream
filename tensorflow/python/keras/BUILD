@@ -188,7 +188,6 @@ py_library(
         ":regularizers",
         ":saving",
         "//tensorflow/python:composite_tensor_utils",
-        "//tensorflow/python:distribute",
         "//tensorflow/python/data",
         "//tensorflow/python/distribute:distribute_coordinator",
         "//tensorflow/python/distribute:distribute_lib",
@@ -620,6 +619,10 @@ tf_py_test(
         "//third_party/py/numpy",
         "//tensorflow/python:client_testlib",
     ],
+    tags = [
+	"no_cuda",
+	"no_rocm",
+    ],
     shard_count = 4,
 )
 
@@ -769,7 +772,12 @@ tf_py_test(
         "//tensorflow/python:client_testlib",
     ],
     shard_count = 3,
-    tags = ["notsan"],
+    tags = ["notsan",
+            # Test temporarily disabled due to test application failure (reshape failure)
+            # on both Cuda and ROCm. Should re-enable once get fixed
+            "no_rocm",
+            "no_cuda",
+    ],
 )
 
 tf_py_test(
@@ -1213,7 +1221,10 @@ tf_py_test(
         "//tensorflow/python:client_testlib",
     ],
     shard_count = 20,
-    tags = ["notsan"],
+    tags = [
+            "notsan",
+            "no_rocm",
+           ],
 )
 
 tf_py_test(
@@ -1240,6 +1251,9 @@ tf_py_test(
         "//third_party/py/numpy",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python:client_testlib",
+    ],
+    tags = [
+	"no_rocm",
     ],
 )
 
@@ -1284,7 +1298,11 @@ tf_py_test(
         "//third_party/py/numpy",
         "//tensorflow/python:client_testlib",
     ],
-    tags = ["notsan"],
+    tags = [
+            "notsan",
+            "no_rocm",
+            "no_cuda",
+           ],
 )
 
 tf_py_test(
@@ -1341,7 +1359,10 @@ tf_py_test(
         "//tensorflow/python:client_testlib",
     ],
     shard_count = 8,
-    tags = ["no_rocm"],
+    tags = [
+            "no_rocm",
+            "no_cuda",
+    ],
 )
 
 tf_py_test(

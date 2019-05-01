@@ -122,6 +122,7 @@ py_test(
         "@absl_py//absl/testing:parameterized",
         "@six_archive//:six",
     ],
+    tags = ["no_rocm_v2"],
 )
 
 # Keep for reference, this test will succeed in 0.11 but fail in 1.0
@@ -183,6 +184,7 @@ py_test(
     deps = [
         "//tensorflow:tensorflow_py",
     ],
+    tags = ["no_rocm_v2"],
 )
 
 py_test(
