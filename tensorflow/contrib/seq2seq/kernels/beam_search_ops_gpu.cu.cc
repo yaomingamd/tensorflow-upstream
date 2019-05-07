@@ -95,7 +95,7 @@ struct GatherTree<GPUDevice, T> {
         GatherTreeOpKernel<T>, config.block_count, config.thread_per_block, 0,
         d.stream(), batch_size, max_time, beam_width, step_ids.data(),
         parent_ids.data(), max_sequence_length.data(), end_token,
-        beams.data());
+        beams.data()));
   }
 };
 

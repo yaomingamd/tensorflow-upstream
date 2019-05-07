@@ -152,7 +152,7 @@ struct ScatterScalarFunctor<GPUDevice, T, Index, op> {
         scatter_op_gpu::ScatterScalarOpCustomKernel<T, Index, op>,
         config.block_count, config.thread_per_block, 0, d.stream(),
         params.data(), update.data(), indices.data(), first_dim_size,
-        indices_size, synthesized_updates_size);
+        indices_size, synthesized_updates_size));
     return -1;
   }
 };

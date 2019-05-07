@@ -279,17 +279,17 @@ struct ResizeBilinear<GPUDevice, T> {
     if (total_count == 0) return;
     GpuLaunchConfig config = GetGpuLaunchConfig(total_count, d);
     if (half_pixel_centers) {
-      GPU_LAUNCH_KERNEL(ResizeBilinearKernel<T>,
+      TF_CHECK_OK(GpuLaunchKernel(ResizeBilinearKernel<T>,
         dim3(config.block_count), dim3(config.thread_per_block), 0, d.stream(),
         config.virtual_thread_count, images.data(), height_scale,
         width_scale, batch, in_height, in_width, channels, out_height,
-        out_width, output.data());
+        out_width, output.data()));
     } else {
-      GPU_LAUNCH_KERNEL(LegacyResizeBilinearKernel<T>,
+      TF_CHECK_OK(GpuLaunchKernel(LegacyResizeBilinearKernel<T>,
         dim3(config.block_count), dim3(config.thread_per_block), 0, d.stream(),
         config.virtual_thread_count, images.data(), height_scale,
         width_scale, batch, in_height, in_width, channels, out_height,
-        out_width, output.data());
+        out_width, output.data()));
     }
   }
 };
@@ -325,19 +325,19 @@ struct ResizeBilinearGrad<GPUDevice, T> {
     total_count = batch * resized_height * resized_width * channels;
     config = GetGpuLaunchConfig(total_count, d);
     if (half_pixel_centers) {
-      GPU_LAUNCH_KERNEL(
+      TF_CHECK_OK(GpuLaunchKernel(
           ResizeBilinearGradKernel<T>, config.block_count,
           config.thread_per_block, 0, d.stream(), config.virtual_thread_count,
           input_grad.data(), height_scale, width_scale, batch, original_height,
           original_width, channels, resized_height, resized_width,
-          output_grad.data());
+          output_grad.data()));
     } else {
-      GPU_LAUNCH_KERNEL(
+      TF_CHECK_OK(GpuLaunchKernel(
           LegacyResizeBilinearGradKernel<T>, config.block_count,
           config.thread_per_block, 0, d.stream(), config.virtual_thread_count,
           input_grad.data(), height_scale, width_scale, batch, original_height,
           original_width, channels, resized_height, resized_width,
-          output_grad.data());
+          output_grad.data()));
     }
   }
 };
