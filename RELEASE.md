@@ -1,3 +1,9 @@
+# Release 1.13.2
+
+## Bug Fixes and Other Changes
+* TF-RCCL path fix for issue#370
+* The 1.13.2 whl package is built the ROCm2.3 user-bit environment
+
 # Release 1.13.0
 
 ## Major Features and Improvements
@@ -6,6 +12,10 @@
 * TensorFlow GPU binaries are now built against CUDA 10 and TensorRT 5.0.
 * Support for Python3.7 on all operating systems.
 * Moved NCCL to core.
+
+## ROCm Features and Improvements
+* MIOpen v1.7.1 integration
+* Tensorflow VERBS support is enabled, details in: [TensorFlow Verbs Quick-Start](https://github.com/ROCmSoftwarePlatform/tensorflow-upstream/blob/r1.13-rocm/rocm_docs/tensorflow-verbs.md)
 
 ## Behavioral changes
 
