@@ -56,7 +56,7 @@ StatusOr<CudnnConvKind> GetCudnnConvKind(const HloCustomCallInstruction* instr);
 // Converts a CudnnConvKind value to a string.
 string CudnnConvKindToString(CudnnConvKind kind);
 
-constexpr int64 kWarpSize = 32;
+constexpr int64 kWarpSize = 64;
 
 // Returns true if `hlo` will be implemented as a call to BLAS gemm.
 //
