@@ -179,3 +179,5 @@ python3 ./scripts/tf_cnn_benchmarks/tf_cnn_benchmarks.py --model=resnet50 --num_
 
 ### Temp workaround:  Solutions when running out of memory
 As a temporary workaround, if your workload runs out of device memory, you can either reduce the batch size or set `config.gpu_options.allow_growth = True`.
+
+
