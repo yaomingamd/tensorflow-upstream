@@ -227,10 +227,9 @@ struct ResizeNearestNeighborGrad<GPUDevice, T, half_pixel_centers,
     const int output_size = batch_size * channels * out_height * out_width;
 
     GpuLaunchConfig output_config = GetGpuLaunchConfig(output_size, d);
-    GPU_LAUNCH_KERNEL(SetZero,
-        dim3(output_config.block_count), dim3(output_config.thread_per_block),
-        0, d.stream(),
-        output_size, output.data());
+    TF_CHECK_OK(GpuLaunchKernel(SetZero<T>, output_config.block_count,
+                                 output_config.thread_per_block, 0, d.stream(),
+                                 output_size, output.data()));
     if (!d.ok()) return false;
 
     const int input_size = batch_size * channels * in_height * in_width;
@@ -240,11 +239,7 @@ struct ResizeNearestNeighborGrad<GPUDevice, T, half_pixel_centers,
     if (half_pixel_centers) {
       GPU_LAUNCH_KERNEL((ResizeNearestNeighborBackwardNHWC<T>),
         dim3(input_config.block_count), dim3(input_config.thread_per_block), 0,
-        d.stream(),
         input_config.virtual_thread_count, input.data(),
-        static_cast<int>(in_height),
-        static_cast<int>(in_width),
-        channels,
         static_cast<int>(out_height),
         static_cast<int>(out_width),
         height_scale, width_scale,

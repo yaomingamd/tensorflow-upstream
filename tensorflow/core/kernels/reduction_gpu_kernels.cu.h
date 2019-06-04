@@ -29,7 +29,7 @@ limitations under the License.
 #include "third_party/cub/iterator/counting_input_iterator.cuh"
 #include "third_party/cub/iterator/transform_input_iterator.cuh"
 #include "third_party/cub/warp/warp_reduce.cuh"
-#include "cuda/include/cuComplex.h"
+#include "third_party/gpus/cuda/include/cuComplex.h"
 #elif TENSORFLOW_USE_ROCM
 #include "external/rocprim_archive/hipcub/include/hipcub/hipcub.hpp"
 #endif
@@ -54,9 +54,9 @@ namespace functor {
 typedef Eigen::GpuDevice GPUDevice;
 
 template <typename T>
-struct Sqrt {
+struct SqrtOfReal {
   __host__ __device__ T operator()(const T& a) const {
-    return Eigen::numext::sqrt(a);
+    return T(Eigen::numext::sqrt(Eigen::numext::real(a)));
   }
 };
 
@@ -657,11 +657,11 @@ void LaunchColumnReduction_LTE4096Cols(OpKernelContext* ctx, OUT_T out, IN_T in,
         in, (T*)temp_storage.flat<int8_t>().data(), extent_x, extent_y, op,
         init);
 
-    dim3 new_grid_dim((grid_dim.y * extent_y + (TF_RED_WARPSIZE-1)) / TF_RED_WARPSIZE, 1, 1);
-    dim3 num_threads(128, 1, 1);
-     GPU_LAUNCH_KERNEL((CleanupSegments<T*,OUT_T,Op>), new_grid_dim, num_threads, 0, cu_stream,
-        ((T*)temp_storage.flat<int8_t>().data()), out, extent_x, extent_y,
-        grid_dim.y, op, init);
+    dim3 new_grid_dim((grid_dim.y * extent_y + 31) / 32, 1, 1);
+    TF_CHECK_OK(GpuLaunchKernel(CleanupSegments<T*, OUT_T, Op>, new_grid_dim,
+                                 block_dim, 0, cu_stream,
+                                 (T*)temp_storage.flat<int8_t>().data(), out,
+                                 extent_x, extent_y, grid_dim.y, op, init));
   }
 }
 
@@ -893,8 +893,8 @@ struct ReduceFunctor<GPUDevice, functor::EuclideanNormReducer<T>> {
                      const functor::EuclideanNormReducer<T>& reducer) {
     typedef gpuprim::TransformInputIterator<T, Square<T>, T*> inputIterType;
     inputIterType input_itr((T*)in.data(), Square<T>());
-    typedef TransformOutputIterator<T, T, Sqrt<T>> outputIterType;
-    outputIterType output_itr((T*)out.data(), Sqrt<T>());
+    typedef TransformOutputIterator<T, T, SqrtOfReal<T>> outputIterType;
+    outputIterType output_itr((T*)out.data(), SqrtOfReal<T>());
     ReduceImpl<T, Sum<T>, outputIterType, inputIterType, ReductionAxes>(
         ctx, output_itr, input_itr, in.rank(), in.dimension(0),
         in.rank() >= 2 ? in.dimension(1) : 1,

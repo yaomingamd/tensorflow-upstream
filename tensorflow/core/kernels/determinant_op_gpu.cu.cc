@@ -154,9 +154,6 @@ struct LogDeterminantFromPivotedLUFunctor<GPUDevice, Scalar> {
     const int64 n = lu_factor.dimension(2);
     GpuLaunchConfig config = GetGpuLaunchConfig(num_matrices, device);
     TF_CHECK_OK(CudaLaunchKernel(
-        DeterminantFromPivotedLUKernel<Scalar, /*compute_log_abs_det=*/true>,
-        config.block_count, config.thread_per_block, 0, device.stream(),
-        config.virtual_thread_count, n, lu_factor.data(), pivots, sign.data(),
         log_abs_det.data()));
   }
 };

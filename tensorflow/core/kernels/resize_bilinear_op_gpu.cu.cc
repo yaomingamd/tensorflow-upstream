@@ -317,9 +317,9 @@ struct ResizeBilinearGrad<GPUDevice, T> {
     total_count = batch * original_height * original_width * channels;
     if (total_count == 0) return;
     config = GetGpuLaunchConfig(total_count, d);
-    GPU_LAUNCH_KERNEL(SetZero,
-        dim3(config.block_count), dim3(config.thread_per_block), 0, d.stream(),
-        config.virtual_thread_count, output_grad.data());
+    TF_CHECK_OK(GpuLaunchKernel(
+        SetZero<T>, config.block_count, config.thread_per_block, 0, d.stream(),
+        config.virtual_thread_count, output_grad.data()));
 
     // Accumulate.
     total_count = batch * resized_height * resized_width * channels;

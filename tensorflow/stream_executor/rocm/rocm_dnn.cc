@@ -103,7 +103,7 @@ class MIOpenHandle {
  public:
   // Takes ownership of the executor context and the lock to access MIOpen
   // using handle.
-  MIOpenHandle(rocm::ScopedActivateExecutorContext context, mutex_lock lock,
+  MIOpenHandle(rocm::ScopedActivateExecutorContext context, std::unique_ptr<absl::MutexLock> lock,
                miopenHandle_t handle)
       : context_(std::move(context)), lock_(std::move(lock)), handle_(handle) {}
 
@@ -113,7 +113,7 @@ class MIOpenHandle {
 
  private:
   rocm::ScopedActivateExecutorContext context_;
-  mutex_lock lock_;
+  std::unique_ptr<absl::MutexLock> lock_;
   miopenHandle_t handle_;  // Not owned.
 };
 
@@ -347,7 +347,7 @@ class CachedFusionPlans {
                            miopenFusionPlanDescriptor_t* fusion_plan,
                            miopenFusionDirection_t fusion_direction,
                            miopenTensorDescriptor_t input_descriptor) {
-    mutex_lock lock{cachedPlansMutex};
+    absl::MutexLock lock{&cached_plans_mutex};
 
     bool foundCachedPlan = false;
 
@@ -371,7 +371,7 @@ class CachedFusionPlans {
 
   // need to figure out the right place to call this routine
   static void Clear() {
-    mutex_lock lock{cachedPlansMutex};
+    absl::MutexLock lock{&cached_plans_mutex};
 
     for (auto it : cachedPlans) {
       auto status = wrap::miopenDestroyFusionPlan(it.second);
@@ -386,21 +386,21 @@ class CachedFusionPlans {
     unsupportedPlans.clear();
   }
 
-  // is the Fusion plan corresponding to this hash unsupported
-  static bool isUnsupportedFusionPlan(uint64 hash) {
-    mutex_lock lock{cachedPlansMutex};
-    return unsupportedPlans.count(hash) > 0;
+  // Is the Fusion plan corresponding to this hash unsupported.
+  static bool IsUnsupportedFusionPlan(uint64 hash) {
+    absl::MutexLock lock{&cached_plans_mutex};
+    return unsupported_plans.count(hash) > 0;
   }
 
-  // mark the given hash value as corresponding to an unsupported fusion plan
-  static void markFusionPlanUnsupported(uint64 hash) {
-    mutex_lock lock{cachedPlansMutex};
-    unsupportedPlans.insert(hash);
+  // Mark the given hash value as corresponding to an unsupported fusion plan.
+  static void MarkFusionPlanUnsupported(uint64 hash) {
+    absl::MutexLock lock{&cached_plans_mutex};
+    unsupported_plans.insert(hash);
   }
 
  private:
-  // mutex to guard access to all data within this class
-  static mutex cachedPlansMutex;
+  // Mutex to guard access to all data within this class.
+  static absl::Mutex cached_plans_mutex;
 
   // map of hash-value to MIOpen Fusion plan descriptors
   // need to be able share this across more than one stream and hence static
@@ -411,13 +411,9 @@ class CachedFusionPlans {
   static std::set<uint64> unsupportedPlans;
 };
 
-mutex CachedFusionPlans::cachedPlansMutex;
-std::map<uint64, miopenFusionPlanDescriptor_t> CachedFusionPlans::cachedPlans;
-std::set<uint64> CachedFusionPlans::unsupportedPlans;
-
-}  // namespace
-
-namespace {
+absl::Mutex CachedFusionPlans::cached_plans_mutex;
+std::map<uint64, miopenFusionPlanDescriptor_t> CachedFusionPlans::cached_plans;
+std::set<uint64> CachedFusionPlans::unsupported_plans;
 
 miopenHandle_t ToHandle(void* opaque_handle) {
   return static_cast<miopenHandle_t>(opaque_handle);
@@ -483,7 +479,7 @@ class MIOpenAccess {
   explicit MIOpenAccess(miopenHandle_t handle) : handle_(handle) {}
 
   ~MIOpenAccess() {
-    mutex_lock lock(mutex_);
+    absl::MutexLock lock(&mutex_);
     wrap::miopenDestroy(handle_);
   }
 
@@ -502,7 +498,8 @@ class MIOpenAccess {
   // therefore a bad idea (performance wise) to call any MIOpen APIs that
   // enqueue work in the stream.
   MIOpenHandle GetHandle(GpuExecutor* executor, Stream* stream) {
-    mutex_lock lock(mutex_);
+    auto lock = absl::make_unique<absl::MutexLock>(&mutex_);
+    mutex_.AssertHeld();
     rocm::ScopedActivateExecutorContext context(executor);
     hipStream_t hip_stream = stream ? AsGpuStreamValue(stream) : nullptr;
     auto status = wrap::miopenSetStream(handle_, hip_stream);
@@ -512,7 +509,7 @@ class MIOpenAccess {
 
  private:
   // Guards the enqueueing of MIOpen operations via the handle_ below.
-  mutex mutex_;
+  absl::Mutex mutex_;
 
   // MIOpen library handle.
   miopenHandle_t handle_ GUARDED_BY(mutex_);  // Owned.

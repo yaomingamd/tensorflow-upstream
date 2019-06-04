@@ -157,11 +157,11 @@ struct SpaceToDepthOpFunctor<GPUDevice, T, FORMAT_NHWC> {
       return;
     }
     GpuLaunchConfig config = GetGpuLaunchConfig(total_count, d);
-    GPU_LAUNCH_KERNEL(
-        S2D_NHWC<T>, dim3(config.block_count), dim3(config.thread_per_block), 0,
-        d.stream(), config.virtual_thread_count, input.data(), block_size,
-        batch_size, input_height, input_width, input_depth, output_height,
-        output_width, output_depth, output.data());
+    TF_CHECK_OK(GpuLaunchKernel(
+        S2D_NHWC<T>, config.block_count, config.thread_per_block, 0, d.stream(),
+        config.virtual_thread_count, input.data(), block_size, batch_size,
+        input_height, input_width, input_depth, output_height, output_width,
+        output_depth, output.data()));
   }
   void operator()(const GPUDevice& d, typename TTypes<T, 5>::ConstTensor input,
                   int block_size, typename TTypes<T, 5>::Tensor output) {
@@ -225,9 +225,9 @@ struct SpaceToDepthOpFunctor<GPUDevice, T, FORMAT_NCHW> {
       return;
     }
     GpuLaunchConfig config = GetGpuLaunchConfig(total_count, d);
-    GPU_LAUNCH_KERNEL(S2D_NCHW<T>,
-        dim3(config.block_count), dim3(config.thread_per_block), 0, d.stream(),
-        config.virtual_thread_count, input.data(), block_size, output_width,
+    TF_CHECK_OK(GpuLaunchKernel(
+        S2D_NCHW<T>, config.block_count, config.thread_per_block, 0, d.stream(),
+    config.virtual_thread_count, input.data(), block_size, output_width,
         input_depth * output_height, output.data());
   }
   void operator()(const GPUDevice& d, typename TTypes<T, 5>::ConstTensor input,
