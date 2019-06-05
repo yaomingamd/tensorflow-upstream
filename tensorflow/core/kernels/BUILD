@@ -5439,7 +5439,11 @@ tf_cuda_cc_test(
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
     ],
+)
+
+tf_kernel_library(
     name = "random_binomial_op",
+    prefix = "random_binomial_op",
     deps = [
         ":cwise_op",
         ":random_ops",

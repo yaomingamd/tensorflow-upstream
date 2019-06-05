@@ -24,8 +24,10 @@ limitations under the License.
 #include "tensorflow/compiler/xla/types.h"
 #include "tensorflow/compiler/xla/xla_data.pb.h"
 #include "tensorflow/core/platform/stream_executor_no_cuda.h"
-#include "tensorflow/stream_executor/cuda/ptxas_utils.h"
 #include "tensorflow/stream_executor/kernel_spec.h"
+#if GOOGLE_CUDA
+#include "tensorflow/stream_executor/cuda/ptxas_utils.h"
+#endif // GOOGLE_CUDA
 
 // Helper functions for interacting with StreamExecutor.
 
@@ -104,9 +106,11 @@ Status ExecuteKernelOnStream(const se::KernelBase& kernel,
                              int64 threads_per_block, int64 block_count,
                              se::Stream* stream);
 
+#if GOOGLE_CUDA
 // Create PtxCompilationOptions out of HloModuleConfig.
 se::cuda::PtxCompilationOptions PtxOptsFromConfig(
     const HloModuleConfig& hlo_module_config);
+#endif // GOOGLE_CUDA
 
 }  // namespace gpu
 }  // namespace xla

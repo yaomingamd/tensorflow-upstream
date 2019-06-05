@@ -1,11 +1,8 @@
 /* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -215,6 +212,8 @@ class MIOpenSupport : public dnn::DnnSupport {
       DeviceMemory<float>* y, DeviceMemory<float>* batch_mean,
       DeviceMemory<float>* batch_var, DeviceMemory<float>* saved_mean,
       DeviceMemory<float>* saved_inv_var, bool is_training,
+      ScratchAllocator* reserve_space_allocator,
+      ScratchAllocator* workspace_allocator,
       std::function<const DeviceMemory<float>&()> var_to_inv_var,
       std::function<void()> inv_var_to_var) override;
 
@@ -228,6 +227,8 @@ class MIOpenSupport : public dnn::DnnSupport {
       DeviceMemory<Eigen::half>* y, DeviceMemory<float>* batch_mean,
       DeviceMemory<float>* batch_var, DeviceMemory<float>* saved_mean,
       DeviceMemory<float>* saved_inv_var, bool is_training,
+      ScratchAllocator* reserve_space_allocator,
+      ScratchAllocator* workspace_allocator,
       std::function<const DeviceMemory<float>&()> var_to_inv_var,
       std::function<void()> inv_var_to_var) override;
 
@@ -238,7 +239,9 @@ class MIOpenSupport : public dnn::DnnSupport {
       const dnn::BatchDescriptor& x_desc,
       const dnn::BatchDescriptor& scale_offset_desc, const double epsilon,
       DeviceMemory<float>* x_backprop, DeviceMemory<float>* scale_backprop,
-      DeviceMemory<float>* offset_backprop) override;
+      DeviceMemory<float>* offset_backprop,
+      DeviceMemory<uint8>* reserve_space_data,
+      ScratchAllocator* workspace_allocator) override;
 
   bool DoBatchNormalizationBackward(
       Stream* stream, const DeviceMemory<Eigen::half>& y_backprop,
@@ -248,7 +251,9 @@ class MIOpenSupport : public dnn::DnnSupport {
       const dnn::BatchDescriptor& scale_offset_desc, const double epsilon,
       DeviceMemory<Eigen::half>* x_backprop,
       DeviceMemory<float>* scale_backprop,
-      DeviceMemory<float>* offset_backprop) override;
+      DeviceMemory<float>* offset_backprop,
+      DeviceMemory<uint8>* reserve_space_data,
+      ScratchAllocator* workspace_allocator) override;
 
   port::Status DoConvolve(
       dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,

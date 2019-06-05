@@ -450,7 +450,8 @@ struct LaunchLRNGrad<CPUDevice, T> {
         bias_(bias),
         alpha_(alpha),
         beta_(beta),
-        alpha_beta_2_(T(-2) * alpha * beta) {}
+        alpha_beta_2_(T(-2) * alpha * beta),
+        data_format_(data_format) {}
 
   void launch(OpKernelContext* context, OpKernel* kernel,
               const Tensor& in_grads, const Tensor& in_image,

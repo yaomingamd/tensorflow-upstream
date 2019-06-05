@@ -19,12 +19,12 @@ limitations under the License.
 #include "absl/time/time.h"
 #include "absl/types/optional.h"
 #include "tensorflow/compiler/xla/service/compiler.h"
-#include "tensorflow/compiler/xla/service/device_memory_allocator.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_conv_runner.h"
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
 #include "tensorflow/compiler/xla/service/hlo_module.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_interface.h"
 #include "tensorflow/core/platform/stream_executor_no_cuda.h"
+#include "tensorflow/stream_executor/device_memory_allocator.h"
 
 namespace xla {
 namespace gpu {
@@ -39,7 +39,7 @@ class MiopenConvAlgorithmPicker : public HloModulePass {
   // memory while timing the various convolution algorithms.  If it's null,
   // we'll use the default allocator on the StreamExecutor.
   MiopenConvAlgorithmPicker(se::StreamExecutor* stream_exec,
-                           DeviceMemoryAllocator* allocator, Compiler* compiler)
+                           se::DeviceMemoryAllocator* allocator, Compiler* compiler)
       : stream_exec_(stream_exec), allocator_(allocator), compiler_(compiler) {}
 
   absl::string_view name() const override {
@@ -62,7 +62,7 @@ class MiopenConvAlgorithmPicker : public HloModulePass {
       const HloCustomCallInstruction* instr);
 
   se::StreamExecutor* stream_exec_;                   // never null
-  DeviceMemoryAllocator* allocator_;                  // may be null
+  se::DeviceMemoryAllocator* allocator_;                  // may be null
   Compiler* compiler_;
 };
 

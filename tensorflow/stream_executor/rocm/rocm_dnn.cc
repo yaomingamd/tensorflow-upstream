@@ -1,11 +1,8 @@
 /* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -103,8 +100,8 @@ class MIOpenHandle {
  public:
   // Takes ownership of the executor context and the lock to access MIOpen
   // using handle.
-  MIOpenHandle(rocm::ScopedActivateExecutorContext context, std::unique_ptr<absl::MutexLock> lock,
-               miopenHandle_t handle)
+  MIOpenHandle(rocm::ScopedActivateExecutorContext context,
+               std::unique_ptr<absl::MutexLock> lock, miopenHandle_t handle)
       : context_(std::move(context)), lock_(std::move(lock)), handle_(handle) {}
 
   // Returns MIOpen handle. To be passed directly to MIOpen APIs, don't keep
@@ -133,9 +130,9 @@ static port::ThreadPool* InitMIOpenThreadpool() {
   return miopen_threadpool_;
 }
 
-static mutex miopen_threadpool_mu(LINKER_INITIALIZED);
+static absl::Mutex miopen_threadpool_mu{absl::kConstInit};
 static port::ThreadPool* GetROCmThreadpool() {
-  mutex_lock lock(miopen_threadpool_mu);
+  absl::MutexLock lock(&miopen_threadpool_mu);
   static port::ThreadPool* miopen_threadpool = InitMIOpenThreadpool();
   return miopen_threadpool;
 }
@@ -347,7 +344,7 @@ class CachedFusionPlans {
                            miopenFusionPlanDescriptor_t* fusion_plan,
                            miopenFusionDirection_t fusion_direction,
                            miopenTensorDescriptor_t input_descriptor) {
-    absl::MutexLock lock{&cached_plans_mutex};
+    absl::MutexLock lock{&cachedPlansMutex};
 
     bool foundCachedPlan = false;
 
@@ -371,7 +368,7 @@ class CachedFusionPlans {
 
   // need to figure out the right place to call this routine
   static void Clear() {
-    absl::MutexLock lock{&cached_plans_mutex};
+    absl::MutexLock lock{&cachedPlansMutex};
 
     for (auto it : cachedPlans) {
       auto status = wrap::miopenDestroyFusionPlan(it.second);
@@ -386,21 +383,21 @@ class CachedFusionPlans {
     unsupportedPlans.clear();
   }
 
-  // Is the Fusion plan corresponding to this hash unsupported.
-  static bool IsUnsupportedFusionPlan(uint64 hash) {
-    absl::MutexLock lock{&cached_plans_mutex};
-    return unsupported_plans.count(hash) > 0;
+  // is the Fusion plan corresponding to this hash unsupported
+  static bool isUnsupportedFusionPlan(uint64 hash) {
+    absl::MutexLock lock{&cachedPlansMutex};
+    return unsupportedPlans.count(hash) > 0;
   }
 
-  // Mark the given hash value as corresponding to an unsupported fusion plan.
-  static void MarkFusionPlanUnsupported(uint64 hash) {
-    absl::MutexLock lock{&cached_plans_mutex};
-    unsupported_plans.insert(hash);
+  // mark the given hash value as corresponding to an unsupported fusion plan
+  static void markFusionPlanUnsupported(uint64 hash) {
+    absl::MutexLock lock{&cachedPlansMutex};
+    unsupportedPlans.insert(hash);
   }
 
  private:
-  // Mutex to guard access to all data within this class.
-  static absl::Mutex cached_plans_mutex;
+  // mutex to guard access to all data within this class
+  static absl::Mutex cachedPlansMutex;
 
   // map of hash-value to MIOpen Fusion plan descriptors
   // need to be able share this across more than one stream and hence static
@@ -411,9 +408,13 @@ class CachedFusionPlans {
   static std::set<uint64> unsupportedPlans;
 };
 
-absl::Mutex CachedFusionPlans::cached_plans_mutex;
-std::map<uint64, miopenFusionPlanDescriptor_t> CachedFusionPlans::cached_plans;
-std::set<uint64> CachedFusionPlans::unsupported_plans;
+absl::Mutex CachedFusionPlans::cachedPlansMutex;
+std::map<uint64, miopenFusionPlanDescriptor_t> CachedFusionPlans::cachedPlans;
+std::set<uint64> CachedFusionPlans::unsupportedPlans;
+
+}  // namespace
+
+namespace {
 
 miopenHandle_t ToHandle(void* opaque_handle) {
   return static_cast<miopenHandle_t>(opaque_handle);
@@ -3027,6 +3028,8 @@ bool MIOpenSupport::DoBatchNormalizationForward(
     DeviceMemory<Eigen::half>* y, DeviceMemory<float>* batch_mean,
     DeviceMemory<float>* batch_var, DeviceMemory<float>* saved_mean,
     DeviceMemory<float>* saved_inv_var, bool is_training,
+    ScratchAllocator* reserve_space_allocator,
+    ScratchAllocator* workspace_allocator,
     std::function<const DeviceMemory<float>&()> var_to_inv_var,
     std::function<void()> inv_var_to_var) {
   return DoBatchNormalizationForwardImpl<Eigen::half, float>(
@@ -3046,6 +3049,8 @@ bool MIOpenSupport::DoBatchNormalizationForward(
     DeviceMemory<float>* y, DeviceMemory<float>* batch_mean,
     DeviceMemory<float>* batch_var, DeviceMemory<float>* saved_mean,
     DeviceMemory<float>* saved_inv_var, bool is_training,
+    ScratchAllocator* reserve_space_allocator,
+    ScratchAllocator* workspace_allocator,
     std::function<const DeviceMemory<float>&()> var_to_inv_var,
     std::function<void()> inv_var_to_var) {
   return DoBatchNormalizationForwardImpl<float, float>(
@@ -3111,9 +3116,10 @@ bool MIOpenSupport::DoBatchNormalizationBackward(
     const DeviceMemory<float>& mean, const DeviceMemory<float>& inv_var,
     const dnn::BatchDescriptor& x_desc,
     const dnn::BatchDescriptor& scale_offset_desc, const double epsilon,
-    DeviceMemory<Eigen::half>* x_backprop,
-    DeviceMemory<float>* scale_backprop,
-    DeviceMemory<float>* offset_backprop) {
+    DeviceMemory<Eigen::half>* x_backprop, DeviceMemory<float>* scale_backprop,
+    DeviceMemory<float>* offset_backprop,
+    DeviceMemory<uint8>* reserve_space_data,
+    ScratchAllocator* workspace_allocator) {
   return DoBatchNormalizationBackwardImpl<Eigen::half, float>(
       stream, miopenHalf, miopenFloat, y_backprop, x, scale, mean, inv_var,
       x_desc, scale_offset_desc, epsilon, x_backprop, scale_backprop,
@@ -3127,7 +3133,9 @@ bool MIOpenSupport::DoBatchNormalizationBackward(
     const dnn::BatchDescriptor& x_desc,
     const dnn::BatchDescriptor& scale_offset_desc, const double epsilon,
     DeviceMemory<float>* x_backprop, DeviceMemory<float>* scale_backprop,
-    DeviceMemory<float>* offset_backprop) {
+    DeviceMemory<float>* offset_backprop,
+    DeviceMemory<uint8>* reserve_space_data,
+    ScratchAllocator* workspace_allocator) {
   return DoBatchNormalizationBackwardImpl<float, float>(
       stream, miopenFloat, miopenFloat, y_backprop, x, scale, mean, variance,
       x_desc, scale_offset_desc, epsilon, x_backprop, scale_backprop,
