@@ -946,6 +946,11 @@ void RunSwapDimension1And2InTensor3(const GPUDevice& d, const T* input,
                                  d.stream(), config.virtual_thread_count, input,
                                  input_dims, output));
   }
+}
+
+// A GPU helper functor that does general dimension 1 and 2 switch for 3D
+// tensor.
+template <typename T, bool conjugate>
 struct SwapDimension1And2InTensor3<GPUDevice, T, conjugate> {
   typedef GPUDevice Device;
   void operator()(const Device& d, const T* in,

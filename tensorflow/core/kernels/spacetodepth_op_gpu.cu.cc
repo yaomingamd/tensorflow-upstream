@@ -224,11 +224,12 @@ struct SpaceToDepthOpFunctor<GPUDevice, T, FORMAT_NCHW> {
     if (total_count == 0) {
       return;
     }
+
     GpuLaunchConfig config = GetGpuLaunchConfig(total_count, d);
     TF_CHECK_OK(GpuLaunchKernel(
         S2D_NCHW<T>, config.block_count, config.thread_per_block, 0, d.stream(),
-    config.virtual_thread_count, input.data(), block_size, output_width,
-        input_depth * output_height, output.data());
+        config.virtual_thread_count, input.data(), block_size, output_width,
+        input_depth * output_height, output.data()));
   }
   void operator()(const GPUDevice& d, typename TTypes<T, 5>::ConstTensor input,
                   int block_size, typename TTypes<T, 5>::Tensor output) {

@@ -234,33 +234,24 @@ struct ResizeNearestNeighborGrad<GPUDevice, T, half_pixel_centers,
 
     const int input_size = batch_size * channels * in_height * in_width;
     if (input_size == 0) return true;
-
     GpuLaunchConfig input_config = GetGpuLaunchConfig(input_size, d);
     if (half_pixel_centers) {
-      TF_CHECK_OK(GpuLaunchKernel((ResizeNearestNeighborBackwardNHWC<T>),
-        dim3(input_config.block_count), dim3(input_config.thread_per_block), 0,
-        input_config.virtual_thread_count, input.data(),
-        static_cast<int>(out_height),
-        static_cast<int>(out_width),
-        height_scale, width_scale,
-        output.data()));
+      TF_CHECK_OK(GpuLaunchKernel(
+          ResizeNearestNeighborBackwardNHWC<T>, input_config.block_count,
+          input_config.thread_per_block, 0, d.stream(),
+          input_config.virtual_thread_count, input.data(), in_height, in_width,
+          channels, out_height, out_width, height_scale, width_scale,
+          output.data()));
       return d.ok();
     } else {
-      TF_CHECK_OK(GpuLaunchKernel((
-        LegacyResizeNearestNeighborBackwardNHWC<T, align_corners>),
-        dim3(input_config.block_count), dim3(input_config.thread_per_block), 0,
-        d.stream(),
-        input_config.virtual_thread_count, input.data(),
-        static_cast<int>(in_height),
-        static_cast<int>(in_width),
-        channels,
-        static_cast<int>(out_height),
-        static_cast<int>(out_width),
-        height_scale, width_scale,
-        output.data()));
+      TF_CHECK_OK(GpuLaunchKernel(
+          LegacyResizeNearestNeighborBackwardNHWC<T, align_corners>,
+          input_config.block_count, input_config.thread_per_block, 0,
+          d.stream(), input_config.virtual_thread_count, input.data(),
+          in_height, in_width, channels, out_height, out_width, height_scale,
+          width_scale, output.data()));
       return d.ok();
     }
-
   }
 };
 

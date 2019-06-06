@@ -140,6 +140,9 @@ void DoInplaceOp(const Device& d, InplaceOpType op, const Tensor& i,
   const int64 nelem = v.NumElements();
   GpuLaunchConfig cfg = GetGpuLaunchConfig(nelem, d);
   auto Ty = y->flat_outer_dims<bool>();
+  const int64 nrows = Ty.dimension(0);
+  const int64 ncols = Ty.dimension(1);
+  const int64 n = i.NumElements();
   const bool* src = v.flat<bool>().data();
   // TODO(sjhwang): Check that first dimension fits in int32 range.
   const int32* rowids = i.flat<int32>().data();
