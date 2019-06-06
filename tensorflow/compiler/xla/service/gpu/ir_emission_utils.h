@@ -144,6 +144,10 @@ bool IsCustomCallToCusolver(const HloInstruction& hlo);
 // is a success/failure code per batch element.
 extern const char* const kCusolverCholeskyCallTarget;
 
+bool IsCustomCallToROCmLibs(const HloInstruction& hlo);
+
+extern const char* const kReduceCallTarget;
+
 // Returns true if `hlo` will be implemented as a library call, e.g. cuBLAS gemm
 // or cuDNN convolution.
 bool ImplementedAsLibraryCall(const HloInstruction& hlo);

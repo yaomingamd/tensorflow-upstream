@@ -435,7 +435,10 @@ cc_library(
         "cholesky_thunk.cc",
         "nvptx_executable.cc"
        ])
-      +  if_rocm_is_configured(["amdgpu_executable.cc"]),
+      +  if_rocm_is_configured([
+        "amdgpu_executable.cc",
+        "reduce_thunk.cc",
+       ]),
     hdrs = [
         "collective_permute_thunk.h",
         "conditional_thunk.h",
@@ -461,7 +464,10 @@ cc_library(
          "cholesky_thunk.h",
          "nvptx_executable.h"
      ])
-      + if_rocm_is_configured(["amdgpu_executable.h"]),
+      + if_rocm_is_configured([
+         "amdgpu_executable.h",
+         "reduce_thunk.h",
+     ]),
     deps = [
         ":buffer_allocations",
         ":cudnn_conv_runner",
@@ -967,8 +973,14 @@ cc_library(
     name = "gpu_compiler",
     srcs = if_cuda_is_configured(["nvptx_compiler.cc"])
            + if_rocm_is_configured(["amdgpu_compiler.cc"]),
-    hdrs = if_cuda_is_configured(["nvptx_compiler.h"])
-           + if_rocm_is_configured(["amdgpu_compiler.h"]),
+    hdrs = if_cuda_is_configured([
+            "nvptx_compiler.h",
+            "cudnn_batchnorm_rewriter.h",
+            ])
+           + if_rocm_is_configured([
+            "amdgpu_compiler.h",
+            "reduce_rewriter.h",
+            ]),
     deps = [
         ":cudnn_batchnorm_rewriter",
         ":cudnn_conv_pad_for_tensor_cores",
@@ -1056,8 +1068,22 @@ cc_library(
         "//tensorflow/stream_executor/cuda:ptxas_utils",
     ])
     + if_rocm_is_configured([":miopen_conv_algorithm_picker",
+                             ":reduce_rewriter",
                             "//tensorflow/core:rocm_rocdl_path",]),
     alwayslink = True,  # Contains compiler registration
+)
+
+cc_library(
+    name = "reduce_rewriter",
+    srcs = ["reduce_rewriter.cc"],
+    hdrs = ["reduce_rewriter.h"],
+    deps = [
+        ":ir_emission_utils",
+        "//tensorflow/compiler/xla:literal",
+        "//tensorflow/compiler/xla:literal_util",
+        "//tensorflow/compiler/xla/service:hlo",
+        "//tensorflow/compiler/xla/service:hlo_pass",
+    ],
 )
 
 cc_library(

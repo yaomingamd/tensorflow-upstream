@@ -61,6 +61,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/miopen_conv_algorithm_picker.h"
 #include "tensorflow/compiler/xla/service/gpu/multi_output_fusion.h"
 #include "tensorflow/compiler/xla/service/gpu/partition_assignment.h"
+#include "tensorflow/compiler/xla/service/gpu/reduce_rewriter.h"
 #include "tensorflow/compiler/xla/service/gpu/stream_assignment.h"
 #include "tensorflow/compiler/xla/service/gpu/stream_executor_util.h"
 #include "tensorflow/compiler/xla/service/gpu/thunk_schedule.h"
@@ -194,6 +195,10 @@ Status OptimizeHloModule(HloModule* hlo_module, se::StreamExecutor* stream_exec,
           /*rewrite_training_op=*/true,
           /*rewrite_inference_op=*/true,
           /*rewrite_grad_op=*/true);
+
+      // Use rocPRIM for scalar reductions to avoid slow atomic CAS loops
+      // employed by XLA LLVM IR emitter
+      pipeline.AddPass<ReduceRewriter>();
 
       pipeline.AddPass<HloGetDimensionSizeRewriter>();
 

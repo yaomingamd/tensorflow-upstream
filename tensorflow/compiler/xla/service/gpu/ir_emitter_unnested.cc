@@ -65,6 +65,9 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/parallel_loop_emitter.h"
 #include "tensorflow/compiler/xla/service/gpu/partition_assignment.h"
 #include "tensorflow/compiler/xla/service/gpu/replica_id_thunk.h"
+#if TENSORFLOW_USE_ROCM
+  #include "tensorflow/compiler/xla/service/gpu/reduce_thunk.h"
+#endif
 #include "tensorflow/compiler/xla/service/gpu/sequential_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/target_util.h"
 #include "tensorflow/compiler/xla/service/gpu/thunk.h"
@@ -515,6 +518,31 @@ Status IrEmitterUnnested::HandleCustomCall(HloInstruction* custom_call) {
     return Status::OK();
   }
 #endif
+
+  if (custom_call->custom_call_target() == kReduceCallTarget) {
+    // understand the information of reduce HLO
+    const HloReduceInstruction* reduce = Cast<HloReduceInstruction>(custom_call->operand(0));
+    const HloConstantInstruction* init_value = Cast<HloConstantInstruction>(reduce->operand(1));
+    VLOG(3) << "Reduce HLO:";
+    VLOG(3) << "Shape/Layout: " << reduce->shape().ToString(true);
+    VLOG(3) << "Input: " << reduce->operand(0)->shape().ToString(true);
+    VLOG(3) << "Initial value: " << init_value->literal().Get<float>({0});
+    VLOG(3) << "Dimension to reduce: " << reduce->dimensions(0);
+    VLOG(3) << "Reduce computation: ";
+    for (auto& computation : reduce->called_computations()) {
+      VLOG(3) << computation->ToString();
+    }
+
+    AddThunkToThunkSequence(absl::make_unique<ReduceThunk>(
+        GetAllocationSlice(*reduce), // tensor from reduce output
+        GetAllocationSlice(*custom_call), // tensor for custom-call output
+        custom_call, // custom-call HLO
+        custom_call->operand(0), // reduce HLO
+        GetAllocationSlice(*reduce->operand(0)), // tensor for reduce
+        reduce->dimensions(0), // dimension to reduce
+        init_value->literal().Get<float>({0}))); // initial value
+    return Status::OK();
+  }
 
   if (void* call_target = CustomCallTargetRegistry::Global()->Lookup(
           custom_call->custom_call_target(),

@@ -5506,6 +5506,22 @@ Stream& Stream::ThenFusedBatchNormActivationBackward(
   return *this;
 }
 
+Stream& Stream::ThenReduce(const DeviceMemoryBase& input,
+                           DeviceMemoryBase* output, float init_value,
+                           int64 reduction_dimension) {
+  if (ok()) {
+    // TODO: review is is better to extract DoReduce into a separate module
+    if (dnn::DnnSupport* dnn = parent_->AsDnn()) {
+      CheckError(
+          dnn->DoReduce(this, input, output, init_value, reduction_dimension));
+    } else {
+      SetErrorAndLogNoDnnSupport();
+    }
+  }
+
+  return *this;
+}
+
 port::Status Stream::BlockHostUntilDone() {
   VLOG_CALL();
 

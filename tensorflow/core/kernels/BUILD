@@ -4766,6 +4766,7 @@ cc_library(
     name = "required",
     deps = [
         ":no_op",
+        ":reduce_thunk_op",
         ":sendrecv_ops",
     ],
 )
@@ -4779,6 +4780,33 @@ tf_kernel_library(
     name = "no_op",
     prefix = "no_op",
     deps = REQUIRED_DEPS,
+)
+
+tf_kernel_library(
+    name = "reduce_thunk_op",
+    srcs = [
+        "reduce_thunk_op.cc",
+    ],
+    hdrs = [
+        "reduce_thunk_op.h",
+    ],
+    gpu_srcs = [
+        "reduce_thunk_op.h",
+        "reduce_thunk_op_gpu.cu.cc",
+    ],
+    deps = REQUIRED_DEPS + if_rocm_is_configured([
+        "@rocprim_archive//:rocprim",
+    ]),
+)
+
+cc_library(
+    name = "reduce_thunk_op_headers",
+    srcs = [
+        "reduce_thunk_op.h",
+    ],
+    deps = REQUIRED_DEPS + if_rocm_is_configured([
+        "@rocprim_archive//:rocprim",
+    ]),
 )
 
 tf_kernel_library(

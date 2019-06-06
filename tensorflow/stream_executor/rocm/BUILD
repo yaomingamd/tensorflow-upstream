@@ -212,6 +212,9 @@ cc_library(
         "//tensorflow/stream_executor/lib",
         "//tensorflow/stream_executor/platform",
         "//tensorflow/stream_executor/platform:dso_loader",
+
+        "//tensorflow/core:framework",
+        "//tensorflow/core/kernels:reduce_thunk_op_headers",
     ] + if_static(["@local_config_rocm//rocm:miopen"])),
     alwayslink = True,
 )

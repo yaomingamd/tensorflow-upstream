@@ -2581,6 +2581,13 @@ class DnnSupport {
       dnn::ProfileResult* output_profile_result) {
     return false;
   }
+
+  virtual bool DoReduce(Stream* stream, const DeviceMemoryBase& input,
+                        DeviceMemoryBase* output, float init_value,
+                        int64 reduction_dimension) {
+    return false;
+  }
+
  protected:
   // Returns whether status is 'ok', and potentially logs the error.
   static bool IsStatusOk(const port::Status& status, bool report_error);

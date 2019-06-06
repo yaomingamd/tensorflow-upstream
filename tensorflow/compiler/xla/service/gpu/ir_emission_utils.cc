@@ -191,9 +191,20 @@ bool IsCustomCallToCusolver(const HloInstruction& hlo) {
   return target == kCusolverCholeskyCallTarget;
 }
 
+const char* const kReduceCallTarget = "__rocm$reduce";
+
+bool IsCustomCallToROCmLibs(const HloInstruction& hlo) {
+  if (hlo.opcode() != HloOpcode::kCustomCall) {
+    return false;
+  }
+  const auto& target = hlo.custom_call_target();
+  return target == kReduceCallTarget;
+}
+
 bool ImplementedAsLibraryCall(const HloInstruction& hlo) {
   return ImplementedAsGemm(hlo) || IsCustomCallToDnnBatchNorm(hlo) ||
-         IsCustomCallToDnnConvolution(hlo);
+         IsCustomCallToDnnConvolution(hlo) ||
+         IsCustomCallToROCmLibs(hlo);
 }
 
 bool IsReductionFromOrToContiguousDimensions(const HloInstruction& reduce) {

@@ -56,6 +56,8 @@ absl::string_view ThunkKindToString(Thunk::Kind kind) {
       return "kOutfeed";
     case Thunk::kReplicaId:
       return "kReplicaId";
+    case Thunk::kReduce:
+      return "kReduce";
     case Thunk::kSequential:
       return "kSequential";
     case Thunk::kTriangularSolve:

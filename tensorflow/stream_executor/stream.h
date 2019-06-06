@@ -2048,6 +2048,11 @@ class Stream {
   // some use cases.
   Stream &ThenRunAfterNextBlockHostUntilDone(std::function<void()> callback);
 
+  // Execute reduction. Currently only scalar reduction (output be a 0-rank
+  // tensor) is supported.
+  Stream& ThenReduce(const DeviceMemoryBase& input, DeviceMemoryBase* output,
+                     float init_value, int64 reduction_dimension);
+
   // Returns the StreamExecutor (parent object) associated with this stream.
   StreamExecutor *parent() const {
     CHECK(parent_ != nullptr);
