@@ -381,6 +381,7 @@ cc_library(
         "kernel_thunk.cc",
         "memset_thunk.cc",
         "outfeed_thunk.cc",
+        "replica_id_thunk.cc",
         "sequential_thunk.cc",
         "thunk_schedule.cc",
         "triangular_solve_thunk.cc",
@@ -402,6 +403,7 @@ cc_library(
         "kernel_thunk.h",
         "memset_thunk.h",
         "outfeed_thunk.h",
+        "replica_id_thunk.h",
         "sequential_thunk.h",
         "thunk_schedule.h",
         "triangular_solve_thunk.h",
@@ -834,12 +836,17 @@ tf_cc_test(
 )
 
 cc_library(
+    name = "nvptx_constants",
+    hdrs = ["nvptx_constants.h"],
+)
+
+cc_library(
     name = "gpu_transfer_manager",
     srcs = ["gpu_transfer_manager.cc"],
     hdrs = ["gpu_transfer_manager.h"],
     deps = [
         ":infeed_manager",
-        ":nvptx_compiler",
+        ":nvptx_constants",
         ":outfeed_manager",
         "//tensorflow/compiler/xla:literal",
         "//tensorflow/compiler/xla:literal_util",
@@ -884,6 +891,7 @@ cc_library(
         ":ir_emission_utils",
         ":ir_emitter",
         ":multi_output_fusion",
+        ":nvptx_constants",
         ":partition_assignment",
         ":stream_assignment",
         ":stream_executor_util",

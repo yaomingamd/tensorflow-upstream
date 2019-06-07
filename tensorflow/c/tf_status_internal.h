@@ -1,4 +1,4 @@
-/* Copyright 2018 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2019 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,24 +13,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/shape_inference.h"
+#ifndef TENSORFLOW_C_TF_STATUS_INTERNAL_H_
+#define TENSORFLOW_C_TF_STATUS_INTERNAL_H_
 
-#if GOOGLE_CUDA
-#if GOOGLE_TENSORRT
+#include "tensorflow/core/lib/core/status.h"
 
-namespace tensorflow {
+// Internal structures used by the status C API. These are likely to change
+// and should not be depended on.
 
-REGISTER_OP("IncPluginTRT")
-    .Attr("inc: list(float)")
-    .Input("input: float32")
-    .Output("output: float32")
-    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-      c->set_output(0, c->input(0));
-      return Status::OK();
-    });
+struct TF_Status {
+  tensorflow::Status status;
+};
 
-}  // namespace tensorflow
-
-#endif  // GOOGLE_CUDA
-#endif  // GOOGLE_TENSORRT
+#endif  // TENSORFLOW_C_TF_STATUS_INTERNAL_H_
