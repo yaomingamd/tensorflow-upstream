@@ -194,8 +194,8 @@ llvm::Function* IrEmitterUnnested::BuildKernelPrototype(
       llvm::Function::Create(kernel_type, llvm::GlobalValue::ExternalLinkage,
                              kernel_name.c_str(), module);
 
-  kernel->setCallingConv(llvm::CallingConv::AMDGPU_KERNEL);
-  kernel->addFnAttr("amdgpu-flat-work-group-size", "1, 1024");
+  // Annotate function as a GPU kernel.
+  AnnotateFunctionAsGpuKernel(module, kernel, &b_);
 
   // Add dereferenceable and alignment information to each of the kernel's
   // parameters.
@@ -1027,7 +1027,8 @@ Status IrEmitterUnnested::HandleRng(HloInstruction* rng) {
   // Emit a kernel to increment the global state for Philox RNG algorithm.
   std::unique_ptr<Thunk> increment_seed_thunk =
       BuildKernelThunk(rng, /*implements_whole_instruction=*/false);
-  llvm_ir::IncrementVariableForPhiloxRngState(1, module_, &b_);
+  unsigned global_address_space = GetGlobalMemoryAddressSpace(*module_);
+  llvm_ir::IncrementVariableForPhiloxRngState(1, module_, &b_, global_address_space);
 
   // Build the SequentialThunk for the RNG hlo.
   std::vector<std::unique_ptr<Thunk>> thunks;
@@ -3242,7 +3243,7 @@ LaunchDimensions IrEmitterUnnested::EmitKernel(
           });
 
       // Wait for all threads to reach this point using `__syncthreads` in CUDA.
-      EmitCallToTargetFunction(TargetFunctionID::kBarrierId, {}, {}, PRIMITIVE_TYPE_INVALID, {}, {}, &b_);
+      EmitCallToTargetIntrinsic(TargetIntrinsicID::kBarrierId, {}, {}, &b_);
     }
 
     llvm_ir::TiledParameterInfo tiled_param_info(param_shmem_buffers, y, x);
@@ -3264,7 +3265,7 @@ LaunchDimensions IrEmitterUnnested::EmitKernel(
     // buffer for the current tile before we move on to process the next tile
     // and overwrite the shared memory buffers.
     if (block_contains_multi_tiles && !tiled_param_ids.empty()) {
-      EmitCallToTargetFunction(TargetFunctionID::kBarrierId, {}, {}, PRIMITIVE_TYPE_INVALID,  {}, {}, &b_);
+      EmitCallToTargetIntrinsic(TargetIntrinsicID::kBarrierId, {}, {}, &b_);
     }
   };
 
@@ -3826,6 +3827,8 @@ Status IrEmitterUnnested::EmitConstantGlobals() {
     //
     // We may have to be more more clever here in the future if we notice that
     // we're keeping around too many globals because of their linkage.
+    unsigned global_address_space =
+        GetGlobalMemoryAddressSpace(*(ir_emitter_context_->llvm_module()));
     llvm::GlobalVariable* global_for_const = new llvm::GlobalVariable(
         global_type, /*isConstant=*/should_emit_initializer,
         llvm::GlobalValue::ExternalLinkage,
@@ -3833,7 +3836,7 @@ Status IrEmitterUnnested::EmitConstantGlobals() {
         llvm_ir::AsStringRef(
             llvm_ir::ConstantBufferAllocationToGlobalName(allocation)),
         /*TLMode=*/llvm::GlobalValue::NotThreadLocal,
-        /*AddressSpace=*/llvm_ir::kAMDGPUGlobalMemoryAddrSpace,
+        /*AddressSpace=*/global_address_space,
         /*isExternallyInitialized=*/false);
     global_for_const->setAlignment(kConstantBufferAlignBytes);
     ir_emitter_context_->llvm_module()->getGlobalList().push_back(
