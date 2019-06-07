@@ -23,6 +23,7 @@ limitations under the License.
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Value.h"
 #include "tensorflow/compiler/xla/service/elemental_ir_emitter.h"
+#include "tensorflow/compiler/xla/service/gpu/target_util.h"
 #include "tensorflow/compiler/xla/service/hlo_computation.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
 #include "tensorflow/compiler/xla/service/hlo_opcode.h"
@@ -80,18 +81,20 @@ Status FusedIrEmitter::DefaultAction(HloInstruction* hlo) {
 }
 
 Status FusedIrEmitter::HandleConstant(HloInstruction* constant) {
+  unsigned global_address_space =
+      gpu::GetGlobalMemoryAddressSpace(*module_);
   indexed_generators_[constant] = [=](const IrArray::Index& index) {
     const Literal& literal = constant->literal();
     llvm::Constant* initializer =
         llvm_ir::ConvertLiteralToIrConstant(literal, module_);
     llvm::GlobalVariable* global = new llvm::GlobalVariable(
         *b_->GetInsertBlock()->getModule(), initializer->getType(),
-        /*isConstant=*/true,
-        /*Linkage=*/llvm::GlobalValue::PrivateLinkage,
-        /*Initializer=*/initializer,
-        /*Name=*/"");
-    global->setUnnamedAddr(llvm::GlobalVariable::UnnamedAddr::Global);
-    llvm::Constant* shape_constant = llvm::ConstantExpr::getBitCast(
+        /*isConstant=*/true, llvm::GlobalValue::ExternalLinkage, initializer,
+        /*Name=*/"", /*InsertBefore=*/nullptr,
+        /*TLMode=*/llvm::GlobalValue::NotThreadLocal,
+        /*AddressSpace=*/global_address_space,
+        /*isExternallyInitialized=*/false);
+    llvm::Constant* shape_constant = llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(
         global,
         llvm_ir::ShapeToIrType(literal.shape(), module_)->getPointerTo());
     return IrArray(shape_constant, constant->shape())

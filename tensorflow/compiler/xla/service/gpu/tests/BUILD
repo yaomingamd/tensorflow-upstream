@@ -29,7 +29,7 @@ load("//tensorflow/compiler/xla/tests:build_defs.bzl", "xla_test")
 load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 load(
     "//tensorflow/core:platform/default/build_config_root.bzl",
-    "tf_cuda_tests_tags",
+    "tf_cuda_tests_tags", "tf_gpu_tests_tags",
 )
 
 cc_library(
@@ -37,7 +37,7 @@ cc_library(
     testonly = True,
     srcs = ["gpu_codegen_test.cc"],
     hdrs = ["gpu_codegen_test.h"],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_gpu_tests_tags(),
     deps = [
         "//tensorflow/compiler/xla:debug_options_flags",
         "//tensorflow/compiler/xla/service:gpu_plugin",
@@ -48,6 +48,23 @@ cc_library(
         "@com_google_absl//absl/memory",
     ],
 )
+
+cc_library(
+    name = "ptx_codegen_test",
+    testonly = True,
+    srcs = ["ptx_codegen_test.cc"],
+    hdrs = ["ptx_codegen_test.h"],
+    tags = tf_cuda_tests_tags(),
+    deps = [
+        ":gpu_codegen_test",
+        "//tensorflow/compiler/xla/service:gpu_plugin",
+        "//tensorflow/compiler/xla/service/gpu:gpu_executable",
+        "//tensorflow/compiler/xla/tests:filecheck",
+        "//tensorflow/core:lib",
+        "@com_google_absl//absl/memory",
+    ],
+)
+
 
 tf_cc_test(
     name = "gpu_copy_test",

@@ -13,9 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define EIGEN_USE_GPU
+#if GOOGLE_CUDA
 #include "third_party/gpus/cuda/include/cuda.h"
+#endif
 #include "tensorflow/core/kernels/fused_batch_norm_op.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 
@@ -28,7 +30,7 @@ template struct FusedBatchNormFreezeGrad<Eigen::GpuDevice, Eigen::half, float>;
 template <class T>
 __global__ void VarianceToInvVarianceKernel(int nthreads, const T* input,
                                             double epsilon, T* output) {
-  CUDA_1D_KERNEL_LOOP(index, nthreads) {
+  GPU_1D_KERNEL_LOOP(index, nthreads) {
     output[index] = rsqrt(input[index] + T(epsilon));
   }
 }
@@ -37,8 +39,8 @@ template <class T>
 void VarianceToInvVariance<T>::operator()(const Eigen::GpuDevice& d,
                                           const T* variance, double epsilon,
                                           int channels, T* inv_variance) {
-  GpuLaunchConfig config = GetCudaLaunchConfig(channels, d);
-  TF_CHECK_OK(CudaLaunchKernel(VarianceToInvVarianceKernel<T>,
+  GpuLaunchConfig config = GetGpuLaunchConfig(channels, d);
+  TF_CHECK_OK(GpuLaunchKernel(VarianceToInvVarianceKernel<T>,
                                config.block_count, config.thread_per_block, 0,
                                d.stream(), config.virtual_thread_count,
                                variance, epsilon, inv_variance));
@@ -47,9 +49,14 @@ void VarianceToInvVariance<T>::operator()(const Eigen::GpuDevice& d,
 template <class T>
 __global__ void InvVarianceToVarianceKernel(int nthreads, double epsilon,
                                             int sample_size, T* variance) {
-  CUDA_1D_KERNEL_LOOP(index, nthreads) {
+  GPU_1D_KERNEL_LOOP(index, nthreads) {
     T inv_var = variance[index];
+#if GOOGLE_CUDA
     T var = __fdividef(1, inv_var * inv_var) - T(epsilon);
+#elif TENSORFLOW_USE_ROCM
+    // ROCM TODO: fix this in ROCDL or LC
+      T var = 1 / (inv_var * inv_var) - T(epsilon);
+#endif
     // This is for Bessel's correction
     var *= T(sample_size) / T((sample_size > 1) ? sample_size - 1 : 1);
     variance[index] = (var > 0) ? var : 0;
@@ -60,8 +67,8 @@ template <class T>
 void InvVarianceToVariance<T>::operator()(const Eigen::GpuDevice& d,
                                           double epsilon, int sample_size,
                                           int channels, T* variance) {
-  GpuLaunchConfig config = GetCudaLaunchConfig(channels, d);
-  TF_CHECK_OK(CudaLaunchKernel(InvVarianceToVarianceKernel<T>,
+  GpuLaunchConfig config = GetGpuLaunchConfig(channels, d);
+  TF_CHECK_OK(GpuLaunchKernel(InvVarianceToVarianceKernel<T>,
                                config.block_count, config.thread_per_block, 0,
                                d.stream(), config.virtual_thread_count, epsilon,
                                sample_size, variance));
@@ -84,4 +91,4 @@ template class SetNanFunctor<float>;
 
 #include "tensorflow/core/kernels/fused_batch_norm_op.h"
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

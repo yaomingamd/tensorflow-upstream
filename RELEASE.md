@@ -1,10 +1,3 @@
-# Release 1.12.2
-
-## Bug Fixes and Other Changes
-
-*   Fixes a potential security vulnerability where carefully crafted GIF images
-    can produce a null pointer dereference during decoding.
-
 # Release 2.0.0-alpha0
 
 ## Major Features and Improvements
@@ -120,6 +113,25 @@ This release contains contributions from many people at Google, as well as:
 
 1e100, a6802739, Abolfazl Shahbazi, Adam Weiss, Ag Ramesh, Alan Du, Albin Joy, Amit, Amit Srivastava, Andy Craze, Anshuman Tripathy, Armen Poghosov, armenpoghosov, Arpit Shah, Ashwin Ramaswami, Aurelien Geron, AuréLien Geron, aweers, awesomealex1, Bairen Yi, Ben Barsdell, Bhavani Subramanian, Brandon Carter, candy.dc, Chao Liu, Clayne Robison, csukuangfj, Dan Jarvis, Dan Lazewatsky, Daniel Ingram, Dave Airlie, David Norman, Dayananda V, Denis Khalikov, Deven Desai, Dheeraj Rajaram Reddy, dmitrievanthony, Drew Szurko, Duncan Riach, Fei Hu, Felix Lemke, Filip Matzner, fo40225, frreiss, Gautam, gehring, Grzegorz George Pawelczak, Grzegorz Pawelczak, HanGuo97, Hari Shankar, hehongliang, Heungsub Lee, Hoeseong Kim, I-Hong Jhuo, Ilango R, Innovimax, Jacky Ko, Jakub Lipinski, Jason Zaman, jcf94, Jeff Poznanovic, Jia Qingtong, Jiankang, Joe Q, Joe Quadrino, Jonas Rauber, Jonathan Kyl, Joppe Geluykens, Joseph Friedman, jtressle, jwu, K. Hodges, kaixih, Karl Lessard, Karl Weinmeister, Kashif Rasul, kjopek, Koan-Sin Tan, kouml, ktaebum, Laurent Le Brun, Li, Guizi, Loo Rong Jie, Lucas Hendren, Lukas Geiger, Luke Han, Mahmoud Abuzaina, manhyuk, Marco Gaido, Marek Drozdowski, Mark Ryan, mars20, Mateusz Chudyk, Matt Conley, MattConley, mbhuiyan, mdfaijul, Melissa Grueter, Michael KäUfl, MickaëL Schoentgen, Miguel Morin, Mike Arpaia, nammbash, Natalia Gimelshein, Nayana-Ibm, neargye, Nehal J Wani, Niels Ole Salscheider, Niranjan Hasabnis, Nutti, olicht, P Sudeepam, Paige Bailey, Palmer Lao, Pariksheet Pinjari, Pavel Samolysov, Pooya Davoodi, Ryan Jiang, Samantha Andow, Sami Kama, Saurabh Deoras, Shahzad Lone, Shashi, Siju, Siju Samuel, Snease-Abq, Spencer Schaber, srinivasan.narayanamoorthy, Steve Lang, Steve Nesae, Supriya Rao, Taylor Jakobson, Taylor Thornton, ThisIsPIRI, Thomas Deegan, tomguluson92, Tongxuan Liu, Vagif, vcarpani, Vikram Tiwari, Vishwak Srinivasan, Vitor-Alves, wangsiyu, WeberXie, WeijieSun, Wen-Heng (Jack) Chung, wenxizhu, William D. Irons, Yan Facai (颜发才), ymodak, Yong Tang, Younes Khoudli, Yuan Lin, Yves-Noel Weweler, zjjott, 卜居, 王振华 (Wang Zhenhua)
 
+# Release 1.13.3
+
+## Bug Fixes and Other Changes
+* The 1.13.3 whl package is built the ROCm2.4 user-bit environment
+
+
+# Release 1.12.2
+
+## Bug Fixes and Other Changes
+
+*   Fixes a potential security vulnerability where carefully crafted GIF images
+    can produce a null pointer dereference during decoding.
+
+# Release 1.13.2
+
+## Bug Fixes and Other Changes
+* TF-RCCL path fix for issue#370
+* The 1.13.2 whl package is built the ROCm2.3 user-bit environment
+
 # Release 1.13.0
 
 ## Major Features and Improvements
@@ -128,6 +140,10 @@ This release contains contributions from many people at Google, as well as:
 * TensorFlow GPU binaries are now built against CUDA 10 and TensorRT 5.0.
 * Support for Python3.7 on all operating systems.
 * Moved NCCL to core.
+
+## ROCm Features and Improvements
+* MIOpen v1.7.1 integration
+* Tensorflow VERBS support is enabled, details in: [TensorFlow Verbs Quick-Start](https://github.com/ROCmSoftwarePlatform/tensorflow-upstream/blob/r1.13-rocm/rocm_docs/tensorflow-verbs.md)
 
 ## Behavioral changes
 
@@ -426,6 +442,12 @@ Abhinav Upadhyay, Ag Ramesh, akikaaa, Alexis Louis, Anders Huss, Andreas Madsen,
 *   Ignite Dataset added to contrib/ignite that allows to work with Apache
     Ignite.
 
+## ROCm Features and Improvements
+* MIOpenv1.6 integration
+* Training in fp16 is fully supported
+* Performance improvements in TF CNN benchmarks
+* Layer fusion is supported, details in: [TensorFlow ROCm port high-level design document](https://github.com/ROCmSoftwarePlatform/tensorflow-upstream/blob/r1.12-rocm/rocm_docs/rocm-port-overview.md)
+
 ## Bug Fixes and Other Changes
 
 *   tf.data:
@@ -697,7 +719,7 @@ Ag Ramesh, Alex Wiltschko, Alexander Pantyukhin, Amogh Mannekote, An Jiaoyang, A
   * [`tf.contrib.estimator.RNNEstimator`](https://www.tensorflow.org/versions/r1.9/api_docs/python/tf/contrib/estimator/RNNClassifier)
 * The [distributions.Bijector](https://www.tensorflow.org/versions/r1.9/api_docs/python/tf/contrib/distributions/bijectors/Bijector)
   API supports broadcasting for Bijectors with new API changes.
-  
+
 ## Breaking Changes
   * If you're opening empty variable scopes; replace `variable_scope('', ...)` by
     `variable_scope(tf.get_variable_scope(), ...)`.
@@ -1176,7 +1198,7 @@ Samuel He, Sandeep Dcunha, sandipmgiri, Sang Han, scott, Scott Mudge, Se-Won Kim
 Simone Cirillo, Steffen Schmitz, Suvojit Manna, Sylvus, Taehoon Lee, Ted Chang, Thomas Deegan,
 Till Hoffmann, Tim, Toni Kunic, Toon Verstraelen, Tristan Rice, Urs KöSter, Utkarsh Upadhyay,
 Vish (Ishaya) Abrams, Winnie Tsang, Yan Chen, Yan Facai (颜发才), Yi Yang, Yong Tang,
-Youssef Hesham, Yuan (Terry) Tang, Zhengsheng Wei, zxcqwe4906, 张志豪, 田传武 
+Youssef Hesham, Yuan (Terry) Tang, Zhengsheng Wei, zxcqwe4906, 张志豪, 田传武
 
 We are also grateful to all who filed issues or helped resolve them, asked and
 answered questions, and were part of inspiring discussions.

@@ -608,7 +608,7 @@ tf_xla_py_test(
     srcs = ["def_function_xla_test.py"],
     tags = [
         "no_pip",
-        "no_rocm",
+        "no_cuda",
         "no_windows",
         "nomac",
     ],

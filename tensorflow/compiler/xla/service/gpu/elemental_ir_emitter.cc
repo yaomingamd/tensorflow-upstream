@@ -34,6 +34,7 @@ limitations under the License.
 #include "llvm/IR/Type.h"
 #include "tensorflow/compiler/xla/literal.h"
 #include "tensorflow/compiler/xla/primitive_util.h"
+#include "tensorflow/compiler/xla/service/gpu/target_util.h"
 #include "tensorflow/compiler/xla/service/hlo_opcode.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/ir_array.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/llvm_loop.h"
@@ -74,13 +75,12 @@ GpuElementalIrEmitter::GpuElementalIrEmitter(
       compute_nested_(std::move(compute_nested)) {}
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitLibdeviceMathCall(
-    const string& callee_name, absl::Span<llvm::Value* const> operands,
+    TargetDeviceFunctionID funcid, absl::Span<llvm::Value* const> operands,
     absl::Span<const PrimitiveType> input_types, PrimitiveType output_type) {
   // The libdevice math functions differentiate between "double" and "float" by
   // appending an 'f' to the function's name. libdevice doesn't have f16 math
   // functions, so we convert the operands to f32 before calling the function
   // and then convert the result back to f16.
-  string munged_callee = callee_name;
   bool cast_result_to_fp16 = false;
   std::vector<llvm::Value*> converted_operands(operands.begin(),
                                                operands.end());
@@ -99,7 +99,6 @@ StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitLibdeviceMathCall(
       output_type = F32;
       TF_FALLTHROUGH_INTENDED;
     case F32:
-      StrAppend(&munged_callee, "f");
       break;
     case F64:
       break;
@@ -107,6 +106,8 @@ StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitLibdeviceMathCall(
       return Unimplemented("Bad type for libdevice math call: %s",
                            PrimitiveType_Name(output_type));
   }
+  const string& munged_callee =
+      ObtainDeviceFunctionName(funcid, output_type, b_);
   llvm::Value* result = EmitMathCall(munged_callee, converted_operands,
                                      converted_input_types, output_type)
                             .ValueOrDie();
@@ -173,9 +174,9 @@ StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitFloatBinaryOp(
 
   switch (op->opcode()) {
     case HloOpcode::kRemainder: {
-      return EmitLibdeviceMathCall("__nv_fmod", {lhs_value, rhs_value},
-                                   {lhs_input_type, rhs_input_type},
-                                   output_type);
+      return EmitLibdeviceMathCall(
+          TargetDeviceFunctionID::kFmod, {lhs_value, rhs_value},
+          {lhs_input_type, rhs_input_type}, output_type);
     }
     case HloOpcode::kPower: {
       return EmitPowerOp(op, lhs_value, rhs_value);
@@ -191,67 +192,77 @@ StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitPowerOp(
   PrimitiveType lhs_input_type = op->operand(0)->shape().element_type();
   PrimitiveType rhs_input_type = op->operand(1)->shape().element_type();
   PrimitiveType output_type = op->shape().element_type();
-  return EmitLibdeviceMathCall("__nv_pow", {lhs_value, rhs_value},
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kPow,
+                               {lhs_value, rhs_value},
                                {lhs_input_type, rhs_input_type}, output_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitErfcInv(
     PrimitiveType prim_type, llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_erfcinv", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kErfcinv, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitLog(PrimitiveType prim_type,
                                                       llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_log", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kLog, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitLog1p(PrimitiveType prim_type,
                                                         llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_log1p", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kLog1p, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitSin(PrimitiveType prim_type,
                                                       llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_sin", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kSin, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitCos(PrimitiveType prim_type,
                                                       llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_cos", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kCos, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitExp(PrimitiveType prim_type,
                                                       llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_exp", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kExp, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitExpm1(PrimitiveType prim_type,
                                                         llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_expm1", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kExpm1, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitPow(PrimitiveType prim_type,
                                                       llvm::Value* lhs,
                                                       llvm::Value* rhs) {
-  return EmitLibdeviceMathCall("__nv_pow", {lhs, rhs}, {prim_type, prim_type},
-                               prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kPow, {lhs, rhs},
+                               {prim_type, prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitSqrt(PrimitiveType prim_type,
                                                        llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_sqrt", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kSqrt, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitRsqrt(PrimitiveType prim_type,
                                                         llvm::Value* value) {
-  return EmitLibdeviceMathCall("__nv_rsqrt", {value}, {prim_type}, prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kRsqrt, {value},
+                               {prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitAtan2(PrimitiveType prim_type,
                                                         llvm::Value* lhs,
                                                         llvm::Value* rhs) {
-  return EmitLibdeviceMathCall("__nv_atan2", {lhs, rhs}, {prim_type, prim_type},
-                               prim_type);
+  return EmitLibdeviceMathCall(TargetDeviceFunctionID::kAtan2, {lhs, rhs},
+                               {prim_type, prim_type}, prim_type);
 }
 
 StatusOr<llvm::Value*> GpuElementalIrEmitter::EmitTanh(PrimitiveType prim_type,
@@ -301,16 +312,17 @@ llvm::Value* GpuElementalIrEmitter::EmitDeviceFunctionCall(
 llvm::Value* GpuElementalIrEmitter::EmitThreadId() {
   llvm::Value* block_id =
       IntCast(llvm_ir::EmitCallToIntrinsic(
-                  llvm::Intrinsic::nvvm_read_ptx_sreg_ctaid_x, {}, {}, b_),
-              b_->getIntNTy(128), /*isSigned=*/true, "block.id");
-  llvm::Value* thread_id_in_block =
-      IntCast(llvm_ir::EmitCallToIntrinsic(
-                  llvm::Intrinsic::nvvm_read_ptx_sreg_tid_x, {}, {}, b_),
-              b_->getIntNTy(128), /*isSigned=*/true, "thread.id");
+                  llvm::Intrinsic::amdgcn_workgroup_id_x, {}, {}, b_),
+              b_->getInt32Ty(), /*isSigned=*/true, "block.id");
+  llvm::Value* thread_id_in_block = IntCast(
+      llvm_ir::EmitCallToIntrinsic(llvm::Intrinsic::amdgcn_workitem_id_x,
+                                   {}, {}, b_),
+      b_->getInt32Ty(), /*isSigned=*/true, "thread.id");
   llvm::Value* threads_per_block =
-      IntCast(llvm_ir::EmitCallToIntrinsic(
-                  llvm::Intrinsic::nvvm_read_ptx_sreg_ntid_x, {}, {}, b_),
-              b_->getIntNTy(128), /*isSigned=*/true, "threads_per_block");
+      IntCast(GpuElementalIrEmitter::EmitDeviceFunctionCall(
+                  "__ockl_get_local_size", {b_->getInt32(0)}, {U32}, U64, {}),
+              b_->getInt32Ty(), /*isSigned=*/true, "threads_per_block");
+
   return NSWAdd(NSWMul(block_id, threads_per_block), thread_id_in_block);
 }
 

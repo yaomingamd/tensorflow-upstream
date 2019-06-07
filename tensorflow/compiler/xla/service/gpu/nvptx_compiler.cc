@@ -62,6 +62,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/ir_emitter_context.h"
 #include "tensorflow/compiler/xla/service/gpu/ir_emitter_unnested.h"
 #include "tensorflow/compiler/xla/service/gpu/llvm_gpu_backend/nvptx_backend_lib.h"
+#include "tensorflow/compiler/xla/service/gpu/nvptx_executable.h"
 #include "tensorflow/compiler/xla/service/gpu/multi_output_fusion.h"
 #include "tensorflow/compiler/xla/service/gpu/partition_assignment.h"
 #include "tensorflow/compiler/xla/service/gpu/stream_assignment.h"
@@ -532,8 +533,8 @@ StatusOr<std::unique_ptr<Executable>> NVPTXCompiler::RunBackend(
       &stream_exec->GetDeviceDescription(), &llvm_module);
 
   HloComputation* entry_computation = module->entry_computation();
-  IrEmitterUnnested ir_emitter(module->config(), entry_computation,
-                               &ir_emitter_context);
+
+  IrEmitterUnnested ir_emitter(module->config(), entry_computation,&ir_emitter_context);
 
   TF_RETURN_IF_ERROR(ir_emitter.EmitConstantGlobals());
 
@@ -638,15 +639,15 @@ StatusOr<std::unique_ptr<Executable>> NVPTXCompiler::RunBackend(
     }
   }
 
-  auto* gpu_executable = new GpuExecutable(
+  auto* nvptx_executable = new NVPTXExecutable(
       ptx, cubin, {cc_major, cc_minor}, std::move(thunk_schedule),
       std::move(module), std::move(buffer_assignment),
       std::move(profile_printer), std::move(profile_index_map));
   if (embed_ir_in_executable) {
     DCHECK_NE("", ir_module_string_before_opt);
-    gpu_executable->set_ir_module_string(ir_module_string_before_opt);
+    nvptx_executable->set_ir_module_string(ir_module_string_before_opt);
   }
-  return std::unique_ptr<Executable>(gpu_executable);
+  return std::unique_ptr<Executable>(nvptx_executable);
 }
 
 std::vector<uint8> NVPTXCompiler::CompilePtxOrGetCachedResult(
@@ -672,6 +673,10 @@ std::vector<uint8> NVPTXCompiler::CompilePtxOrGetCachedResult(
     cache_value = &iter->second;
   }
 
+  // Disable this routine for now because we do not yet know
+  // how to enable the of the definition + calls to PtxOptsFromConfig
+  // in both ROCm and CUDA modes
+#if DISABLED_CODE_IN_UPSTREAM_SYNC_150920
   // Compile the ptx if it wasn't in the cache before we called this function.
   // Other threads asking for the same compilation key will block on
   // cache_value->mutex_ until compilation is done.
@@ -722,6 +727,7 @@ std::vector<uint8> NVPTXCompiler::CompilePtxOrGetCachedResult(
       }
     }
   }
+#endif // DISABLED_CODE_IN_UPSTREAM_SYNC_150920
 
   CHECK(cache_value != nullptr);
   CHECK(cache_value->compilation_done);

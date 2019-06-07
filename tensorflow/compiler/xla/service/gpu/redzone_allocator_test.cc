@@ -18,6 +18,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_module_config.h"
 #include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/compiler/xla/test.h"
+#include "tensorflow/core/common_runtime/gpu/gpu_init.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/platform/test_benchmark.h"
@@ -50,8 +51,10 @@ TEST(RedzoneAllocatorTest, WriteToRedzone) {
   // Allocate 32MiB + 1 byte (to make things misaligned)
   constexpr int64 kAllocSize = (1 << 25) + 1;
 
+  // XXX FIXME devise a way to cope with multiple platforms
   se::Platform* platform =
-      se::MultiPlatformManager::PlatformWithName("cuda").ValueOrDie();
+      se::MultiPlatformManager::PlatformWithName(tensorflow::GpuPlatformName())
+          .ValueOrDie();
   se::StreamExecutor* stream_exec = platform->ExecutorForDevice(0).ValueOrDie();
   HloModuleConfig config;
   se::StreamExecutorMemoryAllocator se_allocator(platform, {stream_exec});
@@ -127,7 +130,8 @@ TEST(RedzoneAllocatorTest, VeryLargeRedzone) {
   // Make sure the redzone size would require grid dimension > 65535.
   constexpr int64 kRedzoneSize = 65535 * 1024 + 1;
   se::Platform* platform =
-      se::MultiPlatformManager::PlatformWithName("cuda").ValueOrDie();
+      se::MultiPlatformManager::PlatformWithName(tensorflow::GpuPlatformName())
+          .ValueOrDie();
   se::StreamExecutor* stream_exec = platform->ExecutorForDevice(0).ValueOrDie();
   HloModuleConfig config;
   se::StreamExecutorMemoryAllocator se_allocator(platform, {stream_exec});

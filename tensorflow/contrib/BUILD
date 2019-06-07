@@ -8,6 +8,7 @@ package(
 
 load("//third_party/mpi:mpi.bzl", "if_mpi")
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm")
 load("//tensorflow:tensorflow.bzl", "if_not_windows")
 
 py_library(
@@ -177,7 +178,9 @@ cc_library(
         "//tensorflow/contrib/tensor_forest:stats_ops_kernels",
         "//tensorflow/contrib/tensor_forest:tensor_forest_kernels",
         "//tensorflow/contrib/text:all_kernels",
-    ] + if_mpi(["//tensorflow/contrib/mpi_collectives:mpi_collectives_py"]) + select({
+    ] + if_mpi([
+        "//tensorflow/contrib/mpi_collectives:mpi_collectives_py"
+    ]) + select({
         "//tensorflow:android": [],
         "//tensorflow:ios": [],
         "//tensorflow:linux_s390x": [],

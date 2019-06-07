@@ -1405,7 +1405,12 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test1DNumpy(self):
-    x = np.ones([3, 6, 5])
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = np.ones([3, 6, 5], dtype=dtype)
     ksize = 2
     strides = 2
 
@@ -1425,7 +1430,12 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test2DNumpy(self):
-    x = np.ones([3, 6, 6, 5])
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = np.ones([3, 6, 6, 5], dtype=dtype)
     ksize = 2
     strides = 2
 
@@ -1435,6 +1445,10 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DTensor(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
     x = array_ops.ones([3, 7, 6, 6, 5])
     ksize = 2
     strides = 2
@@ -1445,6 +1459,10 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DNumpy(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
     x = np.ones([3, 7, 6, 6, 5], dtype=np.float32)
     ksize = 2
     strides = 2
@@ -1469,7 +1487,12 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test1DNumpy(self):
-    x = np.ones([3, 6, 5])
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = np.ones([3, 6, 5], dtype=dtype)
     ksize = 2
     strides = 2
 
@@ -1489,7 +1512,12 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test2DNumpy(self):
-    x = np.ones([3, 6, 6, 5])
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
+    x = np.ones([3, 6, 6, 5], dtype=dtype)
     ksize = 2
     strides = 2
 
@@ -1499,6 +1527,10 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DTensor(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
     x = array_ops.ones([3, 7, 6, 6, 5])
     ksize = 2
     strides = 2
@@ -1509,6 +1541,10 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DNumpy(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
     x = np.ones([3, 7, 6, 6, 5], dtype=np.float32)
     ksize = 2
     strides = 2
@@ -1535,8 +1571,13 @@ class MaxPoolTest(test_lib.TestCase):
 class ConvolutionTest(test_lib.TestCase):
 
   def testUnknownSize(self):
+
+    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # np.ones defaults to using float64 when dtype is not explicitly specified
+    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+
     x = tensor_spec.TensorSpec(None, dtypes.float32, name="x")
-    k = np.ones([3, 6, 6, 5])
+    k = np.ones([3, 6, 6, 5], dtype=dtype)
 
     @def_function.function
     def F(value):
@@ -1589,6 +1630,10 @@ class ConvTransposeTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3D(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
     t = array_ops.ones([2, 4, 4, 4, 3])
     v = array_ops.ones([2, 2, 2, 5, 3])
     strides = 2
@@ -1599,6 +1644,10 @@ class ConvTransposeTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DTensor(self):
+
+    if test_lib.is_built_with_rocm():
+      self.skipTest("5D tensors are not yet supported in ROCm")
+
     t = array_ops.ones([2, 4, 4, 4, 3])
     v = array_ops.ones([2, 2, 2, 5, 3])
     strides = 2

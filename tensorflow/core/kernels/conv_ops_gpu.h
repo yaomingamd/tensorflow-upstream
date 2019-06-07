@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_CONV_OPS_GPU_H_
 #define TENSORFLOW_CORE_KERNELS_CONV_OPS_GPU_H_
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #include <tuple>
 #include <unordered_map>
@@ -160,7 +160,7 @@ class ConvParameters {
     if (version.ok() && version.ValueOrDie().major_version() >= 7) {
       return true;
     }
-    return ShouldIncludeWinogradNonfusedAlgoPreCudnn7<T>();
+    return ShouldIncludeWinogradNonfusedAlgoPreDnn7<T>();
   }
 
  protected:
@@ -185,7 +185,7 @@ class ConvParameters {
   }
 
   template <typename T>
-  bool ShouldIncludeWinogradNonfusedAlgoPreCudnn7() const {
+  bool ShouldIncludeWinogradNonfusedAlgoPreDnn7() const {
     int64 total_size = 16 * std::ceil(batch_ / 16.0) *
                        std::max(in_depths_, out_depths_) * in_[0] * in_[1] *
                        sizeof(T);
@@ -214,6 +214,6 @@ typedef Eigen::GpuDevice GPUDevice;
 
 }  // namespace tensorflow
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW
 
 #endif  // TENSORFLOW_CORE_KERNELS_CONV_OPS_GPU_H_

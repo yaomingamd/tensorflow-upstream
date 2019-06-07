@@ -40,7 +40,9 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/custom_call_target_registry.h"
 #include "tensorflow/compiler/xla/service/dfs_hlo_visitor.h"
 #include "tensorflow/compiler/xla/service/gpu/buffer_allocations.h"
-#include "tensorflow/compiler/xla/service/gpu/cholesky_thunk.h"
+#ifndef TENSORFLOW_USE_ROCM
+  #include "tensorflow/compiler/xla/service/gpu/cholesky_thunk.h"
+#endif
 #include "tensorflow/compiler/xla/service/gpu/conditional_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/convolution_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/copy_thunk.h"
@@ -153,23 +155,7 @@ void UpdateLaunchDimensions(const LaunchDimensions& launch_dims, Thunk* thunk,
   KernelThunk* kernel_thunk = static_cast<KernelThunk*>(thunk);
   kernel_thunk->SetLaunchDimensions(launch_dims);
 
-  // Add __launch_bounds__ to metadata. This limits registers per thread to
-  // avoid out-of-resources launching errors.
-  llvm::NamedMDNode* nvvm_annotations_node =
-      llvm_module->getOrInsertNamedMetadata("nvvm.annotations");
-  llvm::Function* ir_kernel =
-      llvm_module->getFunction(kernel_thunk->kernel_name().c_str());
-  llvm::LLVMContext& llvm_context = llvm_module->getContext();
-  llvm::ConstantInt* threads_per_block_ir_value = llvm::ConstantInt::get(
-      llvm::IntegerType::get(llvm_context, /*NumBits=*/32),
-      launch_dims.threads_per_block());
-  // Our launch bounds are exact, so we can specify them as reqntidx rather than
-  // maxntidx.
-  nvvm_annotations_node->addOperand(llvm::MDNode::get(
-      llvm_context,
-      {llvm::ConstantAsMetadata::get(ir_kernel),
-       llvm::MDString::get(llvm_context, "reqntidx"),
-       llvm::ConstantAsMetadata::get(threads_per_block_ir_value)}));
+  // XXX FIXME add proper AMDGPU function attributes or metadata
 }
 
 }  // namespace
@@ -177,6 +163,7 @@ void UpdateLaunchDimensions(const LaunchDimensions& launch_dims, Thunk* thunk,
 IrEmitterUnnested::IrEmitterUnnested(const HloModuleConfig& hlo_module_config,
                                      const HloComputation* hlo_computation,
                                      IrEmitterContext* ir_emitter_context)
+
     : IrEmitter(hlo_module_config, ir_emitter_context, /*is_nested=*/false),
       hlo_computation_(hlo_computation) {
   // Initialize thunk_sequence_ to an empty list of thunks.
@@ -206,6 +193,9 @@ llvm::Function* IrEmitterUnnested::BuildKernelPrototype(
   llvm::Function* kernel =
       llvm::Function::Create(kernel_type, llvm::GlobalValue::ExternalLinkage,
                              kernel_name.c_str(), module);
+
+  // Annotate function as a GPU kernel.
+  AnnotateFunctionAsGpuKernel(module, kernel, &b_);
 
   // Add dereferenceable and alignment information to each of the kernel's
   // parameters.
@@ -240,15 +230,6 @@ llvm::Function* IrEmitterUnnested::BuildKernelPrototype(
 
   // TODO(b/65380986): Investigate if adding fast math flags for generated
   // kernels makes sense.
-
-  // Add the declaration of this kernel to llvm.nvvm.annotations so that NVPTX
-  // treats it as a CUDA kernel.
-  llvm::NamedMDNode* nvvm_annotations_node =
-      module->getOrInsertNamedMetadata("nvvm.annotations");
-  nvvm_annotations_node->addOperand(llvm::MDNode::get(
-      context, {llvm::ConstantAsMetadata::get(kernel),
-                llvm::MDString::get(context, "kernel"),
-                llvm::ConstantAsMetadata::get(b_.getInt32(1))}));
 
   // Update the insert point to the entry basic block.
   llvm::BasicBlock* entry_bb =
@@ -484,6 +465,7 @@ Status IrEmitterUnnested::HandleCustomCall(HloInstruction* custom_call) {
     return Status::OK();
   }
 
+#if !TENSORFLOW_USE_ROCM
   if (custom_call->custom_call_target() == kCusolverCholeskyCallTarget) {
     TF_ASSIGN_OR_RETURN(CholeskyOptions options,
                         custom_call->backend_config<CholeskyOptions>());
@@ -528,6 +510,7 @@ Status IrEmitterUnnested::HandleCustomCall(HloInstruction* custom_call) {
 
     return Status::OK();
   }
+#endif
 
   if (void* call_target = CustomCallTargetRegistry::Global()->Lookup(
           custom_call->custom_call_target(),
@@ -1044,7 +1027,8 @@ Status IrEmitterUnnested::HandleRng(HloInstruction* rng) {
   // Emit a kernel to increment the global state for Philox RNG algorithm.
   std::unique_ptr<Thunk> increment_seed_thunk =
       BuildKernelThunk(rng, /*implements_whole_instruction=*/false);
-  llvm_ir::IncrementVariableForPhiloxRngState(1, module_, &b_);
+  unsigned global_address_space = GetGlobalMemoryAddressSpace(*module_);
+  llvm_ir::IncrementVariableForPhiloxRngState(1, module_, &b_, global_address_space);
 
   // Build the SequentialThunk for the RNG hlo.
   std::vector<std::unique_ptr<Thunk>> thunks;
@@ -1710,7 +1694,7 @@ std::unique_ptr<KernelThunk> IrEmitterUnnested::BuildKernelThunk(
     llvm::Type* int8_double_pointer =
         llvm::PointerType::get(b_.getInt8PtrTy(), /*AddressSpace=*/0);
     for (int64 idx : gte_index) {
-      loc = BitCast(loc, int8_double_pointer);
+      loc = PointerBitCastOrAddrSpaceCast(loc, int8_double_pointer);
       loc = Load(InBoundsGEP(loc, {b_.getInt64(idx)}));
     }
 
@@ -2808,16 +2792,18 @@ void IrEmitterUnnested::EmitFullWarpShuffleDownLoopForAllReduces(
       llvm::Type* shuffled_value_type =
           element_type->isStructTy() ? b_.getIntNTy(bit_width) : element_type;
       auto convert_pointer_for_shuffle = [&](llvm::Value* ptr) {
-        return BitCast(ptr, shuffled_value_type->getPointerTo());
+        return PointerBitCastOrAddrSpaceCast(
+            ptr, shuffled_value_type->getPointerTo());
       };
       llvm::Value* partial_result =
           Load(convert_pointer_for_shuffle(partial_result_addresses[i]),
                "partial_reduction_result");
-      Store(EmitFullWarpShuffleDown(partial_result, b_.getInt32(distance), &b_),
-            convert_pointer_for_shuffle(result_from_other_lane));
-      TF_CHECK_OK(EmitCallToNestedComputation(
-          *reducers[i], {partial_result_addresses[i], result_from_other_lane},
-          partial_result_addresses[i]));
+    llvm::Module* module = ir_emitter_context_->llvm_module();
+    Store(EmitFullWarpShuffleDown(partial_result, b_.getInt32(distance), &b_),
+          convert_pointer_for_shuffle(result_from_other_lane));
+    TF_CHECK_OK(EmitCallToNestedComputation(
+        *reducers[i], {partial_result_addresses[i], result_from_other_lane},
+        partial_result_addresses[i]));
     }
   }
 }
@@ -3841,11 +3827,17 @@ Status IrEmitterUnnested::EmitConstantGlobals() {
     //
     // We may have to be more more clever here in the future if we notice that
     // we're keeping around too many globals because of their linkage.
+    unsigned global_address_space =
+        GetGlobalMemoryAddressSpace(*(ir_emitter_context_->llvm_module()));
     llvm::GlobalVariable* global_for_const = new llvm::GlobalVariable(
         global_type, /*isConstant=*/should_emit_initializer,
         llvm::GlobalValue::ExternalLinkage,
         /*Initializer=*/initializer,
-        llvm_ir::ConstantBufferAllocationToGlobalName(allocation));
+        llvm_ir::AsStringRef(
+            llvm_ir::ConstantBufferAllocationToGlobalName(allocation)),
+        /*TLMode=*/llvm::GlobalValue::NotThreadLocal,
+        /*AddressSpace=*/global_address_space,
+        /*isExternallyInitialized=*/false);
     global_for_const->setAlignment(kConstantBufferAlignBytes);
     ir_emitter_context_->llvm_module()->getGlobalList().push_back(
         global_for_const);

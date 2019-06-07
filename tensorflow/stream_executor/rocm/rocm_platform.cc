@@ -17,8 +17,9 @@ limitations under the License.
 
 #include "absl/memory/memory.h"
 #include "absl/strings/str_format.h"
-#include "tensorflow/stream_executor/gpu/gpu_driver.h"
-#include "tensorflow/stream_executor/gpu/gpu_executor.h"
+#include "tensorflow/stream_executor/rocm/rocm_driver.h"
+#include "tensorflow/stream_executor/rocm/rocm_gpu_executor.h"
+#include "tensorflow/stream_executor/rocm/rocm_platform_id.h"
 #include "tensorflow/stream_executor/lib/error.h"
 #include "tensorflow/stream_executor/lib/initialize.h"
 #include "tensorflow/stream_executor/lib/status.h"
@@ -134,8 +135,9 @@ port::StatusOr<StreamExecutor*> ROCmPlatform::GetExecutor(
 port::StatusOr<std::unique_ptr<StreamExecutor>>
 ROCmPlatform::GetUncachedExecutor(const StreamExecutorConfig& config) {
   auto executor = absl::make_unique<StreamExecutor>(
-      this, absl::make_unique<GpuExecutor>(config.plugin_config));
-  auto init_status = executor->Init(config.ordinal, config.device_options);
+      this, absl::make_unique<GpuExecutor>(config.plugin_config),
+      config.ordinal);
+  auto init_status = executor->Init(config.device_options);
   if (!init_status.ok()) {
     return port::Status{
         port::error::INTERNAL,
@@ -173,7 +175,6 @@ static void InitializeROCmPlatform() {
 REGISTER_MODULE_INITIALIZER(rocm_platform,
                             stream_executor::InitializeROCmPlatform());
 
-DECLARE_MODULE_INITIALIZER(multi_platform_manager);
 // Note that module initialization sequencing is not supported in the
 // open-source project, so this will be a no-op there.
 REGISTER_MODULE_INITIALIZER_SEQUENCE(rocm_platform, multi_platform_manager);

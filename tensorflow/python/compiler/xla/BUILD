@@ -86,6 +86,7 @@ cuda_py_test(
     tags = [
         "no_mac",
         "no_windows",
+        "no_cuda",
     ],
     xla_enable_strict_auto_jit = True,
     xla_enabled = True,

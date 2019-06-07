@@ -13,8 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <unistd.h>
+#include "tensorflow/stream_executor/rocm/rocm_gpu_executor.h"
 
+#include <unistd.h>
 #include "absl/base/casts.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
@@ -40,7 +41,11 @@ limitations under the License.
 #include "tensorflow/stream_executor/platform/port.h"
 #include "tensorflow/stream_executor/plugin_registry.h"
 #include "tensorflow/stream_executor/rocm/rocm_diagnostics.h"
+#include "tensorflow/stream_executor/rocm/rocm_driver.h"
+#include "tensorflow/stream_executor/rocm/rocm_event.h"
 #include "tensorflow/stream_executor/rocm/rocm_platform_id.h"
+#include "tensorflow/stream_executor/rocm/rocm_stream.h"
+#include "tensorflow/stream_executor/rocm/rocm_timer.h"
 #include "tensorflow/stream_executor/stream.h"
 #include "tensorflow/stream_executor/stream_executor_internal.h"
 #include "tensorflow/stream_executor/stream_executor_pimpl.h"
@@ -77,7 +82,7 @@ static GpuTimer* AsGpuTimer(Timer* timer) {
 // N.B. we must lose constness in order to pass a suitable type to the existing
 // librocm APIs, so the caller should take care to only pass the result of const
 // GPU memory conversions to librocm functions which will honor constness.
-static hipDeviceptr_t AsROCmDevicePtr(const DeviceMemoryBase& gpu_mem) {
+static hipDeviceptr_t AsROCmDevicePtr(const DeviceMemoryBase &gpu_mem) {
   return const_cast<hipDeviceptr_t>(gpu_mem.opaque());
 }
 
@@ -110,6 +115,7 @@ GpuExecutor::~GpuExecutor() {
   if (context_ != nullptr) {
     GpuDriver::DestroyContext(context_);
   }
+  CHECK(kernel_to_gpu_binary_.empty()) << "GpuExecutor has live kernels.";
   CHECK(gpu_binary_to_module_.empty()) << "GpuExecutor has loaded modules.";
 }
 bool GpuExecutor::UnloadModule(ModuleHandle module_handle) {
@@ -136,7 +142,19 @@ bool GpuExecutor::UnloadGpuBinary(const void* gpu_binary) {
 }
 
 void GpuExecutor::UnloadKernel(const KernelBase* kernel) {
-  LOG(FATAL) << "Feature not supported on ROCM platform (UnloadKernel)";
+  VLOG(3) << "Unloading kernel " << kernel << " : " << kernel->name();
+
+  absl::MutexLock lock{&in_memory_modules_mu_};
+  auto gpu_binary_it = kernel_to_gpu_binary_.find(kernel);
+  if (kernel_to_gpu_binary_.end() == gpu_binary_it) {
+    VLOG(3) << "Kernel " << kernel << " : " << kernel->name()
+            << " has never been loaded.";
+    return;  // We've never seen this kernel.
+  }
+  VLOG(3) << "Kernel " << kernel << " : " << kernel->name()
+          << " has loaded GPU code " << gpu_binary_it->second;
+  UnloadGpuBinary(gpu_binary_it->second);
+  kernel_to_gpu_binary_.erase(gpu_binary_it);
 }
 
 port::Status GpuExecutor::Init(int device_ordinal,
@@ -240,12 +258,12 @@ bool GpuExecutor::GetKernel(const MultiKernelLoaderSpec& spec,
     module = in_memory_modules_[hsaco];
 
     if (module == nullptr) {
-      if (!GpuDriver::LoadHsaco(context_, hsaco, &module)) {
+      if (!LoadModuleFromHsaco(hsaco, &module)) {
         LOG(ERROR) << "failed to load HSACO\n";
         return false;
       }
-      in_memory_modules_[hsaco] = module;
     }
+    kernel_to_gpu_binary_[kernel] = hsaco;
   } else {
     LOG(WARNING) << "no method of loading ROCM kernel provided";
     return false;
@@ -401,6 +419,7 @@ bool GpuExecutor::LoadModuleFromHsaco(const char* hsaco, hipModule_t* module) {
       return false;
     }
     module_refcount = 1;
+    in_memory_modules_[hsaco] = *module;
     VLOG(3) << "Loaded HSACO " << static_cast<const void*>(hsaco)
             << " as module " << *module;
   } else {
@@ -593,7 +612,7 @@ port::Status GpuExecutor::WaitForEvent(Stream* stream, Event* event) {
     return port::Status{
         port::error::INTERNAL,
         absl::StrFormat("error recording waiting for ROCM event on stream %p",
-                        stream)};
+                     stream)};
   }
 }
 
@@ -765,29 +784,6 @@ bool GpuExecutor::DeviceMemoryUsage(int64* free, int64* total) const {
 bool GpuExecutor::GetSymbol(const string& symbol_name,
                             ModuleHandle module_handle, void** mem,
                             size_t* bytes) {
-  {  // give limited scope to lock
-    absl::MutexLock lock{&disk_modules_mu_};
-    for (auto& it : disk_modules_) {
-      if (GpuDriver::GetModuleSymbol(context_, it.second, symbol_name.c_str(),
-                                     reinterpret_cast<hipDeviceptr_t*>(mem),
-                                     bytes)) {
-        return true;
-      }
-    }
-  }
-
-  {  // give limited scope to lock
-    absl::MutexLock lock{&in_memory_modules_mu_};
-    for (auto& it : in_memory_modules_) {
-      if (GpuDriver::GetModuleSymbol(context_, it.second, symbol_name.c_str(),
-                                     reinterpret_cast<hipDeviceptr_t*>(mem),
-                                     bytes)) {
-        return true;
-      }
-    }
-  }
-
-  {  // give limited scope to lock
     absl::MutexLock lock{&in_memory_modules_mu_};
     if (static_cast<bool>(module_handle)) {
       auto it = gpu_binary_to_module_.find(module_handle.id());
@@ -806,7 +802,6 @@ bool GpuExecutor::GetSymbol(const string& symbol_name,
         return true;
       }
     }
-  }
 
   LOG(INFO) << "Falied to find symbol in any modules: " << symbol_name;
   return false;

@@ -55,6 +55,7 @@ py_test(
         "//third_party/py/numpy",
         "@six_archive//:six",
     ],
+    tags = ["no_rocm"],
 )
 
 tf_cc_binary(

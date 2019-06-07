@@ -265,9 +265,12 @@ class BatchMatMulBenchmark(test.Benchmark):
 
 
 if __name__ == "__main__":
-  for dtype_ in [
-      np.float16, np.float32, np.float64, np.complex64, np.complex128, np.int32
-  ]:
+  dtypes_to_test = [np.float16, np.float32, np.float64, np.complex64,
+                    np.complex128, np.int32]
+  if test.is_built_with_rocm():
+    # rocBLAS in ROCm stack does not support GEMM for complex types
+    dtypes_to_test = [np.float16, np.float32, np.float64, np.int32]
+  for dtype_ in dtypes_to_test:
     for adjoint_a_ in False, True:
       for adjoint_b_ in False, True:
         name = "%s_%s_%s" % (dtype_.__name__, adjoint_a_, adjoint_b_)
@@ -278,17 +281,17 @@ if __name__ == "__main__":
               "testBatchMatmulOp_" + name + "_{}".format(use_static_shape_),
               _GetBatchMatmulOpTest(dtype_, adjoint_a_, adjoint_b_,
                                     use_static_shape_))
-          # Broadcasting is supported only in v2.
           setattr(
               BatchMatmulOpTest, "testBatchMatmulBroadcasting_" + name +
               ("_%s" % use_static_shape_),
               _GetBatchMatmulOpBroadcastingTest(dtype_, adjoint_a_, adjoint_b_,
-                                                use_static_shape_))
+                                              use_static_shape_))
         if dtype_ == np.int32:
           continue
+
         setattr(BatchMatmulGradientTest, "testBatchMatmulGradient_" + name,
-                _GetBatchMatmulGradientTest(dtype_, adjoint_a_, adjoint_b_))
-        # Broadcasting is supported only in v2.
+              _GetBatchMatmulGradientTest(dtype_, adjoint_a_, adjoint_b_))
+
         setattr(
             BatchMatmulGradientTest,
             "testBatchMatmulGradientWithBroadcasting_" + name,

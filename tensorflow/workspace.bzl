@@ -66,6 +66,7 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
     git_configure(name = "local_config_git")
     sycl_configure(name = "local_config_sycl")
     syslibs_configure(name = "local_config_syslibs")
+    rocm_configure(name="local_config_rocm")
     python_configure(name = "local_config_python")
     rocm_configure(name = "local_config_rocm")
     remote_execution_configure(name = "local_config_remote_execution")
@@ -144,7 +145,6 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
             "https://github.com/abseil/abseil-cpp/archive/2f76a9bf50046e396138cc8eeb3cdc17b7a5ac24.tar.gz",
         ],
     )
-
     tf_http_archive(
         name = "eigen_archive",
         build_file = clean_dep("//third_party:eigen.BUILD"),
@@ -156,7 +156,6 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
             "https://bitbucket.org/eigen/eigen/get/a0d250e79c79.tar.gz",
         ],
     )
-
     tf_http_archive(
         name = "arm_compiler",
         build_file = clean_dep("//:arm_compiler.BUILD"),

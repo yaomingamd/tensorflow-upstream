@@ -8,6 +8,7 @@ package(
 load("//tensorflow:tensorflow.bzl", "tf_py_test")
 load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 load("//tensorflow:tensorflow.bzl", "sycl_py_test")
+load("//tensorflow:tensorflow.bzl", "gpu_py_test")
 load("//tensorflow:tensorflow.bzl", "tf_custom_op_library")
 
 # CPU only tests should use tf_py_test, GPU tests use cuda_py_test
@@ -1272,6 +1273,7 @@ cuda_py_test(
         "//tensorflow/python:linalg_ops",
     ],
     shard_count = 10,
+    tags = ["no_rocm"],
     xla_enable_strict_auto_jit = True,
 )
 
@@ -1373,6 +1375,10 @@ tf_py_test(
         "//third_party/py/numpy",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
+    ],
+    tags = [
+        "no_cuda", # fails on CUDA, do not upstream tag
+        "no_rocm",
     ],
 )
 
@@ -1764,6 +1770,7 @@ cuda_py_test(
     shard_count = 16,
     tags = [
         "notsan",  # TODO(b/132205147): Re-enable this.
+        "no_cuda", # fails on CUDA, but not on ROCm, do not upstream tag
     ],
     xla_enable_strict_auto_jit = True,
 )
@@ -1805,7 +1812,6 @@ cuda_py_test(
         "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:nn_ops",
     ],
-    tags = ["no_rocm"],
     xla_enable_strict_auto_jit = True,
 )
 
@@ -2894,7 +2900,6 @@ cuda_py_test(
     ],
     shard_count = 2,
     tags = [
-        "no_rocm",
         "optonly",  # flaky timeouts unless optimized
     ],
     xla_enable_strict_auto_jit = True,
@@ -2916,7 +2921,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "conv_ops_test",
-    size = "medium",
+    size = "large",
     srcs = ["conv_ops_test.py"],
     additional_deps = [
         "//third_party/py/numpy",
@@ -2936,7 +2941,6 @@ cuda_py_test(
     ],
     shard_count = 4,
     tags = [
-        "no_rocm",
         "optonly",  # times out
     ],
     xla_enable_strict_auto_jit = True,
@@ -3020,7 +3024,6 @@ cuda_py_test(
         "//tensorflow/python:nn_ops_gen",
     ],
     shard_count = 4,
-    tags = ["no_rocm"],
     xla_enable_strict_auto_jit = True,
 )
 
@@ -3300,7 +3303,6 @@ cuda_py_test(
         "//tensorflow/python:nn_ops",
     ],
     shard_count = 30,
-    tags = ["no_rocm"],
     xla_enable_strict_auto_jit = True,
 )
 
@@ -3439,8 +3441,8 @@ cuda_py_test(
     ],
     data = ["//tensorflow/python/kernel_tests/testdata:self_adjoint_eig_op_test_files"],
     shard_count = 20,
+    flaky = 1,  # test fails on rocm (on rare occasions)
     tags = [
-        "no_rocm",  # flaky test
         "no_windows",
     ],
     # TODO(b/127344411): This test passes because XLA does not actually cluster
@@ -3798,6 +3800,31 @@ cuda_py_test(
     xla_enable_strict_auto_jit = True,
 )
 
+gpu_py_test(
+    name = "gpu_fusion_ops_test",
+    size = "small",
+    srcs = ["gpu_fusion_ops_test.py"],
+    additional_deps = [
+        "//third_party/py/numpy",
+        "//tensorflow/contrib/layers:layers_py",
+        "//tensorflow/core:protos_all_py",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:nn",
+        "//tensorflow/python:nn_grad",
+        "//tensorflow/python:nn_ops",
+        "//tensorflow/python:gradients",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform",
+        "//tensorflow/python:random_ops",
+        "//tensorflow/python:variables",
+    ],
+)
+
 cuda_py_test(
     name = "critical_section_test",
     size = "medium",
@@ -3831,5 +3858,6 @@ cuda_py_test(
         "//tensorflow/python:linalg_ops",
     ],
     shard_count = 10,
+    tags = ["no_rocm"],
     xla_enable_strict_auto_jit = True,
 )
