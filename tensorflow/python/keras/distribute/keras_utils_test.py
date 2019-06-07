@@ -96,8 +96,8 @@ class TestDistributionStrategyWithCallbacks(test.TestCase,
         validation_steps=validation_steps,
         callbacks=[counter])
 
-    if isinstance(distribution, (tpu_strategy.TPUStrategy,
-                                 tpu_strategy.TPUStrategyV1)):
+    if (isinstance(distribution, tpu_strategy.TPUStrategyV1) and
+        not context.executing_eagerly()):
       # TPU Strategy can have multi step training, from extended.steps_per_run
       # if steps_per_run = 1, then num_batch_call_per_epoch = steps_per_epoch
       steps_per_run = distribution.extended.steps_per_run
@@ -178,7 +178,7 @@ class TestDistributionStrategyErrorCases(test.TestCase, parameterized.TestCase):
           distribution=[
               strategy_combinations.mirrored_strategy_with_gpu_and_cpu,
           ],
-          mode=['graph', 'eager']))
+          mode=['graph']))
   def test_validating_dataset_input_tensors_with_shape_mismatch(
       self, distribution):
     with self.cached_session():
