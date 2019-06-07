@@ -151,9 +151,9 @@ Status EmitTiledCompareLoop(
     const EmitCallToNestedComputationCallback& emit_compare_callback,
     llvm::IRBuilder<>* b) {
   KernelSupportLibrary ksl(b);
-  llvm::Value* thread_id = gpu::EmitCallToTargetFunction(
-      gpu::TargetFunctionID::kThreadIdx, {}, {},
-      PRIMITIVE_TYPE_INVALID, {},  {},  b);
+  llvm::Value* thread_id =
+      gpu::EmitCallToTargetIntrinsic(gpu::TargetIntrinsicID::kThreadIdx, {}, {},
+                                     b);
   llvm_ir::AddRangeMetadata(0, tile_size / 2,
                             llvm::cast<llvm::Instruction>(thread_id));
   thread_id = b->CreateIntCast(thread_id, tiled_keys_index.GetType(),
@@ -204,8 +204,8 @@ Status EmitTiledCompareLoop(
     });
   }
   // Wait until all reads have happened.
-  gpu::EmitCallToTargetFunction(gpu::TargetFunctionID::kBarrierId, {}, {},
-                                PRIMITIVE_TYPE_INVALID, {}, {},  b);
+  gpu::EmitCallToTargetIntrinsic(gpu::TargetIntrinsicID::kBarrierId, {}, {},
+                                 b);
 
   // Now emit the bodies of the comparison loops.
   auto element_address = [&](int64 operand, llvm::Value* index) {
@@ -266,8 +266,8 @@ Status EmitTiledCompareLoop(
           /*needs_bounds_checks=*/false));
     }
     // Wait until all comparisons have happened.
-    gpu::EmitCallToTargetFunction(gpu::TargetFunctionID::kBarrierId, {}, {},
-                                  PRIMITIVE_TYPE_INVALID, {}, {},  b);
+    gpu::EmitCallToTargetIntrinsic(gpu::TargetIntrinsicID::kBarrierId, {}, {},
+                                   b);
   }
 
   // Copy the operand tiles back from shared memory to the operand buffers.
@@ -338,8 +338,7 @@ Status EmitSortInPlace(
           llvm_ir::PrimitiveTypeToIrType(
               values_arrays[i].GetShape().element_type(), module),
           tile_size);
-      param_shmem_buffers[i] = llvm_ir::AllocateSharedMemoryTile(module, tile_type, absl::StrCat(name, "_tile_param_", i),
-       shared_memory_address_space);
+      param_shmem_buffers[i] = llvm_ir::AllocateSharedMemoryTile(module, tile_type, absl::StrCat(name, "_tile_param_", i));
     }
   }
 

@@ -265,13 +265,13 @@ llvm::Constant* ConvertLiteralToIrConstant(const Literal& literal,
 }
 
 llvm::GlobalVariable* AllocateSharedMemoryTile(
-    llvm::Module* module, llvm::Type* tile_type, absl::string_view name,
-    unsigned int shared_memory_address_space) {
+    llvm::Module* module, llvm::Type* tile_type, absl::string_view name) {
+  const int kNVPTXSharedMemoryAddrSpace = 3;
   return new llvm::GlobalVariable(
       *module, tile_type,
       /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
       llvm::UndefValue::get(tile_type), AsStringRef(name), nullptr,
-      llvm::GlobalValue::NotThreadLocal, shared_memory_address_space);
+      llvm::GlobalValue::NotThreadLocal, kNVPTXSharedMemoryAddrSpace);
 }
 
 llvm::AllocaInst* EmitAllocaAtFunctionEntry(llvm::Type* type,

@@ -160,8 +160,7 @@ llvm::Constant* ConvertLiteralToIrConstant(const Literal& literal,
 
 // Allocates a tile of shared memory.
 llvm::GlobalVariable* AllocateSharedMemoryTile(
-    llvm::Module* module, llvm::Type* tile_type, absl::string_view name,
-    unsigned int shared_memory_address_space);
+    llvm::Module* module, llvm::Type* tile_type, absl::string_view name);
 
 // Inserts an allocate of the requested type at the entry point of the
 // function that the builder is currently building. The insert point
