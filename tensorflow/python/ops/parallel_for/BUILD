@@ -151,7 +151,7 @@ cuda_py_test(
     ],
     shard_count = 5,
     tags = ["optonly"],  # Too slow in non-opt mode
-    xla_enable_strict_auto_jit = True,
+    xla_enable_strict_auto_jit = False,
 )
 
 py_library(

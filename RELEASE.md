@@ -143,9 +143,20 @@ This release contains contributions from many people at Google, as well as:
 # Release 1.12.2
 
 ## Bug Fixes and Other Changes
-
 *   Fixes a potential security vulnerability where carefully crafted GIF images
     can produce a null pointer dereference during decoding.
+
+# Release 1.13.3
+
+## Bug Fixes and Other Changes
+* The 1.13.3 whl package is built to be compatible for the ROCm2.4 user-bit environment
+
+
+# Release 1.13.2
+
+## Bug Fixes and Other Changes
+* TF-RCCL path fix for issue#370
+* The 1.13.2 whl package is built to be compatible for the ROCm2.3 user-bit environment
 
 # Release 1.13.0
 
@@ -155,6 +166,10 @@ This release contains contributions from many people at Google, as well as:
 * TensorFlow GPU binaries are now built against CUDA 10 and TensorRT 5.0.
 * Support for Python3.7 on all operating systems.
 * Moved NCCL to core.
+
+## ROCm Features and Improvements
+* MIOpen v1.7.1 integration
+* Tensorflow VERBS support is enabled, details in: [TensorFlow Verbs Quick-Start](https://github.com/ROCmSoftwarePlatform/tensorflow-upstream/blob/r1.13-rocm/rocm_docs/tensorflow-verbs.md)
 
 ## Behavioral changes
 
@@ -360,6 +375,12 @@ Abhinav Upadhyay, Ag Ramesh, akikaaa, Alexis Louis, Anders Huss, Andreas Madsen,
 *   TensorFlow binaries are built with XLA support linked in by default.
 *   Ignite Dataset added to contrib/ignite that allows to work with Apache
     Ignite.
+
+## ROCm Features and Improvements
+* MIOpenv1.6 integration
+* Training in fp16 is fully supported
+* Performance improvements in TF CNN benchmarks
+* Layer fusion is supported, details in: [TensorFlow ROCm port high-level design document](https://github.com/ROCmSoftwarePlatform/tensorflow-upstream/blob/r1.12-rocm/rocm_docs/rocm-port-overview.md)
 
 ## Bug Fixes and Other Changes
 

@@ -25,15 +25,14 @@ limitations under the License.
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
+#include "tensorflow/compiler/xla/xla_data.pb.h"
 
 namespace xla {
 namespace gpu {
 
-// Enmeration to get target specific intrinsics.
+// Enumeration to get target specific intrinsics.
 enum class TargetIntrinsicID {
-  kShflDownF32 = 0,
-  kShflDownI32,
-  kThreadIdx,
+  kThreadIdx = 0,
   kThreadIdy,
   kThreadIdz,
   kBlockIdx,
@@ -41,6 +40,29 @@ enum class TargetIntrinsicID {
   kBlockIdz,
   kBarrierId,
 };
+
+// Enumeration to get target specific device function.
+enum class TargetDeviceFunctionID {
+  kPow = 0,
+  kErfcinv,
+  kLog,
+  kLog1p,
+  kSin,
+  kCos,
+  kExp,
+  kExpm1,
+  kSqrt,
+  kRsqrt,
+  kAtan2,
+  kFmod,
+  kRound
+};
+// AMDGCN target address spaces
+constexpr int kAMDGPUGlobalMemoryAddrSpace = 1;
+constexpr int kAMDGPUSharedMemoryAddrSpace = 3;
+
+// NVPTX target address spaces
+constexpr int kNVPTXSharedMemoryAddrSpace = 3;
 
 // Emits a call to the specified target intrinsic with the given operands.
 
@@ -50,6 +72,18 @@ enum class TargetIntrinsicID {
 llvm::CallInst* EmitCallToTargetIntrinsic(
     TargetIntrinsicID intrinsic_id, absl::Span<llvm::Value* const> operands,
     absl::Span<llvm::Type* const> overloaded_types, llvm::IRBuilder<>* b);
+
+// Obtain the target specific address space for global variables
+unsigned GetGlobalMemoryAddressSpace(const llvm::Module& module);
+unsigned GetSharedMemoryAddressSpace(const llvm::Module& module);
+
+// Annotate the kernel as GPU kernel according to the GPU target.
+void AnnotateFunctionAsGpuKernel(llvm::Module* module, llvm::Function* func,
+                                 llvm::IRBuilder<>* b);
+
+std::string ObtainDeviceFunctionName(TargetDeviceFunctionID func_id,
+                                     PrimitiveType output_type,
+                                     llvm::IRBuilder<>* b);
 
 }  // namespace gpu
 }  // namespace xla

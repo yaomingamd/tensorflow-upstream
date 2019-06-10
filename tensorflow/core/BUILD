@@ -135,6 +135,9 @@ load(
     "tf_additional_libdevice_data",
     "tf_additional_libdevice_deps",
     "tf_additional_libdevice_srcs",
+    "tf_additional_rocdl_data",
+    "tf_additional_rocdl_deps",
+    "tf_additional_rocdl_srcs",
     "tf_additional_minimal_lib_srcs",
     "tf_additional_monitoring_hdrs",
     "tf_additional_monitoring_srcs",
@@ -169,6 +172,7 @@ load(
     "tf_cuda_tests_tags",
 )
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm")
 load("@io_bazel_rules_closure//closure:defs.bzl", "closure_proto_library")
 load(
     "//third_party/mkl:build_defs.bzl",
@@ -1580,6 +1584,8 @@ cc_library(
     ]) + if_cuda([
         "//tensorflow/core/grappler/optimizers:gpu_swapping_kernels",
         "//tensorflow/core/grappler/optimizers:gpu_swapping_ops",
+    ]) + if_rocm([
+        "//tensorflow/core/kernels:gpu_fusion_ops",
     ]) + if_nccl([
         "//tensorflow/core/kernels:nccl_kernels",
     ]),
@@ -1770,6 +1776,7 @@ filegroup(
             "util/stats_calculator.*",
             "util/reporter.*",
             "platform/**/cuda_libdevice_path.*",
+            "platform/**/rocm_rocdl_path.*",
             "platform/**/logger.cc",
             # Exclude env_time and logging to avoid collisions with
             # :platform_base, a common dependency for downstream targets.
@@ -2449,6 +2456,7 @@ cc_library(
             "platform/**/env_time.cc",
             "platform/**/monitoring.cc",
             "platform/**/cuda_libdevice_path.cc",
+            "platform/**/rocm_rocdl_path.cc",
             "platform/**/device_tracer.cc",
             "platform/**/logger.cc",
             "platform/**/logging.cc",
@@ -2463,6 +2471,7 @@ cc_library(
             "platform/**/cuda_libdevice_path.cc",
             "platform/**/rocm.h",
             "platform/**/monitoring.cc",
+            "platform/**/rocm_rocdl_path.cc",
             "platform/**/stream_executor.h",
             "platform/**/env_time.cc",
             "platform/**/device_tracer.cc",
@@ -3031,6 +3040,7 @@ GRAPH_HDRS = [
     "graph/types.h",
     "graph/validate.h",
     "graph/while_context.h",
+    "graph/gpu_fusion_pass.h",
 ]
 
 tf_cuda_library(
@@ -3235,6 +3245,7 @@ tf_cuda_library(
         "graph/mkl_layout_pass.cc",
         "graph/mkl_tfconversion_pass.cc",
         "graph/quantize_training.cc",
+        "graph/gpu_fusion_pass.cc",
         "public/session.h",
         "public/session_options.h",
         "public/version.h",
@@ -4482,6 +4493,20 @@ tf_cuda_cc_test(
     ],
 )
 
+tf_cc_test_gpu(
+    name = "rocm_rocdl_path_test",
+    size = "small",
+    srcs = ["platform/rocm_rocdl_path_test.cc"],
+    linkstatic = tf_kernel_tests_linkstatic(),
+    tags = tf_cuda_tests_tags(),
+    deps = [
+        ":rocm_rocdl_path",
+        ":lib",
+        ":test",
+        ":test_main",
+    ],
+)
+
 tf_cuda_only_cc_test(
     name = "util_gpu_kernel_helper_test",
     srcs = [
@@ -5396,6 +5421,18 @@ cc_library(
     deps = [
         ":lib",
     ] + tf_additional_libdevice_deps(),
+)
+
+cc_library(
+    name = "rocm_rocdl_path",
+    srcs = ["platform/rocm_rocdl_path.cc"] + tf_additional_rocdl_srcs(),
+    hdrs = ["platform/rocm_rocdl_path.h"],
+    copts = tf_copts(),
+    data = tf_additional_rocdl_data(),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lib",
+    ] + tf_additional_rocdl_deps(),
 )
 
 transitive_hdrs(

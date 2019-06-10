@@ -34,7 +34,7 @@ class OpKernelContext;
 
 namespace functor {
 
-#ifdef GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 typedef Eigen::GpuDevice GPUDevice;
 // Functor for SegmentSumGPUOp.
 // output_rows: the number of output segments (unique segment ids in
@@ -66,13 +66,13 @@ struct UnsortedSegmentFunctor {
                   typename TTypes<T, 2>::Tensor output);
 };
 
-#ifdef GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // reduction functors for the gpu
 template <typename T>
 struct SumOpGpu {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(T* dest,
                                                         const T& value) {
-    CudaAtomicAdd(dest, value);
+    GpuAtomicAdd(dest, value);
   }
 };
 
@@ -80,7 +80,7 @@ template <typename T>
 struct ProdOpGpu {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(T* dest,
                                                         const T& value) {
-    CudaAtomicMul(dest, value);
+    GpuAtomicMul(dest, value);
   }
 };
 
@@ -88,7 +88,7 @@ template <typename T>
 struct MaxOpGpu {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(T* dest,
                                                         const T& value) {
-    CudaAtomicMax(dest, value);
+    GpuAtomicMax(dest, value);
   }
 };
 
@@ -96,11 +96,11 @@ template <typename T>
 struct MinOpGpu {
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void operator()(T* dest,
                                                         const T& value) {
-    CudaAtomicMin(dest, value);
+    GpuAtomicMin(dest, value);
   }
 };
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 // initial value functors
 template <typename T>

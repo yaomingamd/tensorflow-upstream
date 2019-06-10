@@ -1387,6 +1387,7 @@ tf_py_test(
     main = "framework/contrib_test.py",
     tags = [
         "no_pip",
+	"no_rocm_v2",
     ],
 )
 
@@ -3996,8 +3997,11 @@ cuda_py_test(
         "@absl_py//absl/testing:parameterized",
         "//third_party/py/numpy",
     ],
-    tags = ["no_windows"],
+    tags = [
+        "no_windows",
+    ],
     xla_enable_strict_auto_jit = True,
+    flaky = True,
 )
 
 cuda_py_test(
@@ -6440,6 +6444,7 @@ cuda_py_test(
     ],
     tags = [
         "grappler",
+        "no_rocm",
     ],
 )
 

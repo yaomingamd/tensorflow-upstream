@@ -36,6 +36,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/llvm_ir/llvm_loop.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/llvm_util.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/loop_emitter.h"
+#include "tensorflow/compiler/xla/xla_data.pb.h"
 #include "tensorflow/compiler/xla/shape_util.h"
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/core/lib/core/status.h"
@@ -150,8 +151,9 @@ Status EmitTiledCompareLoop(
     const EmitCallToNestedComputationCallback& emit_compare_callback,
     llvm::IRBuilder<>* b) {
   KernelSupportLibrary ksl(b);
-  llvm::Value* thread_id = gpu::EmitCallToTargetIntrinsic(
-      gpu::TargetIntrinsicID::kThreadIdx, {}, {}, b);
+  llvm::Value* thread_id =
+      gpu::EmitCallToTargetIntrinsic(gpu::TargetIntrinsicID::kThreadIdx, {}, {},
+                                     b);
   llvm_ir::AddRangeMetadata(0, tile_size / 2,
                             llvm::cast<llvm::Instruction>(thread_id));
   thread_id = b->CreateIntCast(thread_id, tiled_keys_index.GetType(),
@@ -202,7 +204,8 @@ Status EmitTiledCompareLoop(
     });
   }
   // Wait until all reads have happened.
-  gpu::EmitCallToTargetIntrinsic(gpu::TargetIntrinsicID::kBarrierId, {}, {}, b);
+  gpu::EmitCallToTargetIntrinsic(gpu::TargetIntrinsicID::kBarrierId, {}, {},
+                                 b);
 
   // Now emit the bodies of the comparison loops.
   auto element_address = [&](int64 operand, llvm::Value* index) {
@@ -328,13 +331,14 @@ Status EmitSortInPlace(
   std::vector<llvm::Value*> param_shmem_buffers(values_arrays.size(), nullptr);
   if (xor_masks.size() > 1) {
     llvm::Module* module = b->GetInsertBlock()->getParent()->getParent();
+    unsigned int shared_memory_address_space =
+        gpu::GetSharedMemoryAddressSpace(*module);
     for (int64 i = 0; i < values_arrays.size(); ++i) {
       llvm::Type* tile_type = llvm::ArrayType::get(
           llvm_ir::PrimitiveTypeToIrType(
               values_arrays[i].GetShape().element_type(), module),
           tile_size);
-      param_shmem_buffers[i] = llvm_ir::AllocateSharedMemoryTile(
-          module, tile_type, absl::StrCat(name, "_tile_param_", i));
+      param_shmem_buffers[i] = llvm_ir::AllocateSharedMemoryTile(module, tile_type, absl::StrCat(name, "_tile_param_", i));
     }
   }
 

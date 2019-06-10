@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define EIGEN_USE_GPU
 
 #include <assert.h>
@@ -53,22 +53,22 @@ __global__ void CheckNumericsKernel(const T *data, int size,
     offset += total_thread_count;
   }
 }
-
 }  // namespace
 
 // A simple launch pad to launch the Cuda kernels that checks the numerical
 // abnormality in the given array
 template <typename T>
 struct CheckNumericsLaunch {
-  void Run(const GPUDevice &d, const T *data, int size,
+  void Run(const GPUDevice& d, const T* data, int size,
            int abnormal_detected[2]) {
     const int32 block_size = d.maxGpuThreadsPerBlock();
     const int32 num_blocks =
         (d.getNumGpuMultiProcessors() * d.maxGpuThreadsPerMultiProcessor()) /
         block_size;
 
-    TF_CHECK_OK(CudaLaunchKernel(CheckNumericsKernel<T>, num_blocks, block_size,
-                                 0, d.stream(), data, size, abnormal_detected));
+    TF_CHECK_OK(GpuLaunchKernel(CheckNumericsKernel<T>, dim3(num_blocks),
+                      dim3(block_size), 0, d.stream(), data, size,
+                      abnormal_detected));
   }
 };
 
@@ -77,4 +77,4 @@ template struct CheckNumericsLaunch<float>;
 template struct CheckNumericsLaunch<double>;
 
 }  // namespace tensorflow
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

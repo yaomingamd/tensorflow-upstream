@@ -185,6 +185,10 @@ py_test(
         "//tensorflow/python/data/ops:dataset_ops",
         "//third_party/py/numpy",
     ],
+    tags = [
+        "no_rocm",
+        "no_cuda",
+    ],
 )
 
 py_library(
@@ -933,6 +937,10 @@ cuda_py_test(
     tags = [
         "guitar",
         "multi_and_single_gpu",
+        # Failure due to Rccl Op does not support eager mode, should remove when
+        # PR400 is submitted
+        "no_rocm",
+        "no_cuda",
         "no_windows_gpu",  # TODO(b/130551176)
     ],
 )
@@ -1013,6 +1021,9 @@ distribute_py_test(
     size = "medium",
     srcs = ["keras_saved_model_test.py"],
     main = "keras_saved_model_test.py",
+    tags = [
+        "no_rocm",
+    ],
     deps = [
         ":saved_model_test_base",
         "//tensorflow/python/keras:saving",
