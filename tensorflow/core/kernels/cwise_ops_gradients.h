@@ -141,7 +141,11 @@ template <typename T>
 struct functor_traits<scalar_rsqrt_gradient_op<T>> {
   enum {
     Cost = 4 * NumTraits<T>::MulCost,
+#if TENSORFLOW_USE_ROCM
+    PacketAccess = false,
+#else
     PacketAccess = packet_traits<T>::HasMul,
+#endif
   };
 };
 

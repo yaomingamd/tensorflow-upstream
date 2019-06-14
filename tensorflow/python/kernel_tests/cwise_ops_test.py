@@ -1270,6 +1270,9 @@ class SingularGradientOpTest(test.TestCase):
   def testGradientAtSingularity(self):
     if not compat.forward_compatible(2019, 6, 14):
       self.skipTest("Skipping test for future functionality.")
+    if test.is_built_with_rocm() :
+      # skip testGradientAtSingularity test to align with develop-upstream branch
+      return
 
     ops_and_singularity = [
         (gen_math_ops.reciprocal, (0.,)),
