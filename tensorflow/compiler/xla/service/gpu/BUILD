@@ -718,13 +718,13 @@ cc_library(
              "//tensorflow/compiler/xla:literal",
              "//tensorflow/compiler/xla:util",
              "//tensorflow/compiler/xla:xla_data_proto",
-             "//tensorflow/compiler/xla/service:device_memory_allocator",
              "//tensorflow/compiler/xla/service:hlo",
              "//tensorflow/compiler/xla/service:hlo_pass",
              "//tensorflow/core:lib",
              "//tensorflow/core:stream_executor_no_cuda",
              "//tensorflow/stream_executor:blas",
-              "@com_google_absl//absl/types:optional",
+             "//tensorflow/stream_executor:device_memory_allocator",
+             "@com_google_absl//absl/types:optional",
       ]),
 )
 
