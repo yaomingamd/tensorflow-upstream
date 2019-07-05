@@ -30,7 +30,6 @@ cc_library(
     ]),
     copts = tf_copts(),
     deps = if_nccl([
-        "@com_google_absl//absl/container:flat_hash_map",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:gpu_headers_lib",

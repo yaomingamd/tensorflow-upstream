@@ -27,7 +27,6 @@ limitations under the License.
 #define gpu_assert(x)
 #endif
 
-#include "absl/container/flat_hash_map.h"
 #if GOOGLE_CUDA
 #include "third_party/nccl/nccl.h"
 #endif
