@@ -5152,7 +5152,7 @@ tf_py_test(
         ":errors",
         ":lib",
     ],
-    tags = ["no_windows"],
+    tags = ["no_windows", "no_rocm"],
 )
 
 tf_py_test(
