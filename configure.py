@@ -537,7 +537,7 @@ def set_cc_opt_flags(environ_cp):
     write_to_bazelrc('build:opt --copt=%s' % opt)
   # It should be safe on the same build host.
   if not is_ppc64le() and not is_windows():
-    write_to_bazelrc('build:opt --host_copt=-march=native')
+    write_to_bazelrc('build:opt --host_copt=-march=haswell')
   write_to_bazelrc('build:opt --define with_default_optimizations=true')
 
 
