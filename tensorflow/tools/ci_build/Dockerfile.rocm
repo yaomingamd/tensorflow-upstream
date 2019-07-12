@@ -63,6 +63,11 @@ RUN apt-get update --allow-insecure-repositories && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Roll back OpenCL toolset to ROCm2.2 base
+RUN cd $HOME && wget http://repo.radeon.com/rocm/apt/2.2/pool/main/r/rocm-opencl/rocm-opencl_1.2.0-2019030702_amd64.deb && \
+    wget http://repo.radeon.com/rocm/apt/2.2/pool/main/r/rocm-opencl-dev/rocm-opencl-dev_1.2.0-2019030702_amd64.deb && \
+    dpkg -i rocm-opencl*.deb && rm -rf rocm-rocm*.deb
+
 # Build HCC from source, cleanup the default HCC to avoid issue
 #RUN rm -rf /opt/rocm/hcc-1.0 && rm -rf /opt/rocm/lib/*.bc
 #RUN cd $HOME && git clone --recursive -b <> https://github.com/RadeonOpenCompute/hcc.git
