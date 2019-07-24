@@ -46,6 +46,7 @@ load(
     "tf_opts_nortti_if_android",
 )
 load("@local_config_sycl//sycl:build_defs.bzl", "if_sycl")
+load("//tensorflow:tensorflow.bzl", "if_nccl")
 load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_test")
 load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_tests")
 load(
@@ -194,6 +195,16 @@ tf_cc_test(
     ],
 )
 
+# virtual targets since nested select statements not possible
+tf_kernel_library(
+    name = "virtual_nccl",
+    deps = if_cuda(["@local_config_nccl//:nccl"]),
+)
+tf_kernel_library(
+    name = "virtual_rccl",
+    deps = if_rocm(["@local_config_rocm//rocm:rccl"]),
+)
+
 tf_kernel_library(
     name = "collective_ops",
     srcs = if_nccl([
@@ -208,9 +219,10 @@ tf_kernel_library(
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/profiler/lib:traceme",
     ] + if_nccl([
+        ":virtual_nccl",
+        ":virtual_rccl",
         "//tensorflow/core/nccl:nccl_lib",
-        ] + nccl_config()
-    ),
+    ]),
 )
 
 tf_cuda_cc_test(
@@ -370,16 +382,19 @@ cc_library(
 
 tf_kernel_library(
     name = "nccl_kernels",
-    srcs = if_nccl([
+    srcs = if_cuda_or_rocm([
         "nccl_ops.cc",
     ]),
-    deps = if_nccl([
+    deps = if_cuda([
+        "@local_config_nccl//:nccl",
+    ]) + if_rocm([
+        "@local_config_rocm//rocm:rccl",
+    ]) + if_cuda_or_rocm([
         "//tensorflow/core/nccl:nccl_lib",
         "//tensorflow/core:framework",
         "//tensorflow/core:gpu_headers_lib",
         "//tensorflow/core:gpu_runtime",
-        ] + nccl_config()
-    ),
+    ]),
 )
 
 cc_library(
