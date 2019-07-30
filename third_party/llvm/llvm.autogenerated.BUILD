@@ -1341,6 +1341,7 @@ cc_library(
     ]),
     copts = llvm_copts,
     deps = [
+        ":bitstream_reader",
         ":config",
         ":core",
         ":support",
@@ -1370,6 +1371,26 @@ cc_library(
         ":core",
         ":mc",
         ":object",
+        ":support",
+    ],
+)
+
+cc_library(
+    name = "bitstream_reader",
+    srcs = glob([
+        "lib/Bitstream/Reader/*.c",
+        "lib/Bitstream/Reader/*.cpp",
+        "lib/Bitstream/Reader/*.inc",
+        "lib/Bitstream/Reader/*.h",
+    ]),
+    hdrs = glob([
+        "include/llvm/Bitstream/Reader/*.h",
+        "include/llvm/Bitstream/Reader/*.def",
+        "include/llvm/Bitstream/Reader/*.inc",
+    ]),
+    copts = llvm_copts,
+    deps = [
+        ":config",
         ":support",
     ],
 )
@@ -1533,6 +1554,26 @@ cc_library(
 )
 
 cc_library(
+    name = "debug_info_gsym",
+    srcs = glob([
+        "lib/DebugInfo/GSYM/*.c",
+        "lib/DebugInfo/GSYM/*.cpp",
+        "lib/DebugInfo/GSYM/*.inc",
+        "lib/DebugInfo/GSYM/*.h",
+    ]),
+    hdrs = glob([
+        "include/llvm/DebugInfo/GSYM/*.h",
+        "include/llvm/DebugInfo/GSYM/*.def",
+        "include/llvm/DebugInfo/GSYM/*.inc",
+    ]),
+    copts = llvm_copts,
+    deps = [
+        ":config",
+        ":support",
+    ],
+)
+
+cc_library(
     name = "debug_info_msf",
     srcs = glob([
         "lib/DebugInfo/MSF/*.c",
@@ -1685,6 +1726,7 @@ cc_library(
         ":config",
         ":core",
         ":mc",
+        ":selection_dag",
         ":support",
         ":target",
         ":transform_utils",
