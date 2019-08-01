@@ -84,7 +84,8 @@ static std::vector<string> GetROCDLFilenames(int amdgpu_version) {
     "oclc_finite_only_off.amdgcn.bc",
     "oclc_daz_opt_off.amdgcn.bc",
     "oclc_correctly_rounded_sqrt_on.amdgcn.bc",
-    "oclc_unsafe_math_off.amdgcn.bc"
+    "oclc_unsafe_math_off.amdgcn.bc",
+    "oclc_wavefrontsize64_on.amdgcn.bc",
   };
 
   // AMDGPU version-specific bitcodes
