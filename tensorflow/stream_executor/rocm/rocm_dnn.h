@@ -51,7 +51,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       dnn::RnnDirectionMode direction_mode, dnn::RnnMode rnn_mode,
       dnn::DataType data_type, const dnn::AlgorithmConfig& algorithm_config,
       float dropout, uint64 seed, ScratchAllocator* state_allocator,
-      bool use_padded_io);
+      bool use_padded_io) override;
 
   port::StatusOr<std::unique_ptr<dnn::RnnSequenceTensorDescriptor>>
   createRnnSequenceTensorDescriptor(int seq_length, int batch_size,
