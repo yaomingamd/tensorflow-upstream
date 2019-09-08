@@ -24,7 +24,6 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import spectral_ops_test_util
 from tensorflow.python.ops.linalg import linalg
 from tensorflow.python.ops.linalg import linear_operator_circulant
 from tensorflow.python.ops.linalg import linear_operator_test_util
@@ -58,8 +57,7 @@ class LinearOperatorCirculantBaseTest(object):
     """We overwrite the FFT operation mapping for testing."""
     with test.TestCase._constrain_devices_and_set_default(
         self, sess, use_gpu, force_gpu) as sess:
-      with spectral_ops_test_util.fft_kernel_label_map():
-        yield sess
+      yield sess
 
   def _shape_to_spectrum_shape(self, shape):
     # If spectrum.shape = batch_shape + [N],
@@ -246,7 +244,7 @@ class LinearOperatorCirculantTestNonHermitianSpectrum(
   # Skip Cholesky since we are explicitly testing non-hermitian
   # spectra.
   @staticmethod
-  def tests_to_skip():
+  def skip_these_tests():
     return ["cholesky"]
 
   def operator_and_matrix(
@@ -339,8 +337,8 @@ class LinearOperatorCirculantTestNonHermitianSpectrum(
       h = operator.convolution_kernel()
       c = operator.to_dense()
 
-      self.assertAllEqual((2, 3), h.get_shape())
-      self.assertAllEqual((2, 3, 3), c.get_shape())
+      self.assertAllEqual((2, 3), h.shape)
+      self.assertAllEqual((2, 3, 3), c.shape)
       self.assertAllClose(h.eval(), self.evaluate(c)[:, :, 0])
 
   @test_util.run_deprecated_v1
@@ -392,8 +390,7 @@ class LinearOperatorCirculant2DBaseTest(object):
     """We overwrite the FFT operation mapping for testing."""
     with test.TestCase._constrain_devices_and_set_default(
         self, sess, use_gpu, force_gpu) as sess:
-      with spectral_ops_test_util.fft_kernel_label_map():
-        yield sess
+      yield sess
 
   @staticmethod
   def operator_shapes_infos():
@@ -533,7 +530,7 @@ class LinearOperatorCirculant2DTestNonHermitianSpectrum(
     return [dtypes.complex64, dtypes.complex128]
 
   @staticmethod
-  def tests_to_skip():
+  def skip_these_tests():
     return ["cholesky"]
 
   def operator_and_matrix(
@@ -645,8 +642,7 @@ class LinearOperatorCirculant3DTest(test.TestCase):
     """We overwrite the FFT operation mapping for testing."""
     with test.TestCase._constrain_devices_and_set_default(
         self, sess, use_gpu, force_gpu) as sess:
-      with spectral_ops_test_util.fft_kernel_label_map():
-        yield sess
+      yield sess
 
   @test_util.run_deprecated_v1
   def test_real_spectrum_gives_self_adjoint_operator(self):
@@ -682,7 +678,7 @@ class LinearOperatorCirculant3DTest(test.TestCase):
       self.assertEqual(operator.dtype, dtypes.complex64)
       matrix = operator.to_dense().eval()
       self.assertAllEqual((2, 2 * 3 * 5, 2 * 3 * 5), matrix.shape)
-      np.testing.assert_allclose(0, np.imag(matrix), atol=1e-6)
+      np.testing.assert_allclose(0, np.imag(matrix), atol=1e-5)
 
   @test_util.run_deprecated_v1
   def test_defining_spd_operator_by_taking_real_part(self):

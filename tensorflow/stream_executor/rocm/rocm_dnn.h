@@ -46,11 +46,12 @@ class MIOpenSupport : public dnn::DnnSupport {
   port::StatusOr<perftools::gputools::dnn::VersionInfo> GetVersion() override;
 
   port::StatusOr<std::unique_ptr<dnn::RnnDescriptor>> createRnnDescriptor(
-      int num_layers, int hidden_size, int input_size, int batch_size,
-      dnn::RnnInputMode input_mode, dnn::RnnDirectionMode direction_mode,
-      dnn::RnnMode rnn_mode, dnn::DataType data_type,
-      const dnn::AlgorithmConfig& algorithm_config, float dropout, uint64 seed,
-      ScratchAllocator* state_allocator) override;
+      int num_layers, int hidden_size, int input_size, int cell_size,
+      int batch_size, dnn::RnnInputMode input_mode,
+      dnn::RnnDirectionMode direction_mode, dnn::RnnMode rnn_mode,
+      dnn::DataType data_type, const dnn::AlgorithmConfig& algorithm_config,
+      float dropout, uint64 seed, ScratchAllocator* state_allocator,
+      bool use_padded_io) override;
 
   port::StatusOr<std::unique_ptr<dnn::RnnSequenceTensorDescriptor>>
   createRnnSequenceTensorDescriptor(int seq_length, int batch_size,
@@ -258,7 +259,8 @@ class MIOpenSupport : public dnn::DnnSupport {
       ScratchAllocator* workspace_allocator) override;
 
   port::Status DoConvolve(
-      dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
+      dnn::ConvolutionKind kind, dnn::DataType element_type,
+      dnn::DataType output_type, Stream* stream,
       const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data,
       const dnn::FilterDescriptor& filter_descriptor,
       DeviceMemoryBase filter_data,

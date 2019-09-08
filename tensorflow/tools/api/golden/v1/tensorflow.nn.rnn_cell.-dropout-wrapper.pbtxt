@@ -43,6 +43,10 @@ tf_class {
     mtype: "<type \'property\'>"
   }
   member {
+    name: "input_spec"
+    mtype: "<type \'property\'>"
+  }
+  member {
     name: "losses"
     mtype: "<type \'property\'>"
   }
@@ -156,7 +160,7 @@ tf_class {
   }
   member_method {
     name: "build"
-    argspec: "args=[\'self\', \'_\'], varargs=None, keywords=None, defaults=None"
+    argspec: "args=[\'self\', \'inputs_shape\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
     name: "call"

@@ -624,7 +624,7 @@ REGISTER_OP("XlaEinsum")
     .Input("b: T")
     .Output("product: T")
     .Attr("equation: string")
-    .Attr("T: {bfloat16, float}")
+    .Attr("T: {complex64, bfloat16, float}")
     .SetShapeFn([](shape_inference::InferenceContext* context) {
       shape_inference::ShapeHandle input_a = context->input(0);
       shape_inference::ShapeHandle input_b = context->input(1);
@@ -633,12 +633,14 @@ REGISTER_OP("XlaEinsum")
       if (context->RankKnown(input_a)) {
         rank_a = context->Rank(input_a);
       } else {
-        return errors::InvalidArgument("input 0's rank is unknown.");
+        context->set_output(0, context->UnknownShape());
+        return Status::OK();
       }
       if (context->RankKnown(input_b)) {
         rank_b = context->Rank(input_b);
       } else {
-        return errors::InvalidArgument("input 1's rank is unknown.");
+        context->set_output(0, context->UnknownShape());
+        return Status::OK();
       }
       string equation;
       TF_RETURN_IF_ERROR(context->GetAttr("equation", &equation));

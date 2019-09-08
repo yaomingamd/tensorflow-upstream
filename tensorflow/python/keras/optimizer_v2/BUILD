@@ -1,15 +1,15 @@
 # Description:
 #   Contains the Keras OptimizerV2 API (internal TensorFlow version).
 
+load("//tensorflow:tensorflow.bzl", "py_test")
+load("//tensorflow:tensorflow.bzl", "cuda_py_test")
+
 package(
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],  # Apache 2.0
 )
 
 exports_files(["LICENSE"])
-
-load("//tensorflow:tensorflow.bzl", "py_test")
-load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 
 py_library(
     name = "optimizer_v2",
@@ -117,6 +117,7 @@ cuda_py_test(
         "//tensorflow/python/eager:context",
     ],
     shard_count = 4,
+    tags = ["no_rocm"],
     xla_enable_strict_auto_jit = True,
 )
 
@@ -211,6 +212,7 @@ py_test(
         "no_windows",
         # TODO(b/127092862): Re-enable this test in Kokoro.
         "no_oss",
+        "notap",  # b/140242244
     ],
     deps = [
         ":optimizer_v2",

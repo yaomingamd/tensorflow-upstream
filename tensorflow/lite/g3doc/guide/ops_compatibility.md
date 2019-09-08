@@ -134,8 +134,6 @@ TensorFlow operation not listed above are likely unsupported. Notably, the
 following common ops are not supported at the moment:
 
 *   [tf.depth_to_space](https://www.tensorflow.org/api_docs/python/tf/depth_to_space)
-*   [tf.image.resize_bilinear](https://www.tensorflow.org/api_docs/python/tf/image/resize_bilinear)
-*   [tf.tanh](https://www.tensorflow.org/api_docs/python/tf/tanh)
 
 ## TensorFlow Lite Operations
 
@@ -268,7 +266,7 @@ Options {
 }
 ```
 
-**CONV_2D_TRANSPOSE**
+**TRANSPOSE_CONV**
 
 ```
 Inputs {
@@ -643,6 +641,40 @@ Outputs {
 }
 ```
 
+**NON_MAX_SUPPRESSION_V4**
+
+```
+Inputs {
+  0: boxes in format [y1, x1, y2, x2]
+  1: scores
+  2: max number of detections
+  3: IOU threshold
+  4: score threshold
+}
+Outputs {
+  0: selected indices
+  1: number of selected indices
+}
+```
+
+**NON_MAX_SUPPRESSION_V5**
+
+```
+Inputs {
+  0: boxes in format [y1, x1, y2, x2]
+  1: scores
+  2: max number of detections
+  3: IOU threshold
+  4: score threshold
+  5: soft NMS sigma
+}
+Outputs {
+  0: selected indices
+  1: selected scores
+  2: number of selected indices
+}
+```
+
 **PACK**
 
 ```
@@ -781,6 +813,22 @@ Outputs {
 }
 Options {
   new_shape
+}
+```
+
+**RESIZE_BILINEAR**
+
+```
+Inputs {
+  0: a 4D tensor
+  1: a 1D tensor with 2 elements
+}
+Outputs {
+  0: A tensor of type `tensor 0` resized according to `tensor 1` height/width values
+  using bilinear interpolation.
+}
+Options {
+  align_corners
 }
 ```
 
@@ -1001,6 +1049,17 @@ Options {
 }
 ```
 
+**TANH**
+
+```
+Inputs {
+  0: a tensor
+}
+Outputs {
+  0: result of computing element-wise hyperbolic tangent of the input tensor
+}
+```
+
 **TOP_K**
 
 ```
@@ -1103,8 +1162,6 @@ custom models yet:
 *   HASHTABLE_LOOKUP
 *   LSH_PROJECTION
 *   LSTM
-*   RESIZE_BILINEAR
 *   RNN
 *   SKIP_GRAM
 *   SVDF
-*   TANH

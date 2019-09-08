@@ -38,6 +38,7 @@ from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.util import compat
 from tensorflow.python.util import function_utils
+from tensorflow.python.util import object_identity
 from tensorflow.python.util import tf_contextlib
 from tensorflow.python.util import tf_inspect
 
@@ -476,7 +477,7 @@ class _DefinedFunction(object):
 
     self._stateful_ops = [(op.name, op.type)
                           for op in temp_graph.get_operations()
-                          if op.op_def.is_stateful]
+                          if op._is_stateful]  # pylint: disable=protected-access
 
   def _set_c_attrs(self, attrs):
     """Sets `attrs` as attributes of self._c_func.
@@ -710,7 +711,7 @@ class _FuncGraph(ops.Graph):
     # _FuncGraph.
     self.outputs = []
     # Maps external tensor -> internal tensor (e.g. input placeholder).
-    self._captured = {}
+    self._captured = object_identity.ObjectIdentityDictionary()
     # The external tensors that have been captured as inputs and must be passed
     # to this function (empty if capturing by value, otherwise these are the
     # keys of _captured).
@@ -723,6 +724,11 @@ class _FuncGraph(ops.Graph):
     self.extra_vars = []
 
   # pylint: disable=g-doc-return-or-yield
+
+  @property
+  def outer_graph(self):
+    """The graph active when this _FuncGraph was created."""
+    return self._outer_graph
 
   @tf_contextlib.contextmanager
   def container(self, container_name):
@@ -790,7 +796,7 @@ class _FuncGraph(ops.Graph):
           collections=collections,
           use_resource=use_resource)
       self.extra_vars.append(var)
-      if (isinstance(var, resource_variable_ops.ResourceVariable) and
+      if (isinstance(var, resource_variable_ops.BaseResourceVariable) and
           self._capture_resource_var_by_value):
         # For resource-based variables read the variable outside the function
         # and pass in the value. This ensures that the function is pure and
@@ -799,12 +805,12 @@ class _FuncGraph(ops.Graph):
         return var.value()
       return var
 
-  def create_op(self, op_type, inputs, dtypes=None, **kwargs):  # pylint: disable=redefined-outer-name
+  def _create_op_internal(self, op_type, inputs, dtypes=None, **kwargs):  # pylint: disable=redefined-outer-name
     for i, x in enumerate(inputs):
       if isinstance(x, ops.EagerTensor) or x.graph is not self:
         inputs[i] = self.capture(x)
-    return super(_FuncGraph, self).create_op(op_type, inputs,
-                                             dtypes=dtypes, **kwargs)
+    return super(_FuncGraph, self)._create_op_internal(
+        op_type, inputs, dtypes=dtypes, **kwargs)
 
   def capture(self, tensor, name=None):
     """Adds the given tensor to this graph and returns the captured tensor."""
@@ -853,17 +859,17 @@ class _FuncGraph(ops.Graph):
   def _add_op_and_parents(self, op):
     # pylint: disable=protected-access
     op_def = graph_to_function_def._get_op_def(op)
-    # pylint: enable=protected-access
-    if op_def.is_stateful and op not in self._whitelisted_stateful_ops:
+    if op._is_stateful and op not in self._whitelisted_stateful_ops:
       raise ValueError("Cannot capture a stateful node (name:%s, type:%s) "
                        "by value." % (op.name, op.type))
     elif op.type in ("Placeholder", "PlaceholderV2"):
       raise ValueError("Cannot capture a placeholder (name:%s, type:%s) "
                        "by value." % (op.name, op.type))
+    # pylint: enable=protected-access
 
     captured_inputs = [self._add_tensor_and_parents(x) for x in op.inputs]
 
-    captured_op = self.create_op(
+    captured_op = self._create_op_internal(
         op.type,
         captured_inputs, [o.dtype for o in op.outputs],
         name=op.name,
@@ -1057,7 +1063,7 @@ def _call(sig, *inputs, **kwargs):
     name = func_name
   attrs = _parse_kwargs_as_attrs(func_name, **kwargs)
   output_types = [dtypes.DType(x.type) for x in sig.output_arg]
-  op = g.create_op(
+  op = g._create_op_internal(  # pylint: disable=protected-access
       func_name, list(inputs), output_types, name=name, attrs=attrs, op_def=sig)
   if op.outputs:
     if len(op.outputs) == 1:
@@ -1186,6 +1192,15 @@ def _get_experimental_kwarg_as_attr(attr_name, value):
                      (attr_name, type(value)))
 
 
+def _get_kwarg_as_str_attr(attr_name, value):
+  """Creates an AttrValue for a python object."""
+  if isinstance(value, str):
+    return attr_value_pb2.AttrValue(s=compat.as_bytes(value))
+  else:
+    raise ValueError("Unsupported attribute type for %s with type %s" %
+                     (attr_name, type(value)))
+
+
 def _parse_kwargs_as_attrs(func_name, **kwargs):
   """Parses **kwargs into a node's attributes."""
   attrs = {}
@@ -1218,7 +1233,10 @@ def _parse_kwargs_as_attrs(func_name, **kwargs):
     if key.startswith("experimental_"):
       attrs[key] = _get_experimental_kwarg_as_attr(key, kwargs[key])
       del kwargs[key]
-
+    # Support for https://github.com/tensorflow/community/pull/113/files.
+    elif key == "_implements" or key == "_reference":
+      attrs[key] = _get_kwarg_as_str_attr(key, kwargs[key])
+      del kwargs[key]
   if kwargs:
     raise ValueError("Unknown keyword arguments: %s" % kwargs.keys())
   return attrs

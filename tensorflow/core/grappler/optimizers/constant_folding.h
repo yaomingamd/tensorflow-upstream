@@ -32,6 +32,7 @@ namespace grappler {
 
 const char kConstantFoldingConst[] = "ConstantFolding";
 const char kConstantFoldingCtrl[] = "ConstantFoldingCtrl";
+extern const int64 kMaxConstantSize;
 
 // Constant folding optimization for a graph.
 class ConstantFolding : public GraphOptimizer {
@@ -48,7 +49,9 @@ class ConstantFolding : public GraphOptimizer {
 
   ~ConstantFolding() override {}
 
-  string name() const override { return "constant folding"; };
+  string name() const override { return "constant_folding"; };
+
+  bool UsesFunctionLibrary() const override { return false; }
 
   Status Optimize(Cluster* cluster, const GrapplerItem& item,
                   GraphDef* output) override;
@@ -77,7 +80,7 @@ class ConstantFolding : public GraphOptimizer {
                                  const GraphProperties& properties);
   Status MaterializeConstants(const GraphProperties& properties);
 
-  bool IsFoldable(const NodeDef& node) const;
+  bool IsFoldable(const NodeDef& node, const GraphProperties* properties) const;
 
   Status EvaluateNode(const NodeDef& node,
                       const gtl::InlinedVector<TensorValue, 4>& inputs,
@@ -112,7 +115,7 @@ class ConstantFolding : public GraphOptimizer {
                                             NodeDef* node, GraphDef* graph);
 
   void ReplaceDivisionOfOnesByReciprocal(NodeDef* node, GraphDef* graph);
-  Status FoldGraph(GraphDef* output,
+  Status FoldGraph(const GraphProperties& properties, GraphDef* output,
                    absl::flat_hash_set<string>* nodes_to_not_simplify);
 
   bool IsSimplifiableReshape(const NodeDef& node,
@@ -142,7 +145,8 @@ class ConstantFolding : public GraphOptimizer {
 
   // Pushes down constants on '+' and '*' operators if applicable. Returns true
   // the transformation applied successfully.
-  bool ConstantPushDown(GraphDef* optimized_graph, NodeDef* node);
+  bool ConstantPushDown(const GraphProperties& properties,
+                        GraphDef* optimized_graph, NodeDef* node);
 
   // Aggregate constants present around a conv operator. Returns true if the
   // transformation was applied successfully.

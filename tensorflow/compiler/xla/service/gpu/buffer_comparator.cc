@@ -284,11 +284,11 @@ LBB8_6:
   and.pred    %p4, %p2, %p3;
   @%p4 bra   LBB9_6;
   {
-  .reg .b32 %temp; 
+  .reg .b32 %temp;
   mov.b64   {%r6, %temp}, %fd1;
   }
   {
-  .reg .b32 %temp; 
+  .reg .b32 %temp;
   mov.b64   {%temp, %r1}, %fd1;
   }
   and.b32    %r7, %r1, 2147483647;
@@ -297,11 +297,11 @@ LBB8_6:
   or.pred    %p7, %p6, %p5;
   @%p7 bra   LBB9_4;
   {
-  .reg .b32 %temp; 
+  .reg .b32 %temp;
   mov.b64   {%r8, %temp}, %fd2;
   }
   {
-  .reg .b32 %temp; 
+  .reg .b32 %temp;
   mov.b64   {%temp, %r9}, %fd2;
   }
   and.b32    %r10, %r9, 2147483647;
@@ -364,9 +364,9 @@ static StatusOr<bool> DeviceCompare(se::Stream* stream,
   uint64 buffer_size = lhs_typed.ElementCount();
 
   TF_ASSIGN_OR_RETURN(absl::Span<const uint8> compiled_ptx,
-                      se::cuda::CompilePtxOrGetCached(
-                          executor->device_ordinal(), buffer_compare_ptx,
-                          PtxOptsFromConfig(config)));
+                      se::CompileGpuAsmOrGetCached(executor->device_ordinal(),
+                                                   buffer_compare_ptx,
+                                                   PtxOptsFromConfig(config)));
 
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<ComparisonKernelT<ElementT>> comparison_kernel,
@@ -461,7 +461,7 @@ static StatusOr<bool> CompareEqualParameterized(se::Stream* stream,
 
 StatusOr<bool> BufferComparator::CompareEqual(se::Stream* stream,
                                               se::DeviceMemoryBase lhs,
-                                              se::DeviceMemoryBase rhs) {
+                                              se::DeviceMemoryBase rhs) const {
   switch (shape_.element_type()) {
     case xla::F16:
       return CompareEqualParameterized<Eigen::half, float>(
@@ -474,6 +474,27 @@ StatusOr<bool> BufferComparator::CompareEqual(se::Stream* stream,
           stream, lhs, rhs, shape_, config_, "__xla_fp64_comparison");
     default:
       return Unimplemented("Unimplemented element type");
+  }
+}
+
+BufferComparator::BufferComparator(const Shape& shape,
+                                   const HloModuleConfig& config)
+    : shape_(shape), config_(config) {
+  // Normalize complex shapes: since we treat the passed array as a contiguous
+  // storage it does not matter which dimension are we doubling.
+  auto double_dim_size = [&]() {
+    int64 prev_zero_dim_size = shape_.dimensions(0);
+    shape_.set_dimensions(0, prev_zero_dim_size * 2);
+  };
+
+  if (shape_.element_type() == PrimitiveType::C64) {
+    // C64 is just two F32s next to each other.
+    shape_.set_element_type(PrimitiveType::F32);
+    double_dim_size();
+  } else if (shape_.element_type() == PrimitiveType::C128) {
+    // C128 is just two F64s next to each other.
+    shape_.set_element_type(PrimitiveType::F64);
+    double_dim_size();
   }
 }
 

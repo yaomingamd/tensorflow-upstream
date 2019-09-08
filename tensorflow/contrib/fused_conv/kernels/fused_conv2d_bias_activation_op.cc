@@ -229,13 +229,17 @@ class LaunchFusedConv2DBiasActivationOp<CPUDevice, qint8, BiasType, ScaleType> {
         // (1) Scale and add bias.
         // NOTE(ezhulenev): We do not use Eigen expressions for this loop,
         // because it seems that packet FMA produces slightly different results,
-        // and we are targeting bit-by-bit equality with Nvidia implementation.
+        // and we are targeting close equality with Nvidia implementation.
+        // We could use std::fmaf, but it can be ~50x slower, on machines
+        // without fma instruction.
         for (int idx = 0; idx < num_rows; ++idx) {
-          conv_output_ptr[idx] =
-              std::fmaf(conv_output_ptr[idx], conv_input_scale, bias_ptr[idx]);
+          conv_output_ptr[idx] = static_cast<double>(conv_output_ptr[idx]) *
+                                     static_cast<double>(conv_input_scale) +
+                                 static_cast<double>(bias_ptr[idx]);
           if (side_input_scale != 0.0f) {
-            conv_output_ptr[idx] = std::fmaf(
-                side_input_ptr[idx], side_input_scale, conv_output_ptr[idx]);
+            conv_output_ptr[idx] = static_cast<double>(side_input_ptr[idx]) *
+                                       static_cast<double>(side_input_scale) +
+                                   static_cast<double>(conv_output_ptr[idx]);
           }
         }
 
@@ -530,7 +534,10 @@ tensorflow::ComputeCapability GetComputeCapability(
 }
 
 void LogFusedConvForwardAutotuneResults(
-    se::dnn::DataType element_type, const se::dnn::BatchDescriptor& input_desc,
+    se::dnn::DataType element_type, se::DeviceMemoryBase input_buffer,
+    se::DeviceMemoryBase filter_buffer, se::DeviceMemoryBase output_buffer,
+    se::DeviceMemoryBase bias_buffer, se::DeviceMemoryBase side_input_buffer,
+    const se::dnn::BatchDescriptor& input_desc,
     const se::dnn::FilterDescriptor& filter_desc,
     const se::dnn::BatchDescriptor& output_desc,
     const se::dnn::ConvolutionDescriptor& conv_desc, double conv_scale,
@@ -547,15 +554,29 @@ void LogFusedConvForwardAutotuneResults(
     instr.set_conv_scale(conv_scale);
     instr.set_side_value_scale(side_value_scale);
     instr.set_activation(activation_mode);
+    instr.set_input_address(reinterpret_cast<uint64>(input_buffer.opaque()));
+    instr.set_filter_address(reinterpret_cast<uint64>(filter_buffer.opaque()));
+    instr.set_output_address(reinterpret_cast<uint64>(output_buffer.opaque()));
+    instr.set_bias_address(reinterpret_cast<uint64>(bias_buffer.opaque()));
+    instr.set_side_input_address(
+        reinterpret_cast<uint64>(side_input_buffer.opaque()));
     log.mutable_instr()->PackFrom(std::move(instr));
   }
   *log.mutable_cudnn_version() = GetCudnnVersion(stream_exec);
   *log.mutable_compute_capability() = GetComputeCapability(stream_exec);
   log.set_device_pci_bus_id(stream_exec->GetDeviceDescription().pci_bus_id());
+  {
+    string blas_version;
+    if (auto* blas = stream_exec->AsBlas()) {
+      if (blas->GetVersion(&blas_version).ok()) {
+        log.set_blas_version(blas_version);
+      }
+    }
+  }
   for (const auto& result : results) {
     *log.add_results() = result;
   }
-  Logger::Singleton()->LogProto(log);
+  Logger::GetSingleton()->LogProto(log);
 }
 
 Status BestCudnnConvAlgorithm(absl::Span<const AutotuneResult> results,
@@ -946,7 +967,8 @@ void LaunchFusedConv2DBiasActivationOp<GPUDevice, T, BiasType, ScaleType>::
       }
     }
     internal::LogFusedConvForwardAutotuneResults(
-        se::dnn::ToDataType<typename RawType<T>::type>::value, conv_input_desc,
+        se::dnn::ToDataType<typename RawType<T>::type>::value, conv_input_ptr,
+        filter_ptr, output_ptr, bias_ptr, side_input_ptr, conv_input_desc,
         filter_desc, output_desc, conv_desc, conv_input_scale, side_input_scale,
         dnn_activation_mode, stream->parent(), results);
     OP_REQUIRES_OK(

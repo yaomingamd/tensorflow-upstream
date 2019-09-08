@@ -8,6 +8,9 @@
 #   For a user interface walkthrough, see https://www.tensorflow.org/guide/debugger
 # ":grpc_debug_server": Server interface for grpc:// debug URLs.
 
+load("//tensorflow:tensorflow.bzl", "cuda_py_test")
+load("//tensorflow:tensorflow.bzl", "if_not_v2", "if_not_windows", "py_binary", "py_test")
+
 package(
     default_visibility = ["//tensorflow:internal"],
     licenses = ["notice"],  # Apache 2.0
@@ -15,18 +18,13 @@ package(
 
 exports_files(["LICENSE"])
 
-load("//tensorflow:tensorflow.bzl", "cuda_py_test")
-load("//tensorflow:tensorflow.bzl", "py_test")
-load("//tensorflow:tensorflow.bzl", "py_binary")
-load("//tensorflow:tensorflow.bzl", "if_not_v2")
-load("//tensorflow:tensorflow.bzl", "if_not_windows")
-
 py_library(
     name = "debug_py",
     srcs = ["__init__.py"],
     srcs_version = "PY2AND3",
     visibility = ["//visibility:public"],
     deps = [
+        ":check_numerics_callback",
         ":debug_data",
         ":debug_gradients",
         ":debug_graphs",
@@ -57,6 +55,18 @@ py_library(
 )
 
 py_library(
+    name = "check_numerics_callback",
+    srcs = ["lib/check_numerics_callback.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":source_utils",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:op_callbacks",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_library(
     name = "common",
     srcs = ["lib/common.py"],
     srcs_version = "PY2AND3",
@@ -80,6 +90,10 @@ py_library(
     name = "debug_data",
     srcs = ["lib/debug_data.py"],
     srcs_version = "PY2AND3",
+    visibility = [
+        "//tensorflow:internal",
+        "//third_party/py/tf_slim:__subpackages__",
+    ],
     deps = [
         ":debug_graphs",
         "//tensorflow/core:protos_all_py",
@@ -326,6 +340,10 @@ py_library(
     name = "dumping_wrapper",
     srcs = ["wrappers/dumping_wrapper.py"],
     srcs_version = "PY2AND3",
+    visibility = [
+        "//tensorflow:internal",
+        "//third_party/py/tf_slim:__subpackages__",
+    ],
     deps = [
         ":debug_data",
         ":framework",
@@ -367,6 +385,10 @@ py_library(
     name = "hooks",
     srcs = ["wrappers/hooks.py"],
     srcs_version = "PY2AND3",
+    visibility = [
+        "//tensorflow:internal",
+        "//third_party/py/tf_slim:__subpackages__",
+    ],
     deps = [
         ":debug_utils",
         ":dumping_wrapper",
@@ -464,7 +486,6 @@ py_library(
     deps = [
         ":debug_py",
         "//tensorflow:tensorflow_py",
-        "//tensorflow/examples/tutorials/mnist:input_data",
     ],
 )
 
@@ -548,6 +569,23 @@ py_test(
         "//tensorflow/python:platform",
         "//tensorflow/python:platform_test",
         "//third_party/py/numpy",
+    ],
+)
+
+cuda_py_test(
+    name = "check_numerics_callback_test",
+    size = "small",
+    srcs = ["lib/check_numerics_callback_test.py"],
+    additional_deps = [
+        ":check_numerics_callback",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:gradients",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
+        "//tensorflow/python:training",
+        "//tensorflow/python:variables",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "//tensorflow/python/keras",
     ],
 )
 
@@ -788,6 +826,22 @@ py_library(
         "//tensorflow/python:errors",
         "//tensorflow/python:variables",
     ],
+)
+
+cuda_py_test(
+    name = "debug_grappler_test",
+    size = "small",
+    srcs = ["lib/debug_grappler_test.py"],
+    additional_deps = [
+        ":debug_data",
+        ":debug_utils",
+        "//tensorflow/python:client",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform_test",
+        "//tensorflow/python:variables",
+    ],
+    xla_enable_strict_auto_jit = False,  # Tests TF:Classic implementation
 )
 
 cuda_py_test(
@@ -1126,6 +1180,7 @@ py_test(
         "//tensorflow/python:state_ops",
         "//tensorflow/python:training",
         "//tensorflow/python:variables",
+        "//tensorflow/python/keras",
         "//third_party/py/numpy",
     ],
 )

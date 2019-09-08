@@ -1,11 +1,11 @@
 # Tests of TensorFlow kernels written using the Python API.
 
+load("//tensorflow:tensorflow.bzl", "cuda_py_test")
+
 package(
     default_visibility = ["//tensorflow:internal"],
     licenses = ["notice"],  # Apache 2.0
 )
-
-load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 
 cuda_py_test(
     name = "linear_operator_test",
@@ -134,7 +134,6 @@ cuda_py_test(
     additional_deps = [
         "//third_party/py/numpy",
         "//tensorflow/python:array_ops",
-        "//tensorflow/python:spectral_ops_test_util",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework",
         "//tensorflow/python:framework_for_generated_wrappers",
@@ -356,7 +355,6 @@ cuda_py_test(
     additional_deps = [
         "//third_party/py/numpy",
         "//tensorflow/python:array_ops",
-        "//tensorflow/python:spectral_ops_test_util",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework",
         "//tensorflow/python:framework_for_generated_wrappers",
@@ -368,6 +366,8 @@ cuda_py_test(
     ],
     shard_count = 5,
     tags = [
+        "no_cuda_on_cpu_tap",  # flaky, b/135701551
+        "no_gpu",  # flaky, b/135701551
         "noasan",  # times out, b/63678675
         "optonly",  # times out, b/79171797
     ],

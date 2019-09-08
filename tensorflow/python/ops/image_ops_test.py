@@ -4514,6 +4514,8 @@ class NonMaxSuppressionTest(test_util.TensorFlowTestCase):
 class NonMaxSuppressionWithScoresTest(test_util.TensorFlowTestCase):
 
   @test_util.run_deprecated_v1
+  @test_util.disable_xla(
+      "non_max_suppression with dynamic output shape unsupported.")
   def testSelectFromThreeClustersWithSoftNMS(self):
     boxes_np = [[0, 0, 1, 1], [0, 0.1, 1, 1.1], [0, -0.1, 1, 0.9],
                 [0, 10, 1, 11], [0, 10.1, 1, 11.1], [0, 100, 1, 101]]
@@ -5070,7 +5072,7 @@ class ImageGradientsTest(test_util.TensorFlowTestCase):
 
 class SobelEdgesTest(test_util.TensorFlowTestCase):
 
-  def testSobelEdges1x2x3x1(self):
+  def disabled_testSobelEdges1x2x3x1(self):
     img = constant_op.constant([[1, 3, 6], [4, 1, 5]],
                                dtype=dtypes.float32, shape=[1, 2, 3, 1])
     expected = np.reshape([[[0, 0], [0, 12], [0, 0]],

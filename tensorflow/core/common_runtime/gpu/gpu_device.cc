@@ -70,7 +70,6 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/platform/tracing.h"
 #include "tensorflow/core/platform/types.h"
-#include "tensorflow/core/profiler/lib/traceme.h"
 #include "tensorflow/core/public/session_options.h"
 #include "tensorflow/core/util/device_name_utils.h"
 #include "tensorflow/core/util/env_var.h"
@@ -250,6 +249,20 @@ class BaseGPUDevice::StreamGroupFactory {
       VLOG(2) << "Created stream[" << stream_group_within_gpu
               << "] = " << group->compute;
 
+#if TENSORFLOW_USE_ROCM
+      // ROCm streams are lightweight and will not necessarily trigger device
+      // queue init until they are first used. For optimal performance,
+      // compute and nccl streams must be immediate siblings.
+      group->nccl = new se::Stream(executor);
+      group->nccl->Init();
+      VLOG(2) << "Created nccl_stream[" << stream_group_within_gpu
+              << "] = " << group->nccl;
+
+      // Force underlying resource creation now.
+      group->compute->ThenWaitFor(group->nccl);
+      group->nccl->ThenWaitFor(group->compute);
+#endif
+
       group->host_to_device = new se::Stream(executor);
       group->host_to_device->Init();
       VLOG(2) << "Created host_to_device_stream[" << stream_group_within_gpu
@@ -372,8 +385,12 @@ Status BaseGPUDevice::Init(const SessionOptions& options) {
     streams_.push_back(StreamGroupFactory::Global().GetOrCreate(
         tf_gpu_id_, i, executor_, options.config.gpu_options()));
     device_contexts_.push_back(new GPUDeviceContext(
-        i, streams_.back()->compute, streams_.back()->host_to_device,
-        streams_.back()->device_to_host, streams_.back()->device_to_device));
+        i, streams_.back()->compute,
+#if TENSORFLOW_USE_ROCM
+        streams_.back()->nccl,
+#endif
+        streams_.back()->host_to_device, streams_.back()->device_to_host,
+        streams_.back()->device_to_device));
   }
 
   em_ = EventMgrFactory::Singleton()->GetEventMgr(executor_,
@@ -518,18 +535,6 @@ string BaseGPUDevice::ComputeOpKernelDebugString(const OpKernel& op_kernel,
 }
 
 void BaseGPUDevice::Compute(OpKernel* op_kernel, OpKernelContext* context) {
-  profiler::TraceMe activity(
-      [&] {
-        return strings::StrCat("BaseGPUDevice::Compute ", op_kernel->name(),
-                               ":", op_kernel->type_string(),
-                               "#step_id=", context->step_id(),
-                               ",step_container_name=",
-                               context->step_container() == nullptr
-                                   ? "n/a"
-                                   : context->step_container()->name(),
-                               "#");
-      },
-      profiler::GetTFTraceMeLevel(op_kernel->IsExpensive()));
   // NOTE(tucker): We need to discriminate between Eigen GPU
   // operations and all others.  If an operation is Eigen
   // implemented (or otherwise tries to launch a GPU kernel
@@ -654,20 +659,6 @@ void BaseGPUDevice::ComputeAsync(AsyncOpKernel* op_kernel,
           << op_kernel->type_string() << " on GPU" << tf_gpu_id_ << " stream["
           << stream_id << "]";
 
-  // When Xprof profiling is off (which is the default), constructing the
-  // activity is simple enough that its overhead is negligible.
-  profiler::TraceMe activity(
-      [&] {
-        return strings::StrCat("BaseGPUDevice::ComputeAsync ",
-                               op_kernel->name(), ":", op_kernel->type_string(),
-                               "#step_id=", context->step_id(),
-                               ",step_container_name=",
-                               context->step_container() == nullptr
-                                   ? "n/a"
-                                   : context->step_container()->name(),
-                               "#");
-      },
-      profiler::GetTFTraceMeLevel(op_kernel->IsExpensive()));
   ScopedActivateExecutorContext scoped_activation{stream->parent()};
   op_kernel->ComputeAsync(context, done);
 }
@@ -1569,7 +1560,7 @@ std::vector<CudaVersion> GetSupportedCudaComputeCapabilities() {
 #endif  // GOOGLE_CUDA
 
 #if TENSORFLOW_USE_ROCM
-std::vector<int> supported_amdgpu_isa_versions = {803, 900, 906};
+std::vector<int> supported_amdgpu_isa_versions = {803, 900, 906, 908};
 
 std::vector<int> GetSupportedAMDGPUISAVersions() {
   return supported_amdgpu_isa_versions;
@@ -1665,7 +1656,12 @@ Status BaseGPUDeviceFactory::GetValidDeviceIds(
   // Try to dlopen GPU libraries if they are supposed to be dynamically loaded.
   auto handle_or = se::internal::DsoLoader::MaybeTryDlopenGPULibraries();
   if (!handle_or.ok()) {
-    LOG(WARNING) << "Cannot dlopen some GPU libraries. Skipping registering "
+    LOG(WARNING) << "Cannot dlopen some GPU libraries. Please make sure the "
+                    "missing libraries mentioned above are installed properly "
+                    "if you would like to use GPU. Follow the guide at "
+                    "https://www.tensorflow.org/install/gpu for how to "
+                    "download and setup the required libraries for your "
+                    "platform.\nSkipping registering "
                     "GPU devices...";
     return Status::OK();
   }
@@ -1931,4 +1927,4 @@ void GPUKernelTracker::RecordTerminated(uint64 queued_count) {
 
 }  // namespace tensorflow
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

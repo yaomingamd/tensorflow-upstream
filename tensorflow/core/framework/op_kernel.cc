@@ -18,14 +18,16 @@ limitations under the License.
 #include <cstdlib>
 #include <cstring>
 #include <mutex>  // NOLINT
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "tensorflow/core/framework/allocation_description.pb.h"
 #include "tensorflow/core/framework/attr_value_util.h"
 #include "tensorflow/core/framework/device_attributes.pb.h"
-#include "tensorflow/core/framework/graph.pb_text.h"
-#include "tensorflow/core/framework/kernel_def.pb_text.h"
+#include "tensorflow/core/framework/graph.pb.h"
+#include "tensorflow/core/framework/kernel_def.pb.h"
 #include "tensorflow/core/framework/kernel_def_util.h"
 #include "tensorflow/core/framework/log_memory.h"
 #include "tensorflow/core/framework/memory_types.h"
@@ -824,21 +826,29 @@ Status OpKernelContext::allocate_persistent(DataType type,
   Status s = allocate_tensor(type, shape, &persistent, attr);
   if (s.ok()) {
     *out_persistent = PersistentTensor(persistent);
+    Tensor* t = out_persistent->AccessTensor(this);
+
     if (out_tensor) {
-      *out_tensor = out_persistent->AccessTensor(this);
+      *out_tensor = t;
     }
+
     if (track_allocations()) {
-      Tensor* t = out_persistent->AccessTensor(this);
       Allocator* a = get_allocator(attr);
       if (a->TracksAllocationSizes()) {
-        int64 alloc_size = a->AllocatedSize(t->tensor_data().data());
-        int64 alloc_id = a->AllocationId(t->tensor_data().data());
-        record_persistent_memory_allocation(alloc_size, alloc_id);
+        // Zero-byte Tensors don't use allocators: check and skip tracking.
+        AllocationDescription alloc_desc;
+        TensorReference tensor_ref(*t);
+        tensor_ref.FillDescription(&alloc_desc);
+        tensor_ref.Unref();
+
+        if (alloc_desc.allocated_bytes()) {  // Non-zero sized tensor.
+          int64 alloc_size = a->AllocatedSize(t->tensor_data().data());
+          int64 alloc_id = a->AllocationId(t->tensor_data().data());
+          record_persistent_memory_allocation(alloc_size, alloc_id);
+        }
       }
     } else if (record_memory_consumption_) {
-      mutex_lock l(stats_mu_);
-      persistent_memory_allocated_ +=
-          out_persistent->AccessTensor(this)->TotalBytes();
+      record_persistent_memory_allocation(t->TotalBytes());
     }
   }
   return s;
@@ -1234,18 +1244,60 @@ Status FindKernelRegistration(
     TF_RETURN_IF_ERROR(KernelAttrsMatch(iter->second.def, node_attrs, &match));
     if (match) {
       if (*reg != nullptr) {
-        return errors::InvalidArgument(
-            "Multiple OpKernel registrations match NodeDef '",
-            FormatNodeDefForError(node_name, has_experimental_debug_info,
-                                  experimental_debug_info),
-            "': '", ProtoShortDebugString((*reg)->def), "' and '",
-            ProtoShortDebugString(iter->second.def), "'");
+        if ((*reg)->def.priority() == iter->second.def.priority()) {
+          return errors::InvalidArgument(
+              "Multiple OpKernel registrations match NodeDef at the same "
+              "priority '",
+              FormatNodeDefForError(node_name, has_experimental_debug_info,
+                                    experimental_debug_info),
+              "': '", (*reg)->def.ShortDebugString(), "' and '",
+              iter->second.def.ShortDebugString(), "'");
+        } else if ((*reg)->def.priority() > iter->second.def.priority()) {
+          continue;
+        }
+        // iter->second's priority is higher than *reg.
       }
       *reg = &iter->second;
     } else {
       *was_attr_mismatch = true;
     }
   }
+  // Check if no device specific registrations found. If not, try finding a
+  // default kernel.
+  if (*reg == nullptr &&
+      !IsSymbolicExecutionDevice(device_type.type_string())) {
+    const string default_key = Key(node_op, DEVICE_DEFAULT, label);
+    auto regs = typed_registry->registry.equal_range(default_key);
+    for (auto iter = regs.first; iter != regs.second; ++iter) {
+      // If there is a kernel registered for the op and device_type,
+      // check that the attrs match.
+      bool match;
+      TF_RETURN_IF_ERROR(
+          KernelAttrsMatch(iter->second.def, node_attrs, &match));
+      if (match) {
+        if (*reg != nullptr) {
+          return errors::InvalidArgument(
+              "Multiple Default OpKernel registrations match NodeDef '",
+              FormatNodeDefForError(node_name, has_experimental_debug_info,
+                                    experimental_debug_info),
+              "': '", (*reg)->def.ShortDebugString(), "' and '",
+              iter->second.def.ShortDebugString(), "'");
+        }
+        *reg = &iter->second;
+      } else {
+        *was_attr_mismatch = true;
+      }
+    }
+
+    if (*reg != nullptr) {
+      VLOG(1) << "No device-specific kernels found for NodeDef '"
+              << FormatNodeDefForError(node_name, has_experimental_debug_info,
+                                       experimental_debug_info)
+              << "'"
+              << "Will fall back to a default kernel." << std::endl;
+    }
+  }
+
   return Status::OK();
 }
 
@@ -1313,7 +1365,8 @@ Status FindKernelDef(const DeviceType& device_type, const NodeDef& node_def,
 
 Status SupportedDeviceTypesForNode(
     const std::vector<DeviceType>& prioritized_types, const NodeDef& def,
-    PrioritizedDeviceTypeVector* prioritized_device_types) {
+    PrioritizedDeviceTypeVector* prioritized_device_types,
+    const DeviceNameUtils::ParsedName* local_address_spec) {
   // TODO(zhifengc): Changes the callers (SimplePlacer and
   // DynamicPlacer) to consider the possibility that 'def' is call to
   // a user-defined function and only calls this
@@ -1321,14 +1374,42 @@ Status SupportedDeviceTypesForNode(
   const OpRegistrationData* op_reg_data;
   const Status s = OpRegistry::Global()->LookUp(def.op(), &op_reg_data);
   if (s.ok()) {
+    bool exists_attr_mismatch = false;
     for (const DeviceType& device_type : prioritized_types) {
       const KernelRegistration* reg = nullptr;
-      bool was_attr_mismatch;
+      bool was_attr_mismatch = false;
       TF_RETURN_IF_ERROR(
           FindKernelRegistration(device_type, def, &reg, &was_attr_mismatch));
+      exists_attr_mismatch = exists_attr_mismatch || was_attr_mismatch;
       if (reg != nullptr) {
         int32 priority = reg->def.priority();
         prioritized_device_types->emplace_back(device_type, priority);
+      }
+    }
+    // Add extra supported device types if the following conditions are
+    // satisfied:
+    // 1) No kernel is defined for the given op (e.g. PyFunc on worker process)
+    // 2) A device is requested for this node which specifies job/replica/task
+    // 3) A local device is provided which specifies job/replica/task
+    // 4) The local device does not have the same (job, replica, task) as the
+    //    requested device
+    //
+    // The goal is to address the issue where a graph includes op (e.g. PyFunc)
+    // whose kernel is known to a remote process but not to the current process.
+    if (prioritized_device_types->empty() && !exists_attr_mismatch &&
+        local_address_spec != nullptr) {
+      DeviceNameUtils::ParsedName requested_device_name;
+      DeviceNameUtils::ParseFullName(def.device(), &requested_device_name);
+      if (DeviceNameUtils::IsDifferentAddressSpace(*local_address_spec,
+                                                   requested_device_name)) {
+        if (requested_device_name.has_type) {
+          prioritized_device_types->push_back(
+              std::make_pair(DeviceType(requested_device_name.type), 0));
+        } else {
+          for (const DeviceType& device_type : prioritized_types) {
+            prioritized_device_types->push_back(std::make_pair(device_type, 0));
+          }
+        }
       }
     }
     std::sort(prioritized_device_types->begin(),
@@ -1349,7 +1430,7 @@ Status SupportedDeviceTypesForNode(
 void LogAllRegisteredKernels() {
   KernelList kernel_list = GetAllRegisteredKernels();
   for (const auto& kernel_def : kernel_list.kernel()) {
-    LOG(INFO) << "OpKernel ('" << ProtoShortDebugString(kernel_def) << "')";
+    LOG(INFO) << "OpKernel ('" << kernel_def.ShortDebugString() << "')";
   }
 }
 
@@ -1431,8 +1512,8 @@ Status CreateOpKernel(DeviceType device_type, DeviceBase* device,
   }
   if (registration == nullptr) {
     s.Update(errors::NotFound("No registered '", node_def.op(),
-                              "' OpKernel for ", DeviceTypeString(device_type),
-                              " devices compatible with node ",
+                              "' OpKernel for '", DeviceTypeString(device_type),
+                              "' devices compatible with node ",
                               FormatNodeDefForError(node_def)));
     if (was_attr_mismatch) {
       errors::AppendToMessage(
@@ -1497,7 +1578,7 @@ Status ValidateKernelRegistrations(const OpRegistryInterface& op_registry) {
     const Status status = op_registry.LookUp(kernel_def.op(), &op_reg_data);
     if (!status.ok()) {
       // TODO(josh11b): Make this a hard error.
-      LOG(ERROR) << "OpKernel ('" << ProtoShortDebugString(kernel_def)
+      LOG(ERROR) << "OpKernel ('" << kernel_def.ShortDebugString()
                  << "') for unknown op: " << kernel_def.op();
       continue;
     }
