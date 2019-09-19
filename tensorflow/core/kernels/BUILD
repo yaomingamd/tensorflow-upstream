@@ -196,6 +196,7 @@ tf_kernel_library(
     name = "virtual_nccl",
     deps = if_cuda(["@local_config_nccl//:nccl"]),
 )
+
 tf_kernel_library(
     name = "virtual_rccl",
     deps = if_rocm(["@local_config_rocm//rocm:rccl"]),
