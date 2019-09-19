@@ -847,7 +847,7 @@ MemRefAccess::MemRefAccess(Operation *loadOrStoreOpInst) {
     opInst = loadOrStoreOpInst;
     auto loadMemrefType = loadOp.getMemRefType();
     indices.reserve(loadMemrefType.getRank());
-    for (auto *index : loadOp.getIndices()) {
+    for (auto *index : loadOp.getMapOperands()) {
       indices.push_back(index);
     }
   } else {
@@ -857,7 +857,7 @@ MemRefAccess::MemRefAccess(Operation *loadOrStoreOpInst) {
     memref = storeOp.getMemRef();
     auto storeMemrefType = storeOp.getMemRefType();
     indices.reserve(storeMemrefType.getRank());
-    for (auto *index : storeOp.getIndices()) {
+    for (auto *index : storeOp.getMapOperands()) {
       indices.push_back(index);
     }
   }
@@ -916,7 +916,7 @@ static Optional<int64_t> getMemoryFootprintBytes(Block &block,
     if (failed(
             region->compute(opInst,
                             /*loopDepth=*/getNestingDepth(*block.begin())))) {
-      return opInst->emitError("Error obtaining memory region\n");
+      return opInst->emitError("error obtaining memory region\n");
     }
 
     auto it = regions.find(region->memref);

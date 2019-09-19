@@ -183,9 +183,10 @@ class EagerContext : public core::RefCounted {
 
   GraphCollector* GetGraphCollector() { return &graph_collector_; }
 
-  EagerExecutor* Executor();
+  EagerExecutor& Executor();
 
-  Status AddFunctionDef(const FunctionDef& fdef);
+  Status AddFunctionDef(const FunctionDef& fdef,
+                        const bool add_to_local_only = false);
 
   Status RemoveFunction(const string& func);
 
@@ -258,6 +259,7 @@ class EagerContext : public core::RefCounted {
   Status GetClient(Device* device, eager::EagerClient** client);
   Status GetClient(const DeviceNameUtils::ParsedName& device_name,
                    eager::EagerClient** client);
+  Status GetClient(const string& remote_task, eager::EagerClient** client);
 
   uint64 GetContextId();
 

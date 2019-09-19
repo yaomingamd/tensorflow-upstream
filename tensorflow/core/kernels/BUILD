@@ -3516,6 +3516,7 @@ tf_kernel_library(
     prefix = "einsum_op",
     deps = [
         ":batch_matmul_op",
+        ":fill_functor",
         ":reduction_ops",
         ":transpose_functor",
         "//tensorflow/core:framework",
@@ -4396,6 +4397,7 @@ tf_kernel_library(
     deps = NN_DEPS + [
         ":fill_functor",
         ":redux_functor",
+        ":transpose_functor",
     ] + if_cuda([
         "//tensorflow/core:stream_executor",
     ]),
@@ -4748,6 +4750,7 @@ cc_library(
 )
 
 PARSING_DEPS = [
+    "//tensorflow/core:core_cpu_internal",
     "//tensorflow/core:framework",
     "//tensorflow/core:lib",
     "//tensorflow/core:protos_all_cc",
@@ -6525,7 +6528,7 @@ filegroup(
     name = "android_all_ops",
     srcs = [
         "//tensorflow/c/kernels:android_all_op_kernels",
-        "//tensorflow/core/kernels/data:dataset_ops_srcs",
+        "//tensorflow/core/kernels/data:android_all_op_kernels",
     ] + glob(
         [
             "*.cc",

@@ -1,4 +1,4 @@
-load("//tensorflow:tensorflow.bzl", "tf_cc_binary", "tf_native_cc_binary")
+load("//tensorflow:tensorflow.bzl", "tf_cc_binary", "tf_cc_test", "tf_native_cc_binary")
 load(
     "@local_config_mlir//:tblgen.bzl",
     "gentbl",
@@ -186,6 +186,57 @@ cc_library(
 )
 
 cc_library(
+    name = "lstm_utils",
+    srcs = [
+        "utils/lstm_utils.cc",
+    ],
+    hdrs = [
+        "utils/lstm_utils.h",
+    ],
+    copts = ["-std=c++14"],
+    deps = [
+        ":tensorflow_lite",
+        "//tensorflow/compiler/mlir/tensorflow",
+        "@llvm//:support",
+        "@local_config_mlir//:IR",
+        "@local_config_mlir//:StandardOps",
+        "@local_config_mlir//:Support",
+    ],
+)
+
+cc_library(
+    name = "statetul_ops_utils",
+    srcs = [
+        "utils/stateful_ops_utils.cc",
+    ],
+    hdrs = [
+        "utils/stateful_ops_utils.h",
+    ],
+    deps = [
+        ":tensorflow_lite",
+        "@llvm//:support",
+        "@local_config_mlir//:IR",
+        "@local_config_mlir//:StandardOps",
+    ],
+)
+
+tf_cc_test(
+    name = "lstm_utils_test",
+    size = "small",
+    srcs = ["utils/lstm_utils_test.cc"],
+    deps = [
+        ":lstm_utils",
+        "//tensorflow/compiler/mlir/tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "@llvm//:support",
+        "@local_config_mlir//:IR",
+        "@local_config_mlir//:StandardOps",
+        "@local_config_mlir//:Support",
+    ],
+)
+
+cc_library(
     name = "tensorflow_lite_legalize_tf",
     srcs = [
         "transforms/extract_ophint.cc",
@@ -197,6 +248,7 @@ cc_library(
         "transforms/lower_static_tensor_list.cc",
         "transforms/prepare_composite_functions_tf.cc",
         "transforms/prepare_tf.cc",
+        "transforms/split_merged_operands.cc",
         "transforms/trim_functions_tf.cc",
         "transforms/unroll_batch_matmul.cc",
     ],
@@ -206,6 +258,7 @@ cc_library(
     ],
     deps = [
         ":common",
+        ":statetul_ops_utils",
         ":tensorflow_lite",
         ":validators",
         "//tensorflow/compiler/mlir/lite/quantization:quantization_lib",
@@ -251,6 +304,7 @@ cc_library(
     name = "tensorflow_lite_quantize",
     srcs = [
         "transforms/generated_quantize.inc",
+        "transforms/load_quantization_recipe.cc",
         "transforms/post_quantize.cc",
         "transforms/prepare_quantize.cc",
         "transforms/quantize.cc",
@@ -395,6 +449,7 @@ cc_library(
     ],
     deps = [
         ":flatbuffer_tflite_operator_lib",
+        ":statetul_ops_utils",
         ":tensorflow_lite",
         ":tensorflow_lite_dialect_registration",
         "//tensorflow/compiler/mlir:op_name_mapper",
@@ -559,6 +614,7 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib_proto_parsing",
         "//tensorflow/core:protos_all_proto_cc",
+        "//tensorflow/lite/tools/optimize:quantize_weights",
         "//tensorflow/stream_executor/lib",
         "@llvm//:support",
         "@local_config_mlir//:Analysis",

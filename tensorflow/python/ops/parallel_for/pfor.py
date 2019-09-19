@@ -980,9 +980,9 @@ class PForConfig(object):
     # This may be set to the number of iterations.
     self._maybe_iters = None
     # Map from output placeholder to the unvectorized tensor.
-    self._reduce_concat_map = object_identity.ObjectIdentityDictionary()
+    self._reduce_concat_map = {}
     # Reverse map of `self._reduce_concat_map`.
-    self._reverse_reduce_concat_map = object_identity.ObjectIdentityDictionary()
+    self._reverse_reduce_concat_map = {}
 
   def _has_reductions(self):
     """True if some reductions where performed by loop body."""
@@ -1007,17 +1007,17 @@ class PForConfig(object):
     """
     assert not context.executing_eagerly()
     assert isinstance(x, ops.Tensor)
-    if x not in self._reduce_concat_map:
+    if x.experimental_ref() not in self._reduce_concat_map:
       out_shape = tensor_shape.TensorShape([self._maybe_iters]).concatenate(
           x.shape)
       with ops.control_dependencies([x]):
         # Control dependency to make sure out is converted after x.
         out = array_ops.placeholder(x.dtype, out_shape)
-      self._reduce_concat_map[out] = x
-      self._reverse_reduce_concat_map[x] = out
+      self._reduce_concat_map[out.experimental_ref()] = x
+      self._reverse_reduce_concat_map[x.experimental_ref()] = out
       return out
     else:
-      return self._reverse_reduce_concat_map[x]
+      return self._reverse_reduce_concat_map[x.experimental_ref()]
 
   def reduce_mean(self, x):
     """Performs a mean reduction on `x` across pfor iterations.
@@ -1051,7 +1051,7 @@ class PForConfig(object):
     """Lookups Placeholder `pl` in the reduction map."""
     msg = "Expected Tensor, got {} of type {}."
     assert isinstance(pl, ops.Tensor), msg.format(pl, type(pl))
-    return self._reduce_concat_map.get(pl, None)
+    return self._reduce_concat_map.get(pl.experimental_ref())
 
 
 class PFor(object):
@@ -1968,8 +1968,8 @@ def _convert_gather(pfor_input):
       axis = axis_value
   if indices_stacked and not param_stacked:
     if indices is pfor_input.pfor.all_indices and axis == 0:
-      param_shape0 = param.shape.dims[0].value
-      indices_shape0 = indices.shape.dims[0].value
+      param_shape0 = tensor_shape.dimension_value(param.shape[0])
+      indices_shape0 = tensor_shape.dimension_value(indices.shape[0])
       if param_shape0 is not None and indices_shape0 == param_shape0:
         # Note that with loops and conditionals, indices may not be contiguous.
         # However they will be sorted and unique. So if the shape matches, then
@@ -3254,6 +3254,38 @@ def _convert_parse_single_example(pfor_input):
       sparse_keys=sparse_keys,
       dense_keys=dense_keys,
       sparse_types=sparse_types,
+      dense_shapes=dense_shapes)
+  return [wrap(t, True, True) for t in nest.flatten(output)]
+
+
+@RegisterPFor("ParseExampleV2")
+def _convert_parse_example_v2(pfor_input):
+  serialized = pfor_input.stacked_input(0)
+  sparse_keys = pfor_input.unstacked_input(2)
+  dense_keys = pfor_input.unstacked_input(3)
+  ragged_keys = pfor_input.unstacked_input(4)
+  dense_defaults = [
+      pfor_input.unstacked_input(i) for i in range(5, pfor_input.num_inputs)
+  ]
+  num_sparse = pfor_input.get_attr("num_sparse")
+  sparse_types = pfor_input.get_attr("sparse_types")
+  ragged_value_types = pfor_input.get_attr("ragged_value_types")
+  ragged_split_types = pfor_input.get_attr("ragged_split_types")
+  dense_shapes = pfor_input.get_attr("dense_shapes")
+  if serialized.shape.ndims not in (None, 1):
+    raise ValueError("ParseExampleV2 can only be converted if `serialized` "
+                     "is scalar.")
+  output = gen_parsing_ops.parse_example_v2(
+      serialized=serialized,
+      names=[],
+      sparse_keys=sparse_keys,
+      dense_keys=dense_keys,
+      ragged_keys=ragged_keys,
+      dense_defaults=dense_defaults,
+      num_sparse=num_sparse,
+      sparse_types=sparse_types,
+      ragged_value_types=ragged_value_types,
+      ragged_split_types=ragged_split_types,
       dense_shapes=dense_shapes)
   return [wrap(t, True, True) for t in nest.flatten(output)]
 

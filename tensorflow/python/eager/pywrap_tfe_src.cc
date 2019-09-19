@@ -43,6 +43,31 @@ using tensorflow::strings::Printf;
 
 namespace {
 
+thread_local std::unique_ptr<TFE_Op> thread_local_eager_operation =  // NOLINT
+    nullptr;
+
+TFE_Op* ReleaseThreadLocalOp() {
+  if (thread_local_eager_operation == nullptr) {
+    return nullptr;
+  }
+  return thread_local_eager_operation.release();
+}
+
+TFE_Op* CreateOrResetOp(TFE_Context* ctx, const char* op_or_function_name,
+                        TF_Status* status, TFE_Op* op_to_reset) {
+  if (op_to_reset) {
+    TFE_OpReset(ctx, op_or_function_name, status, op_to_reset);
+    return op_to_reset;
+  } else {
+    return TFE_NewOp(ctx, op_or_function_name, status);
+  }
+}
+
+void ClearAndReturnThreadLocalOp(TFE_Op* object) {
+  object->Clear();
+  thread_local_eager_operation.reset(object);
+}
+
 struct InputInfo {
   InputInfo(int i, bool is_list) : i(i), is_list(is_list) {}
 
@@ -735,7 +760,10 @@ void TFE_Py_ExecuteCancelable(TFE_Context* ctx, const char* device_name,
                               TFE_CancellationManager* cancellation_manager,
                               TFE_OutputTensorHandles* outputs,
                               TF_Status* out_status) {
-  TFE_Op* op = TFE_NewOp(ctx, op_name, out_status);
+  TFE_Op* op =
+      CreateOrResetOp(ctx, op_name, out_status, ReleaseThreadLocalOp());
+  auto cleaner =
+      tensorflow::gtl::MakeCleanup([op] { ClearAndReturnThreadLocalOp(op); });
   if (!out_status->status.ok()) return;
   TFE_OpSetDevice(op, device_name, out_status);
   if (out_status->status.ok()) {
@@ -761,7 +789,6 @@ void TFE_Py_ExecuteCancelable(TFE_Context* ctx, const char* device_name,
                                              " [Op:", op_name, "]")
                      .c_str());
   }
-  TFE_DeleteOp(op);
   Py_END_ALLOW_THREADS;
 }
 
@@ -1934,9 +1961,8 @@ bool TapeSetRecordForwardprop(
   }
   if (forwardprop_output_indices != nullptr &&
       forwardprop_output_indices != Py_None) {
-    tensorflow::Safe_PyObjectPtr indices_fast(
-        PySequence_Fast(forwardprop_output_indices,
-                        "Expected a sequence sequences of indices"));
+    tensorflow::Safe_PyObjectPtr indices_fast(PySequence_Fast(
+        forwardprop_output_indices, "Expected a sequence of indices"));
     if (indices_fast == nullptr || PyErr_Occurred()) {
       return false;
     }
@@ -1996,6 +2022,97 @@ bool TapeSetRecordForwardprop(
   return true;
 }
 
+PyObject* TangentsAsPyTuple(const std::vector<PyObject*>& input_tangents) {
+  PyObject* py_input_tangents = PyTuple_New(input_tangents.size());
+  for (int i = 0; i < input_tangents.size(); ++i) {
+    PyObject* element;
+    if (input_tangents[i] == nullptr) {
+      element = Py_None;
+    } else {
+      element = input_tangents[i];
+    }
+    Py_INCREF(element);
+    PyTuple_SET_ITEM(py_input_tangents, i, element);
+  }
+  return py_input_tangents;
+}
+
+tensorflow::Status ParseTangentOutputs(
+    PyObject* user_output, std::vector<PyObject*>* output_tangents) {
+  if (user_output == Py_None) {
+    // No connected gradients.
+    return tensorflow::Status::OK();
+  }
+  tensorflow::Safe_PyObjectPtr fast_result(
+      PySequence_Fast(user_output, "expected a sequence of forward gradients"));
+  if (fast_result == nullptr) {
+    return tensorflow::errors::InvalidArgument(
+        "forward gradient function did not return a sequence.");
+  }
+  int len = PySequence_Fast_GET_SIZE(fast_result.get());
+  PyObject** fast_result_array = PySequence_Fast_ITEMS(fast_result.get());
+  output_tangents->reserve(len);
+  for (int i = 0; i < len; ++i) {
+    PyObject* item = fast_result_array[i];
+    if (item == Py_None) {
+      output_tangents->push_back(nullptr);
+    } else {
+      Py_INCREF(item);
+      output_tangents->push_back(item);
+    }
+  }
+  return tensorflow::Status::OK();
+}
+
+// Calls the registered forward_gradient_function, computing `output_tangents`
+// from `input_tangents`. `output_tangents` must not be null.
+//
+// `op_name`, `attrs`, `inputs`, and `results` describe the operation for which
+// the forward function is being called.
+tensorflow::Status CallForwardGradientFunction(
+    PyObject* op_name, PyObject* attrs, PyObject* inputs, PyObject* results,
+    const std::vector<PyObject*>& input_tangents,
+    std::vector<PyObject*>* output_tangents) {
+  if (forward_gradient_function == nullptr) {
+    return tensorflow::errors::Internal(
+        "No forward gradient function registered.");
+  }
+  tensorflow::Safe_PyObjectPtr py_input_tangents(
+      TangentsAsPyTuple(input_tangents));
+
+  // Normalize the input sequence to a tuple so it works with function
+  // caching; otherwise it may be an opaque _InputList object.
+  tensorflow::Safe_PyObjectPtr input_tuple(PySequence_Tuple(inputs));
+  tensorflow::Safe_PyObjectPtr callback_args(
+      Py_BuildValue("OOOOO", op_name, attrs, input_tuple.get(), results,
+                    py_input_tangents.get()));
+  tensorflow::Safe_PyObjectPtr py_result(
+      PyObject_CallObject(forward_gradient_function, callback_args.get()));
+  if (py_result == nullptr || PyErr_Occurred()) {
+    return tensorflow::errors::Internal(
+        "forward gradient function threw exceptions");
+  }
+  return ParseTangentOutputs(py_result.get(), output_tangents);
+}
+
+// Like CallForwardGradientFunction, but calls a pre-bound forward function.
+// These are passed in from a record_gradient argument.
+tensorflow::Status CallOpSpecificForwardGradientFunction(
+    PyObject* op_specific_forward_function,
+    const std::vector<PyObject*>& input_tangents,
+    std::vector<PyObject*>* output_tangents) {
+  tensorflow::Safe_PyObjectPtr py_input_tangents(
+      TangentsAsPyTuple(input_tangents));
+
+  tensorflow::Safe_PyObjectPtr py_result(PyObject_CallObject(
+      op_specific_forward_function, py_input_tangents.get()));
+  if (py_result == nullptr || PyErr_Occurred()) {
+    return tensorflow::errors::Internal(
+        "forward gradient function threw exceptions");
+  }
+  return ParseTangentOutputs(py_result.get(), output_tangents);
+}
+
 bool ParseOpTypeString(PyObject* op_type, string* op_type_string) {
   if (PyBytes_Check(op_type)) {
     *op_type_string = PyBytes_AsString(op_type);
@@ -2050,7 +2167,8 @@ bool TapeSetRecordOperation(
 PyObject* TFE_Py_TapeSetRecordOperation(PyObject* op_type,
                                         PyObject* output_tensors,
                                         PyObject* input_tensors,
-                                        PyObject* backward_function) {
+                                        PyObject* backward_function,
+                                        PyObject* forward_function) {
   if (!HasAccumulatorOrTape() || *ThreadTapeIsStopped()) {
     Py_RETURN_NONE;
   }
@@ -2077,11 +2195,26 @@ PyObject* TFE_Py_TapeSetRecordOperation(PyObject* op_type,
         delete py_backward_function;
       });
 
-  if (!TapeSetRecordOperation(
-          op_type, input_tensors, output_tensors, input_ids, input_dtypes,
-          backward_function_getter, backward_function_killer,
-          nullptr /* No special-cased forward function */)) {
-    return nullptr;
+  if (forward_function == Py_None) {
+    if (!TapeSetRecordOperation(
+            op_type, input_tensors, output_tensors, input_ids, input_dtypes,
+            backward_function_getter, backward_function_killer,
+            nullptr /* No special-cased forward function */)) {
+      return nullptr;
+    }
+  } else {
+    tensorflow::eager::ForwardFunction<PyObject> wrapped_forward_function(
+        [forward_function](const std::vector<PyObject*>& input_tangents,
+                           std::vector<PyObject*>* output_tangents) {
+          return CallOpSpecificForwardGradientFunction(
+              forward_function, input_tangents, output_tangents);
+        });
+    if (!TapeSetRecordOperation(
+            op_type, input_tensors, output_tensors, input_ids, input_dtypes,
+            backward_function_getter, backward_function_killer,
+            &wrapped_forward_function)) {
+      return nullptr;
+    }
   }
   Py_RETURN_NONE;
 }
@@ -2747,68 +2880,6 @@ PyObject* CopySequenceSettingIndicesToNull(
   return result;
 }
 
-// Calls the registered forward_gradient_function, computing `output_tangents`
-// from `input_tangents`. `output_tangents` must not be null.
-//
-// `op_name`, `attrs`, `inputs`, and `results` describe the operation for which
-// the forward function is being called.
-tensorflow::Status CallForwardGradientFunction(
-    PyObject* op_name, PyObject* attrs, PyObject* inputs, PyObject* results,
-    const std::vector<PyObject*>& input_tangents,
-    std::vector<PyObject*>* output_tangents) {
-  if (forward_gradient_function == nullptr) {
-    return tensorflow::errors::Internal(
-        "No forward gradient function registered.");
-  }
-  tensorflow::Safe_PyObjectPtr py_input_tangents(
-      PyTuple_New(input_tangents.size()));
-  for (int i = 0; i < input_tangents.size(); ++i) {
-    PyObject* element;
-    if (input_tangents[i] == nullptr) {
-      element = Py_None;
-    } else {
-      element = input_tangents[i];
-    }
-    Py_INCREF(element);
-    PyTuple_SET_ITEM(py_input_tangents.get(), i, element);
-  }
-  // Normalize the input sequence to a tuple so it works with function
-  // caching; otherwise it may be an opaque _InputList object.
-  tensorflow::Safe_PyObjectPtr input_tuple(PySequence_Tuple(inputs));
-  tensorflow::Safe_PyObjectPtr callback_args(
-      Py_BuildValue("OOOOO", op_name, attrs, input_tuple.get(), results,
-                    py_input_tangents.get()));
-  tensorflow::Safe_PyObjectPtr py_result(
-      PyObject_CallObject(forward_gradient_function, callback_args.get()));
-  if (py_result == nullptr || PyErr_Occurred()) {
-    return tensorflow::errors::Internal(
-        "forward gradient function threw exceptions");
-  }
-  if (py_result.get() == Py_None) {
-    // No connected gradients.
-    return tensorflow::Status::OK();
-  }
-  tensorflow::Safe_PyObjectPtr fast_result(PySequence_Fast(
-      py_result.get(), "expected a sequence of forward gradients"));
-  if (fast_result == nullptr) {
-    return tensorflow::errors::InvalidArgument(
-        "forward gradient function did not return a sequence.");
-  }
-  int len = PySequence_Fast_GET_SIZE(fast_result.get());
-  PyObject** fast_result_array = PySequence_Fast_ITEMS(fast_result.get());
-  output_tangents->reserve(len);
-  for (int i = 0; i < len; ++i) {
-    PyObject* item = fast_result_array[i];
-    if (item == Py_None) {
-      output_tangents->push_back(nullptr);
-    } else {
-      Py_INCREF(item);
-      output_tangents->push_back(item);
-    }
-  }
-  return tensorflow::Status::OK();
-}
-
 PyObject* RecordGradient(PyObject* op_name, PyObject* inputs, PyObject* attrs,
                          PyObject* results, PyObject* name) {
   std::vector<tensorflow::int64> input_ids = MakeTensorIDList(inputs);
@@ -3253,10 +3324,11 @@ PyObject* TFE_Py_FastPathExecute_C(PyObject*, PyObject* args) {
     return nullptr;
   }
 
-  TFE_Op* op = TFE_NewOp(op_exec_info.ctx, op_name, status);
+  TFE_Op* op = CreateOrResetOp(op_exec_info.ctx, op_name, status,
+                               ReleaseThreadLocalOp());
   auto cleaner = tensorflow::gtl::MakeCleanup([status, op] {
     TF_DeleteStatus(status);
-    TFE_DeleteOp(op);
+    ClearAndReturnThreadLocalOp(op);
   });
   if (MaybeRaiseExceptionFromTFStatus(status, nullptr)) {
     return nullptr;
@@ -3572,6 +3644,8 @@ const char kShapeDelim[] = "-";
 const char kDType[] = "d";
 const char kNone[] = "n";
 const char kCompositeTensor[] = "C";
+const char kAttrs[] = "A";
+const char kAttrsEnd[] = "a";
 
 struct EncodeResult {
   string str;
@@ -3748,6 +3822,20 @@ tensorflow::Status TFE_Py_EncodeArgHelper(PyObject* arg,
           "Error while reading CompositeTensor._type_spec.");
     }
     result->objects.push_back(type_spec);
+  } else if (tensorflow::swig::IsAttrs(arg)) {
+    absl::StrAppend(&result->str, kAttrs);
+    tensorflow::Safe_PyObjectPtr attrs(
+        PyObject_GetAttrString(arg, "__attrs_attrs__"));
+    tensorflow::Safe_PyObjectPtr iter(PyObject_GetIter(attrs.get()));
+    for (tensorflow::Safe_PyObjectPtr item(PyIter_Next(iter.get())); item;
+         item.reset(PyIter_Next(iter.get()))) {
+      tensorflow::Safe_PyObjectPtr name(
+          PyObject_GetAttrString(item.get(), "name"));
+      tensorflow::Safe_PyObjectPtr attr_arg(PyObject_GetAttr(arg, name.get()));
+      TF_RETURN_IF_ERROR(TFE_Py_EncodeArgHelper(
+          attr_arg.get(), include_tensor_ranks_only, result));
+    }
+    absl::StrAppend(&result->str, kAttrsEnd);
   } else {
     PyObject* object = PyWeakref_NewRef(arg, nullptr);
 
