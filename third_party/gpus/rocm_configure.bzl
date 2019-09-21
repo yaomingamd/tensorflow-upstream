@@ -186,6 +186,7 @@ def _rocm_include_path(repository_ctx, rocm_config):
     # Add HIP-Clang headers
     inc_dirs.append("/opt/rocm/llvm/lib/clang/8.0/include")
     inc_dirs.append("/opt/rocm/llvm/lib/clang/9.0.0/include")
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/10.0.0/include")
 
     # Add rocrand and hiprand headers
     inc_dirs.append("/opt/rocm/rocrand/include")
@@ -216,9 +217,13 @@ def _rocm_include_path(repository_ctx, rocm_config):
     inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/9.0.0/include/")
     inc_dirs.append("/opt/rocm/hcc/lib/clang/9.0.0/include")
 
+    # Support hcc based off clang 10.0.0, included in ROCm2.8
+    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/10.0.0/include/")
+    inc_dirs.append("/opt/rocm/hcc/lib/clang/10.0.0/include")
+
     return inc_dirs
 
-def _enable_rocm(repository_ctx):
+def enable_rocm(repository_ctx):
     if "TF_NEED_ROCM" in repository_ctx.os.environ:
         enable_rocm = repository_ctx.os.environ["TF_NEED_ROCM"].strip()
         return enable_rocm == "1"
@@ -891,7 +896,7 @@ def _create_remote_rocm_repository(repository_ctx, remote_config_repo):
 
 def _rocm_autoconf_impl(repository_ctx):
     """Implementation of the rocm_autoconf repository rule."""
-    if not _enable_rocm(repository_ctx):
+    if not enable_rocm(repository_ctx):
         _create_dummy_repository(repository_ctx)
     elif _TF_ROCM_CONFIG_REPO in repository_ctx.os.environ:
         _create_remote_rocm_repository(
