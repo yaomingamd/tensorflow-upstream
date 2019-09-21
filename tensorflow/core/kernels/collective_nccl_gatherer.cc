@@ -17,7 +17,6 @@ limitations under the License.
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #include "tensorflow/core/common_runtime/collective_util.h"
-#include "tensorflow/core/common_runtime/gpu_device_context.h"
 #include "tensorflow/core/nccl/nccl_manager.h"
 #include "tensorflow/core/platform/tracing.h"
 #include "tensorflow/core/profiler/lib/traceme.h"
@@ -26,9 +25,6 @@ namespace tensorflow {
 
 void NcclGatherer::Run(StatusCallback done) {
   auto* compute_stream = col_ctx_->op_ctx->op_device_context()->stream();
-  auto* nccl_stream =
-      static_cast<GPUDeviceContext*>(col_ctx_->op_ctx->op_device_context())
-          ->nccl_stream();
   auto* gpu_info = col_ctx_->op_ctx->device()->tensorflow_gpu_device_info();
   const int num_global_devices = col_params_->group.group_size;
   const int num_local_devices = col_params_->instance.num_devices_per_task.at(

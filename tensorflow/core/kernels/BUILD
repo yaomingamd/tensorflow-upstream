@@ -217,7 +217,6 @@ tf_kernel_library(
     prefix = "collective_ops",
     deps = [
         "//tensorflow/core:framework",
-        "//tensorflow/core:gpu_runtime",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/profiler/lib:traceme",
@@ -403,7 +402,6 @@ tf_kernel_library(
         "//tensorflow/core/nccl:nccl_lib",
         "//tensorflow/core:framework",
         "//tensorflow/core:gpu_headers_lib",
-        "//tensorflow/core:gpu_runtime",
     ]),
 )
 
