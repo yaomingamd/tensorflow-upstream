@@ -8014,6 +8014,7 @@ cc_library(
         "cwise_ops_gpu_common.cu.h",
         "cwise_ops_gpu_gradients.cu.h",
         "cwise_ops_gradients.h",
+        "fill_functor.h",
         "meta_support.h",
     ],
     deps = [

@@ -47,14 +47,14 @@ DOCLINES = __doc__.split('\n')
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '1.15.0-rc0'
+_VERSION = '1.15.0-rc1'
 
 REQUIRED_PACKAGES = [
     'absl-py >= 0.7.0',
     'astor >= 0.6.0',
     'backports.weakref >= 1.0rc1;python_version<"3.4"',
     'enum34 >= 1.1.6;python_version<"3.4"',
-    'gast >= 0.2.0',
+    'gast == 0.2.2',
     'google_pasta >= 0.1.6',
     'keras_applications >= 1.0.8',
     'keras_preprocessing >= 1.0.5',
@@ -62,8 +62,8 @@ REQUIRED_PACKAGES = [
     'opt_einsum >= 2.3.2',
     'six >= 1.10.0',
     'protobuf >= 3.6.1',
-    'tb-nightly >= 1.15.0a20190821, < 1.15.0a20190822',
-    'tf-estimator-nightly >= 1.14.0.dev2019090401, < 1.14.0.dev2019090402',
+    'tensorboard >= 1.15.0, < 1.16.0',
+    'tensorflow-estimator == 1.15.1',
     'termcolor >= 1.1.0',
     'wrapt >= 1.11.1',
 ]
