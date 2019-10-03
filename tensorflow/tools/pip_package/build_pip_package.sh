@@ -317,7 +317,7 @@ function main() {
   elif [[ ${GPU_BUILD} == "1" ]]; then
     PKG_NAME_FLAG="--project_name tensorflow_gpu"
   elif [[ ${ROCM_BUILD} == "1" ]]; then
-    PKG_NAME_FLAG="--project_name tensorflow_rocm"
+    PKG_NAME_FLAG="--project_name tensorflow_rocm_enhanced"
   fi
 
   build_wheel "$SRCDIR" "$DSTDIR" "$PKG_NAME_FLAG"
