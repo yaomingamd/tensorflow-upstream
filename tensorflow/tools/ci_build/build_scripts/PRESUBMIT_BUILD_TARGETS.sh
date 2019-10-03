@@ -1,4 +1,4 @@
-# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2019 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""ZeroOut op Python library."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+#!/bin/bash
+set -x
 
-import os.path
-
-import tensorflow as tf
-
-_zero_out_module = tf.load_op_library(
-    os.path.join(tf.compat.v1.resource_loader.get_data_files_path(),
-                 'zero_out_op_kernel_1.so'))
-zero_out = _zero_out_module.zero_out
-namespace_zero_out = _zero_out_module.namespace_zero_out
-namespace_nested_zero_out = _zero_out_module.namespace_nested_zero_out
+DEFAULT_BAZEL_TARGETS="//tensorflow/... -//tensorflow/compiler/... -//tensorflow/contrib/..."
