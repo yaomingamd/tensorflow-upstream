@@ -95,6 +95,27 @@ cc_library(
 )
 
 objc_library(
+    name = "compiled_model_test_lib",
+    testonly = 1,
+    srcs = ["compiled_model_test.mm"],
+    sdk_frameworks = ["XCTest"],
+    deps = [
+        ":compiled_model",
+    ],
+)
+
+ios_unit_test(
+    name = "compiled_model_test",
+    testonly = 1,
+    minimum_os_version = "10.0",
+    tags = [
+        "notap",
+        "tflite_not_portable_android",
+    ],
+    deps = [":compiled_model_test_lib"],
+)
+
+objc_library(
     name = "compute_task",
     srcs = ["compute_task.mm"],
     hdrs = ["compute_task.h"],
@@ -141,6 +162,28 @@ objc_library(
 )
 
 objc_library(
+    name = "environment_test_lib",
+    testonly = 1,
+    srcs = ["environment_test.mm"],
+    sdk_frameworks = ["XCTest"],
+    deps = [
+        ":environment",
+        "//tensorflow/lite/delegates/gpu/metal/kernels:test_util",
+    ],
+)
+
+ios_unit_test(
+    name = "environment_test",
+    testonly = 1,
+    minimum_os_version = "10.0",
+    tags = [
+        "notap",
+        "tflite_not_portable_android",
+    ],
+    deps = [":environment_test_lib"],
+)
+
+objc_library(
     name = "inference_context",
     srcs = ["inference_context.mm"],
     hdrs = ["inference_context.h"],
@@ -157,6 +200,28 @@ objc_library(
         "//tensorflow/lite/delegates/gpu/common:util",
         "@com_google_absl//absl/strings",
     ],
+)
+
+objc_library(
+    name = "inference_context_test_lib",
+    testonly = 1,
+    srcs = ["inference_context_test.mm"],
+    sdk_frameworks = ["XCTest"],
+    deps = [
+        ":inference_context",
+        "//tensorflow/lite/delegates/gpu/metal/kernels:test_util",
+    ],
+)
+
+ios_unit_test(
+    name = "inference_context_test",
+    testonly = 1,
+    minimum_os_version = "10.0",
+    tags = [
+        "notap",
+        "tflite_not_portable_android",
+    ],
+    deps = [":inference_context_test_lib"],
 )
 
 cc_library(

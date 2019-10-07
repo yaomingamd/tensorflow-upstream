@@ -196,18 +196,18 @@ def BinaryOpSameElementTypeConstraint :
 //===----------------------------------------------------------------------===//
 
 def TFL_BroadcastableBinaryBuilder : OpBuilder<
-  "Builder *builder, OperationState *result, Value *lhs, Value *rhs",
+  "Builder *builder, OperationState &result, Value *lhs, Value *rhs",
   [{
     auto resultType =
       OpTrait::util::getBroadcastedType(lhs->getType(), rhs->getType());
     if (!resultType)
-      mlir::emitError(result->location, "non-broadcastable operands");
-    result->addOperands({lhs, rhs});
-    result->types.push_back(resultType);
+      mlir::emitError(result.location, "non-broadcastable operands");
+    result.addOperands({lhs, rhs});
+    result.types.push_back(resultType);
   }]>;
 
 def TFL_FusedBroadcastableBinaryBuilder : OpBuilder<
-  "Builder *builder, OperationState *result, Value *lhs, Value *rhs, "
+  "Builder *builder, OperationState &result, Value *lhs, Value *rhs, "
   "StringAttr fusedActivationFunction",
   [{
     buildFusedBroadcastableBinOp(
@@ -215,7 +215,7 @@ def TFL_FusedBroadcastableBinaryBuilder : OpBuilder<
   }]>;
 
 def TFL_ComparisonBinaryBuilder : OpBuilder<
-  "Builder *builder, OperationState *result, Value *lhs, Value *rhs",
+  "Builder *builder, OperationState &result, Value *lhs, Value *rhs",
   [{
     buildComparisonBinOp(builder, result, lhs, rhs);
   }]>;
@@ -320,15 +320,13 @@ def TFL_AddOp : TFL_Op<"add", [Broadcastable, NoSideEffect, Commutative]> {
 
   let builders = [TFL_FusedBroadcastableBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 
   let hasOptions = 1;
 }
 
-// TODO(haoliang): Implement legalization pass after pattern rewrite generator
-// supports variadic inputs.
 def TFL_AddNOp : TFL_Op<"add_n", [Commutative, NoSideEffect, SameOperandsAndResultsScale]> {
   let summary = "add_n operator";
 
@@ -545,7 +543,6 @@ def TFL_FullyConnectedOptionsWeightFormatAttr :
     ]>;
 
 // TODO(jpienaar): Update post discussion on semantics of FC OP.
-// TODO(jpienaar): Include more shape verification.
 def TFL_FullyConnectedOp : TFL_Op<"fully_connected", [
     NoSideEffect, AccumulatorUniformScale<2, 0, 1>]> {
   let summary = "Fully connected op";
@@ -564,6 +561,8 @@ def TFL_FullyConnectedOp : TFL_Op<"fully_connected", [
   let results = (outs
     Variadic<TensorOf<[F32, QI8, QUI8, QI16, QUI16]>>:$output
   );
+
+  let verifier = [{ return Verify(*this); }];
 
   let hasOptions = 1;
 }
@@ -589,7 +588,7 @@ def TFL_GatherOp : TFL_Op<"gather", [
 
   let builders =
   [
-    OpBuilder<"Builder *builder, OperationState *result, "
+    OpBuilder<"Builder *builder, OperationState &result, "
       "Value *params, Value *indices, IntegerAttr axis",
         [{ BuildGatherOp(builder, result, params, indices, axis); }]>
   ];
@@ -635,9 +634,9 @@ def TFL_LessEqualOp : TFL_Op<"less_equal", [
 
   let builders = [TFL_ComparisonBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 
   let hasOptions = 0;
 }
@@ -691,9 +690,36 @@ def TFL_GreaterEqualOp : TFL_Op<"greater_equal", [
 
   let builders = [TFL_ComparisonBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
+
+  let hasOptions = 0;
+}
+
+def TFL_MatrixDiagOp : TFL_Op<"matrix_diag", [
+  NoSideEffect,
+  TFL_OperandHasAtleastRank<0, 1>,
+  PredOpTrait<"operand and result must have the same element type",
+    TCresVTEtIsSameAsOp<0, 0>>]> {
+  let summary = [{
+    Returns a tensor with the provided diagonal and everything else padded with zeros.
+  }];
+
+  let description = [{
+    Given a diagonal, returns a tensor with the diagonal and everything else padded with zeros.
+    Assume diagonal has k dimensions `[I, J, K, ..., N]`, then the output is a tensor of rank `k+1`
+    with dimensions `[I, J, K, ..., N, N]` where:
+       `output[i, j, k, ..., m, n] = 1{m=n} * diagonal[i, j, k, ..., n].`
+  }];
+
+  let arguments = (ins
+    TensorOf<[F32, I8, I64, I32, TFL_Uint8]>:$diagonal
+  );
+
+  let results = (outs
+    TensorOf<[F32, I8, I64, I32, TFL_Uint8]>:$output
+  );
 
   let hasOptions = 0;
 }
@@ -826,15 +852,15 @@ def TFL_NotEqualOp : TFL_Op<"not_equal", [
   let builders =
   [
     OpBuilder<
-      "Builder *builder, OperationState *result, Value *lhs, Value *rhs",
+      "Builder *builder, OperationState &result, Value *lhs, Value *rhs",
       [{
         buildComparisonBinOp(builder, result, lhs, rhs);
       }]>
   ];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 }
 
 def TFL_DivOp : TFL_Op<"div", [Broadcastable, NoSideEffect]> {
@@ -853,9 +879,9 @@ def TFL_DivOp : TFL_Op<"div", [Broadcastable, NoSideEffect]> {
 
   let builders = [TFL_FusedBroadcastableBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 
   let hasOptions = 1;
 }
@@ -1052,9 +1078,9 @@ def TFL_FloorDivOp : TFL_Op<"floor_div", [
 
   let builders = [TFL_BroadcastableBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 }
 
 def TFL_FloorModOp : TFL_Op<"floor_mod", [Broadcastable, NoSideEffect]> {
@@ -1086,10 +1112,27 @@ def TFL_GreaterOp : TFL_Op<"greater", [NoSideEffect, NoQuantizableResult]> {
 
   let results = (outs AnyTensor:$output);
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 }
+
+def TFL_HardSwishOp: TFL_Op<"hard_swish", [NoSideEffect,
+                                          SameOperandsAndResultType]> {
+  let summary = "Hardswish activation function.";
+  let description = [{
+    Computes hard-swish activation function
+      f(x) -> (x * relu6(x+3))/6
+    element-wise.
+  }];
+
+  let arguments = (ins TensorOf<[F32, QUI8, QI8]>:$input);
+
+  let results = (outs TensorOf<[F32, QUI8, QI8]>:$out);
+
+  let hasOptions = 0;
+}
+
 
 // NoSideEffect trait is not added to the op intentionally to prevent it from
 // getting removed if the input is unused. The generated FlatBuffer needs to
@@ -1163,9 +1206,9 @@ def TFL_LessOp : TFL_Op<"less", [NoSideEffect, NoQuantizableResult]> {
 
   let builders = [TFL_ComparisonBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 }
 
 def TFL_LogicalAndOp : TFL_Op<"logical_and", [NoSideEffect]> {
@@ -1181,9 +1224,9 @@ def TFL_LogicalAndOp : TFL_Op<"logical_and", [NoSideEffect]> {
 
   let results = (outs I1Tensor:$output);
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 }
 
 def TFL_LogicalNotOp : TFL_Op<"logical_not", [NoSideEffect]> {
@@ -1211,9 +1254,9 @@ def TFL_LogicalOrOp : TFL_Op<"logical_or", [NoSideEffect]> {
 
   let results = (outs I1Tensor:$output);
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 }
 
 def TFL_LogisticOp: TFL_Op<"logistic", [
@@ -1549,9 +1592,9 @@ def TFL_MulOp : TFL_Op<"mul", [Broadcastable, NoSideEffect, Commutative]> {
 
   let builders = [TFL_FusedBroadcastableBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 
   let hasOptions = 1;
 }
@@ -1612,6 +1655,8 @@ def TFL_PackOp : TFL_Op<"pack", [NoSideEffect, SameOperandsAndResultsScale]> {
   );
 
   let verifier = [{ return Verify(*this); }];
+
+  let hasCanonicalizer = 1;
 
   let hasOptions = 1;
 }
@@ -1717,11 +1762,33 @@ def TFL_PowOp : TFL_Op<"pow", [Broadcastable, NoSideEffect, NoQuantizableResult]
 
   let results = (outs AnyTensor:$output);
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 
   let builders = [TFL_BroadcastableBinaryBuilder];
+}
+
+def TFL_PReluOp : TFL_Op<"prelu", [NoSideEffect]> {
+  let summary = "Parameterized Relu operator";
+
+  let description = [{
+    Parameterized Relu operator
+      x -> x >= 0 ? x : (alpha * x)
+    where alpha is a trainable tensor.
+    alpha should have one less rank than the input as it doesn't have the batch
+    dimension, and the other dimensions either should be the same size as input
+    or size 1, where it is broadcasted in the second case.
+  }];
+
+  let arguments = (
+    ins TensorOf<[F32, QUI8]>:$input,
+    TensorOf<[F32, QUI8]>:$alpha
+  );
+
+  let results = (outs TensorOf<[F32, QUI8]>:$output);
+
+  let verifier = [{ return Verify(*this); }];
 }
 
 def TFL_RankOp: TFL_Op<"rank", [NoSideEffect]> {
@@ -1926,12 +1993,12 @@ def TFL_SelectOp : TFL_Op<"select", [NoSideEffect,
   let results = (outs AnyTensor:$output);
 
   // TODO(jpienaar): autogenerate this.
-  let builders = [OpBuilder<"Builder *builder, OperationState *result, "
+  let builders = [OpBuilder<"Builder *builder, OperationState &result, "
                             "Value *condition, Value *x, Value *y",
   [{
     auto resultType = x->getType();
-    result->addOperands({condition, x, y});
-    result->types.push_back(resultType);
+    result.addOperands({condition, x, y});
+    result.types.push_back(resultType);
   }]>];
 
   let hasOptions = 1;
@@ -2025,9 +2092,9 @@ def TFL_SubOp : TFL_Op<"sub", [Broadcastable, NoSideEffect]> {
 
   let builders = [TFL_FusedBroadcastableBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 
   let hasOptions = 1;
 }
@@ -2050,9 +2117,9 @@ def TFL_SquaredDifferenceOp : TFL_Op<"squared_difference", [
 
   let builders = [TFL_BroadcastableBinaryBuilder];
 
-  let parser = [{ return mlir::impl::parseBinaryOp(parser, result); }];
+  let parser = [{ return mlir::impl::parseOneResultSameOperandTypeOp(parser, result); }];
 
-  let printer = [{ return mlir::impl::printBinaryOp(getOperation(), p); }];
+  let printer = [{ return mlir::impl::printOneResultOp(getOperation(), p); }];
 }
 
 def TFL_TanhOp: TFL_Op<"tanh", [
@@ -2119,7 +2186,7 @@ def TFL_TopKV2Op: TFL_Op<"topk_v2", [NoSideEffect, TFL_OperandHasRank<1,0>,
     AnyTensor:$values,
     I32Tensor:$indices);
 
-  let builders = [OpBuilder<"Builder *builder, OperationState *result, "
+  let builders = [OpBuilder<"Builder *builder, OperationState &result, "
                             "Value *input, Value *k",
                   [{ BuildTopKOp(builder, result, input, k); }]>];
 
@@ -2558,8 +2625,7 @@ in the unique output `y`. In other words:
 //===----------------------------------------------------------------------===//
 // Quantization ops.
 //===----------------------------------------------------------------------===//
-def TFL_DequantizeOp: TFL_Op<"dequantize", [
-    NoSideEffect, NoQuantizableResult]> {
+def TFL_DequantizeOp: TFL_Op<"dequantize", [NoQuantizableResult]> {
   let summary = "Dequantize operator";
 
   let description = [{
@@ -2613,7 +2679,7 @@ def TFL_QConstOp : Op<TFL_Dialect, "pseudo_qconst", [
 }
 
 def TFL_QuantizeOp: TFL_Op<"quantize", [
-    NoSideEffect, FirstAttrDerivedResultType, NoQuantizableResult]> {
+    FirstAttrDerivedResultType, NoQuantizableResult]> {
   let summary = "Quantize operator";
 
   let description = [{

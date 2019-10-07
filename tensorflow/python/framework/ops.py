@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
-import copy
 import re
 import sys
 import threading
@@ -49,7 +48,6 @@ from tensorflow.python.framework import device as pydev
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import indexed_slices
-from tensorflow.python.framework import op_def_registry
 from tensorflow.python.framework import registry
 from tensorflow.python.framework import tensor_conversion_registry
 from tensorflow.python.framework import tensor_like
@@ -893,8 +891,8 @@ class _EagerTensorBase(Tensor):
                                                   self.dtype.name)
 
   def __repr__(self):
-    return "<tf.Tensor: id=%s, shape=%s, dtype=%s, numpy=%s>" % (
-        self._id, self.shape, self.dtype.name, numpy_text(self, is_repr=True))
+    return "<tf.Tensor: shape=%s, dtype=%s, numpy=%s>" % (
+        self.shape, self.dtype.name, numpy_text(self, is_repr=True))
 
   def __len__(self):
     """Returns the length of the first dimension in the Tensor."""
@@ -2154,16 +2152,6 @@ class Operation(object):
     return self._inputs_val
 
   @property
-  def _inputs(self):
-    logging.warning("Operation._inputs is private, use Operation.inputs "
-                    "instead. Operation._inputs will eventually be removed.")
-    return self.inputs
-
-  @_inputs.setter
-  def _inputs(self, value):
-    raise ValueError("Cannot assign _inputs")
-
-  @property
   def _input_types(self):
     num_inputs = c_api.TF_OperationNumInputs(self._c_op)
     input_types = [
@@ -2171,10 +2159,6 @@ class Operation(object):
         for i in xrange(num_inputs)
     ]
     return input_types
-
-  @_input_types.setter
-  def _input_types(self, value):
-    raise ValueError("Cannot assign _input_types")
 
   @property
   def control_inputs(self):
@@ -2218,25 +2202,6 @@ class Operation(object):
     # pylint: enable=protected-access
 
   @property
-  def _control_inputs(self):
-    logging.warning("Operation._control_inputs is private, use "
-                    "Operation.control_inputs instead. "
-                    "Operation._control_inputs will eventually be removed.")
-    return self.control_inputs
-
-  @_control_inputs.setter
-  def _control_inputs(self, value):
-    logging.warning("Operation._control_inputs is private, use "
-                    "Operation.control_inputs instead. "
-                    "Operation._control_inputs will eventually be removed.")
-    # Copy value because it may be self._control_inputs_val (in particular if
-    # this is called from self._control_inputs += ...), and we don't want to
-    # clear value below.
-    value = copy.copy(value)
-    self._remove_all_control_inputs()
-    self._add_control_inputs(value)
-
-  @property
   def type(self):
     """The type of the op (e.g. `"MatMul"`)."""
     return c_api.TF_OperationOpType(self._c_op)
@@ -2265,12 +2230,6 @@ class Operation(object):
     return node_def
 
   @property
-  def _node_def(self):
-    logging.warning("Operation._node_def is private, use Operation.node_def "
-                    "instead. Operation._node_def will eventually be removed.")
-    return self.node_def
-
-  @property
   def op_def(self):
     # pylint: disable=line-too-long
     """Returns the `OpDef` proto that represents the type of this op.
@@ -2282,12 +2241,6 @@ class Operation(object):
     """
     # pylint: enable=line-too-long
     return self._graph._get_op_def(self.type)
-
-  @property
-  def _op_def(self):
-    logging.warning("Operation._op_def is private, use Operation.op_def "
-                    "instead. Operation._op_def will eventually be removed.")
-    return self.op_def
 
   @property
   def traceback(self):
@@ -2518,26 +2471,6 @@ def get_gradient_function(op):
   except ValueError:
     op_type = op.type
   return _gradient_registry.lookup(op_type)
-
-
-class RegisterShape(object):
-  """No longer used.
-
-  Was: A decorator for registering a shape function.
-
-  Shape functions must now be registered via the SetShapeFn on the
-  original Op specification in C++.
-
-  """
-
-  def __init__(self, op_type):
-    """Saves the `op_type` as the `Operation` type."""
-    if not isinstance(op_type, six.string_types):
-      raise TypeError("op_type must be a string")
-
-  def __call__(self, f):
-    """No-op."""
-    return f
 
 
 def set_shape_and_handle_data_for_outputs(_):
@@ -2835,7 +2768,6 @@ class Graph(object):
     # Estimator and optimizer V1 use cases.
     self._is_loss_scaled_by_optimizer = False
     self._container = ""
-    self._registered_ops = op_def_registry.get_registered_ops()
     # Set to True if this graph is being built in an
     # AutomaticControlDependencies context.
     self._add_control_dependencies = False
@@ -3114,7 +3046,10 @@ class Graph(object):
             func_graph_inputs = func_graph.inputs
           except AttributeError:
             continue
-          for input_tensor in func_graph_inputs:
+          # TODO(b/141471245): Fix the inconsistency when inputs of func graph
+          # are appended during gradient computation of while/cond.
+          for input_tensor, _ in zip(func_graph_inputs,
+                                     function_def.signature.input_arg):
             if input_tensor.dtype == dtypes.resource:
               # TODO(allenl): Save and restore handle data, then save the
               # resource placeholder's shape. Right now some shape functions get
