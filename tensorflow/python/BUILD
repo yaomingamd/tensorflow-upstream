@@ -1470,6 +1470,7 @@ tf_py_test(
     main = "framework/contrib_test.py",
     tags = [
         "no_pip",
+	"no_rocm_v2",
         "no_windows",
     ],
 )
@@ -3193,9 +3194,6 @@ cuda_py_test(
         ":mixed_precision",
         "@absl_py//absl/testing:parameterized",
         "//tensorflow/python:client_testlib",
-    ],
-    tags = [
-        "no_rocm",
     ],
     xla_enable_strict_auto_jit = True,
 )
@@ -6836,10 +6834,7 @@ cuda_py_test(
         "//third_party/py/numpy",
         "//tensorflow/core:protos_all_py",
     ],
-    tags = [
-        "grappler",
-        "no_rocm",
-    ],
+    tags = ["grappler"],
     # This test analyzes the graph, but XLA changes the names of nodes.
     xla_enable_strict_auto_jit = False,
 )

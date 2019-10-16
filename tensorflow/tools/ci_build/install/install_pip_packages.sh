@@ -113,8 +113,8 @@ pip3 install grpcio
 # Eager-to-graph execution needs astor, gast and termcolor:
 pip2 install --upgrade astor
 pip3 install --upgrade astor
-pip2 install --upgrade gast
-pip3 install --upgrade gast
+pip2 install --upgrade gast==0.2.2
+pip3 install --upgrade gast==0.2.2
 pip2 install --upgrade termcolor
 pip3 install --upgrade termcolor
 
@@ -127,8 +127,8 @@ pip2 install --upgrade h5py==2.8.0
 pip3 install --upgrade h5py==2.8.0
 
 # Estimator
-pip2 install tf-estimator-nightly --no-deps
-pip3 install tf-estimator-nightly --no-deps
+pip2 install tf-estimator-nightly==1.14.0.dev2019061801 --no-deps
+pip3 install tf-estimator-nightly==1.14.0.dev2019061801 --no-deps
 
 # Argparse
 pip2 install --upgrade argparse
