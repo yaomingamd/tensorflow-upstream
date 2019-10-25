@@ -99,6 +99,18 @@ cc_library(
 )
 
 cc_library(
+    name = "roctracer",
+    srcs = ["rocm/lib/%{roctracer_lib}"],
+    data = ["rocm/lib/%{roctracer_lib}"],
+    includes = [
+        ".",
+        "rocm/include",
+    ],
+    linkstatic = 1,
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "rocm",
     visibility = ["//visibility:public"],
     deps = [
@@ -108,7 +120,8 @@ cc_library(
         ":rocfft",
         ":hiprand",
         ":miopen",
-    ],
+        ":roctracer",
+    ]
 )
 
 filegroup(

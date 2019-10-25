@@ -2,7 +2,7 @@ load(
     "//tensorflow:tensorflow.bzl",
     "tf_cuda_library",
 )
-load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+load("//tensorflow:tensorflow.bzl", "if_cuda_or_rocm")
 
 package(
     default_visibility = [
@@ -45,7 +45,7 @@ tf_cuda_library(
     visibility = ["//tensorflow:internal"],
     deps = [
         "//tensorflow/core/profiler/internal/cpu:host_tracer",
-    ] + if_cuda([
+    ] + if_cuda_or_rocm([
         "//tensorflow/core/profiler/internal/gpu:device_tracer",
     ]),
     alwayslink = 1,

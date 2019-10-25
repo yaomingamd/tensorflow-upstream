@@ -203,6 +203,10 @@ def _rocm_include_path(repository_ctx, rocm_config):
     # Add RCCL headers
     inc_dirs.append("/opt/rocm/rccl/include")
 
+    # Add rocTracer headers
+    inc_dirs.append("/opt/rocm/roctracer/include")
+    inc_dirs.append("/opt/rocm/roctracer/include/ext")
+
     # Add hcc headers
     inc_dirs.append("/opt/rocm/hcc/include")
     inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/7.0.0/include/")
@@ -480,6 +484,12 @@ def _find_libs(repository_ctx, rocm_config):
             cpu_value,
             rocm_config.rocm_toolkit_path + "/rccl",
         ),
+        "roctracer": _find_rocm_lib(
+            "roctracer64",
+            repository_ctx,
+            cpu_value,
+            rocm_config.rocm_toolkit_path + "/roctracer",
+        ),
     }
 
 def _get_rocm_config(repository_ctx):
@@ -565,6 +575,7 @@ def _create_dummy_repository(repository_ctx):
             "%{rccl_lib}": _lib_name("rccl", cpu_value),
             "%{rocfft_lib}": _lib_name("rocfft", cpu_value),
             "%{hiprand_lib}": _lib_name("hiprand", cpu_value),
+            "%{roctracer_lib}": _lib_name("roctracer", cpu_value),
             "%{copy_rules}": "",
             "%{rocm_headers}": "",
         },
@@ -710,6 +721,12 @@ def _create_local_rocm_repository(repository_ctx):
             src_dir = rocm_toolkit_path + "/rccl/include",
             out_dir = "rocm/include/rccl",
         ),
+        #make_copy_dir_rule(
+        #    repository_ctx,
+        #    name = "roctracer-include",
+        #    src_dir = rocm_toolkit_path + "/roctracer/include",
+        #    out_dir = "rocm/include/roctracer",
+        #),
     ]
 
     rocm_libs = _find_libs(repository_ctx, rocm_config)
@@ -747,12 +764,15 @@ def _create_local_rocm_repository(repository_ctx):
             "%{hiprand_lib}": rocm_libs["hiprand"].file_name,
             "%{miopen_lib}": rocm_libs["miopen"].file_name,
             "%{rccl_lib}": rocm_libs["rccl"].file_name,
+            "%{roctracer_lib}": rocm_libs["roctracer"].file_name,
             "%{copy_rules}": "\n".join(copy_rules),
             "%{rocm_headers}": ('":rocm-include",\n' +
                                 '":rocfft-include",\n' +
                                 '":rocblas-include",\n' +
                                 '":miopen-include",\n' +
                                 '":rccl-include",'),
+                                #'":rccl-include",\n' +
+                                #'":roctracer-include",'),
         },
     )
 
