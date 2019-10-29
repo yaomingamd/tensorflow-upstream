@@ -119,7 +119,6 @@ distribute_py_test(
     shard_count = 8,
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",  # times out on ROCm
         "no_windows_gpu",
         "notpu",  # TODO(b/142805125): Enable tpu_test_target once fixed on tpu.
         "notsan",
