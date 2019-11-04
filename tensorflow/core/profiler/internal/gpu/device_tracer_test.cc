@@ -40,7 +40,7 @@ limitations under the License.
 
 namespace tensorflow {
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 std::unique_ptr<profiler::ProfilerInterface> CreateGpuTracer(
     const profiler::ProfilerOptions& options);
 #else

@@ -693,7 +693,7 @@ Status RocmGpuTracer::CollectData(RunMetadata* run_metadata) {
 }  // namespace profiler
 
 // Not in anonymous namespace for testing purposes.
-std::unique_ptr<profiler::ProfilerInterface> CreateRocmTracer(
+std::unique_ptr<profiler::ProfilerInterface> CreateGpuTracer(
     const profiler::ProfilerOptions& options) {
   if (options.device_type != profiler::DeviceType::kGpu &&
       options.device_type != profiler::DeviceType::kUnspecified)
@@ -710,7 +710,7 @@ std::unique_ptr<profiler::ProfilerInterface> CreateRocmTracer(
 }
 
 auto register_rocm_gpu_tracer_factory = [] {
-  RegisterProfilerFactory(&CreateRocmTracer);
+  RegisterProfilerFactory(&CreateGpuTracer);
   return 0;
 }();
 
