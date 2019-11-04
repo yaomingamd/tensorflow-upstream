@@ -73,6 +73,9 @@ def if_not_v2(a):
 def if_cuda_is_configured_compat(x):
     return if_cuda_is_configured(x)
 
+def if_rocm_is_configured_compat(x):
+    return if_rocm_is_configured(x)
+
 # Given a source file, generate a test name.
 # i.e. "common_runtime/direct_session_test.cc" becomes
 #      "common_runtime_direct_session_test"

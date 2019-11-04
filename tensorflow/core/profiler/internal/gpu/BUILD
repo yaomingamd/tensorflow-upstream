@@ -3,6 +3,8 @@ load(
     "tf_copts",
     "tf_cuda_library",
     "if_cuda_is_configured_compat",
+    "tf_gpu_library",
+    "if_rocm_is_configured_compat",
 )
 load("//tensorflow:tensorflow.bzl", "tf_cc_test_gpu")
 load(
@@ -28,6 +30,7 @@ tf_cuda_library(
     cuda_deps = [
         "//tensorflow/core/profiler/internal/gpu:cupti_tracer",
         "//tensorflow/core/profiler/internal/gpu:cupti_wrapper",
+        "//tensorflow/core/profiler/internal/gpu:rocm_tracer",
     ],
     deps = [
         ":cupti_utils",
@@ -123,4 +126,21 @@ tf_cuda_library(
         ":cupti_wrapper",
     ] + tf_additional_cupti_utils_cuda_deps(),
     visibility = ["//visibility:public"],
+)
+
+tf_gpu_library(
+    name = "rocm_tracer",
+    srcs = if_rocm_is_configured_compat(["rocm_tracer.cc"]),
+    hdrs = if_rocm_is_configured_compat(["rocm_tracer.h"]),
+    copts = tf_copts(),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/core:lib",
+        "//tensorflow/core/platform:annotation",
+        "@com_google_absl//absl/container:fixed_array",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/container:node_hash_set",
+        "@com_google_absl//absl/types:optional",
+    ],
 )
