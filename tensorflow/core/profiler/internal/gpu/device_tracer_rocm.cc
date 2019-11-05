@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensorflow/core/platform/annotation.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/stringprintf.h"
+#include "tensorflow/core/profiler/internal/gpu/rocm_tracer.h"
 #include "tensorflow/core/profiler/internal/parse_annotation.h"
 #include "tensorflow/core/profiler/internal/profiler_interface.h"
 #include "tensorflow/core/util/env_var.h"
@@ -37,509 +38,197 @@ limitations under the License.
 #include "roctracer/roctracer_hcc.h"
 #include "hsa.h"
 
-//#define DT_LOG(s) do {} while (0)
-//#define DT_LOG1(s) do { std::cout << s << std::endl << std::flush; } while (0)
-//#define DT_LOG2(s) DT_LOG(s)
-//#define DT_LOG3(s) DT_LOG(s)
-//
-//#define ROCTRACER_CALL(call)                                                                       \
-//  do {                                                                                             \
-//    int err = call;                                                                                \
-//    if (err != 0) {                                                                                \
-//      std::cerr << roctracer_error_string() << std::endl << std::flush;                            \
-//      abort();                                                                                     \
-//    }                                                                                              \
-//  } while (0)
-
 namespace tensorflow {
 namespace profiler {
 
-//// TODO(pbar) Move this to platform specific header file?
-//// Static thread local variable for POD types.
-//#define TF_STATIC_THREAD_LOCAL_POD(_Type_, _var_)                  \
-//  static thread_local _Type_ s_obj_##_var_;                            \
-//  namespace {                                                      \
-//  class ThreadLocal_##_var_ {                                      \
-//   public:                                                         \
-//    ThreadLocal_##_var_() {}                                       \
-//    void Init() {}                                                 \
-//    inline _Type_ *pointer() const { return &s_obj_##_var_; }      \
-//    inline _Type_ *safe_pointer() const { return &s_obj_##_var_; } \
-//    _Type_ &get() const { return s_obj_##_var_; }                  \
-//    bool is_native_tls() const { return true; }                    \
-//                                                                   \
-//   private:                                                        \
-//    TF_DISALLOW_COPY_AND_ASSIGN(ThreadLocal_##_var_);              \
-//  } _var_;                                                         \
-//  }  // namespace
-//
-//// Thread-local state recording the most recent annotation (if any).
-//// When non-null, this points to a string in the active annotation
-//// of the current thread.  The annotation is guaranteed to remain live
-//// for the duration of the API callback.
-//TF_STATIC_THREAD_LOCAL_POD(const char *, tls_current_annotation);
-//
-//class DeviceTracerBase;
-//class TraceAdapter {
-//  public:
-//  TraceAdapter() {}
-//  virtual ~TraceAdapter() {}
-//  virtual bool Start(DeviceTracerBase*) = 0;
-//  virtual bool Stop() = 0;
-//};
-//
-//class DeviceTracerIf : public DeviceTracer,
-//                       public tracing::TraceCollector {};
-//
-//class DeviceTracerBase : public DeviceTracerIf {
-// public:
-//  DeviceTracerBase(TraceAdapter* adapter);
-//  ~DeviceTracerBase() override;
-//
-//  // DeviceTracer interface:
-//  Status Start() override;
-//  Status Stop() override;
-//  Status Collect(StepStatsCollector *collector) override;
-//  void AddApiRecord(uint32_t cid, const hip_api_data_t* data);
-//  void AddActivityRecord(const roctracer_record_t* record);
-//
-//  // tracing::TraceCollector interface:
-//  virtual std::unique_ptr<Handle> CreateAnnotationHandle(
-//      StringPiece name_part1, StringPiece name_part2) const {
-//    struct Impl : public tracing::TraceCollector::Handle {
-//      string annotation;
-//      explicit Impl(string &&name_scope) : annotation(name_scope) {
-//        VLOG(2) << "CreateAnnotationHandle " << annotation;
-//        // Remember the most recent ScopedAnnotation for each thread.
-//        tls_current_annotation.get() = annotation.c_str();
-//      }
-//      ~Impl() override { tls_current_annotation.get() = nullptr; }
-//    };
-//    return std::unique_ptr<Handle>(
-//        new Impl{ConcatenateNames(name_part1, name_part2)});
-//  }
-//
-//  virtual std::unique_ptr<Handle> CreateActivityHandle(StringPiece, StringPiece,
-//                                                       bool) const {
-//    // We don't do anything with 'Activities' yet.
-//    return nullptr;
-//  }
-//
-//  bool IsEnabledForAnnotations() const override {
-//    // We are always enabled for 'Annotations'.
-//    return true;
-//  }
-//
-//  bool IsEnabledForActivities(bool is_expensive) const override {
-//    // We don't do anything with 'Activities' so we are never 'enabled'.
-//    return false;
-//  }
-//
-//  // Records the mapping between correlation ID and kernel name.
-//  static void AddCorrelationId(uint32 correlation_id, const string &name);
-//  static std::recursive_mutex trace_mu_;
-//
-// private:
-//  // Internal struct to record kernel launches.
-//  struct KernelRecord {
-//    int64_t start_timestamp_ns;
-//    int64_t end_timestamp_ns;
-//    int device_id;
-//    uint64 queue_id;
-//    uint64 correlation_id;
-//    uint8 activityDomain;
-//    uint8 activityId;
-//    uint8 activityKind;
-//  };
-//  // Internal struct to record memcpy operations.
-//  struct MemcpyRecord {
-//    int64_t start_timestamp_ns;
-//    int64_t end_timestamp_ns;
-//    int device_id;
-//    uint64 queue_id;
-//    uint64 correlation_id;
-//    uint8 activityDomain;
-//    uint8 activityId;
-//    uint8 activityKind;
-//    uint64 bytes;
-//  };
-//
-//  typedef int64_t timestamp_t;
-//  typedef double freq_t;
-//
-//  timestamp_t GetTimestampNs() {
-//    timestamp_t timestamp_hz = 0;
-//    hsa_status_t status = hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &timestamp_hz);
-//    if (status != HSA_STATUS_SUCCESS) {
-//      std::cerr << "hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY) failed" << std::endl;
-//      abort();
-//    }
-//    const freq_t timestamp_rate = (freq_t)1000000000 / (freq_t)timestamp_hz;
-//    timestamp_t timestamp = 0;
-//    status = hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &timestamp);
-//    if (status != HSA_STATUS_SUCCESS) {
-//      std::cerr << "hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP) failed" << std::endl;
-//      abort();
-//    }
-//    const freq_t timestamp_ns = (freq_t)timestamp * timestamp_rate;
-//    return (timestamp_t)timestamp_ns;
-//  }
-//
-//  // Returns the current system time in microseconds.
-//  inline int64 NowInUsec() { return Env::Default()->NowMicros(); }
-//
-//  static constexpr size_t kMaxRecords = 1024 * 1024;
-//  static std::map<uint32, string>* correlations_;
-//  std::vector<KernelRecord> kernel_records_;
-//  std::vector<MemcpyRecord> memcpy_records_;
-//
-//  mutex mu_;
-//  bool enabled_ GUARDED_BY(mu_);
-//  int64_t start_walltime_us_ GUARDED_BY(mu_);
-//  int64_t end_walltime_us_ GUARDED_BY(mu_);
-//  int64_t start_timestamp_ns_ GUARDED_BY(mu_);
-//  int64_t end_timestamp_ns_ GUARDED_BY(mu_);
-//  static uint64_t step_;
-//
-//  TraceAdapter* adapter_;
-//
-//  TF_DISALLOW_COPY_AND_ASSIGN(DeviceTracerBase);
-//};
-//
-//std::recursive_mutex DeviceTracerBase::trace_mu_;
-//std::map<uint32, string>* DeviceTracerBase::correlations_ = NULL;
-//uint64_t DeviceTracerBase::step_ = 0;
-//
-//DeviceTracerBase::DeviceTracerBase(TraceAdapter* adapter) {
-//  DT_LOG3("DeviceTracer created. " << this);
-//  enabled_ = false;
-//  adapter_ = adapter;
-//  start_timestamp_ns_ = 0;
-//  end_timestamp_ns_ = 0;
-//}
-//
-//DeviceTracerBase::~DeviceTracerBase() {
-//  // freed memory.
-//  Stop().IgnoreError();
-//  DT_LOG3("DeviceTracer destroed. " << this);
-//}
-//
-//Status DeviceTracerBase::Start() {
-//  mutex_lock l(mu_);
-//  if (enabled_) {
-//    return errors::FailedPrecondition("DeviceTracer is already enabled.");
-//  }
-//
-//  if (correlations_ == NULL) correlations_ = new std::map<uint32, string>;
-//
-//  start_walltime_us_ = NowInUsec();
-//  start_timestamp_ns_ = GetTimestampNs();
-//  ++step_;
-//  DT_LOG2("DeviceTracer::Start(" << step_ << ") wt " << start_walltime_us_ << ", ts " << start_timestamp_ns_ << " " << this);
-//
-//  while(adapter_->Start(this) != true) {}
-//  // Register as a TraceEngine to receive ScopedAnnotations.
-//  tracing::SetTraceCollector(this);
-//  enabled_ = true;
-//
-//  return Status::OK();
-//}
-//
-//Status DeviceTracerBase::Stop() {
-//  mutex_lock l(mu_);
-//  if (!enabled_) {
-//    return Status::OK();
-//  }
-//
-//  end_walltime_us_ = NowInUsec();
-//  end_timestamp_ns_ = GetTimestampNs();
-//  DT_LOG2("DeviceTracer::Stop(" << step_ << ") wt " << end_walltime_us_ << ", ts " << end_timestamp_ns_ << " " << this);
-//
-//  tracing::SetTraceCollector(nullptr);
-//  adapter_->Stop();
-//  enabled_ = false;
-//
-//  return Status::OK();
-//}
-//
-//void DeviceTracerBase::AddCorrelationId(uint32 correlation_id,
-//                                        const string &name) {
-//  DT_LOG3("CORRID: " << correlation_id << " : " << name);
-//  std::lock_guard<std::recursive_mutex> l(trace_mu_);
-//  //if (correlations_.size() >= kMaxRecords) return;
-//  //correlations_.emplace(correlation_id, name);
-//  (*correlations_)[correlation_id] = name;
-//}
-//
-//Status DeviceTracerBase::Collect(StepStatsCollector *collector) {
-//  mutex_lock l(mu_);
-//  if (enabled_) {
-//    return errors::FailedPrecondition("DeviceTracer is still enabled.");
-//  }
-//  DT_LOG2("DeviceTracer::Collect(" << step_ << ") wt " << start_walltime_us_ << " : " << end_walltime_us_ << ", ts " << start_timestamp_ns_ << " : " << end_timestamp_ns_ << " " << this);
-//
-//  // TODO(pbar) Handle device IDs and prefix properly.
-//  const string prefix = "";
-//
-//  std::lock_guard<std::recursive_mutex> l2(trace_mu_);
-//  for (const auto &rec : kernel_records_) {
-//    const string stream_device =
-//      strings::StrCat(prefix, "/device:GPU:", rec.device_id, "/stream:");
-//    const char* cmd_kind_string = roctracer_id_string(rec.activityDomain, rec.activityId, rec.activityKind);
-//    auto it = correlations_->find(rec.correlation_id);
-//    const string name = (it != correlations_->cend()) ? it->second : (string("unknown:") + cmd_kind_string);
-//    NodeExecStats *ns = new NodeExecStats;
-//    ns->set_all_start_micros(start_walltime_us_ +
-//                             ((rec.start_timestamp_ns - start_timestamp_ns_) / 1000));
-//    ns->set_op_start_rel_micros(0);
-//    auto elapsed_us =
-//        std::max<int64>((rec.end_timestamp_ns - rec.start_timestamp_ns) / 1000, 1);
-//    ns->set_op_end_rel_micros(elapsed_us);
-//    ns->set_all_end_rel_micros(elapsed_us);
-//    ns->set_node_name(name);
-//    // TODO(pbar) Generate details based on the kernel activity record.
-//    // ns->set_timeline_label(details);
-//    auto nscopy = new NodeExecStats;
-//    *nscopy = *ns;
-//    collector->Save(strings::StrCat(stream_device, "all"), ns);
-//    collector->Save(strings::StrCat(stream_device, rec.queue_id), nscopy);
-//    DT_LOG2("KERNEL REC: " <<
-//      name <<
-//      ", " << strings::StrCat(stream_device, rec.queue_id) <<
-//      ", corrid " << rec.correlation_id <<
-//      ", start " << (start_walltime_us_ + ((rec.start_timestamp_ns - start_timestamp_ns_) / 1000)) << "us" <<
-//      ", elapsed " << elapsed_us << "us"
-//    );
-//    if (it == correlations_->cend()) {
-//      std::cerr << "Unknown async kernel record" << std::endl << std::flush;
-//      abort();
-//    }
-//  }
-//  for (const auto &rec : memcpy_records_) {
-//    const string stream_device =
-//      strings::StrCat(prefix, "/device:GPU:", rec.device_id, "/stream:");
-//    const string memcpy_device =
-//      strings::StrCat(prefix, "/device:GPU:", rec.device_id, "/memcpy");
-//    const char* cmd_kind_string = roctracer_id_string(rec.activityDomain, rec.activityId, rec.activityKind);
-//    auto it = correlations_->find(rec.correlation_id);
-//    const string name = (it != correlations_->cend()) ? it->second : "unknown";
-//    NodeExecStats *ns = new NodeExecStats;
-//    ns->set_all_start_micros(start_walltime_us_ +
-//                             ((rec.start_timestamp_ns - start_timestamp_ns_) / 1000));
-//    ns->set_op_start_rel_micros(0);
-//    auto elapsed_us =
-//        std::max<int64>((rec.end_timestamp_ns - rec.start_timestamp_ns) / 1000, 1);
-//    ns->set_op_end_rel_micros(elapsed_us);
-//    ns->set_all_end_rel_micros(elapsed_us);
-//    const string details = strings::Printf(
-//        "%s %llu bytes", cmd_kind_string, rec.bytes);
-//    ns->set_node_name(
-//        strings::StrCat(name, ":", cmd_kind_string));
-//    ns->set_timeline_label(details);
-//    auto nscopy = new NodeExecStats;
-//    *nscopy = *ns;
-//    collector->Save(memcpy_device, ns);
-//    collector->Save(strings::StrCat(stream_device, rec.queue_id), nscopy);
-//    DT_LOG2("MEMCPY REC: " <<
-//      strings::StrCat(name, ":", cmd_kind_string) <<
-//      ", " << details <<
-//      ", " << memcpy_device <<
-//      ", " << strings::StrCat(stream_device, rec.queue_id) <<
-//      ", corrid " << rec.correlation_id <<
-//      ", start " << start_walltime_us_ + ((rec.start_timestamp_ns - start_timestamp_ns_) / 1000) << "us" <<
-//      ", elapsed " << elapsed_us << "us"
-//    );
-//    if (it == correlations_->cend()) {
-//      std::cerr << "Unknown async memcpy record" << std::endl << std::flush;
-//      abort();
-//    }
-//  }
-//  return Status::OK();
-//}
-//
-//void DeviceTracerBase::AddApiRecord(uint32_t cid, const hip_api_data_t* data) {
-//  const char* name = roctracer_id_string(ACTIVITY_DOMAIN_HIP_API, cid, 0);
-//  (void)name;
-//
-//  // API callbacks are invoked synchronously on the thread making the
-//  // API call. If this pointer is non-null then the ScopedAnnotation
-//  // must be valid.
-//  const char* tls_annotation = tls_current_annotation.get();
-//
-//  DT_LOG("API Callback for " << name << " '" << tls_annotation << "'");
-//
-//  switch (cid) {
-//    case HIP_API_ID_hipModuleLaunchKernel:
-//    case HIP_API_ID_hipHccModuleLaunchKernel:
-//      {
-//        const string annotation = 
-//          tls_annotation ? string(tls_annotation) : string(hipKernelNameRef(data->args.hipModuleLaunchKernel.f)) + ":kernel";
-//        AddCorrelationId(data->correlation_id, annotation);
-//      }
-//      break;
-//    case HIP_API_ID_hipMemcpyToSymbolAsync:
-//    case HIP_API_ID_hipMemcpyFromSymbolAsync:
-//    case HIP_API_ID_hipMemcpy2DToArray:
-//    case HIP_API_ID_hipMemcpyAsync:
-//    case HIP_API_ID_hipMemcpyFromSymbol:
-//    case HIP_API_ID_hipMemcpy3D:
-//    case HIP_API_ID_hipMemcpyAtoH:
-//    case HIP_API_ID_hipMemcpyHtoD:
-//    case HIP_API_ID_hipMemcpyHtoA:
-//    case HIP_API_ID_hipMemcpy2D:
-//    case HIP_API_ID_hipMemcpyPeerAsync:
-//    case HIP_API_ID_hipMemcpyDtoH:
-//    case HIP_API_ID_hipMemcpyHtoDAsync:
-//    case HIP_API_ID_hipMemcpyDtoD:
-//    case HIP_API_ID_hipMemcpyFromArray:
-//    case HIP_API_ID_hipMemcpy2DAsync:
-//    case HIP_API_ID_hipMemcpy:
-//    case HIP_API_ID_hipMemcpyToArray:
-//    case HIP_API_ID_hipMemcpyToSymbol:
-//    case HIP_API_ID_hipMemcpyPeer:
-//    case HIP_API_ID_hipMemcpyDtoDAsync:
-//    case HIP_API_ID_hipMemcpyDtoHAsync:
-//    case HIP_API_ID_hipMemcpyParam2D:
-//      {
-//        const string annotation = tls_annotation ? tls_annotation : "unknown:unknown";
-//        AddCorrelationId(data->correlation_id, annotation);
-//      }
-//      break;
-//    default:
-//      DT_LOG("Unhandled API Callback for " << name);
-//  }
-//}
-//
-//void DeviceTracerBase::AddActivityRecord(const roctracer_record_t* record) {
-//  std::lock_guard<std::recursive_mutex> l(trace_mu_);
-//
-//  const char* name = roctracer_id_string(record->domain, record->activity_id, record->kind);
-//  (void)name;
-//
-//  if (record->activity_id == hc::HSA_OP_ID_DISPATCH) {
-//    // Kernel activity
-//    if (kernel_records_.size() >= kMaxRecords) return;
-//    kernel_records_.push_back(KernelRecord{
-//      (int64)(record->begin_ns),
-//      (int64)(record->end_ns),
-//      record->device_id,
-//      record->queue_id,
-//      record->correlation_id,
-//      (uint8)(record->domain),
-//      (uint8)(record->activity_id),
-//      (uint8)(record->kind)
-//    });
-//  } if (record->activity_id == hc::HSA_OP_ID_COPY) {
-//    // Memcpy activity
-//    if (memcpy_records_.size() >= kMaxRecords) return;
-//    memcpy_records_.push_back(MemcpyRecord{
-//      (int64)(record->begin_ns),
-//      (int64)(record->end_ns),
-//      record->device_id,
-//      record->queue_id,
-//      record->correlation_id,
-//      (uint8)(record->domain),
-//      (uint8)(record->activity_id),
-//      (uint8)(record->kind),
-//      record->bytes
-//    });
-//  } else {
-//    DT_LOG("Unhandled Activity Callback for " << name << ", op(" << record->op_id << ")");
-//  }
-//}
-//
-//class DeviceTracerRocm : public TraceAdapter {
-//  public:
-//  DeviceTracerRocm() {
-//    device_ = NULL;
-//    // Creating tracer pool
-//    roctracer_properties_t properties{};
-//    properties.buffer_size = 12;
-//    properties.buffer_callback_fun = activity_callback;
-//    properties.buffer_callback_arg = this;
-//    if (roctracer_default_pool() == NULL)
-//      ROCTRACER_CALL(roctracer_open_pool(&properties));
-//  }
-//
-//  ~DeviceTracerRocm() override {
-//    DT_LOG("~DeviceTracerRocm()");
-//  }
-//
-//  bool Start(DeviceTracerBase* device) override {
-//    mutex_lock l(mu_);
-//    if (device_ != NULL) {
-//      DT_LOG1("DeviceTracerRocm::Start BUSY");
-//      abort();
-//      return false;
-//    }
-//    DT_LOG("DeviceTracerRocm::Start");
-//    device_ = device;
-//
-//    // Enable HIP API callbacks
-//    ROCTRACER_CALL(roctracer_enable_callback(ACTIVITY_DOMAIN_ANY, 0, hip_api_callback, this));
-//    // Enable HIP activity tracing
-//    ROCTRACER_CALL(roctracer_enable_activity(ACTIVITY_DOMAIN_ANY, 0));
-//    DT_LOG("DeviceTracerRocm::Start DONE");
-//    return true;
-//  }
-//
-//  bool Stop() override {
-//    mutex_lock l(mu_);
-//    if (device_ == NULL) {
-//       DT_LOG("DeviceTracerRocm::Stop already disabled");
-//       abort();
-//    }
-//    DT_LOG("DeviceTracerRocm::Stop");
-//    device_ = NULL;
-//    // Flush buffered atcivity
-//    ROCTRACER_CALL(roctracer_flush_activity());
-//    DT_LOG("DeviceTracerRocm::Stop DONE");
-//    return true;
-//  }
-//
-//  private:
-//  // HIP API callback function
-//  static void hip_api_callback(
-//    uint32_t domain,
-//    uint32_t cid,
-//    const void* callback_data,
-//    void* arg)
-//  {
-//    std::lock_guard<std::recursive_mutex> l(DeviceTracerBase::trace_mu_);
-//    const hip_api_data_t* data = reinterpret_cast<const hip_api_data_t*>(callback_data);
-//    const char* name = roctracer_id_string(ACTIVITY_DOMAIN_HIP_API, cid, 0);
-//    DT_LOG2("API: " << name << "(" << data->correlation_id << ") phase(" << data->phase << ")");
-//    if (data->phase == ACTIVITY_API_PHASE_ENTER) {
-//      DeviceTracerRocm* tracer = reinterpret_cast<DeviceTracerRocm*>(arg);
-//      DeviceTracerBase* device = tracer->device_;
-//      DeviceTracerBase::AddCorrelationId(data->correlation_id, string(name));
-//      if (device != NULL) device->AddApiRecord(cid, data);
-//    }
-//  }
-//
-//  // Activity tracing callback
-//  static void activity_callback(const char* begin, const char* end, void* arg) {
-//    DeviceTracerRocm* tracer = reinterpret_cast<DeviceTracerRocm*>(arg);
-//    DeviceTracerBase* device = tracer->device_;
-//    if (device != NULL) {
-//      const roctracer_record_t* record = reinterpret_cast<const roctracer_record_t*>(begin);
-//      const roctracer_record_t* end_record = reinterpret_cast<const roctracer_record_t*>(end);
-//      while (record < end_record) {
-//        device->AddActivityRecord(record);
-//        ROCTRACER_CALL(roctracer_next_record(record, &record));
-//      }
-//    }
-//  }
-//
-//  mutex mu_;
-//  DeviceTracerBase* device_;
-//};
+// Adapter from RocmTraceCollector to StepStatsCollector: This class convert
+// and filter from RocmTracerEvent to tensorflow::NodeExecStats.
+// We can not just forward event on the fly because StepStatsCollector have
+// a single mutex for all devices, Therefore we will cache events and forward
+// only when Flush().
+class StepStatsRocmTracerAdaptor : public RocmTraceCollector {
+ public:
+  StepStatsRocmTracerAdaptor(const RocmTracerCollectorOptions& option,
+                              const std::string prefix, int num_gpus,
+                              uint64 start_walltime_ns, uint64 start_gpu_ns,
+                              StepStatsCollector* trace_collector)
+      : RocmTraceCollector(option),
+        trace_collector_(trace_collector),
+        num_callback_events_(0),
+        num_activity_events_(0),
+        start_walltime_ns_(start_walltime_ns),
+        start_gpu_ns_(start_gpu_ns),
+        num_gpus_(num_gpus),
+        per_device_adaptor_(num_gpus) {
+    for (int i = 0; i < num_gpus; ++i) {  // for each device id.
+      per_device_adaptor_[i].stream_device =
+          strings::StrCat(prefix, "/device:GPU:", i, "/stream:");
+      per_device_adaptor_[i].memcpy_device =
+          strings::StrCat(prefix, "/device:GPU:", i, "/memcpy");
+      per_device_adaptor_[i].sync_device =
+          strings::StrCat(prefix, "/device:GPU:", i, "/sync");
+    }
+  }
+
+  void AddEvent(RocmTracerEvent&& event) override {
+    if (event.device_id >= num_gpus_) return;
+    if (event.source == RocmTracerEventSource::DriverCallback) {
+      if (num_callback_events_ > options_.max_callback_api_events) {
+        OnEventsDropped("trace collector", 1);
+        return;
+      }
+      num_callback_events_++;
+    } else {
+      if (num_activity_events_ > options_.max_activity_api_events) {
+        OnEventsDropped("trace collector", 1);
+        return;
+      }
+      num_activity_events_++;
+    }
+    per_device_adaptor_[event.device_id].AddEvent(std::move(event));
+  }
+  void OnEventsDropped(const std::string& reason, uint32 num_events) override {}
+  void Flush() override {
+    LOG(INFO) << " GpuTracer has collected " << num_callback_events_
+              << " callback api events and " << num_activity_events_
+              << " activity events.";
+    for (int i = 0; i < num_gpus_; ++i) {
+      per_device_adaptor_[i].Flush(trace_collector_, start_walltime_ns_,
+                                   start_gpu_ns_);
+    }
+  }
+
+ private:
+  StepStatsCollector* trace_collector_;
+  std::atomic<int> num_callback_events_;
+  std::atomic<int> num_activity_events_;
+  uint64 start_walltime_ns_;
+  uint64 start_gpu_ns_;
+  int num_gpus_;
+
+  struct CorrelationInfo {
+    CorrelationInfo(uint32 t, uint32 e) : thread_id(t), enqueue_time_ns(e) {}
+    uint32 thread_id;
+    uint64 enqueue_time_ns;
+  };
+  struct PerDeviceAdaptor {
+    void AddEvent(RocmTracerEvent&& event) {
+      absl::MutexLock lock(&mutex);
+      if (event.source == RocmTracerEventSource::DriverCallback) {
+        // Rocm api callcack events were used to populate launch times etc.
+        if (event.name == "hipStreamSynchronize") {
+          events.emplace_back(std::move(event));
+        }
+        if (event.correlation_id != RocmTracerEvent::kInvalidCorrelationId) {
+          correlation_info.insert(
+              {event.correlation_id,
+               CorrelationInfo(event.thread_id, event.start_time_ns)});
+        }
+      } else {
+        // Rocm activity events measure device times etc.
+        events.emplace_back(std::move(event));
+      }
+    }
+    void Flush(StepStatsCollector* collector, uint64 start_walltime_ns,
+               uint64 start_gpu_ns) {
+      absl::MutexLock lock(&mutex);
+      for (auto& event : events) {
+        NodeExecStats* ns = new NodeExecStats;
+        ns->set_all_start_micros(
+            (start_walltime_ns + (event.start_time_ns - start_gpu_ns)) / 1000);
+        ns->set_op_start_rel_micros(0);
+        auto elapsed_ns = event.end_time_ns - event.start_time_ns;
+        ns->set_op_end_rel_micros(elapsed_ns / 1000);
+        ns->set_all_end_rel_micros(elapsed_ns / 1000);
+
+        if (event.source == RocmTracerEventSource::DriverCallback) {
+          DCHECK_EQ(event.name, "hipStreamSynchronize");
+          ns->set_node_name(event.name);
+          ns->set_timeline_label(absl::StrCat("ThreadId ", event.thread_id));
+          ns->set_thread_id(event.thread_id);
+          collector->Save(sync_device, ns);
+        } else {  // RocmTracerEventSource::Activity
+          // Get launch information if available.
+          if (event.correlation_id != RocmTracerEvent::kInvalidCorrelationId) {
+            auto it = correlation_info.find(event.correlation_id);
+            if (it != correlation_info.end()) {
+              ns->set_scheduled_micros(it->second.enqueue_time_ns / 1000);
+              ns->set_thread_id(it->second.thread_id);
+            }
+          }
+
+          auto annotation_stack = ParseAnnotationStack(event.annotation);
+          std::string kernel_name = port::MaybeAbiDemangle(event.name.c_str());
+          std::string activity_name =
+              !annotation_stack.empty()
+                  ? std::string(annotation_stack.back().name)
+                  : kernel_name;
+          ns->set_node_name(activity_name);
+          switch (event.type) {
+            case RocmTracerEventType::Kernel: {
+              const std::string details = strings::Printf(
+                  "regs:%llu shm:%llu grid:%llu,%llu,%llu block:%llu,%llu,%llu",
+                  event.kernel_info.registers_per_thread,
+                  event.kernel_info.static_shared_memory_usage,
+                  event.kernel_info.grid_x, event.kernel_info.grid_y,
+                  event.kernel_info.grid_z, event.kernel_info.block_x,
+                  event.kernel_info.block_y, event.kernel_info.block_z);
+              ns->set_timeline_label(absl::StrCat(kernel_name, " ", details,
+                                                  "@@", event.annotation));
+              auto nscopy = new NodeExecStats(*ns);
+              collector->Save(absl::StrCat(stream_device, "all"), ns);
+              collector->Save(absl::StrCat(stream_device, event.stream_id),
+                              nscopy);
+              break;
+            }
+            case RocmTracerEventType::MemcpyH2D:
+            case RocmTracerEventType::MemcpyD2H:
+            case RocmTracerEventType::MemcpyD2D:
+            case RocmTracerEventType::MemcpyP2P: {
+              std::string details = absl::StrCat(
+                  activity_name, " bytes:", event.memcpy_info.num_bytes);
+              if (event.memcpy_info.async) {
+                absl::StrAppend(&details, " aync");
+              }
+              if (event.memcpy_info.destination != event.device_id) {
+                absl::StrAppend(&details,
+                                " to device:", event.memcpy_info.destination);
+              }
+              ns->set_timeline_label(std::move(details));
+              auto nscopy = new NodeExecStats(*ns);
+              collector->Save(memcpy_device, ns);
+              collector->Save(
+                  absl::StrCat(stream_device, event.stream_id, "<",
+                               GetTraceEventTypeName(event.type), ">"),
+                  nscopy);
+              break;
+            }
+            default:
+              ns->set_timeline_label(activity_name);
+              collector->Save(stream_device, ns);
+          }
+        }
+      }
+    }
+
+    absl::Mutex mutex;
+    std::string stream_device GUARDED_BY(mutex);
+    std::string memcpy_device GUARDED_BY(mutex);
+    std::string sync_device GUARDED_BY(mutex);
+    std::vector<RocmTracerEvent> events GUARDED_BY(mutex);
+    absl::flat_hash_map<uint32, CorrelationInfo> correlation_info
+        GUARDED_BY(mutex);
+  };
+  absl::FixedArray<PerDeviceAdaptor> per_device_adaptor_;
+
+  TF_DISALLOW_COPY_AND_ASSIGN(StepStatsRocmTracerAdaptor);
+};
 
 // RocmGpuTracer for ROCm GPU.
 class RocmGpuTracer : public profiler::ProfilerInterface {
  public:
-  RocmGpuTracer() //(RocmTracer* cupti_tracer, RocmInterface* cupti_interface)
-      : //cupti_tracer_(cupti_tracer),
+  RocmGpuTracer(RocmTracer* rocm_tracer)
+      : rocm_tracer_(),
         trace_collector_(&step_stats_) {
     VLOG(1) << "RocmGpuTracer created.";
   }
@@ -566,17 +255,17 @@ class RocmGpuTracer : public profiler::ProfilerInterface {
   };
   State profiling_state_ = State::kNotStarted;
 
-  //RocmTracer* cupti_tracer_;
-  //RocmTracerOptions options_;
+  RocmTracer* rocm_tracer_;
+  RocmTracerOptions options_;
   StepStats step_stats_;
   StepStatsCollector trace_collector_;
-  //std::unique_ptr<StepStatsRocmTracerAdaptor> step_stats_rocm_adaptor_;
+  std::unique_ptr<StepStatsRocmTracerAdaptor> step_stats_rocm_adaptor_;
 };
 
 Status RocmGpuTracer::DoStart() {
-  //if (!cupti_tracer_->IsAvailable()) {
-  //  return errors::Unavailable("Another profile session running.");
-  //}
+  if (!rocm_tracer_->IsAvailable()) {
+    return errors::Unavailable("Another profile session running.");
+  }
 
   //options_.cbids_selected = {
   //    // KERNEL
@@ -603,14 +292,14 @@ Status RocmGpuTracer::DoStart() {
   //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoA_v2,
   //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoAAsync_v2,
   //    // GENERIC
-  //    CUPTI_DRIVER_TRACE_CBID_cuStreamSynchronize,
+  //    CUPTI_DRIVER_TRACE_CBID_hipStreamSynchronize,
   //};
 
-  //bool use_cupti_activity_api = true;
+  //bool use_roctracer_activity_api = true;
   //ReadBoolFromEnvVar("TF_GPU_CUPTI_USE_ACTIVITY_API", true,
-  //                   &use_cupti_activity_api)
+  //                   &use_roctracer_activity_api)
   //    .IgnoreError();
-  //options_.enable_event_based_activity = !use_cupti_activity_api;
+  //options_.enable_event_based_activity = !use_roctracer_activity_api;
 
   //bool trace_concurrent_kernels = false;
   //ReadBoolFromEnvVar("TF_GPU_CUPTI_FORCE_CONCURRENT_KERNEL", false,
@@ -623,20 +312,16 @@ Status RocmGpuTracer::DoStart() {
   //options_.activities_selected.push_back(CUPTI_ACTIVITY_KIND_MEMCPY2);
   //options_.activities_selected.push_back(CUPTI_ACTIVITY_KIND_OVERHEAD);
 
-//#if CUDA_VERSION < 10000
-//  if (!trace_concurrent_kernels) options_.cupti_finalize = true;
-//#endif
+  RocmTracerCollectorOptions collector_options;
+  uint64 start_gputime_ns = RocmTracer::GetTimestamp();
+  uint64 start_walltime_ns = tensorflow::EnvTime::Default()->NowNanos();
+  int num_gpus = rocm_tracer_->NumGpus();
+  step_stats_rocm_adaptor_ = absl::make_unique<StepStatsRocmTracerAdaptor>(
+      collector_options, "", num_gpus, start_walltime_ns, start_gputime_ns,
+      &trace_collector_);
 
-  //RocmTracerCollectorOptions collector_options;
-  //uint64 start_gputime_ns = RocmTracer::GetTimestamp();
-  //uint64 start_walltime_ns = tensorflow::EnvTime::Default()->NowNanos();
-  //int num_gpus = cupti_tracer_->NumGpus();
-  //step_stats_cupti_adaptor_ = absl::make_unique<StepStatsRocmTracerAdaptor>(
-  //    collector_options, "", num_gpus, start_walltime_ns, start_gputime_ns,
-  //    &trace_collector_);
-
-  //tensorflow::tracing::ScopedAnnotation::Enable(true);
-  //cupti_tracer_->Enable(options_, step_stats_cupti_adaptor_.get());
+  tensorflow::tracing::ScopedAnnotation::Enable(true);
+  rocm_tracer_->Enable(options_, step_stats_rocm_adaptor_.get());
   return Status::OK();
 }
 
@@ -652,7 +337,7 @@ Status RocmGpuTracer::Start() {
 }
 
 Status RocmGpuTracer::DoStop() {
-  //cupti_tracer_->Disable();
+  rocm_tracer_->Disable();
   tensorflow::tracing::ScopedAnnotation::Enable(false);
   return Status::OK();
 }
@@ -698,15 +383,12 @@ std::unique_ptr<profiler::ProfilerInterface> CreateGpuTracer(
   if (options.device_type != profiler::DeviceType::kGpu &&
       options.device_type != profiler::DeviceType::kUnspecified)
     return nullptr;
-  //profiler::RocmTracer* rocm_tracer =
-  //    profiler::RocmTracer::GetRocmTracerSingleton();
-  //if (!rocm_tracer->IsAvailable()) {
-  //  return nullptr;
-  //}
-  //profiler::RocmInterface* cupti_interface = profiler::GetRocmInterface();
-  //return absl::make_unique<profiler::GpuTracer>(cupti_tracer, cupti_interface);
-
-  return absl::make_unique<profiler::RocmGpuTracer>();
+  profiler::RocmTracer* rocm_tracer =
+      profiler::RocmTracer::GetRocmTracerSingleton();
+  if (!rocm_tracer->IsAvailable()) {
+    return nullptr;
+  }
+  return absl::make_unique<profiler::RocmGpuTracer>(rocm_tracer);
 }
 
 auto register_rocm_gpu_tracer_factory = [] {
