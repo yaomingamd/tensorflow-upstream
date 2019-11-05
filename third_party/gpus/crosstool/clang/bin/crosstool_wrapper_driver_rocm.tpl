@@ -261,6 +261,9 @@ def main():
     gpu_linker_flags.append('-Wl,-rpath=' + HIP_RUNTIME_PATH)
     gpu_linker_flags.append('-l' + HIP_RUNTIME_LIBRARY)
 
+    # link with roctracer library
+    gpu_linker_flags.append('-lroctracer64')
+
     if VERBOSE: print(' '.join([CPU_COMPILER] + gpu_linker_flags))
     return subprocess.call([CPU_COMPILER] + gpu_linker_flags)
 

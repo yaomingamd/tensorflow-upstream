@@ -25,40 +25,39 @@ limitations under the License.
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/mem.h"
 
+#include "roctracer/roctracer.h"
+#include "hip/hip_runtime.h"
+
 namespace tensorflow {
 namespace profiler {
 
 namespace {
 
-// ROCM TODO: decide whether to keep this
-//static thread_local bool internalCuCall;
-//
-//// Temporary disable cupti api tracing for this thread during the life scope of
-//// this class. Used for the API calls that initiated by us.
-//class RocmApiTracingDisabler {
-// public:
-//  RocmApiTracingDisabler() { internalCuCall = true; }
-//  ~RocmApiTracingDisabler() { internalCuCall = false; }
-//};
+static thread_local bool internalRocmCall;
 
-// ROCM TODO: decide whether to keep this
-//Status ToStatus(CUptiResult result) {
-//  if (result == CUPTI_SUCCESS) {
-//    return Status::OK();
-//  }
-//  const char *str = nullptr;
-//  cuptiGetResultString(result, &str);
-//  return errors::Unavailable("CUPTI error: ", str ? str : "<unknown>");
-//}
-//
-//Status ToStatus(CUresult result) {
-//  if (result == CUDA_SUCCESS) {
-//    return Status::OK();
-//  }
-//  const char *str = nullptr;
-//  cuGetErrorName(result, &str);
-//  return errors::Unavailable("CUDA error: ", str ? str : "<unknown>");
-//}
+// Temporary disable cupti api tracing for this thread during the life scope of
+// this class. Used for the API calls that initiated by us.
+class RocmApiTracingDisabler {
+ public:
+  RocmApiTracingDisabler() { internalRocmCall = true; }
+  ~RocmApiTracingDisabler() { internalRocmCall = false; }
+};
+
+Status ToStatus(roctracer_status_t result) {
+  if (result == ROCTRACER_STATUS_SUCCESS) {
+    return Status::OK();
+  }
+  const char *str = roctracer_error_string();
+  return errors::Unavailable("ROCTRACER error: ", str ? str : "<unknown>");
+}
+
+Status ToStatus(hipError_t result) {
+  if (result == hipSuccess) {
+    return Status::OK();
+  }
+  const char *str = hipGetErrorString(result);
+  return errors::Unavailable("ROCM error: ", str ? str : "<unknown>");
+}
 
 inline void LogIfError(const Status &status) {
   if (status.ok()) return;
@@ -83,17 +82,15 @@ inline void LogIfError(const Status &status) {
 //  return "<UNKNOWN>";
 //}
 
-// ROCM TODO: revise with roctracer API
-//#define RETURN_IF_CUPTI_ERROR(expr)                                         \
-//  do {                                                                      \
-//    CUptiResult status = expr;                                              \
-//    if (status != CUPTI_SUCCESS) {                                          \
-//      const char *errstr = "";                                              \
-//      cupti_interface_->GetResultString(status, &errstr);                   \
-//      LOG(ERROR) << "function " << #expr << "failed with error " << errstr; \
-//      return errors::Internal(absl::StrCat("cutpi call error", errstr));    \
-//    }                                                                       \
-//  } while (false)
+#define RETURN_IF_ROCTRACER_ERROR(expr)                                     \
+  do {                                                                      \
+    roctracer_status_t status = expr;                                       \
+    if (status != ROCTRACER_STATUS_SUCCESS) {                               \
+      const char *errstr = roctracer_error_string();                        \
+      LOG(ERROR) << "function " << #expr << "failed with error " << errstr; \
+      return errors::Internal(absl::StrCat("roctracer call error", errstr));\
+    }                                                                       \
+  } while (false)
 
 // GetCachedTID() caches the thread ID in thread-local storage (which is a
 // userspace construct) to avoid unnecessary system calls. Without this caching,
@@ -103,13 +100,6 @@ int32 GetCachedTID() {
       Env::Default()->GetCurrentThreadId();
   return current_thread_id;
 }
-
-// ROCM TODO: revise with HIP API?
-//size_t Bytes2D(const CUDA_MEMCPY2D *p) { return p->Height * p->WidthInBytes; }
-//
-//size_t Bytes3D(const CUDA_MEMCPY3D *p) {
-//  return p->Depth * p->Height * p->WidthInBytes;
-//}
 
 // ROCM TODO: revise with HIP API?
 //template <typename CudaMemcpy>
@@ -213,18 +203,18 @@ int32 GetCachedTID() {
 //  }
 //}
 
-// ROCM TODO: revise with roctracer API
-//// Rocm callback corresponding to a driver or runtime API. This global function
-//// is invoked twice for each API: at entry and at exit. The cbdata
-//// parameter is guaranteed by Rocm to be thread-safe. Most invocations are
-//// dropped to the floor and entry/exit is tracked for the APIs we deem
-//// performance-relevant.
-//void CUPTIAPI ApiCallback(void *user_data, CUpti_CallbackDomain domain,
-//                          CUpti_CallbackId cbid,
-//                          const CUpti_CallbackData *cbdata) {
-//  RocmTracer *tracer = reinterpret_cast<RocmTracer *>(user_data);
-//  tracer->HandleCallback(domain, cbid, cbdata).IgnoreError();
-//}
+// Rocm callback corresponding to a driver or runtime API. This global function
+// is invoked twice for each API: at entry and at exit. The cbdata
+// parameter is guaranteed by Rocm to be thread-safe. Most invocations are
+// dropped to the floor and entry/exit is tracked for the APIs we deem
+// performance-relevant.
+void ApiCallback(uint32_t domain,
+                 uint32_t cbid,
+                 const void *cbdata,
+                 void *user_data) {
+  RocmTracer *tracer = reinterpret_cast<RocmTracer *>(user_data);
+  tracer->HandleCallback(domain, cbid, cbdata).IgnoreError();
+}
 
 // ROCM TODO: revise with roctracer API
 //// Callback which is invoked when an empty buffer is requested by CUPTI.
@@ -249,11 +239,12 @@ int32 GetCachedTID() {
 //          << reinterpret_cast<uintptr_t>(*buffer) << std::dec
 //          << " size=" << *size;
 //}
-//
+
+// ROCM TODO: revise with roctracer API
 //// Callback which is invoked when a buffer containing activity records is
 //// available from CUPTI. Frees the buffer after reading activity records from
 //// it.
-//void CUPTIAPI FreeRocmActivityBuffer(CUcontext context, uint32_t stream_id,
+//void CUPTIAPI FreeRocmActivityBuffer(hipCtx_t context, uint32_t stream_id,
 //                                      uint8_t *buffer, size_t size,
 //                                      size_t valid_size) {
 //  VLOG(3) << "Freeing Rocm Buffer, buffer:" << std::hex
@@ -380,23 +371,22 @@ int32 GetCachedTID() {
 //  collector->AddEvent(std::move(event));
 //}
 
-// ROCM TODO: revise with roctracer API
-//void AddGenericEventUponApiExit(RocmTraceCollector *collector,
-//                                uint32 device_id, CUpti_CallbackId cbid,
-//                                const CUpti_CallbackData *cbdata,
-//                                uint64 start_time, uint64 end_time) {
-//  RocmTracerEvent event;
-//  event.type = RocmTracerEventType::Generic;
-//  event.source = RocmTracerEventSource::DriverCallback;
-//  event.name = cbdata->functionName;
-//  event.start_time_ns = start_time;
-//  event.end_time_ns = end_time;
-//  event.thread_id = GetCachedTID();
-//  event.device_id = device_id;
-//  event.context_id = cbdata->contextUid;
-//  event.correlation_id = cbdata->correlationId;
-//  collector->AddEvent(std::move(event));
-//}
+void AddGenericEventUponApiExit(RocmTraceCollector *collector,
+                                uint32 device_id, uint32_t cbid,
+                                const void *cbdata,
+                                uint64 start_time, uint64 end_time) {
+  RocmTracerEvent event;
+  event.type = RocmTracerEventType::Generic;
+  event.source = RocmTracerEventSource::DriverCallback;
+  //event.name = cbdata->functionName;
+  event.start_time_ns = start_time;
+  event.end_time_ns = end_time;
+  event.thread_id = GetCachedTID();
+  event.device_id = device_id;
+  //event.context_id = cbdata->contextUid;
+  //event.correlation_id = cbdata->correlationId;
+  collector->AddEvent(std::move(event));
+}
 
 // ROCM TODO: revise with roctracer API
 //void AddKernelActivityEvent(RocmTraceCollector *collector,
@@ -576,599 +566,600 @@ int32 GetCachedTID() {
 //  collector->AddEvent(std::move(event));
 //}
 
-// ROCM TODO: revise with roctracer API
-//// This hook uses cupti activity api to measure device side activities.
-//class RocmDriverApiHookWithActivityApi : public RocmDriverApiHook {
-// public:
-//  RocmDriverApiHookWithActivityApi(const RocmTracerOptions &option,
-//                                    RocmInterface *cupti_interface,
-//                                    RocmTraceCollector *collector,
-//                                    AnnotationMap *annotation_map)
-//      : option_(option),
-//        cupti_interface_(cupti_interface),
-//        collector_(collector),
-//        annotation_map_(annotation_map) {}
-//
-//  Status OnDriverApiEnter(int device_id, CUpti_CallbackDomain domain,
-//                          CUpti_CallbackId cbid,
-//                          const CUpti_CallbackData *cbdata) override {
-//    // Stash away the current Rocm timestamp into cbdata.
-//    *cbdata->correlationData =
-//        option_.required_callback_api_events ? RocmTracer::GetTimestamp() : 0;
-//    return Status::OK();
-//  }
-//  Status OnDriverApiExit(int device_id, CUpti_CallbackDomain domain,
-//                         CUpti_CallbackId cbid,
-//                         const CUpti_CallbackData *cbdata) override {
-//    // If we are not collecting CPU events from Callback API, we can return now.
-//    if (!option_.required_callback_api_events) {
-//      return Status::OK();
-//    }
-//
-//    // Grab timestamp for API exit. API entry timestamp saved in cbdata.
-//    uint64 end_tsc = RocmTracer::GetTimestamp();
-//    uint64 start_tsc = *cbdata->correlationData;
-//    return AddDriverApiCallbackEvent(collector_, cupti_interface_, device_id,
-//                                     start_tsc, end_tsc, domain, cbid, cbdata);
-//  }
-//  Status Flush() override { return Status::OK(); }
-//
-// private:
-//  const RocmTracerOptions option_;
-//  RocmInterface *cupti_interface_;
-//  RocmTraceCollector *collector_;
-//  AnnotationMap *annotation_map_;
-//
-//  TF_DISALLOW_COPY_AND_ASSIGN(RocmDriverApiHookWithActivityApi);
-//};
+// This hook uses cupti activity api to measure device side activities.
+class RocmDriverApiHookWithActivityApi : public RocmDriverApiHook {
+ public:
+  RocmDriverApiHookWithActivityApi(const RocmTracerOptions &option,
+                                   RocmTraceCollector *collector,
+                                   AnnotationMap *annotation_map)
+      : option_(option),
+        collector_(collector),
+        annotation_map_(annotation_map) {}
 
-// ROCM TODO: revise with HIP API
-//struct KernelRecord {
-//  const char *kernel_name;
-//  // TODO(csigg): cuStreamGetCtx introduced in CUDA 9.2 would allow us to only
-//  // record the stream and infer the context during collection.
-//  CUcontext context;
-//  CUstream stream;
-//  uint32 correlation_id;
-//  CUevent start_event;
-//  CUevent stop_event;
-//  KernelDetails details;
-//  uint64 start_timestamp;
-//};
-//
-//struct MemcpyRecord {
-//  RocmTracerEventType type;
-//  size_t size_bytes;
-//  CUcontext context;
-//  CUstream stream;
-//  uint32 correlation_id;
-//  CUevent start_event;
-//  CUevent stop_event;
-//  uint64 start_timestamp;
-//};
-//
-//Status CreateAndRecordEvent(CUevent *event, CUstream stream) {
+  Status OnDriverApiEnter(int device_id, uint32_t domain,
+                          uint32_t cbid,
+                          const void *cbdata) override {
+    // ROCM TODO: revise this.
+    //// Stash away the current Rocm timestamp into cbdata.
+    //*cbdata->correlationData =
+    //    option_.required_callback_api_events ? RocmTracer::GetTimestamp() : 0;
+    return Status::OK();
+  }
+  Status OnDriverApiExit(int device_id, uint32_t domain,
+                         uint32_t cbid,
+                         const void *cbdata) override {
+    // If we are not collecting CPU events from Callback API, we can return now.
+    if (!option_.required_callback_api_events) {
+      return Status::OK();
+    }
+
+    // Grab timestamp for API exit. API entry timestamp saved in cbdata.
+    uint64 end_tsc = RocmTracer::GetTimestamp();
+    // ROCM TODO: revise this.
+    uint64 start_tsc = 0; //*cbdata->correlationData;
+    return AddDriverApiCallbackEvent(collector_, device_id,
+                                     start_tsc, end_tsc, domain, cbid, cbdata);
+  }
+  Status Flush() override { return Status::OK(); }
+
+ private:
+  const RocmTracerOptions option_;
+  RocmTraceCollector *collector_;
+  AnnotationMap *annotation_map_;
+
+  TF_DISALLOW_COPY_AND_ASSIGN(RocmDriverApiHookWithActivityApi);
+};
+
+struct KernelRecord {
+  const char *kernel_name;
+  // TODO(csigg): cuStreamGetCtx introduced in CUDA 9.2 would allow us to only
+  // record the stream and infer the context during collection.
+  hipCtx_t context;
+  hipStream_t stream;
+  uint32 correlation_id;
+  hipEvent_t start_event;
+  hipEvent_t stop_event;
+  KernelDetails details;
+  uint64 start_timestamp;
+};
+
+struct MemcpyRecord {
+  RocmTracerEventType type;
+  size_t size_bytes;
+  hipCtx_t context;
+  hipStream_t stream;
+  uint32 correlation_id;
+  hipEvent_t start_event;
+  hipEvent_t stop_event;
+  uint64 start_timestamp;
+};
+
+// ROCM TODO: revise this with HIP API.
+//Status CreateAndRecordEvent(hipEvent_t *event, hipStream_t stream) {
 //  RocmApiTracingDisabler disabler;
 //  TF_RETURN_IF_ERROR(ToStatus(cuEventCreate(event, CU_EVENT_DEFAULT)));
 //  return ToStatus(cuEventRecord(*event, stream));
 //}
 
-// ROCM TODO: revise with HIP API
-//// Stores a series of kernel and memcpy records.
-//class CudaEventRecorder {
-// public:
-//  CudaEventRecorder(RocmInterface *cupti_interface,
-//                    RocmTraceCollector *collector, int ordinal)
-//      : cupti_interface_(cupti_interface),
-//        collector_(collector),
-//        ordinal_(ordinal) {
-//    device_name_ = absl::StrCat("gpu ", ordinal);  // default.
-//    CUdevice device;
-//    if (cuDeviceGet(&device, ordinal) == CUDA_SUCCESS) {
-//      char name[100];
-//      if (cuDeviceGetName(name, sizeof(name), device) == CUDA_SUCCESS) {
-//        device_name_ = name;
-//      }
-//    }
-//  }
-//
-//  // Registers the start of a kernel launch. The returned index should be passed
-//  // to StopKernel() after the kernel launch has completed.
-//  size_t StartKernel(const char *kernel_name, CUcontext context,
-//                     uint32 correlation_id,
-//                     const cuLaunchKernel_params *params) {
-//    CUstream stream = params->hStream;
-//    KernelRecord record = {kernel_name, context, stream, correlation_id};
-//    record.details.registers_per_thread = 0;  // unknown.
-//    record.details.static_shared_memory_usage = params->sharedMemBytes;
-//    record.details.dynamic_shared_memory_usage = 0;  // unknown
-//    record.details.block_x = params->blockDimX;
-//    record.details.block_y = params->blockDimY;
-//    record.details.block_z = params->blockDimZ;
-//    record.details.grid_x = params->gridDimX;
-//    record.details.grid_y = params->gridDimY;
-//    record.details.grid_z = params->gridDimZ;
-//    record.start_timestamp = RocmTracer::GetTimestamp();
-//    LogIfError(CreateAndRecordEvent(&record.start_event, stream));
-//    absl::MutexLock lock(&mutex_);
-//    if (stopped_) return -1;
-//    kernel_records_.push_back(record);
-//    return kernel_records_.size() - 1;
-//  }
-//  uint64 StopKernel(size_t index) {
-//    absl::MutexLock lock(&mutex_);
-//    if (index >= kernel_records_.size()) return 0;
-//    auto &record = kernel_records_[index];
-//    LogIfError(CreateAndRecordEvent(&record.stop_event, record.stream));
-//    return record.start_timestamp;
-//  }
-//
-//  // Registers the start of a copy operation. The returned index should be
-//  // passed to StopMemcpy() after the memcpy has completed.
-//  size_t StartMemcpy(RocmTracerEventType type, size_t size_bytes,
-//                     CUcontext context, CUstream stream,
-//                     uint32 correlation_id) {
-//    MemcpyRecord record = {type, size_bytes, context, stream, correlation_id};
-//    record.start_timestamp = RocmTracer::GetTimestamp();
-//    LogIfError(CreateAndRecordEvent(&record.start_event, stream));
-//    absl::MutexLock lock(&mutex_);
-//    if (stopped_) return -1;
-//    memcpy_records_.push_back(record);
-//    return memcpy_records_.size() - 1;
-//  }
-//  uint64 StopMemcpy(size_t index) {
-//    absl::MutexLock lock(&mutex_);
-//    if (index >= memcpy_records_.size()) return 0;
-//    auto &record = memcpy_records_[index];
-//    LogIfError(CreateAndRecordEvent(&record.stop_event, record.stream));
-//    return record.start_timestamp;
-//  }
-//
-//  Status Stop() {
-//    {
-//      absl::MutexLock lock(&mutex_);
-//      stopped_ = true;
-//      LOG(INFO) << "Collecting " << kernel_records_.size()
-//                << " kernel records, " << memcpy_records_.size()
-//                << " memcpy records.";
-//
-//      // Gather all profiled streams and contexts.
-//      for (const auto &record : kernel_records_) {
-//        TF_RETURN_IF_ERROR(
-//            AddStreamInfo(record.context, record.stream, "Kernel"));
-//      }
-//      for (const auto &record : memcpy_records_) {
-//        TF_RETURN_IF_ERROR(AddStreamInfo(record.context, record.stream,
-//                                         GetTraceEventTypeName(record.type)));
-//      }
-//    }
-//
-//    // Synchronize all contexts, record end events, synchronize again.
-//    // This scheme is an unreliable measure to associate a event with the wall
-//    // time. There are chances that other threads might enque kernels which
-//    // delay the second synchornization.
-//    TF_RETURN_IF_ERROR(Synchronize());
-//    for (auto &pair : context_infos_) {
-//      TF_RETURN_IF_ERROR(ToStatus(cuCtxSetCurrent(pair.first)));
-//      TF_RETURN_IF_ERROR(CreateAndRecordEvent(&pair.second.end_event, nullptr));
-//    }
-//
-//    TF_RETURN_IF_ERROR(Synchronize());
-//    end_walltime_us_ = Env::Default()->NowMicros();
-//    return Status::OK();
-//  }
-//
-//  Status Flush(AnnotationMap *annotation_map) {
-//    auto kernel_records = ConsumeKernelRecords();
-//    auto memcpy_records = ConsumeMemcpyRecords();
-//    for (const auto &record : kernel_records) {
-//      TF_RETURN_IF_ERROR(SaveRecord(record, annotation_map));
-//    }
-//    for (const auto &record : memcpy_records) {
-//      TF_RETURN_IF_ERROR(SaveRecord(record, annotation_map));
-//    }
-//    return Status::OK();
-//  }
-//
-//  std::vector<KernelRecord> ConsumeKernelRecords() {
-//    absl::MutexLock lock(&mutex_);
-//    return std::move(kernel_records_);
-//  }
-//  std::vector<MemcpyRecord> ConsumeMemcpyRecords() {
-//    absl::MutexLock lock(&mutex_);
-//    return std::move(memcpy_records_);
-//  }
-//
-// private:
-//  struct ContextInfo {
-//    uint32 context_id = 0;
-//    int num_streams = 0;
-//    CUevent end_event;
-//  };
-//
-//  struct StreamInfo {
-//    uint32 stream_id = 0;
-//    std::string name;
-//    int index;  // 0 is reserved for null stream.
-//    const ContextInfo *ctx_info;
-//  };
-//
-//  // Synchronizes all contexts.
-//  Status Synchronize() const {
-//    RocmApiTracingDisabler disabler;
-//    for (const auto &pair : context_infos_) {
-//      TF_RETURN_IF_ERROR(ToStatus(cuCtxSetCurrent(pair.first)));
-//      TF_RETURN_IF_ERROR(ToStatus(cuCtxSynchronize()));
-//    }
-//    return Status::OK();
-//  }
-//
-//  // Returns element from context_infos_, adding it if not yet present.
-//  Status GetContextInfo(CUcontext context, ContextInfo **ctx_info_ptr) {
-//    auto it = context_infos_.find(context);
-//
-//    if (it == context_infos_.end()) {
-//      uint32 context_id = 0;
-//      RETURN_IF_CUPTI_ERROR(
-//          cupti_interface_->GetContextId(context, &context_id));
-//      ContextInfo ctx_info = {context_id};
-//      it = context_infos_.emplace(context, ctx_info).first;
-//    }
-//
-//    *ctx_info_ptr = &it->second;
-//    return Status::OK();
-//  }
-//
-//  // Adds element to stream_infos_ if not yet present. If present, clear name
-//  // if it doesn't match parameter.
-//  Status AddStreamInfo(CUcontext context, CUstream stream,
-//                       absl::string_view name) {
-//    StreamKey key(context, stream);
-//    auto it = stream_infos_.find(key);
-//    if (it != stream_infos_.end()) {
-//      if (it->second.name != name) {
-//        it->second.name.clear();  // Stream with inconsistent names, clear it.
-//      }
-//      return Status::OK();
-//    }
-//
-//    ContextInfo *ctx_info;
-//    TF_RETURN_IF_ERROR(GetContextInfo(context, &ctx_info));
-//    int index = stream ? ++ctx_info->num_streams : 0;
-//    uint32 stream_id = 0;
+// Stores a series of kernel and memcpy records.
+class HipEventRecorder {
+ public:
+  HipEventRecorder(RocmTraceCollector *collector, int ordinal)
+      : collector_(collector),
+        ordinal_(ordinal) {
+    device_name_ = absl::StrCat("gpu ", ordinal);  // default.
+    // ROCM TODO: revise this with HIP API.
+    //hipDevice_t device;
+    //if (hipGetDevice(&device, ordinal) == CUDA_SUCCESS) {
+    //  char name[100];
+    //  if (cuDeviceGetName(name, sizeof(name), device) == CUDA_SUCCESS) {
+    //    device_name_ = name;
+    //  }
+    //}
+  }
+
+  // ROCM TODO: enable this at the right timing.
+  //// Registers the start of a kernel launch. The returned index should be passed
+  //// to StopKernel() after the kernel launch has completed.
+  //size_t StartKernel(const char *kernel_name, hipCtx_t context,
+  //                   uint32 correlation_id,
+  //                   const cuLaunchKernel_params *params) {
+  //  hipStream_t stream = params->hStream;
+  //  KernelRecord record = {kernel_name, context, stream, correlation_id};
+  //  record.details.registers_per_thread = 0;  // unknown.
+  //  record.details.static_shared_memory_usage = params->sharedMemBytes;
+  //  record.details.dynamic_shared_memory_usage = 0;  // unknown
+  //  record.details.block_x = params->blockDimX;
+  //  record.details.block_y = params->blockDimY;
+  //  record.details.block_z = params->blockDimZ;
+  //  record.details.grid_x = params->gridDimX;
+  //  record.details.grid_y = params->gridDimY;
+  //  record.details.grid_z = params->gridDimZ;
+  //  record.start_timestamp = RocmTracer::GetTimestamp();
+  //  LogIfError(CreateAndRecordEvent(&record.start_event, stream));
+  //  absl::MutexLock lock(&mutex_);
+  //  if (stopped_) return -1;
+  //  kernel_records_.push_back(record);
+  //  return kernel_records_.size() - 1;
+  //}
+  //uint64 StopKernel(size_t index) {
+  //  absl::MutexLock lock(&mutex_);
+  //  if (index >= kernel_records_.size()) return 0;
+  //  auto &record = kernel_records_[index];
+  //  LogIfError(CreateAndRecordEvent(&record.stop_event, record.stream));
+  //  return record.start_timestamp;
+  //}
+
+  //// Registers the start of a copy operation. The returned index should be
+  //// passed to StopMemcpy() after the memcpy has completed.
+  //size_t StartMemcpy(RocmTracerEventType type, size_t size_bytes,
+  //                   hipCtx_t context, hipStream_t stream,
+  //                   uint32 correlation_id) {
+  //  MemcpyRecord record = {type, size_bytes, context, stream, correlation_id};
+  //  record.start_timestamp = RocmTracer::GetTimestamp();
+  //  LogIfError(CreateAndRecordEvent(&record.start_event, stream));
+  //  absl::MutexLock lock(&mutex_);
+  //  if (stopped_) return -1;
+  //  memcpy_records_.push_back(record);
+  //  return memcpy_records_.size() - 1;
+  //}
+  //uint64 StopMemcpy(size_t index) {
+  //  absl::MutexLock lock(&mutex_);
+  //  if (index >= memcpy_records_.size()) return 0;
+  //  auto &record = memcpy_records_[index];
+  //  LogIfError(CreateAndRecordEvent(&record.stop_event, record.stream));
+  //  return record.start_timestamp;
+  //}
+
+  Status Stop() {
+    {
+      absl::MutexLock lock(&mutex_);
+      stopped_ = true;
+      LOG(INFO) << "Collecting " << kernel_records_.size()
+                << " kernel records, " << memcpy_records_.size()
+                << " memcpy records.";
+
+      // Gather all profiled streams and contexts.
+      for (const auto &record : kernel_records_) {
+        TF_RETURN_IF_ERROR(
+            AddStreamInfo(record.context, record.stream, "Kernel"));
+      }
+      for (const auto &record : memcpy_records_) {
+        TF_RETURN_IF_ERROR(AddStreamInfo(record.context, record.stream,
+                                         GetTraceEventTypeName(record.type)));
+      }
+    }
+
+    // Synchronize all contexts, record end events, synchronize again.
+    // This scheme is an unreliable measure to associate a event with the wall
+    // time. There are chances that other threads might enque kernels which
+    // delay the second synchornization.
+    TF_RETURN_IF_ERROR(Synchronize());
+    // ROCM TODO: re-enable this later.
+    //for (auto &pair : context_infos_) {
+    //  TF_RETURN_IF_ERROR(ToStatus(cuCtxSetCurrent(pair.first)));
+    //  TF_RETURN_IF_ERROR(CreateAndRecordEvent(&pair.second.end_event, nullptr));
+    //}
+
+    TF_RETURN_IF_ERROR(Synchronize());
+    end_walltime_us_ = Env::Default()->NowMicros();
+    return Status::OK();
+  }
+
+  Status Flush(AnnotationMap *annotation_map) {
+    auto kernel_records = ConsumeKernelRecords();
+    auto memcpy_records = ConsumeMemcpyRecords();
+    for (const auto &record : kernel_records) {
+      TF_RETURN_IF_ERROR(SaveRecord(record, annotation_map));
+    }
+    for (const auto &record : memcpy_records) {
+      TF_RETURN_IF_ERROR(SaveRecord(record, annotation_map));
+    }
+    return Status::OK();
+  }
+
+  std::vector<KernelRecord> ConsumeKernelRecords() {
+    absl::MutexLock lock(&mutex_);
+    return std::move(kernel_records_);
+  }
+  std::vector<MemcpyRecord> ConsumeMemcpyRecords() {
+    absl::MutexLock lock(&mutex_);
+    return std::move(memcpy_records_);
+  }
+
+ private:
+  struct ContextInfo {
+    uint32 context_id = 0;
+    int num_streams = 0;
+    hipEvent_t end_event;
+  };
+
+  struct StreamInfo {
+    uint32 stream_id = 0;
+    std::string name;
+    int index;  // 0 is reserved for null stream.
+    const ContextInfo *ctx_info;
+  };
+
+  // Synchronizes all contexts.
+  Status Synchronize() const {
+    RocmApiTracingDisabler disabler;
+    // ROCM TODO: re-enable this later.
+    //for (const auto &pair : context_infos_) {
+    //  TF_RETURN_IF_ERROR(ToStatus(cuCtxSetCurrent(pair.first)));
+    //  TF_RETURN_IF_ERROR(ToStatus(cuCtxSynchronize()));
+    //}
+    return Status::OK();
+  }
+
+  // Returns element from context_infos_, adding it if not yet present.
+  Status GetContextInfo(hipCtx_t context, ContextInfo **ctx_info_ptr) {
+    auto it = context_infos_.find(context);
+
+    if (it == context_infos_.end()) {
+      uint32 context_id = 0;
+      // ROCM TODO: enable this per HIP API or roctracer API.
+      //RETURN_IF_ROCTRACER_ERROR(
+      //    cupti_interface_->GetContextId(context, &context_id));
+      ContextInfo ctx_info = {context_id};
+      it = context_infos_.emplace(context, ctx_info).first;
+    }
+
+    *ctx_info_ptr = &it->second;
+    return Status::OK();
+  }
+
+  // Adds element to stream_infos_ if not yet present. If present, clear name
+  // if it doesn't match parameter.
+  Status AddStreamInfo(hipCtx_t context, hipStream_t stream,
+                       absl::string_view name) {
+    StreamKey key(context, stream);
+    auto it = stream_infos_.find(key);
+    if (it != stream_infos_.end()) {
+      if (it->second.name != name) {
+        it->second.name.clear();  // Stream with inconsistent names, clear it.
+      }
+      return Status::OK();
+    }
+
+    // ROCM TODO: re-enable this later.
+    ContextInfo *ctx_info;
+    TF_RETURN_IF_ERROR(GetContextInfo(context, &ctx_info));
+    int index = stream ? ++ctx_info->num_streams : 0;
+    uint32 stream_id = 0;
+    // ROCM TODO: enable this per HIP API or roctrcer API.
 //#if defined(CUDA_API_PER_THREAD_DEFAULT_STREAM)
-//    RETURN_IF_CUPTI_ERROR(
+//    RETURN_IF_ROCTRACER_ERROR(
 //        cupti_interface_->GetStreamIdEx(context, stream, 1, &stream_id));
 //#else
-//    RETURN_IF_CUPTI_ERROR(
+//    RETURN_IF_ROCTRACER_ERROR(
 //        cupti_interface_->GetStreamIdEx(context, stream, 0, &stream_id));
 //#endif
-//
-//    StreamInfo stream_info = {stream_id, static_cast<std::string>(name), index,
-//                              ctx_info};
-//    stream_infos_.emplace(key, stream_info);
-//    return Status::OK();
-//  }
-//
-//  // Returns time in microseconds between events recorded on the GPU.
-//  static uint64_t GetElapsedTimeUs(CUevent start, CUevent stop) {
-//    RocmApiTracingDisabler disabler;
-//    float elapsed_ms = 0.0f;
-//    LogIfError(ToStatus(cuEventElapsedTime(&elapsed_ms, start, stop)));
-//    return static_cast<uint64>(
-//        std::llroundf(1000 * std::max(elapsed_ms, 0.0f)));
-//  }
-//
-//  Status SaveRecord(const KernelRecord &record,
-//                    AnnotationMap *annotation_map) const {
-//    if (!record.start_event || !record.stop_event) {
-//      return Status::OK();
-//    }
-//    const auto &stream_info =
-//        stream_infos_.at(StreamKey(record.context, record.stream));
-//    auto start_us =
-//        GetElapsedTimeUs(record.start_event, stream_info.ctx_info->end_event);
-//    auto elapsed_us = GetElapsedTimeUs(record.start_event, record.stop_event);
-//
-//    std::string annotation;
-//
-//    RocmTracerEvent event;
-//    event.type = RocmTracerEventType::Kernel;
-//    event.source = RocmTracerEventSource::Activity;  // on gpu device.
-//    event.name = record.kernel_name;
-//    event.start_time_ns = (end_walltime_us_ - start_us) * 1000;
-//    event.end_time_ns = event.start_time_ns + elapsed_us * 1000;
-//    event.device_id = ordinal_;
-//    event.context_id = stream_info.ctx_info->context_id;
-//    event.stream_id = stream_info.stream_id;
-//    event.correlation_id = record.correlation_id;
-//    event.annotation =
-//        annotation_map->LookUp(event.device_id, event.correlation_id);
-//    event.kernel_info = record.details;
-//    collector_->AddEvent(std::move(event));
-//    return Status::OK();
-//  }
-//
-//  Status SaveRecord(const MemcpyRecord &record,
-//                    AnnotationMap *annotation_map) const {
-//    if (!record.start_event || !record.stop_event) {
-//      return Status::OK();
-//    }
-//    const auto &stream_info =
-//        stream_infos_.at(StreamKey(record.context, record.stream));
-//    auto start_us =
-//        GetElapsedTimeUs(record.start_event, stream_info.ctx_info->end_event);
-//    auto elapsed_us = GetElapsedTimeUs(record.start_event, record.stop_event);
-//
-//    RocmTracerEvent event;
-//    event.type = record.type;
-//    event.name = GetTraceEventTypeName(event.type);
-//    event.source = RocmTracerEventSource::Activity;
-//    event.start_time_ns = (end_walltime_us_ - start_us) * 1000;
-//    event.end_time_ns = event.start_time_ns + elapsed_us * 1000;
-//    event.device_id = ordinal_;
-//    event.context_id = stream_info.ctx_info->context_id;
-//    event.stream_id = stream_info.stream_id;
-//    event.correlation_id = record.correlation_id;
-//    event.annotation =
-//        annotation_map->LookUp(event.device_id, event.correlation_id);
-//    event.memcpy_info.num_bytes = record.size_bytes;
-//    // TODO: support MemcpyD2D where destination != source;
-//    event.memcpy_info.destination = ordinal_;
-//    // TODO: support differentiate sync and async memcpy.
-//    event.memcpy_info.async = false;
-//    collector_->AddEvent(std::move(event));
-//    return Status::OK();
-//  }
-//
-//  absl::Mutex mutex_;
-//  bool stopped_ GUARDED_BY(mutex_) = false;
-//  std::vector<KernelRecord> kernel_records_ GUARDED_BY(mutex_);
-//  std::vector<MemcpyRecord> memcpy_records_ GUARDED_BY(mutex_);
-//
-//  RocmInterface *cupti_interface_;
-//  RocmTraceCollector *collector_;
-//  const int ordinal_;
-//  std::string device_name_;
-//  uint64 end_walltime_us_;
-//  // Include context in key to distinguish null streams.
-//  using StreamKey = std::pair<CUcontext, CUstream>;
-//
-//  absl::node_hash_map<CUcontext, ContextInfo> context_infos_;
-//  absl::flat_hash_map<StreamKey, StreamInfo, hash<StreamKey>> stream_infos_;
-//};
 
-// ROCM TODO: revise with HIP API
-//// This hook uses cuda events to measure device side activities.
-//class RocmDriverApiHookWithCudaEvent : public RocmDriverApiHook {
-// public:
-//  RocmDriverApiHookWithCudaEvent(const RocmTracerOptions &option,
-//                                  RocmInterface *cupti_interface,
-//                                  RocmTraceCollector *collector,
-//                                  AnnotationMap *annotation_map)
-//      : option_(option),
-//        cupti_interface_(cupti_interface),
-//        annotation_map_(annotation_map),
-//        collector_(collector) {
-//    int num_gpus = RocmTracer::NumGpus();
-//    cuda_event_recorders_.reserve(num_gpus);
-//    for (int i = 0; i < num_gpus; ++i) {
-//      cuda_event_recorders_.emplace_back(
-//          absl::make_unique<CudaEventRecorder>(cupti_interface, collector, i));
-//    }
-//  }
-//
-//  Status OnDriverApiEnter(int device_id, CUpti_CallbackDomain domain,
-//                          CUpti_CallbackId cbid,
-//                          const CUpti_CallbackData *cbdata) override {
-//    auto *recorder = cuda_event_recorders_[device_id].get();
-//    switch (cbid) {
-//      case CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel: {
-//        DCHECK_NE(cbdata->symbolName, nullptr);
-//        auto params =
-//            static_cast<const cuLaunchKernel_params *>(cbdata->functionParams);
-//        *cbdata->correlationData = recorder->StartKernel(
-//            cbdata->symbolName, cbdata->context, cbdata->correlationId, params);
-//        break;
-//      }
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpy: {
-//        auto params =
-//            static_cast<const cuMemcpy_params *>(cbdata->functionParams);
-//        StartMemcpy<cuMemcpy_params>(GetMemcpyType(params->src, params->dst),
-//                                     cbdata, recorder);
-//        break;
-//      }
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync: {
-//        auto params =
-//            static_cast<const cuMemcpyAsync_params *>(cbdata->functionParams);
-//        StartMemcpyAsync<cuMemcpyAsync_params>(
-//            GetMemcpyType(params->src, params->dst), cbdata, recorder);
-//        break;
-//      }
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
-//        StartMemcpy<cuMemcpyHtoD_v2_params>(RocmTracerEventType::MemcpyH2D,
-//                                            cbdata, recorder);
-//        break;
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
-//        StartMemcpyAsync<cuMemcpyHtoDAsync_v2_params>(
-//            RocmTracerEventType::MemcpyH2D, cbdata, recorder);
-//        break;
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
-//        StartMemcpy<cuMemcpyDtoH_v2_params>(RocmTracerEventType::MemcpyD2H,
-//                                            cbdata, recorder);
-//        break;
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
-//        StartMemcpyAsync<cuMemcpyDtoHAsync_v2_params>(
-//            RocmTracerEventType::MemcpyD2H, cbdata, recorder);
-//        break;
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
-//        StartMemcpy<cuMemcpyDtoD_v2_params>(RocmTracerEventType::MemcpyD2D,
-//                                            cbdata, recorder);
-//        break;
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
-//        StartMemcpyAsync<cuMemcpyDtoDAsync_v2_params>(
-//            RocmTracerEventType::MemcpyD2D, cbdata, recorder);
-//        break;
-//      default:
-//        VLOG(1) << "Unexpected callback id: " << cbid;
-//        break;
-//    }
-//    return Status::OK();
-//  }
-//  Status OnDriverApiExit(int device_id, CUpti_CallbackDomain domain,
-//                         CUpti_CallbackId cbid,
-//                         const CUpti_CallbackData *cbdata) override {
-//    auto *recorder = cuda_event_recorders_[device_id].get();
-//    if (*cbdata->correlationData == static_cast<size_t>(-1))
-//      return Status::OK();
-//    uint64 start_tsc = 0;
-//    switch (cbid) {
-//      case CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel:
-//        start_tsc = recorder->StopKernel(*cbdata->correlationData);
-//        break;
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpy:
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync:
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
-//      case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
-//        start_tsc = recorder->StopMemcpy(*cbdata->correlationData);
-//        break;
-//      default:
-//        VLOG(1) << "Unexpected callback id: " << cbid;
-//        // TODO: figure out how to get start timestamp in this case.
-//        return Status::OK();
-//    }
-//    // If we are not collecting CPU events from Callback API, we can return now.
-//    if (!option_.required_callback_api_events) {
-//      return Status::OK();
-//    }
-//
-//    // Grab timestamp for API exit. API entry timestamp saved in cbdata.
-//    uint64 end_tsc = RocmTracer::GetTimestamp();
-//    return AddDriverApiCallbackEvent(collector_, cupti_interface_, device_id,
-//                                     start_tsc, end_tsc, domain, cbid, cbdata);
-//  }
-//  Status Flush() override {
-//    for (auto &recorder : cuda_event_recorders_) {
-//      TF_RETURN_IF_ERROR(recorder->Stop());
-//    }
-//    for (auto &recorder : cuda_event_recorders_) {
-//      TF_RETURN_IF_ERROR(recorder->Flush(annotation_map_));
-//    }
-//    return Status::OK();
-//  }
-//
-// private:
-//  template <typename T>
-//  static void StartMemcpy(RocmTracerEventType type,
-//                          const CUpti_CallbackData *cbdata,
-//                          CudaEventRecorder *recorder) {
-//    auto params = static_cast<const T *>(cbdata->functionParams);
-//    *cbdata->correlationData =
-//        recorder->StartMemcpy(type, params->ByteCount, cbdata->context, nullptr,
-//                              cbdata->correlationId);
-//  }
-//  template <typename T>
-//  static void StartMemcpyAsync(RocmTracerEventType type,
-//                               const CUpti_CallbackData *cbdata,
-//                               CudaEventRecorder *recorder) {
-//    auto params = static_cast<const T *>(cbdata->functionParams);
-//    *cbdata->correlationData =
-//        recorder->StartMemcpy(type, params->ByteCount, cbdata->context,
-//                              params->hStream, cbdata->correlationId);
-//  }
-//
-//  static CUmemorytype GetMemoryType(CUdeviceptr ptr) {
-//    RocmApiTracingDisabler disabler;
-//    CUmemorytype mem_type = CU_MEMORYTYPE_HOST;
-//    auto status =
-//        cuPointerGetAttribute(&mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, ptr);
-//    if (status == CUDA_ERROR_INVALID_VALUE) {
-//      // Pointer not registered with CUDA, must be host memory.
-//      return CU_MEMORYTYPE_HOST;
-//    }
-//    LogIfError(ToStatus(status));
-//    return mem_type;
-//  }
-//
-//  static RocmTracerEventType GetMemcpyType(CUdeviceptr src, CUdeviceptr dst) {
-//    CUmemorytype src_type = GetMemoryType(src);
-//    CUmemorytype dst_type = GetMemoryType(dst);
-//    // TODO: handle CU_MEMORYTYPE_ARRAY case
-//    if (src_type == CU_MEMORYTYPE_HOST && dst_type == CU_MEMORYTYPE_DEVICE) {
-//      return RocmTracerEventType::MemcpyH2D;
-//    } else if (src_type == CU_MEMORYTYPE_DEVICE &&
-//               dst_type == CU_MEMORYTYPE_HOST) {
-//      return RocmTracerEventType::MemcpyD2H;
-//    } else if (src_type == CU_MEMORYTYPE_DEVICE &&
-//               dst_type == CU_MEMORYTYPE_DEVICE) {
-//      return RocmTracerEventType::MemcpyD2D;
-//    }
-//    return RocmTracerEventType::MemcpyOther;
-//  }
-//
-//  const RocmTracerOptions option_;
-//  RocmInterface *cupti_interface_;
-//  AnnotationMap *annotation_map_;
-//  RocmTraceCollector *collector_;
-//  std::vector<std::unique_ptr<CudaEventRecorder>> cuda_event_recorders_;
-//  TF_DISALLOW_COPY_AND_ASSIGN(RocmDriverApiHookWithCudaEvent);
-//};
+    StreamInfo stream_info = {stream_id, static_cast<std::string>(name), index,
+                              ctx_info};
+    stream_infos_.emplace(key, stream_info);
+    return Status::OK();
+  }
+
+  // Returns time in microseconds between events recorded on the GPU.
+  static uint64_t GetElapsedTimeUs(hipEvent_t start, hipEvent_t stop) {
+    RocmApiTracingDisabler disabler;
+    float elapsed_ms = 0.0f;
+    // ROCM TODO: re-enable this later.
+    //LogIfError(ToStatus(cuEventElapsedTime(&elapsed_ms, start, stop)));
+    return static_cast<uint64>(
+        std::llroundf(1000 * std::max(elapsed_ms, 0.0f)));
+  }
+
+  Status SaveRecord(const KernelRecord &record,
+                    AnnotationMap *annotation_map) const {
+    if (!record.start_event || !record.stop_event) {
+      return Status::OK();
+    }
+    const auto &stream_info =
+        stream_infos_.at(StreamKey(record.context, record.stream));
+    auto start_us =
+        GetElapsedTimeUs(record.start_event, stream_info.ctx_info->end_event);
+    auto elapsed_us = GetElapsedTimeUs(record.start_event, record.stop_event);
+
+    std::string annotation;
+
+    RocmTracerEvent event;
+    event.type = RocmTracerEventType::Kernel;
+    event.source = RocmTracerEventSource::Activity;  // on gpu device.
+    event.name = record.kernel_name;
+    event.start_time_ns = (end_walltime_us_ - start_us) * 1000;
+    event.end_time_ns = event.start_time_ns + elapsed_us * 1000;
+    event.device_id = ordinal_;
+    event.context_id = stream_info.ctx_info->context_id;
+    event.stream_id = stream_info.stream_id;
+    event.correlation_id = record.correlation_id;
+    event.annotation =
+        annotation_map->LookUp(event.device_id, event.correlation_id);
+    event.kernel_info = record.details;
+    collector_->AddEvent(std::move(event));
+    return Status::OK();
+  }
+
+  Status SaveRecord(const MemcpyRecord &record,
+                    AnnotationMap *annotation_map) const {
+    if (!record.start_event || !record.stop_event) {
+      return Status::OK();
+    }
+    const auto &stream_info =
+        stream_infos_.at(StreamKey(record.context, record.stream));
+    auto start_us =
+        GetElapsedTimeUs(record.start_event, stream_info.ctx_info->end_event);
+    auto elapsed_us = GetElapsedTimeUs(record.start_event, record.stop_event);
+
+    RocmTracerEvent event;
+    event.type = record.type;
+    event.name = GetTraceEventTypeName(event.type);
+    event.source = RocmTracerEventSource::Activity;
+    event.start_time_ns = (end_walltime_us_ - start_us) * 1000;
+    event.end_time_ns = event.start_time_ns + elapsed_us * 1000;
+    event.device_id = ordinal_;
+    event.context_id = stream_info.ctx_info->context_id;
+    event.stream_id = stream_info.stream_id;
+    event.correlation_id = record.correlation_id;
+    event.annotation =
+        annotation_map->LookUp(event.device_id, event.correlation_id);
+    event.memcpy_info.num_bytes = record.size_bytes;
+    // TODO: support MemcpyD2D where destination != source;
+    event.memcpy_info.destination = ordinal_;
+    // TODO: support differentiate sync and async memcpy.
+    event.memcpy_info.async = false;
+    collector_->AddEvent(std::move(event));
+    return Status::OK();
+  }
+
+  absl::Mutex mutex_;
+  bool stopped_ GUARDED_BY(mutex_) = false;
+  std::vector<KernelRecord> kernel_records_ GUARDED_BY(mutex_);
+  std::vector<MemcpyRecord> memcpy_records_ GUARDED_BY(mutex_);
+
+  RocmTraceCollector *collector_;
+  const int ordinal_;
+  std::string device_name_;
+  uint64 end_walltime_us_;
+  // Include context in key to distinguish null streams.
+  using StreamKey = std::pair<hipCtx_t, hipStream_t>;
+
+  absl::node_hash_map<hipCtx_t, ContextInfo> context_infos_;
+  absl::flat_hash_map<StreamKey, StreamInfo, hash<StreamKey>> stream_infos_;
+};
+
+// This hook uses cuda events to measure device side activities.
+class RocmDriverApiHookWithHipEvent : public RocmDriverApiHook {
+ public:
+  RocmDriverApiHookWithHipEvent(const RocmTracerOptions &option,
+                                  RocmTraceCollector *collector,
+                                  AnnotationMap *annotation_map)
+      : option_(option),
+        annotation_map_(annotation_map),
+        collector_(collector) {
+    int num_gpus = RocmTracer::NumGpus();
+    hip_event_recorders_.reserve(num_gpus);
+    for (int i = 0; i < num_gpus; ++i) {
+      hip_event_recorders_.emplace_back(
+          absl::make_unique<HipEventRecorder>(collector, i));
+    }
+  }
+
+  Status OnDriverApiEnter(int device_id, uint32_t domain,
+                          uint32_t cbid,
+                          const void *cbdata) override {
+    auto *recorder = hip_event_recorders_[device_id].get();
+    switch (cbid) {
+      // ROCM TODO: revise this.
+      //case CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel: {
+      //  DCHECK_NE(cbdata->symbolName, nullptr);
+      //  auto params =
+      //      static_cast<const cuLaunchKernel_params *>(cbdata->functionParams);
+      //  *cbdata->correlationData = recorder->StartKernel(
+      //      cbdata->symbolName, cbdata->context, cbdata->correlationId, params);
+      //  break;
+      //}
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy: {
+      //  auto params =
+      //      static_cast<const cuMemcpy_params *>(cbdata->functionParams);
+      //  StartMemcpy<cuMemcpy_params>(GetMemcpyType(params->src, params->dst),
+      //                               cbdata, recorder);
+      //  break;
+      //}
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync: {
+      //  auto params =
+      //      static_cast<const cuMemcpyAsync_params *>(cbdata->functionParams);
+      //  StartMemcpyAsync<cuMemcpyAsync_params>(
+      //      GetMemcpyType(params->src, params->dst), cbdata, recorder);
+      //  break;
+      //}
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
+      //  StartMemcpy<cuMemcpyHtoD_v2_params>(RocmTracerEventType::MemcpyH2D,
+      //                                      cbdata, recorder);
+      //  break;
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
+      //  StartMemcpyAsync<cuMemcpyHtoDAsync_v2_params>(
+      //      RocmTracerEventType::MemcpyH2D, cbdata, recorder);
+      //  break;
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
+      //  StartMemcpy<cuMemcpyDtoH_v2_params>(RocmTracerEventType::MemcpyD2H,
+      //                                      cbdata, recorder);
+      //  break;
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
+      //  StartMemcpyAsync<cuMemcpyDtoHAsync_v2_params>(
+      //      RocmTracerEventType::MemcpyD2H, cbdata, recorder);
+      //  break;
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
+      //  StartMemcpy<cuMemcpyDtoD_v2_params>(RocmTracerEventType::MemcpyD2D,
+      //                                      cbdata, recorder);
+      //  break;
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
+      //  StartMemcpyAsync<cuMemcpyDtoDAsync_v2_params>(
+      //      RocmTracerEventType::MemcpyD2D, cbdata, recorder);
+      //  break;
+      default:
+        VLOG(1) << "Unexpected callback id: " << cbid;
+        break;
+    }
+    return Status::OK();
+  }
+  Status OnDriverApiExit(int device_id, uint32_t domain,
+                         uint32_t cbid,
+                         const void *cbdata) override {
+    auto *recorder = hip_event_recorders_[device_id].get();
+    // ROCM TODO: revise this per roctracer API.
+    //if (*cbdata->correlationData == static_cast<size_t>(-1))
+    //  return Status::OK();
+    uint64 start_tsc = 0;
+    switch (cbid) {
+      // ROCM TODO: revise this.
+      //case CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel:
+      //  start_tsc = recorder->StopKernel(*cbdata->correlationData);
+      //  break;
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy:
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync:
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
+      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
+      //  start_tsc = recorder->StopMemcpy(*cbdata->correlationData);
+      //  break;
+      default:
+        VLOG(1) << "Unexpected callback id: " << cbid;
+        // TODO: figure out how to get start timestamp in this case.
+        return Status::OK();
+    }
+    // If we are not collecting CPU events from Callback API, we can return now.
+    if (!option_.required_callback_api_events) {
+      return Status::OK();
+    }
+
+    // Grab timestamp for API exit. API entry timestamp saved in cbdata.
+    uint64 end_tsc = RocmTracer::GetTimestamp();
+    return AddDriverApiCallbackEvent(collector_, device_id,
+                                     start_tsc, end_tsc, domain, cbid, cbdata);
+  }
+  Status Flush() override {
+    for (auto &recorder : hip_event_recorders_) {
+      TF_RETURN_IF_ERROR(recorder->Stop());
+    }
+    for (auto &recorder : hip_event_recorders_) {
+      TF_RETURN_IF_ERROR(recorder->Flush(annotation_map_));
+    }
+    return Status::OK();
+  }
+
+ private:
+  // ROCM TODO: revise this.
+  //template <typename T>
+  //static void StartMemcpy(RocmTracerEventType type,
+  //                        const CUpti_CallbackData *cbdata,
+  //                        HipEventRecorder *recorder) {
+  //  auto params = static_cast<const T *>(cbdata->functionParams);
+  //  *cbdata->correlationData =
+  //      recorder->StartMemcpy(type, params->ByteCount, cbdata->context, nullptr,
+  //                            cbdata->correlationId);
+  //}
+  //template <typename T>
+  //static void StartMemcpyAsync(RocmTracerEventType type,
+  //                             const CUpti_CallbackData *cbdata,
+  //                             HipEventRecorder *recorder) {
+  //  auto params = static_cast<const T *>(cbdata->functionParams);
+  //  *cbdata->correlationData =
+  //      recorder->StartMemcpy(type, params->ByteCount, cbdata->context,
+  //                            params->hStream, cbdata->correlationId);
+  //}
+
+  //static CUmemorytype GetMemoryType(CUdeviceptr ptr) {
+  //  RocmApiTracingDisabler disabler;
+  //  CUmemorytype mem_type = CU_MEMORYTYPE_HOST;
+  //  auto status =
+  //      cuPointerGetAttribute(&mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, ptr);
+  //  if (status == CUDA_ERROR_INVALID_VALUE) {
+  //    // Pointer not registered with CUDA, must be host memory.
+  //    return CU_MEMORYTYPE_HOST;
+  //  }
+  //  LogIfError(ToStatus(status));
+  //  return mem_type;
+  //}
+
+  //static RocmTracerEventType GetMemcpyType(CUdeviceptr src, CUdeviceptr dst) {
+  //  CUmemorytype src_type = GetMemoryType(src);
+  //  CUmemorytype dst_type = GetMemoryType(dst);
+  //  // TODO: handle CU_MEMORYTYPE_ARRAY case
+  //  if (src_type == CU_MEMORYTYPE_HOST && dst_type == CU_MEMORYTYPE_DEVICE) {
+  //    return RocmTracerEventType::MemcpyH2D;
+  //  } else if (src_type == CU_MEMORYTYPE_DEVICE &&
+  //             dst_type == CU_MEMORYTYPE_HOST) {
+  //    return RocmTracerEventType::MemcpyD2H;
+  //  } else if (src_type == CU_MEMORYTYPE_DEVICE &&
+  //             dst_type == CU_MEMORYTYPE_DEVICE) {
+  //    return RocmTracerEventType::MemcpyD2D;
+  //  }
+  //  return RocmTracerEventType::MemcpyOther;
+  //}
+
+  const RocmTracerOptions option_;
+  AnnotationMap *annotation_map_;
+  RocmTraceCollector *collector_;
+  std::vector<std::unique_ptr<HipEventRecorder>> hip_event_recorders_;
+  TF_DISALLOW_COPY_AND_ASSIGN(RocmDriverApiHookWithHipEvent);
+};
 }  // namespace
 
-// ROCM TODO: revise with roctracer API
-///*static*/ Status RocmDriverApiHook::AddDriverApiCallbackEvent(
-//    RocmTraceCollector *collector, RocmInterface *cupti_interface,
-//    int device_id, uint64 start_tsc, uint64 end_tsc,
-//    CUpti_CallbackDomain domain, CUpti_CallbackId cbid,
-//    const CUpti_CallbackData *cbdata) {
-//  switch (cbid) {
-//    case CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel:
-//      AddKernelEventUponApiExit(collector, device_id, cbdata, start_tsc,
-//                                end_tsc);
-//      break;
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoH_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoHAsync_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoD_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoA_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoA_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2D_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DUnaligned_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DAsync_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy3D_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy3DAsync_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoA_v2:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoAAsync_v2:
-//      AddNormalMemcpyEventUponApiExit(collector, device_id, cbid, cbdata,
-//                                      start_tsc, end_tsc);
-//      break;
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyPeer:
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyPeerAsync:
-//      AddP2PMemcpyEventUponApiExit(collector, cupti_interface, device_id, cbid,
-//                                   cbdata, start_tsc, end_tsc);
-//      break;
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemAlloc_v2:
-//      AddCudaMallocEventUponApiExit(collector, device_id, cbid, cbdata,
-//                                    start_tsc, end_tsc);
-//      break;
-//    default:
-//      AddGenericEventUponApiExit(collector, device_id, cbid, cbdata, start_tsc,
-//                                 end_tsc);
-//      break;
-//  }
-//  return Status::OK();
-//}
+/*static*/ Status RocmDriverApiHook::AddDriverApiCallbackEvent(
+    RocmTraceCollector *collector,
+    int device_id, uint64 start_tsc, uint64 end_tsc,
+    uint32_t domain, uint32_t cbid,
+    const void *cbdata) {
+  switch (cbid) {
+    //case CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel:
+    //  AddKernelEventUponApiExit(collector, device_id, cbdata, start_tsc,
+    //                            end_tsc);
+    //  break;
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoH_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoHAsync_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoD_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoA_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoA_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2D_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DUnaligned_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DAsync_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy3D_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy3DAsync_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoA_v2:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoAAsync_v2:
+    //  AddNormalMemcpyEventUponApiExit(collector, device_id, cbid, cbdata,
+    //                                  start_tsc, end_tsc);
+    //  break;
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyPeer:
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyPeerAsync:
+    //  AddP2PMemcpyEventUponApiExit(collector, device_id, cbid,
+    //                               cbdata, start_tsc, end_tsc);
+    //  break;
+    //case CUPTI_DRIVER_TRACE_CBID_cuMemAlloc_v2:
+    //  AddCudaMallocEventUponApiExit(collector, device_id, cbid, cbdata,
+    //                                start_tsc, end_tsc);
+    //  break;
+    default:
+      AddGenericEventUponApiExit(collector, device_id, cbid, cbdata, start_tsc,
+                                 end_tsc);
+      break;
+  }
+  return Status::OK();
+}
 
 const char *GetTraceEventTypeName(const RocmTracerEventType &type) {
   switch (type) {
@@ -1234,37 +1225,33 @@ bool RocmTracer::IsAvailable() const {
 }
 
 int RocmTracer::NumGpus() {
-  // ROCM TODO: replace with proper HIP or StreamExecutor API
-  //static int num_gpus = []() -> int {
-  //  if (hipInit(0) != CUDA_SUCCESS) {
-  //    return 0;
-  //  }
-  //  int gpu_count;
-  //  if (hipDeviceGetCount(&gpu_count) != CUDA_SUCCESS) {
-  //    return 0;
-  //  }
-  //  LOG(INFO) << "Profiler found " << gpu_count << " GPUs";
-  //  return gpu_count;
-  //}();
-  //return num_gpus;
-  return 1;
+  static int num_gpus = []() -> int {
+    if (hipInit(0) != hipSuccess) {
+      return 0;
+    }
+    int gpu_count;
+    if (hipGetDeviceCount(&gpu_count) != hipSuccess) {
+      return 0;
+    }
+    LOG(INFO) << "Profiler found " << gpu_count << " GPUs";
+    return gpu_count;
+  }();
+  return num_gpus;
 }
 
 void RocmTracer::Enable(const RocmTracerOptions &option,
-                         RocmTraceCollector *collector) {
+                        RocmTraceCollector *collector) {
   option_ = option;
   collector_ = collector;
   annotation_map_.emplace(option.max_annotation_strings, NumGpus());
 
   if (option_->enable_event_based_activity) {
     option_->enable_activity_api = false;
-    // ROCM TODO: replace with actual implementation.
-    //cupti_driver_api_hook_.reset(new RocmDriverApiHookWithCudaEvent(
-    //    option, cupti_interface_, collector, &*annotation_map_));
+    roctracer_driver_api_hook_.reset(new RocmDriverApiHookWithHipEvent(
+        option, collector, &*annotation_map_));
   } else {
-    // ROCM TODO: replace with actual implementation.
-    //cupti_driver_api_hook_.reset(new RocmDriverApiHookWithActivityApi(
-    //    option, cupti_interface_, collector, &*annotation_map_));
+    roctracer_driver_api_hook_.reset(new RocmDriverApiHookWithActivityApi(
+        option, collector, &*annotation_map_));
   }
 
   EnableApiTracing().IgnoreError();
@@ -1291,15 +1278,16 @@ Status RocmTracer::EnableApiTracing() {
   if (api_tracing_enabled_) return Status::OK();
   api_tracing_enabled_ = true;
 
-  // ROCM TODO: revise with roctracer API
+  // ROCM TODO: do more selected filtering later on.
   //if (!option_->cbids_selected.empty()) {
   //  for (auto cbid : option_->cbids_selected) {
-  //    RETURN_IF_CUPTI_ERROR(cupti_interface_->EnableCallback(
-  //        1 /* ENABLE */, subscriber_, CUPTI_CB_DOMAIN_DRIVER_API, cbid));
+  //    // ROCM TODO: determine the best domain(s) to monitor.
+  //    RETURN_IF_ROCTRACER_ERROR(roctracer_enable_op_callback(
+  //        ACTIVITY_DOMAIN_HIP_API, cbid, ApiCallback, this));
   //  }
   //} else {  // select all callback ids.
-  //  RETURN_IF_CUPTI_ERROR(cupti_interface_->EnableDomain(
-  //      1 /* ENABLE */, subscriber_, CUPTI_CB_DOMAIN_DRIVER_API));
+    RETURN_IF_ROCTRACER_ERROR(roctracer_enable_callback(
+        ApiCallback, this));
   //}
   return Status::OK();
 }
@@ -1309,59 +1297,57 @@ Status RocmTracer::DisableApiTracing() {
 
   api_tracing_enabled_ = false;
 
-  // ROCM TODO: revise with roctracer API
-  //if (!option_->cbids_selected.empty()) {
-  //  for (auto cbid : option_->cbids_selected) {
-  //    RETURN_IF_CUPTI_ERROR(cupti_interface_->EnableCallback(
-  //        0 /* DISABLE */, subscriber_, CUPTI_CB_DOMAIN_DRIVER_API, cbid));
-  //  }
-  //} else {
-  //  RETURN_IF_CUPTI_ERROR(cupti_interface_->EnableDomain(
-  //      0 /* DISABLE */, subscriber_, CUPTI_CB_DOMAIN_DRIVER_API));
-  //}
+  if (!option_->cbids_selected.empty()) {
+    for (auto cbid : option_->cbids_selected) {
+      RETURN_IF_ROCTRACER_ERROR(roctracer_disable_op_callback(
+          ACTIVITY_DOMAIN_HIP_API, cbid));
+    }
+  } else {
+    RETURN_IF_ROCTRACER_ERROR(roctracer_disable_callback());
+  }
 
   return Status::OK();
 }
 
 Status RocmTracer::EnableActivityTracing() {
-  // ROCM TODO: revise with roctracer API
-  //if (!option_->activities_selected.empty()) {
+  if (!option_->activities_selected.empty()) {
+    // Initialize callback functions for Rocm Activity API.
+    VLOG(1) << "Registering roctracer activity callbacks";
     // ROCM TODO: revise with roctracer API
-    //// Initialize callback functions for Rocm Activity API.
-    //VLOG(1) << "Registering CUPTI activity callbacks";
-    //RETURN_IF_CUPTI_ERROR(cupti_interface_->ActivityRegisterCallbacks(
+    //RETURN_IF_ROCTRACER_ERROR(cupti_interface_->ActivityRegisterCallbacks(
     //    AllocRocmActivityBuffer, FreeRocmActivityBuffer));
 
-    //VLOG(1) << "Enabling activity tracing for "
-    //        << option_->activities_selected.size() << " activities";
-    //for (auto activity : option_->activities_selected) {
-    //  VLOG(1) << "Enabling activity tracing for: " << activity;
+    VLOG(1) << "Enabling activity tracing for "
+            << option_->activities_selected.size() << " activities";
+    for (auto activity : option_->activities_selected) {
+      VLOG(1) << "Enabling activity tracing for: " << activity;
+    // ROCM TODO: revise with roctracer API
     //  if (activity == CUPTI_ACTIVITY_KIND_UNIFIED_MEMORY_COUNTER) {
     //    ConfigureActivityUnifiedMemoryCounter(true);
     //  }
-    //  RETURN_IF_CUPTI_ERROR(cupti_interface_->ActivityEnable(activity));
-    //}
-  //}
+    //  RETURN_IF_ROCTRACER_ERROR(cupti_interface_->ActivityEnable(activity));
+    }
+  }
   activity_tracing_enabled_ = true;
   return Status::OK();
 }
 
 Status RocmTracer::DisableActivityTracing() {
   if (activity_tracing_enabled_) {
+    VLOG(1) << "Disabling activity tracing for "
+            << option_->activities_selected.size() << " activities";
+    for (auto activity : option_->activities_selected) {
+      VLOG(1) << "Disabling activity tracing for: " << activity;
     // ROCM TODO: revise with roctracer API
-    //VLOG(1) << "Disabling activity tracing for "
-    //        << option_->activities_selected.size() << " activities";
-    //for (auto activity : option_->activities_selected) {
-    //  VLOG(1) << "Disabling activity tracing for: " << activity;
-    //  RETURN_IF_CUPTI_ERROR(cupti_interface_->ActivityDisable(activity));
-    //}
-    //option_->activities_selected.clear();
+    //  RETURN_IF_ROCTRACER_ERROR(cupti_interface_->ActivityDisable(activity));
+    }
+    option_->activities_selected.clear();
 
+    VLOG(1) << "Flushing roctracer activity buffer";
     // ROCM TODO: revise with roctracer API
-    //VLOG(1) << "Flushing CUPTI activity buffer";
-    //RETURN_IF_CUPTI_ERROR(
+    //RETURN_IF_ROCTRACER_ERROR(
     //    cupti_interface_->ActivityFlushAll(CUPTI_ACTIVITY_FLAG_FLUSH_FORCED));
-    //LOG(INFO) << "CUPTI activity buffer flushed";
+    LOG(INFO) << "roctracer activity buffer flushed";
   }
   activity_tracing_enabled_ = false;
   return Status::OK();
@@ -1383,47 +1369,48 @@ Status RocmTracer::Finalize() {
   return 0;
 }
 
-// ROCM TODO: revise with roctracer API
-//Status RocmTracer::HandleCallback(CUpti_CallbackDomain domain,
-//                                   CUpti_CallbackId cbid,
-//                                   const CUpti_CallbackData *cbdata) {
-//  if (!api_tracing_enabled_) return Status::OK();  // already unsubscribed.
-//  if (domain != CUPTI_CB_DOMAIN_DRIVER_API) return Status::OK();
-//  if (internalCuCall) return Status::OK();
-//
-//  if (cbdata->context == nullptr) {
-//    // API callback is called before any CUDA context is created.
-//    // This is expected to be rare, and we ignore this case.
-//    VLOG(3) << "API callback received before creation of CUDA context\n";
-//    return errors::Internal("cutpi callback without context");
-//  }
-//
-//  // Grab a correct device ID.
-//  uint32 device_id = -1;
-//  RETURN_IF_CUPTI_ERROR(
-//      cupti_interface_->GetDeviceId(cbdata->context, &device_id));
-//  if (device_id >= num_gpus_) {
-//    return errors::Internal(absl::StrCat("Invalid device id:", device_id));
-//  }
-//
-//  if (cbdata->callbackSite == CUPTI_API_ENTER) {
-//    TF_RETURN_IF_ERROR(cupti_driver_api_hook_->OnDriverApiEnter(
-//        device_id, domain, cbid, cbdata));
-//  } else if (cbdata->callbackSite == CUPTI_API_EXIT) {
-//    // Set up the map from correlation id to annotation string.
-//    const std::string &annotation = tensorflow::Annotation::CurrentAnnotation();
-//    if (!annotation.empty()) {
-//      annotation_map_->Add(device_id, cbdata->correlationId, annotation);
-//    }
-//
-//    TF_RETURN_IF_ERROR(cupti_driver_api_hook_->OnDriverApiExit(
-//        device_id, domain, cbid, cbdata));
-//  }
-//  return Status::OK();
-//}
+Status RocmTracer::HandleCallback(uint32_t domain, uint32_t cbid,
+                                  const void *cbdata) {
+  if (!api_tracing_enabled_) return Status::OK();  // already unsubscribed.
+  // ROCM TODO: determined the most proper domain.
+  //if (domain != CUPTI_CB_DOMAIN_DRIVER_API) return Status::OK();
+  if (internalRocmCall) return Status::OK();
+
+  // ROCM TODO: revise this.
+  //if (cbdata->context == nullptr) {
+  //  // API callback is called before any CUDA context is created.
+  //  // This is expected to be rare, and we ignore this case.
+  //  VLOG(3) << "API callback received before creation of CUDA context\n";
+  //  return errors::Internal("cutpi callback without context");
+  //}
+
+  // ROCM TODO: revise this.
+  //// Grab a correct device ID.
+  //uint32 device_id = -1;
+  //RETURN_IF_ROCTRACER_ERROR(
+  //    cupti_interface_->GetDeviceId(cbdata->context, &device_id));
+  //if (device_id >= num_gpus_) {
+  //  return errors::Internal(absl::StrCat("Invalid device id:", device_id));
+  //}
+
+  //if (cbdata->callbackSite == CUPTI_API_ENTER) {
+  //  TF_RETURN_IF_ERROR(cupti_driver_api_hook_->OnDriverApiEnter(
+  //      device_id, domain, cbid, cbdata));
+  //} else if (cbdata->callbackSite == CUPTI_API_EXIT) {
+  //  // Set up the map from correlation id to annotation string.
+  //  const std::string &annotation = tensorflow::Annotation::CurrentAnnotation();
+  //  if (!annotation.empty()) {
+  //    annotation_map_->Add(device_id, cbdata->correlationId, annotation);
+  //  }
+
+  //  TF_RETURN_IF_ERROR(cupti_driver_api_hook_->OnDriverApiExit(
+  //      device_id, domain, cbid, cbdata));
+  //}
+  return Status::OK();
+}
 
 // ROCM TODO: revise with roctracer API
-//Status RocmTracer::ProcessActivityBuffer(CUcontext context, uint32_t stream_id,
+//Status RocmTracer::ProcessActivityBuffer(hipCtx_t context, uint32_t stream_id,
 //                                          uint8_t *buffer, size_t size) {
 //  if (!activity_tracing_enabled_) {
 //    LOG(WARNING) << "CUPTI activity buffer is freed after flush.";
@@ -1475,11 +1462,11 @@ Status RocmTracer::Finalize() {
 //
 //  // Report dropped records.
 //  size_t dropped;
-//  RETURN_IF_CUPTI_ERROR(cupti_interface_->ActivityGetNumDroppedRecords(
+//  RETURN_IF_ROCTRACER_ERROR(cupti_interface_->ActivityGetNumDroppedRecords(
 //      context, stream_id, &dropped));
 //  if (dropped != 0) {
 //    uint32 device_id = -1;
-//    RETURN_IF_CUPTI_ERROR(cupti_interface_->GetDeviceId(context, &device_id));
+//    RETURN_IF_ROCTRACER_ERROR(cupti_interface_->GetDeviceId(context, &device_id));
 //    collector_->OnEventsDropped("CUpti activity buffer", dropped);
 //  }
 //  return Status::OK();

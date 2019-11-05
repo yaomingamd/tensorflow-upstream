@@ -25,6 +25,8 @@ limitations under the License.
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/types.h"
 
+#include "roctracer/roctracer.h"
+
 namespace tensorflow {
 namespace profiler {
 
@@ -132,16 +134,14 @@ struct RocmTracerOptions {
   bool required_callback_api_events = true;
   // Maximum number of annotation strings that we can accommodate.
   uint64 max_annotation_strings = 1024 * 1024;
-  // ROCM TODO: replace with roctracer enum
-  //// The callback ids that will be enabled and monitored, if empty, all
-  //// Callback ids to be enabled using Callback API.
-  //// We only care CUPTI_CB_DOMAIN_DRIVER_API domain for now. It is kind of
-  //// redundant to have both CUPTI_CB_DOMAIN_DRIVER_API and
-  //// CUPTI_CB_DOMAIN_RUNTIME_API.
-  //std::vector<CUpti_driver_api_trace_cbid_enum> cbids_selected;
-  //// Activity kinds to be collected using Activity API. If empty, the Activity
-  //// API is disable.
-  //std::vector<CUpti_ActivityKind> activities_selected;
+  // The callback ids that will be enabled and monitored, if empty, all
+  // Callback ids to be enabled using Callback API.
+  std::vector<uint32_t> cbids_selected;
+  // Activity kinds to be collected using Activity API. If empty, the Activity
+  // API is disable.
+  std::vector<activity_kind_t> activities_selected;
+
+  // ROCM TODO: decide whether to keep this field.
   // Whether to call cuptiFinalize.
   bool roctracer_finalize = false;
 };
@@ -201,22 +201,20 @@ class RocmDriverApiHook {
  public:
   virtual ~RocmDriverApiHook() {}
 
-  // ROCM TODO: replace with roctracer types
-  //virtual Status OnDriverApiEnter(int device_id, CUpti_CallbackDomain domain,
-  //                                CUpti_CallbackId cbid,
-  //                                const CUpti_CallbackData* callback_info) = 0;
-  //virtual Status OnDriverApiExit(int device_id, CUpti_CallbackDomain domain,
-  //                               CUpti_CallbackId cbid,
-  //                               const CUpti_CallbackData* callback_info) = 0;
+  virtual Status OnDriverApiEnter(int device_id, uint32_t domain,
+                                  uint32_t cbid,
+                                  const void* callback_info) = 0;
+  virtual Status OnDriverApiExit(int device_id, uint32_t domain,
+                                 uint32_t cbid,
+                                 const void* callback_info) = 0;
   virtual Status Flush() = 0;
 
  protected:
-  // ROCM TODO: revise interface
-  //static Status AddDriverApiCallbackEvent(
-  //    RocmTraceCollector* collector, RocmInterface* roctracer_interface,
-  //    int device_id, uint64 start_tsc, uint64 end_tsc,
-  //    CUpti_CallbackDomain domain, CUpti_CallbackId cbid,
-  //    const CUpti_CallbackData* callback_info);
+  static Status AddDriverApiCallbackEvent(
+      RocmTraceCollector* collector,
+      int device_id, uint64 start_tsc, uint64 end_tsc,
+      uint32_t domain, uint32_t cbid,
+      const void* callback_info);
 };
 
 // The class use to enable cupti callback/activity API and forward the collected
@@ -233,9 +231,8 @@ class RocmTracer {
   void Enable(const RocmTracerOptions& option, RocmTraceCollector* collector);
   void Disable();
 
-  // ROCM TODO: revise interface
-  //Status HandleCallback(CUpti_CallbackDomain domain, CUpti_CallbackId cbid,
-  //                      const CUpti_CallbackData* callback_info);
+  Status HandleCallback(uint32_t domain, uint32_t cbid,
+                        const void* callback_info);
 
   // ROCM TODO: revise interface
   //// This function is public because called from registered callback.

@@ -33,10 +33,8 @@ limitations under the License.
 #include "tensorflow/core/profiler/internal/profiler_interface.h"
 #include "tensorflow/core/util/env_var.h"
 
+#include "roctracer/roctracer.h"
 #include "hip/hip_runtime.h"
-#include "roctracer/roctracer_hip.h"
-#include "roctracer/roctracer_hcc.h"
-#include "hsa.h"
 
 namespace tensorflow {
 namespace profiler {
@@ -228,10 +226,8 @@ class StepStatsRocmTracerAdaptor : public RocmTraceCollector {
 class RocmGpuTracer : public profiler::ProfilerInterface {
  public:
   RocmGpuTracer(RocmTracer* rocm_tracer)
-      : rocm_tracer_(),
-        trace_collector_(&step_stats_) {
-    VLOG(1) << "RocmGpuTracer created.";
-  }
+      : rocm_tracer_(rocm_tracer),
+        trace_collector_(&step_stats_) {}
   ~RocmGpuTracer() override {}
 
   // RocmGpuTracer interface:
@@ -267,49 +263,24 @@ Status RocmGpuTracer::DoStart() {
     return errors::Unavailable("Another profile session running.");
   }
 
-  //options_.cbids_selected = {
-  //    // KERNEL
-  //    CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel,
-  //    // MEMCPY
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpy,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoH_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoHAsync_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoD_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoA_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoA_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpy2D_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DUnaligned_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DAsync_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpy3D_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpy3DAsync_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoA_v2,
-  //    CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoAAsync_v2,
-  //    // GENERIC
-  //    CUPTI_DRIVER_TRACE_CBID_hipStreamSynchronize,
-  //};
+  options_.cbids_selected = {
+      // KERNEL
+      HIP_API_ID_hipLaunchKernel,
+      // MEMCPY
+      HIP_API_ID_hipMemcpy,
+      HIP_API_ID_hipMemcpyAsync,
+      // GENERIC
+      HIP_API_ID_hipStreamSynchronize,
+  };
 
-  //bool use_roctracer_activity_api = true;
-  //ReadBoolFromEnvVar("TF_GPU_CUPTI_USE_ACTIVITY_API", true,
-  //                   &use_roctracer_activity_api)
-  //    .IgnoreError();
-  //options_.enable_event_based_activity = !use_roctracer_activity_api;
+  bool use_roctracer_activity_api = true;
+  ReadBoolFromEnvVar("TF_GPU_ROCM_USE_ACTIVITY_API", true,
+                     &use_roctracer_activity_api)
+      .IgnoreError();
+  options_.enable_event_based_activity = !use_roctracer_activity_api;
 
-  //bool trace_concurrent_kernels = false;
-  //ReadBoolFromEnvVar("TF_GPU_CUPTI_FORCE_CONCURRENT_KERNEL", false,
-  //                   &trace_concurrent_kernels)
-  //    .IgnoreError();
-  //options_.activities_selected.push_back(
-  //    trace_concurrent_kernels ? CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL
-  //                             : CUPTI_ACTIVITY_KIND_KERNEL);
+  // ROCM TODO: decide what to capture here.
   //options_.activities_selected.push_back(CUPTI_ACTIVITY_KIND_MEMCPY);
-  //options_.activities_selected.push_back(CUPTI_ACTIVITY_KIND_MEMCPY2);
   //options_.activities_selected.push_back(CUPTI_ACTIVITY_KIND_OVERHEAD);
 
   RocmTracerCollectorOptions collector_options;
@@ -365,7 +336,7 @@ Status RocmGpuTracer::CollectData(RunMetadata* run_metadata) {
       return Status::OK();
     case State::kStoppedOk: {
       // Input run_metadata is shared by profiler interfaces, we need append.
-      //trace_collector_.Finalize();
+      trace_collector_.Finalize();
       for (auto& dev_stats : *step_stats_.mutable_dev_stats()) {
         run_metadata->mutable_step_stats()->add_dev_stats()->Swap(&dev_stats);
       }
