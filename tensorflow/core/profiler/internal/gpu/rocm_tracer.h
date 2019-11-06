@@ -126,7 +126,7 @@ struct RocmTracerEvent {
 struct RocmTracerOptions {
   bool enable_activity_api = true;
 
-  // Use cuda events to enclose the kernel/memcpy to measure device activity.
+  // Use HIP events to enclose the kernel/memcpy to measure device activity.
   // enable_event_based_activity, if true, will override the enable_activity_api
   // setting.
   bool enable_event_based_activity = false;
@@ -139,11 +139,7 @@ struct RocmTracerOptions {
   std::vector<uint32_t> cbids_selected;
   // Activity kinds to be collected using Activity API. If empty, the Activity
   // API is disable.
-  std::vector<activity_kind_t> activities_selected;
-
-  // ROCM TODO: decide whether to keep this field.
-  // Whether to call cuptiFinalize.
-  bool roctracer_finalize = false;
+  std::vector<activity_domain_t> activities_selected;
 };
 
 struct RocmTracerCollectorOptions {
@@ -234,10 +230,8 @@ class RocmTracer {
   Status HandleCallback(uint32_t domain, uint32_t cbid,
                         const void* callback_info);
 
-  // ROCM TODO: revise interface
-  //// This function is public because called from registered callback.
-  //Status ProcessActivityBuffer(CUcontext context, uint32_t stream_id,
-  //                             uint8_t* buffer, size_t size);
+  // This function is public because called from registered callback.
+  Status ProcessActivityRecord(const char *begin, const char *end);
 
   static uint64 GetTimestamp();
   static int NumGpus();

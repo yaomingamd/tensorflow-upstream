@@ -101,61 +101,10 @@ int32 GetCachedTID() {
   return current_thread_id;
 }
 
-// ROCM TODO: revise with HIP API?
-//template <typename CudaMemcpy>
-//RocmTracerEventType MemcpyKind(const CudaMemcpy *p) {
-//  if (p->srcMemoryType == CU_MEMORYTYPE_HOST &&
-//      p->dstMemoryType == CU_MEMORYTYPE_DEVICE) {
-//    return RocmTracerEventType::MemcpyH2D;
-//  }
-//  if (p->srcMemoryType == CU_MEMORYTYPE_DEVICE &&
-//      p->dstMemoryType == CU_MEMORYTYPE_HOST) {
-//    return RocmTracerEventType::MemcpyD2H;
-//  }
-//  if (p->srcMemoryType == CU_MEMORYTYPE_DEVICE &&
-//      p->dstMemoryType == CU_MEMORYTYPE_DEVICE) {
-//    return RocmTracerEventType::MemcpyD2D;
-//  }
-//  return RocmTracerEventType::Unsupported;
-//}
-
 // ROCM TODO: revise with roctracer / HIP API?
 //std::tuple<size_t /*bytes*/, RocmTracerEventType, bool /*async*/>
 //DecodeDriverMemcpy(CUpti_CallbackId cbid, const void *params) {
 //  switch (cbid) {
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2: {
-//      const auto *p = reinterpret_cast<const cuMemcpyHtoD_v2_params *>(params);
-//      return std::make_tuple(p->ByteCount, RocmTracerEventType::MemcpyH2D,
-//                             false);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2: {
-//      const auto *p =
-//          reinterpret_cast<const cuMemcpyHtoDAsync_v2_params *>(params);
-//      return std::make_tuple(p->ByteCount, RocmTracerEventType::MemcpyH2D,
-//                             true);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2: {
-//      const auto *p = reinterpret_cast<const cuMemcpyDtoH_v2_params *>(params);
-//      return std::make_tuple(p->ByteCount, RocmTracerEventType::MemcpyD2H,
-//                             false);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2: {
-//      const auto *p =
-//          reinterpret_cast<const cuMemcpyDtoHAsync_v2_params *>(params);
-//      return std::make_tuple(p->ByteCount, RocmTracerEventType::MemcpyD2H,
-//                             true);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2: {
-//      const auto *p = reinterpret_cast<const cuMemcpyDtoD_v2_params *>(params);
-//      return std::make_tuple(p->ByteCount, RocmTracerEventType::MemcpyD2D,
-//                             false);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2: {
-//      const auto *p =
-//          reinterpret_cast<const cuMemcpyDtoDAsync_v2_params *>(params);
-//      return std::make_tuple(p->ByteCount, RocmTracerEventType::MemcpyD2D,
-//                             true);
-//    }
 //    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy: {
 //      const auto *p = reinterpret_cast<const cuMemcpy_params *>(params);
 //      return std::make_tuple(p->ByteCount, RocmTracerEventType::Unsupported,
@@ -165,24 +114,6 @@ int32 GetCachedTID() {
 //      const auto *p = reinterpret_cast<const cuMemcpyAsync_params *>(params);
 //      return std::make_tuple(p->ByteCount, RocmTracerEventType::Unsupported,
 //                             true);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2D_v2: {
-//      const auto *p = reinterpret_cast<const cuMemcpy2D_v2_params *>(params);
-//      return std::make_tuple(Bytes2D(p->pCopy), MemcpyKind(p->pCopy), false);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DAsync_v2: {
-//      const auto *p =
-//          reinterpret_cast<const cuMemcpy2DAsync_v2_params *>(params);
-//      return std::make_tuple(Bytes2D(p->pCopy), MemcpyKind(p->pCopy), true);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy3D_v2: {
-//      const auto *p = reinterpret_cast<const cuMemcpy3D_v2_params *>(params);
-//      return std::make_tuple(Bytes3D(p->pCopy), MemcpyKind(p->pCopy), true);
-//    }
-//    case CUPTI_DRIVER_TRACE_CBID_cuMemcpy3DAsync_v2: {
-//      const auto *p =
-//          reinterpret_cast<const cuMemcpy3DAsync_v2_params *>(params);
-//      return std::make_tuple(Bytes3D(p->pCopy), MemcpyKind(p->pCopy), true);
 //    }
 //    case CUPTI_DRIVER_TRACE_CBID_cuMemcpyPeer: {
 //      const cuMemcpyPeer_params *p2p_params =
@@ -212,59 +143,16 @@ void ApiCallback(uint32_t domain,
                  uint32_t cbid,
                  const void *cbdata,
                  void *user_data) {
+  LOG(INFO) << "ApiCallback\n";
   RocmTracer *tracer = reinterpret_cast<RocmTracer *>(user_data);
   tracer->HandleCallback(domain, cbid, cbdata).IgnoreError();
 }
 
-// ROCM TODO: revise with roctracer API
-//// Callback which is invoked when an empty buffer is requested by CUPTI.
-//// Allocates an empty aligned-memory buffer. The buffer is used by CUPTI as a
-//// ring buffer where device maintains activity profiles that have been
-//// collected.
-//void CUPTIAPI AllocRocmActivityBuffer(uint8_t **buffer, size_t *size,
-//                                       size_t *maxNumRecords) {
-//  // Buffer size and alignment, 32K and 8 as in CUPTI samples.
-//  constexpr size_t kBufferSize = 32 * 1024;
-//  constexpr int kBufferAlignSize = 8;
-//  *buffer = reinterpret_cast<uint8_t *>(
-//      port::AlignedMalloc(kBufferSize, kBufferAlignSize));
-//  if (*buffer == nullptr) {
-//    LOG(WARNING)
-//        << "Rocm Buffer not allocated, activity records will be dropped";
-//    return;
-//  }
-//  *size = kBufferSize;
-//  *maxNumRecords = 0;  // Rocm to fill as many records as fit in the buffer.
-//  VLOG(3) << "Allocated Rocm Buffer, buffer=" << std::hex
-//          << reinterpret_cast<uintptr_t>(*buffer) << std::dec
-//          << " size=" << *size;
-//}
-
-// ROCM TODO: revise with roctracer API
-//// Callback which is invoked when a buffer containing activity records is
-//// available from CUPTI. Frees the buffer after reading activity records from
-//// it.
-//void CUPTIAPI FreeRocmActivityBuffer(hipCtx_t context, uint32_t stream_id,
-//                                      uint8_t *buffer, size_t size,
-//                                      size_t valid_size) {
-//  VLOG(3) << "Freeing Rocm Buffer, buffer:" << std::hex
-//          << reinterpret_cast<uintptr_t>(buffer) << std::dec
-//          << " size: " << size << " valid_size: " << valid_size;
-//
-//  // Ensure buffer is free when this function returns.
-//  auto buffer_cleanup =
-//      gtl::MakeCleanup([buffer] { port::AlignedFree(buffer); });
-//
-//  if (valid_size <= 0) {
-//    return;
-//  }
-//
-//  VLOG(3) << "Activity profile for stream " << stream_id;
-//
-//  RocmTracer *cupti_tracer = RocmTracer::GetRocmTracerSingleton();
-//  cupti_tracer->ProcessActivityBuffer(context, stream_id, buffer, valid_size)
-//      .IgnoreError();
-//}
+void ActivityCallback(const char *begin, const char *end, void *user_data) {
+  LOG(INFO) << "ActivityCallback\n";
+  RocmTracer *tracer = reinterpret_cast<RocmTracer *>(user_data);
+  tracer->ProcessActivityRecord(begin, end);
+}
 
 // ROCM TODO: revise with roctracer API
 //void AddKernelEventUponApiExit(RocmTraceCollector *collector, uint32 device_id,
@@ -385,6 +273,7 @@ void AddGenericEventUponApiExit(RocmTraceCollector *collector,
   event.device_id = device_id;
   //event.context_id = cbdata->contextUid;
   //event.correlation_id = cbdata->correlationId;
+  LOG(INFO) << "collect AddEvent";
   collector->AddEvent(std::move(event));
 }
 
@@ -906,7 +795,6 @@ class HipEventRecorder {
     event.annotation =
         annotation_map->LookUp(event.device_id, event.correlation_id);
     event.memcpy_info.num_bytes = record.size_bytes;
-    // TODO: support MemcpyD2D where destination != source;
     event.memcpy_info.destination = ordinal_;
     // TODO: support differentiate sync and async memcpy.
     event.memcpy_info.async = false;
@@ -975,30 +863,6 @@ class RocmDriverApiHookWithHipEvent : public RocmDriverApiHook {
       //      GetMemcpyType(params->src, params->dst), cbdata, recorder);
       //  break;
       //}
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
-      //  StartMemcpy<cuMemcpyHtoD_v2_params>(RocmTracerEventType::MemcpyH2D,
-      //                                      cbdata, recorder);
-      //  break;
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
-      //  StartMemcpyAsync<cuMemcpyHtoDAsync_v2_params>(
-      //      RocmTracerEventType::MemcpyH2D, cbdata, recorder);
-      //  break;
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
-      //  StartMemcpy<cuMemcpyDtoH_v2_params>(RocmTracerEventType::MemcpyD2H,
-      //                                      cbdata, recorder);
-      //  break;
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
-      //  StartMemcpyAsync<cuMemcpyDtoHAsync_v2_params>(
-      //      RocmTracerEventType::MemcpyD2H, cbdata, recorder);
-      //  break;
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
-      //  StartMemcpy<cuMemcpyDtoD_v2_params>(RocmTracerEventType::MemcpyD2D,
-      //                                      cbdata, recorder);
-      //  break;
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
-      //  StartMemcpyAsync<cuMemcpyDtoDAsync_v2_params>(
-      //      RocmTracerEventType::MemcpyD2D, cbdata, recorder);
-      //  break;
       default:
         VLOG(1) << "Unexpected callback id: " << cbid;
         break;
@@ -1020,12 +884,6 @@ class RocmDriverApiHookWithHipEvent : public RocmDriverApiHook {
       //  break;
       //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy:
       //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync:
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
-      //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
       //  start_tsc = recorder->StopMemcpy(*cbdata->correlationData);
       //  break;
       default:
@@ -1123,24 +981,6 @@ class RocmDriverApiHookWithHipEvent : public RocmDriverApiHook {
     //  break;
     //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy:
     //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAsync:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoDAsync_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoH_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoHAsync_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoD_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoDAsync_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoH_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoHAsync_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoD_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyDtoA_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyAtoA_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2D_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DUnaligned_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy2DAsync_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy3D_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpy3DAsync_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoA_v2:
-    //case CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoAAsync_v2:
     //  AddNormalMemcpyEventUponApiExit(collector, device_id, cbid, cbdata,
     //                                  start_tsc, end_tsc);
     //  break;
@@ -1313,20 +1153,23 @@ Status RocmTracer::EnableActivityTracing() {
   if (!option_->activities_selected.empty()) {
     // Initialize callback functions for Rocm Activity API.
     VLOG(1) << "Registering roctracer activity callbacks";
-    // ROCM TODO: revise with roctracer API
-    //RETURN_IF_ROCTRACER_ERROR(cupti_interface_->ActivityRegisterCallbacks(
-    //    AllocRocmActivityBuffer, FreeRocmActivityBuffer));
+
+    // Creating tracer pool.
+    roctracer_properties_t properties{};
+    properties.buffer_size = 0x1000;
+    properties.buffer_callback_fun = ActivityCallback;
+    properties.buffer_callback_arg = this;
+    if (roctracer_default_pool() == NULL)
+      RETURN_IF_ROCTRACER_ERROR(roctracer_open_pool(&properties));
 
     VLOG(1) << "Enabling activity tracing for "
             << option_->activities_selected.size() << " activities";
+
     for (auto activity : option_->activities_selected) {
       VLOG(1) << "Enabling activity tracing for: " << activity;
-    // ROCM TODO: revise with roctracer API
-    //  if (activity == CUPTI_ACTIVITY_KIND_UNIFIED_MEMORY_COUNTER) {
-    //    ConfigureActivityUnifiedMemoryCounter(true);
-    //  }
-    //  RETURN_IF_ROCTRACER_ERROR(cupti_interface_->ActivityEnable(activity));
+      RETURN_IF_ROCTRACER_ERROR(roctracer_enable_domain_activity(activity));
     }
+    //RETURN_IF_ROCTRACER_ERROR(roctracer_enable_activity());
   }
   activity_tracing_enabled_ = true;
   return Status::OK();
@@ -1338,15 +1181,13 @@ Status RocmTracer::DisableActivityTracing() {
             << option_->activities_selected.size() << " activities";
     for (auto activity : option_->activities_selected) {
       VLOG(1) << "Disabling activity tracing for: " << activity;
-    // ROCM TODO: revise with roctracer API
-    //  RETURN_IF_ROCTRACER_ERROR(cupti_interface_->ActivityDisable(activity));
+      RETURN_IF_ROCTRACER_ERROR(roctracer_disable_domain_activity(activity));
     }
+    //RETURN_IF_ROCTRACER_ERROR(roctracer_disable_activity());
     option_->activities_selected.clear();
 
     VLOG(1) << "Flushing roctracer activity buffer";
-    // ROCM TODO: revise with roctracer API
-    //RETURN_IF_ROCTRACER_ERROR(
-    //    cupti_interface_->ActivityFlushAll(CUPTI_ACTIVITY_FLAG_FLUSH_FORCED));
+    RETURN_IF_ROCTRACER_ERROR(roctracer_flush_activity());
     LOG(INFO) << "roctracer activity buffer flushed";
   }
   activity_tracing_enabled_ = false;
@@ -1372,8 +1213,7 @@ Status RocmTracer::Finalize() {
 Status RocmTracer::HandleCallback(uint32_t domain, uint32_t cbid,
                                   const void *cbdata) {
   if (!api_tracing_enabled_) return Status::OK();  // already unsubscribed.
-  // ROCM TODO: determined the most proper domain.
-  //if (domain != CUPTI_CB_DOMAIN_DRIVER_API) return Status::OK();
+  if (domain != ACTIVITY_DOMAIN_HIP_API) return Status::OK();
   if (internalRocmCall) return Status::OK();
 
   // ROCM TODO: revise this.
@@ -1385,92 +1225,64 @@ Status RocmTracer::HandleCallback(uint32_t domain, uint32_t cbid,
   //}
 
   // ROCM TODO: revise this.
-  //// Grab a correct device ID.
-  //uint32 device_id = -1;
+  // Grab a correct device ID.
+  uint32 device_id = -1;
   //RETURN_IF_ROCTRACER_ERROR(
   //    cupti_interface_->GetDeviceId(cbdata->context, &device_id));
   //if (device_id >= num_gpus_) {
   //  return errors::Internal(absl::StrCat("Invalid device id:", device_id));
   //}
 
-  //if (cbdata->callbackSite == CUPTI_API_ENTER) {
-  //  TF_RETURN_IF_ERROR(cupti_driver_api_hook_->OnDriverApiEnter(
-  //      device_id, domain, cbid, cbdata));
-  //} else if (cbdata->callbackSite == CUPTI_API_EXIT) {
-  //  // Set up the map from correlation id to annotation string.
-  //  const std::string &annotation = tensorflow::Annotation::CurrentAnnotation();
-  //  if (!annotation.empty()) {
-  //    annotation_map_->Add(device_id, cbdata->correlationId, annotation);
-  //  }
+  const hip_api_data_t *data = reinterpret_cast<const hip_api_data_t*>(cbdata);
+  if (data->phase == ACTIVITY_API_PHASE_ENTER) {
+    TF_RETURN_IF_ERROR(roctracer_driver_api_hook_->OnDriverApiEnter(
+        device_id, domain, cbid, cbdata));
+  } else if (data->phase == ACTIVITY_API_PHASE_EXIT) {
+    // Set up the map from correlation id to annotation string.
+    const std::string &annotation = tensorflow::Annotation::CurrentAnnotation();
+    if (!annotation.empty()) {
+      annotation_map_->Add(device_id, data->correlation_id, annotation);
+    }
 
-  //  TF_RETURN_IF_ERROR(cupti_driver_api_hook_->OnDriverApiExit(
-  //      device_id, domain, cbid, cbdata));
-  //}
+    TF_RETURN_IF_ERROR(roctracer_driver_api_hook_->OnDriverApiExit(
+        device_id, domain, cbid, cbdata));
+  }
   return Status::OK();
 }
 
-// ROCM TODO: revise with roctracer API
-//Status RocmTracer::ProcessActivityBuffer(hipCtx_t context, uint32_t stream_id,
-//                                          uint8_t *buffer, size_t size) {
-//  if (!activity_tracing_enabled_) {
-//    LOG(WARNING) << "CUPTI activity buffer is freed after flush.";
-//    return Status::OK();
-//  }
-//  if (cupti_interface_->Disabled()) return errors::Internal("Disabled.");
-//
-//  CUpti_Activity *record = nullptr;
-//  while (true) {
-//    CUptiResult status =
-//        cupti_interface_->ActivityGetNextRecord(buffer, size, &record);
-//    if (status == CUPTI_SUCCESS) {
-//      switch (record->kind) {
-//        case CUPTI_ACTIVITY_KIND_KERNEL:  // sequential
-//        case CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL:
-//          AddKernelActivityEvent(
-//              collector_, &*annotation_map_,
-//              reinterpret_cast<CUpti_ActivityKernel4 *>(record));
-//          break;
-//        case CUPTI_ACTIVITY_KIND_MEMCPY:
-//          AddMemcpyActivityEvent(
-//              collector_, &*annotation_map_,
-//              reinterpret_cast<CUpti_ActivityMemcpy *>(record));
-//          break;
-//        case CUPTI_ACTIVITY_KIND_MEMCPY2:
-//          AddMemcpy2ActivityEvent(
-//              collector_, &*annotation_map_,
-//              reinterpret_cast<CUpti_ActivityMemcpy2 *>(record));
-//          break;
-//        case CUPTI_ACTIVITY_KIND_OVERHEAD:
-//          AddRocmOverheadActivityEvent(
-//              collector_, reinterpret_cast<CUpti_ActivityOverhead *>(record));
-//          break;
-//        case CUPTI_ACTIVITY_KIND_UNIFIED_MEMORY_COUNTER:
-//          AddUnifiedMemoryActivityEvent(
-//              collector_,
-//              reinterpret_cast<CUpti_ActivityUnifiedMemoryCounter2 *>(record));
-//          break;
-//        default:
-//          LOG(ERROR) << "Activity type " << record->kind << " not supported.";
-//          break;
-//      }
-//    } else if (status == CUPTI_ERROR_MAX_LIMIT_REACHED) {
-//      break;
-//    } else {
-//      return errors::Internal("Parse cupti activity buffer error.");
-//    }
-//  }
-//
-//  // Report dropped records.
-//  size_t dropped;
-//  RETURN_IF_ROCTRACER_ERROR(cupti_interface_->ActivityGetNumDroppedRecords(
-//      context, stream_id, &dropped));
-//  if (dropped != 0) {
-//    uint32 device_id = -1;
-//    RETURN_IF_ROCTRACER_ERROR(cupti_interface_->GetDeviceId(context, &device_id));
-//    collector_->OnEventsDropped("CUpti activity buffer", dropped);
-//  }
-//  return Status::OK();
-//}
+Status RocmTracer::ProcessActivityRecord(const char *begin, const char *end) {
+  if (!activity_tracing_enabled_) {
+    LOG(WARNING) << "roctracer activity buffer is freed after flush.";
+    return Status::OK();
+  }
+
+  const roctracer_record_t *record = reinterpret_cast<const roctracer_record_t*>(begin);
+  const roctracer_record_t *end_record = reinterpret_cast<const roctracer_record_t*>(end);
+  while (record < end_record) {
+  //    switch (record->kind) {
+  //      case CUPTI_ACTIVITY_KIND_KERNEL:
+  //        AddKernelActivityEvent(
+  //            collector_, &*annotation_map_,
+  //            reinterpret_cast<CUpti_ActivityKernel4 *>(record));
+  //        break;
+  //      case CUPTI_ACTIVITY_KIND_MEMCPY:
+  //        AddMemcpyActivityEvent(
+  //            collector_, &*annotation_map_,
+  //            reinterpret_cast<CUpti_ActivityMemcpy *>(record));
+  //        break;
+  //      case CUPTI_ACTIVITY_KIND_OVERHEAD:
+  //        AddRocmOverheadActivityEvent(
+  //            collector_, reinterpret_cast<CUpti_ActivityOverhead *>(record));
+  //        break;
+  //      default:
+  //        LOG(ERROR) << "Activity type " << record->kind << " not supported.";
+  //        break;
+  //    }
+
+    RETURN_IF_ROCTRACER_ERROR(static_cast<roctracer_status_t>(roctracer_next_record(record, &record)));
+  }
+  return Status::OK();
+}
 
 }  // namespace profiler
 }  // namespace tensorflow

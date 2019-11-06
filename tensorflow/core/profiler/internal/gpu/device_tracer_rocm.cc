@@ -279,9 +279,8 @@ Status RocmGpuTracer::DoStart() {
       .IgnoreError();
   options_.enable_event_based_activity = !use_roctracer_activity_api;
 
-  // ROCM TODO: decide what to capture here.
-  //options_.activities_selected.push_back(CUPTI_ACTIVITY_KIND_MEMCPY);
-  //options_.activities_selected.push_back(CUPTI_ACTIVITY_KIND_OVERHEAD);
+  options_.activities_selected.push_back(ACTIVITY_DOMAIN_HIP_API);
+  options_.activities_selected.push_back(ACTIVITY_DOMAIN_HCC_OPS);
 
   RocmTracerCollectorOptions collector_options;
   uint64 start_gputime_ns = RocmTracer::GetTimestamp();
