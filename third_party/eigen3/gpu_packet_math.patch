@@ -47,13 +47,13 @@
 
  #include "src/SpecialFunctions/SpecialFunctionsImpl.h"
 +#if defined(EIGEN_HIPCC)
-+#include "src/SpecialFunctions/hip_vector_compatibility.h"
++#include "src/SpecialFunctions/HipVectorCompatibility.h"
 +#endif
  #include "src/SpecialFunctions/SpecialFunctionsPacketMath.h"
  #include "src/SpecialFunctions/SpecialFunctionsHalf.h"
  #include "src/SpecialFunctions/SpecialFunctionsFunctors.h"
 --- /dev/null
-+++ b/unsupported/Eigen/src/SpecialFunctions/hip_vector_compatibility.h
++++ b/unsupported/Eigen/src/SpecialFunctions/HipVectorCompatibility.h
 @@ -0,0 +1,108 @@
 +#ifndef HIP_VECTOR_COMPATIBILITY_H
 +#define HIP_VECTOR_COMPATIBILITY_H
