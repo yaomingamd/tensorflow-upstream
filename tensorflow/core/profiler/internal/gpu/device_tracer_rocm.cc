@@ -70,7 +70,7 @@ class StepStatsRocmTracerAdaptor : public RocmTraceCollector {
 
   void AddEvent(RocmTracerEvent&& event) override {
     if (event.device_id >= num_gpus_) return;
-    if (event.source == RocmTracerEventSource::DriverCallback) {
+    if (event.source == RocmTracerEventSource::ApiCallback) {
       if (num_callback_events_ > options_.max_callback_api_events) {
         OnEventsDropped("trace collector", 1);
         return;
@@ -112,7 +112,7 @@ class StepStatsRocmTracerAdaptor : public RocmTraceCollector {
   struct PerDeviceAdaptor {
     void AddEvent(RocmTracerEvent&& event) {
       absl::MutexLock lock(&mutex);
-      if (event.source == RocmTracerEventSource::DriverCallback) {
+      if (event.source == RocmTracerEventSource::ApiCallback) {
         // Rocm api callcack events were used to populate launch times etc.
         if (event.name == "hipStreamSynchronize") {
           events.emplace_back(std::move(event));
@@ -139,7 +139,7 @@ class StepStatsRocmTracerAdaptor : public RocmTraceCollector {
         ns->set_op_end_rel_micros(elapsed_ns / 1000);
         ns->set_all_end_rel_micros(elapsed_ns / 1000);
 
-        if (event.source == RocmTracerEventSource::DriverCallback) {
+        if (event.source == RocmTracerEventSource::ApiCallback) {
           DCHECK_EQ(event.name, "hipStreamSynchronize");
           ns->set_node_name(event.name);
           ns->set_timeline_label(absl::StrCat("ThreadId ", event.thread_id));
@@ -165,9 +165,7 @@ class StepStatsRocmTracerAdaptor : public RocmTraceCollector {
           switch (event.type) {
             case RocmTracerEventType::Kernel: {
               const std::string details = strings::Printf(
-                  "regs:%llu shm:%llu grid:%llu,%llu,%llu block:%llu,%llu,%llu",
-                  event.kernel_info.registers_per_thread,
-                  event.kernel_info.static_shared_memory_usage,
+                  "grid:%llu,%llu,%llu block:%llu,%llu,%llu",
                   event.kernel_info.grid_x, event.kernel_info.grid_y,
                   event.kernel_info.grid_z, event.kernel_info.block_x,
                   event.kernel_info.block_y, event.kernel_info.block_z);
@@ -265,19 +263,17 @@ Status RocmGpuTracer::DoStart() {
 
   options_.cbids_selected = {
       // KERNEL
-      HIP_API_ID_hipLaunchKernel,
+      HIP_API_ID_hipModuleLaunchKernel,
       // MEMCPY
-      HIP_API_ID_hipMemcpy,
-      HIP_API_ID_hipMemcpyAsync,
+      HIP_API_ID_hipMemcpyDtoH,
+      HIP_API_ID_hipMemcpyDtoHAsync,
+      HIP_API_ID_hipMemcpyHtoD,
+      HIP_API_ID_hipMemcpyHtoDAsync,
+      HIP_API_ID_hipMemcpyDtoD,
+      HIP_API_ID_hipMemcpyDtoDAsync,
       // GENERIC
       HIP_API_ID_hipStreamSynchronize,
   };
-
-  bool use_roctracer_activity_api = true;
-  ReadBoolFromEnvVar("TF_GPU_ROCM_USE_ACTIVITY_API", true,
-                     &use_roctracer_activity_api)
-      .IgnoreError();
-  options_.enable_event_based_activity = !use_roctracer_activity_api;
 
   options_.activities_selected.push_back(ACTIVITY_DOMAIN_HIP_API);
   options_.activities_selected.push_back(ACTIVITY_DOMAIN_HCC_OPS);

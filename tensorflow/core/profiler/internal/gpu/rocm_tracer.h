@@ -38,9 +38,6 @@ struct MemcpyDetails {
   uint32 destination;
   // Whether or not the memcpy is asynchronous.
   bool async;
-  // This contains CUpti_ActivityMemcpyKind for activity event (on device).
-  // For events from other RocmTracerEventSource, it is always 0.
-  int8 kind;
 };
 
 struct MemAllocDetails {
@@ -49,10 +46,15 @@ struct MemAllocDetails {
 };
 
 struct KernelDetails {
-  // The number of registers used in this kernel.
-  uint64 registers_per_thread;
-  // The amount of shared memory space used by a thread block.
-  uint64 static_shared_memory_usage;
+  // ROCM TODO: enable these fields once roctracer is able to parse code object
+  // metadata.
+  //// The number of registers used in this kernel (VGPR).
+  //uint64 registers_per_thread;
+  //// The number of registers used in this workgroup (SGPR).
+  //uint64 registers_per_workgroup;
+  //// The amount of shared memory space used by a thread block (LDS).
+  //uint64 static_shared_memory_usage;
+
   // The amount of dynamic memory space used by a thread block.
   uint64 dynamic_shared_memory_usage;
   // X-dimension of a thread block.
@@ -78,17 +80,14 @@ enum class RocmTracerEventType {
   MemcpyP2P = 5,
   MemcpyOther = 6,
   MemoryAlloc = 7,
-  Overhead = 8,
-  UnifiedMemory = 9,
   Generic = 100,
 };
 
 const char* GetTraceEventTypeName(const RocmTracerEventType& type);
 
 enum class RocmTracerEventSource {
-  DriverCallback = 0,
+  ApiCallback = 0,
   Activity = 1,
-  // Maybe consider adding runtime callback and metric api in the future.
 };
 
 struct RocmTracerEvent {
@@ -102,9 +101,6 @@ struct RocmTracerEvent {
       std::numeric_limits<uint64_t>::max();
   RocmTracerEventType type;
   RocmTracerEventSource source;
-  // Although CUpti_CallbackData::functionName is persistent, however
-  // CUpti_ActivityKernel4::name is not persistent, therefore we need a copy of
-  // it.
   std::string name;
   // This points to strings in AnnotationMap, which should outlive the point
   // where serialization happens.
@@ -114,7 +110,6 @@ struct RocmTracerEvent {
   uint32 device_id;
   uint32 correlation_id = kInvalidCorrelationId;
   uint32 thread_id = kInvalidThreadId;
-  int64 context_id = kInvalidContextId;
   int64 stream_id = kInvalidStreamId;
   union {
     MemcpyDetails memcpy_info;      // If type == Memcpy*
@@ -125,11 +120,6 @@ struct RocmTracerEvent {
 
 struct RocmTracerOptions {
   bool enable_activity_api = true;
-
-  // Use HIP events to enclose the kernel/memcpy to measure device activity.
-  // enable_event_based_activity, if true, will override the enable_activity_api
-  // setting.
-  bool enable_event_based_activity = false;
 
   bool required_callback_api_events = true;
   // Maximum number of annotation strings that we can accommodate.
