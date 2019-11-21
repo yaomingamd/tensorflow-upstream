@@ -236,8 +236,7 @@ void AddKernelActivityEvent(RocmTraceCollector *collector,
   event.device_id = 0; // record->device_id;
   event.stream_id = 0; // record->queue_id;
   event.correlation_id = record->correlation_id;
-  event.annotation =
-      annotation_map->LookUp(event.device_id, event.correlation_id);
+  event.annotation = annotation_map->LookUp(event.correlation_id);
 
   collector->AddEvent(std::move(event));
 }
@@ -315,8 +314,7 @@ void AddMemcpyActivityEvent(RocmTraceCollector *collector,
   event.stream_id = record->queue_id;
 
   event.correlation_id = record->correlation_id;
-  event.annotation =
-      annotation_map->LookUp(event.device_id, event.correlation_id);
+  event.annotation = annotation_map->LookUp(event.correlation_id);
   collector->AddEvent(std::move(event));
 }
 
@@ -403,30 +401,23 @@ const char *GetTraceEventTypeName(const RocmTracerEventType &type) {
   }
 }
 
-void AnnotationMap::Add(uint32 device_id, uint32 correlation_id,
-                        const std::string &annotation) {
+void AnnotationMap::Add(uint32 correlation_id, const std::string& annotation) {
   if (annotation.empty()) return;
-  VLOG(3) << "Add annotation: device_id: " << device_id
+  VLOG(3) << "Add annotation: "
           << " correlation_id: " << correlation_id
           << " annotation: " << annotation;
-  if (device_id >= per_device_map_.size()) return;
-  auto &per_device_map = per_device_map_[device_id];
-  absl::MutexLock lock(&per_device_map.mutex);
-  if (per_device_map.annotations.size() < max_size_) {
+  absl::MutexLock lock(&map_.mutex);
+  if (map_.annotations.size() < max_size_) {
     absl::string_view annotation_str =
-        *per_device_map.annotations.insert(annotation).first;
-    per_device_map.correlation_map.emplace(correlation_id, annotation_str);
+        *map_.annotations.insert(annotation).first;
+    map_.correlation_map.emplace(correlation_id, annotation_str);
   }
 }
 
-absl::string_view AnnotationMap::LookUp(uint32 device_id,
-                                        uint32 correlation_id) {
-  if (device_id >= per_device_map_.size()) return absl::string_view();
-  auto &per_device_map = per_device_map_[device_id];
-  absl::MutexLock lock(&per_device_map.mutex);
-  auto it = per_device_map.correlation_map.find(correlation_id);
-  return it != per_device_map.correlation_map.end() ? it->second
-                                                    : absl::string_view();
+absl::string_view AnnotationMap::LookUp(uint32 correlation_id) {
+  absl::MutexLock lock(&map_.mutex);
+  auto it = map_.correlation_map.find(correlation_id);
+  return it != map_.correlation_map.end() ? it->second : absl::string_view();
 }
 
 /* static */ RocmTracer *RocmTracer::GetRocmTracerSingleton() {
@@ -457,7 +448,7 @@ void RocmTracer::Enable(const RocmTracerOptions &option,
                         RocmTraceCollector *collector) {
   option_ = option;
   collector_ = collector;
-  annotation_map_.emplace(option.max_annotation_strings, NumGpus());
+  annotation_map_.emplace(option.max_annotation_strings);
 
   roctracer_api_hook_.reset(new RocmApiHookImpl(
       option, collector, &*annotation_map_));
@@ -567,10 +558,11 @@ Status RocmTracer::Finalize() {
 }
 
 /*static*/ uint64 RocmTracer::GetTimestamp() {
-  uint64_t tsc;
+  // uint64_t tsc;
   // ROCM TODO: revise with HIP or ROCR API
-  //RocmInterface *cupti_interface = GetRocmInterface();
-  //if (cupti_interface && cupti_interface->GetTimestamp(&tsc) == CUPTI_SUCCESS) {
+  // RocmInterface *cupti_interface = GetRocmInterface();
+  // if (cupti_interface && cupti_interface->GetTimestamp(&tsc) ==
+  // CUPTI_SUCCESS) {
   //  return tsc;
   //}
   // Return 0 on error. If an activity timestamp is 0, the activity will be
@@ -597,8 +589,7 @@ Status RocmTracer::HandleCallback(uint32_t domain, uint32_t cbid,
     // Set up the map from correlation id to annotation string.
     const std::string &annotation = tensorflow::Annotation::CurrentAnnotation();
     if (!annotation.empty()) {
-      // ROCM TODO: FIXME revise AnnotationMap data struture.
-      annotation_map_->Add(/*device_id*/ 0, data->correlation_id, annotation);
+      annotation_map_->Add(data->correlation_id, annotation);
     }
 
     TF_RETURN_IF_ERROR(

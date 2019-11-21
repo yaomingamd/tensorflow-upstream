@@ -163,14 +163,12 @@ class RocmTraceCollector {
 
 class AnnotationMap {
  public:
-  explicit AnnotationMap(uint64 max_size, uint32 num_gpus)
-      : max_size_(max_size), per_device_map_(num_gpus) {}
-  void Add(uint32 device_id, uint32 correlation_id,
-           const std::string& annotation);
-  absl::string_view LookUp(uint32 device_id, uint32 correlation_id);
+  explicit AnnotationMap(uint64 max_size) : max_size_(max_size), map_() {}
+  void Add(uint32 correlation_id, const std::string& annotation);
+  absl::string_view LookUp(uint32 correlation_id);
 
  private:
-  struct PerDeviceAnnotationMap {
+  struct AnnotationMapImpl {
     // The population/consuption of annotations might happen from multiple
     // callback/activity api related threads.
     absl::Mutex mutex;
@@ -180,7 +178,7 @@ class AnnotationMap {
     absl::flat_hash_map<uint32, absl::string_view> correlation_map;
   };
   const uint64 max_size_;
-  absl::FixedArray<PerDeviceAnnotationMap> per_device_map_;
+  AnnotationMapImpl map_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(AnnotationMap);
 };
