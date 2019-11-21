@@ -91,6 +91,8 @@ enum class RocmTracerEventSource {
 };
 
 struct RocmTracerEvent {
+  static constexpr uint32 kInvalidDeviceId =
+      std::numeric_limits<uint32_t>::max();
   static constexpr uint32 kInvalidThreadId =
       std::numeric_limits<uint32_t>::max();
   static constexpr uint32 kInvalidCorrelationId =
@@ -107,7 +109,7 @@ struct RocmTracerEvent {
   absl::string_view annotation;
   uint64 start_time_ns;
   uint64 end_time_ns;
-  uint32 device_id;
+  uint32 device_id = kInvalidDeviceId;
   uint32 correlation_id = kInvalidCorrelationId;
   uint32 thread_id = kInvalidThreadId;
   int64 stream_id = kInvalidStreamId;
@@ -187,17 +189,16 @@ class RocmApiHook {
  public:
   virtual ~RocmApiHook() {}
 
-  virtual Status OnApiEnter(int device_id, uint32_t domain, uint32_t cbid,
+  virtual Status OnApiEnter(uint32_t domain, uint32_t cbid,
                             const void* callback_info) = 0;
-  virtual Status OnApiExit(int device_id, uint32_t domain, uint32_t cbid,
+  virtual Status OnApiExit(uint32_t domain, uint32_t cbid,
                            const void* callback_info) = 0;
   virtual Status Flush() = 0;
 
  protected:
   static Status AddApiCallbackEvent(RocmTraceCollector* collector,
-                                    int device_id, uint64 start_tsc,
-                                    uint64 end_tsc, uint32_t domain,
-                                    uint32_t cbid, const void* callback_info);
+                                    uint32_t domain, uint32_t cbid,
+                                    const void* callback_info);
 };
 
 // The class use to enable cupti callback/activity API and forward the collected
