@@ -183,24 +183,21 @@ class AnnotationMap {
   TF_DISALLOW_COPY_AND_ASSIGN(AnnotationMap);
 };
 
-class RocmDriverApiHook {
+class RocmApiHook {
  public:
-  virtual ~RocmDriverApiHook() {}
+  virtual ~RocmApiHook() {}
 
-  virtual Status OnDriverApiEnter(int device_id, uint32_t domain,
-                                  uint32_t cbid,
-                                  const void* callback_info) = 0;
-  virtual Status OnDriverApiExit(int device_id, uint32_t domain,
-                                 uint32_t cbid,
-                                 const void* callback_info) = 0;
+  virtual Status OnApiEnter(int device_id, uint32_t domain, uint32_t cbid,
+                            const void* callback_info) = 0;
+  virtual Status OnApiExit(int device_id, uint32_t domain, uint32_t cbid,
+                           const void* callback_info) = 0;
   virtual Status Flush() = 0;
 
  protected:
-  static Status AddDriverApiCallbackEvent(
-      RocmTraceCollector* collector,
-      int device_id, uint64 start_tsc, uint64 end_tsc,
-      uint32_t domain, uint32_t cbid,
-      const void* callback_info);
+  static Status AddApiCallbackEvent(RocmTraceCollector* collector,
+                                    int device_id, uint64 start_tsc,
+                                    uint64 end_tsc, uint32_t domain,
+                                    uint32_t cbid, const void* callback_info);
 };
 
 // The class use to enable cupti callback/activity API and forward the collected
@@ -246,7 +243,7 @@ class RocmTracer {
   bool api_tracing_enabled_ = false;
   bool activity_tracing_enabled_ = false;
 
-  std::unique_ptr<RocmDriverApiHook> roctracer_driver_api_hook_;
+  std::unique_ptr<RocmApiHook> roctracer_api_hook_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(RocmTracer);
 };

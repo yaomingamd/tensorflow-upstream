@@ -342,31 +342,30 @@ void AddMemcpyActivityEvent(RocmTraceCollector *collector,
 }
 
 // This hook uses cupti activity api to measure device side activities.
-class RocmDriverApiHookWithActivityApi : public RocmDriverApiHook {
+class RocmApiHookImpl : public RocmApiHook {
  public:
-  RocmDriverApiHookWithActivityApi(const RocmTracerOptions &option,
+  RocmApiHookImpl(const RocmTracerOptions &option,
                                    RocmTraceCollector *collector,
                                    AnnotationMap *annotation_map)
       : option_(option),
         collector_(collector),
         annotation_map_(annotation_map) {}
 
-  Status OnDriverApiEnter(int device_id, uint32_t domain,
-                          uint32_t cbid,
-                          const void *cbdata) override {
+  Status OnApiEnter(int device_id, uint32_t domain, uint32_t cbid,
+                    const void* cbdata) override {
     return Status::OK();
   }
-  Status OnDriverApiExit(int device_id, uint32_t domain,
-                         uint32_t cbid,
-                         const void *cbdata) override {
+  Status OnApiExit(int device_id, uint32_t domain, uint32_t cbid,
+                   const void* cbdata) override {
     // If we are not collecting CPU events from Callback API, we can return now.
     if (!option_.required_callback_api_events) {
       return Status::OK();
     }
     // ROCM TODO: revise this.
     // start_tsc and end_tsc are kept in activity logs.
-    return AddDriverApiCallbackEvent(collector_, device_id,
-                                     /*start_tsc*/0, /*end_tsc*/0, domain, cbid, cbdata);
+    return AddApiCallbackEvent(collector_, device_id,
+                               /*start_tsc*/ 0, /*end_tsc*/ 0, domain, cbid,
+                               cbdata);
   }
   Status Flush() override { return Status::OK(); }
 
@@ -375,15 +374,13 @@ class RocmDriverApiHookWithActivityApi : public RocmDriverApiHook {
   RocmTraceCollector *collector_;
   AnnotationMap *annotation_map_;
 
-  TF_DISALLOW_COPY_AND_ASSIGN(RocmDriverApiHookWithActivityApi);
+  TF_DISALLOW_COPY_AND_ASSIGN(RocmApiHookImpl);
 };
 }  // namespace
 
-/*static*/ Status RocmDriverApiHook::AddDriverApiCallbackEvent(
-    RocmTraceCollector *collector,
-    int device_id, uint64 start_tsc, uint64 end_tsc,
-    uint32_t domain, uint32_t cbid,
-    const void *cbdata) {
+/*static*/ Status RocmApiHook::AddApiCallbackEvent(
+    RocmTraceCollector* collector, int device_id, uint64 start_tsc,
+    uint64 end_tsc, uint32_t domain, uint32_t cbid, const void* cbdata) {
   switch (cbid) {
     case HIP_API_ID_hipModuleLaunchKernel:
       AddKernelEventUponApiExit(collector, device_id, cbdata, start_tsc,
@@ -491,7 +488,7 @@ void RocmTracer::Enable(const RocmTracerOptions &option,
   collector_ = collector;
   annotation_map_.emplace(option.max_annotation_strings, NumGpus());
 
-  roctracer_driver_api_hook_.reset(new RocmDriverApiHookWithActivityApi(
+  roctracer_api_hook_.reset(new RocmApiHookImpl(
       option, collector, &*annotation_map_));
 
   EnableApiTracing().IgnoreError();
@@ -506,11 +503,11 @@ void RocmTracer::Disable() {
     DisableActivityTracing().IgnoreError();
   }
   Finalize().IgnoreError();
-  roctracer_driver_api_hook_->Flush().IgnoreError();
+  roctracer_api_hook_->Flush().IgnoreError();
   collector_->Flush();
   collector_ = nullptr;
   option_.reset();
-  roctracer_driver_api_hook_.reset();
+  roctracer_api_hook_.reset();
   annotation_map_.reset();
 }
 
@@ -627,8 +624,8 @@ Status RocmTracer::HandleCallback(uint32_t domain, uint32_t cbid,
   LOG(INFO) << "domain: " << domain << " op: " << cbid << " correlation_id: " << data->correlation_id;
 
   if (data->phase == ACTIVITY_API_PHASE_ENTER) {
-    TF_RETURN_IF_ERROR(roctracer_driver_api_hook_->OnDriverApiEnter(
-        device_id, domain, cbid, cbdata));
+    TF_RETURN_IF_ERROR(
+        roctracer_api_hook_->OnApiEnter(device_id, domain, cbid, cbdata));
   } else if (data->phase == ACTIVITY_API_PHASE_EXIT) {
     // Set up the map from correlation id to annotation string.
     const std::string &annotation = tensorflow::Annotation::CurrentAnnotation();
@@ -636,8 +633,8 @@ Status RocmTracer::HandleCallback(uint32_t domain, uint32_t cbid,
       annotation_map_->Add(device_id, data->correlation_id, annotation);
     }
 
-    TF_RETURN_IF_ERROR(roctracer_driver_api_hook_->OnDriverApiExit(
-        device_id, domain, cbid, cbdata));
+    TF_RETURN_IF_ERROR(
+        roctracer_api_hook_->OnApiExit(device_id, domain, cbid, cbdata));
   }
   return Status::OK();
 }
