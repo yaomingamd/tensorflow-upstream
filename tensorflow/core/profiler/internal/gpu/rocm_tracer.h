@@ -33,6 +33,8 @@ namespace profiler {
 struct MemcpyDetails {
   // The amount of data copied for memcpy events.
   size_t num_bytes;
+
+  // ROCM TODO: figure out a way to properly populate this field.
   // The destination device for peer-2-peer communication (memcpy). The source
   // device is implicit: its the current device.
   uint32 destination;
@@ -46,15 +48,6 @@ struct MemAllocDetails {
 };
 
 struct KernelDetails {
-  // ROCM TODO: enable these fields once roctracer is able to parse code object
-  // metadata.
-  //// The number of registers used in this kernel (VGPR).
-  //uint64 registers_per_thread;
-  //// The number of registers used in this workgroup (SGPR).
-  //uint64 registers_per_workgroup;
-  //// The amount of shared memory space used by a thread block (LDS).
-  //uint64 static_shared_memory_usage;
-
   // The amount of dynamic memory space used by a thread block.
   uint64 dynamic_shared_memory_usage;
   // X-dimension of a thread block.
@@ -90,6 +83,11 @@ enum class RocmTracerEventSource {
   Activity = 1,
 };
 
+enum class RocmTracerEventDomain {
+  HIP = 0,
+  HCC = 1,
+};
+
 struct RocmTracerEvent {
   static constexpr uint32 kInvalidDeviceId =
       std::numeric_limits<uint32_t>::max();
@@ -97,10 +95,9 @@ struct RocmTracerEvent {
       std::numeric_limits<uint32_t>::max();
   static constexpr uint32 kInvalidCorrelationId =
       std::numeric_limits<uint32_t>::max();
-  static constexpr uint64 kInvalidContextId =
-      std::numeric_limits<uint64_t>::max();
   static constexpr uint64 kInvalidStreamId =
       std::numeric_limits<uint64_t>::max();
+  RocmTracerEventDomain domain;
   RocmTracerEventType type;
   RocmTracerEventSource source;
   std::string name;

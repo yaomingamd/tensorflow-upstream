@@ -33,16 +33,6 @@ namespace profiler {
 
 namespace {
 
-static thread_local bool internalRocmCall;
-
-// Temporary disable cupti api tracing for this thread during the life scope of
-// this class. Used for the API calls that initiated by us.
-class RocmApiTracingDisabler {
- public:
-  RocmApiTracingDisabler() { internalRocmCall = true; }
-  ~RocmApiTracingDisabler() { internalRocmCall = false; }
-};
-
 Status ToStatus(roctracer_status_t result) {
   if (result == ROCTRACER_STATUS_SUCCESS) {
     return Status::OK();
@@ -113,7 +103,7 @@ DecodeHipMemcpy(uint32_t cbid, const void *cbdata) {
   }
 }
 
-// Rocm callback corresponding to a driver or runtime API. This global function
+// Rocm callback corresponding to a HIP API. This global function
 // is invoked twice for each API: at entry and at exit. The cbdata
 // parameter is guaranteed by Rocm to be thread-safe. Most invocations are
 // dropped to the floor and entry/exit is tracked for the APIs we deem
@@ -136,6 +126,7 @@ void AddKernelEventUponApiExit(RocmTraceCollector *collector,
   const hip_api_data_t *data = reinterpret_cast<const hip_api_data_t*>(cbdata);
   const hipFunction_t kernelFunc = data->args.hipModuleLaunchKernel.f;
   RocmTracerEvent event;
+  event.domain = RocmTracerEventDomain::HIP;
   event.type = RocmTracerEventType::Kernel;
   event.source = RocmTracerEventSource::ApiCallback;
   if (kernelFunc != nullptr)
@@ -157,16 +148,20 @@ void AddKernelEventUponApiExit(RocmTraceCollector *collector,
 
 // Performs the actual callback for both normal and P2P memcpy operations.
 RocmTracerEvent PopulateMemcpyCallbackEvent(
-    RocmTracerEventType type, const void *cbdata, size_t num_bytes,
-    bool async) {
+    RocmTracerEventType type, uint32_t cbid, const void *cbdata,
+    size_t num_bytes, bool async) {
   const hip_api_data_t *data = reinterpret_cast<const hip_api_data_t*>(cbdata);
   RocmTracerEvent event;
+  event.domain = RocmTracerEventDomain::HIP;
+  event.name = roctracer_op_string(ACTIVITY_DOMAIN_HIP_API, cbid, 0);
   event.type = type;
   event.source = RocmTracerEventSource::ApiCallback;
   event.thread_id = GetCachedTID();
   event.correlation_id = data->correlation_id;
   event.memcpy_info.num_bytes = num_bytes;
   event.memcpy_info.async = async;
+  // ROCM TODO: figure out a way to properly populate this field.
+  event.memcpy_info.destination = 0;
   return event;
 }
 
@@ -180,7 +175,7 @@ void AddNormalMemcpyEventUponApiExit(RocmTraceCollector *collector,
 
   VLOG(3) << "HIP Memcpy observed :" << num_bytes;
   RocmTracerEvent event =
-      PopulateMemcpyCallbackEvent(type, cbdata, num_bytes, async);
+      PopulateMemcpyCallbackEvent(type, cbid, cbdata, num_bytes, async);
   collector->AddEvent(std::move(event));
 }
 
@@ -188,6 +183,7 @@ void AddMallocEventUponApiExit(RocmTraceCollector* collector,
                                uint32_t cbid, const void* cbdata) {
   const hip_api_data_t* data = reinterpret_cast<const hip_api_data_t*>(cbdata);
   RocmTracerEvent event;
+  event.domain = RocmTracerEventDomain::HIP;
   event.name = roctracer_op_string(ACTIVITY_DOMAIN_HIP_API, cbid, 0);
   event.type = RocmTracerEventType::MemoryAlloc;
   event.source = RocmTracerEventSource::ApiCallback;
@@ -210,6 +206,7 @@ void AddGenericEventUponApiExit(RocmTraceCollector *collector,
                                 uint32_t cbid, const void *cbdata) {
   const hip_api_data_t *data = reinterpret_cast<const hip_api_data_t*>(cbdata);
   RocmTracerEvent event;
+  event.domain = RocmTracerEventDomain::HIP;
   event.name = roctracer_op_string(ACTIVITY_DOMAIN_HIP_API, cbid, 0);
   event.type = RocmTracerEventType::Generic;
   event.source = RocmTracerEventSource::ApiCallback;
@@ -219,89 +216,106 @@ void AddGenericEventUponApiExit(RocmTraceCollector *collector,
   collector->AddEvent(std::move(event));
 }
 
-void AddKernelActivityEvent(RocmTraceCollector *collector,
+void AddHipKernelActivityEvent(RocmTraceCollector *collector,
                             AnnotationMap *annotation_map,
                             const void *data) {
   const roctracer_record_t *record = reinterpret_cast<const roctracer_record_t*>(data);
+  const char * name = roctracer_op_string(record->domain, record->op, record->kind);
 
   RocmTracerEvent event;
+  event.domain = RocmTracerEventDomain::HIP;
   event.type = RocmTracerEventType::Kernel;
   event.source = RocmTracerEventSource::Activity;
 
-  // ROCM TODO: need to populate these fields.
-  event.name = ""; //kernel->name;
+  event.name = name;
   event.start_time_ns = record->begin_ns;
   event.end_time_ns = record->end_ns;
-  // ROCM TODO: need to populate these fields.
-  event.device_id = 0; // record->device_id;
-  event.stream_id = 0; // record->queue_id;
   event.correlation_id = record->correlation_id;
   event.annotation = annotation_map->LookUp(event.correlation_id);
 
   collector->AddEvent(std::move(event));
 }
 
-void AddMemcpyActivityEvent(RocmTraceCollector *collector,
+void AddHccKernelActivityEvent(RocmTraceCollector *collector,
+                               AnnotationMap *annotation_map,
+                               const void *data) {
+  const roctracer_record_t *record = reinterpret_cast<const roctracer_record_t*>(data);
+  const char * name = roctracer_op_string(record->domain, record->op, record->kind);
+
+  RocmTracerEvent event;
+  event.domain = RocmTracerEventDomain::HCC;
+  event.type = RocmTracerEventType::Kernel;
+  event.source = RocmTracerEventSource::Activity;
+
+  event.name = name;
+  event.start_time_ns = record->begin_ns;
+  event.end_time_ns = record->end_ns;
+  event.device_id = record->device_id;
+  event.stream_id = record->queue_id;
+  event.correlation_id = record->correlation_id;
+  event.annotation = annotation_map->LookUp(event.correlation_id);
+
+  collector->AddEvent(std::move(event));
+}
+
+void AddHipMemcpyActivityEvent(RocmTraceCollector *collector,
                             AnnotationMap *annotation_map,
                             const void *data) {
   const roctracer_record_t *record = reinterpret_cast<const roctracer_record_t*>(data);
+  const char * name = roctracer_op_string(record->domain, record->op, record->kind);
 
   RocmTracerEvent event;
+  event.domain = RocmTracerEventDomain::HIP;
   switch (record->op) {
     case HIP_API_ID_hipMemcpyDtoH:
       event.type = RocmTracerEventType::MemcpyD2H;
-      event.name = "MemcpyD2H";
+      event.name = name;
       event.memcpy_info.num_bytes = record->bytes;
       event.memcpy_info.async = false;
-      // ROCM TODO: verify if this field is properly populated.
       event.memcpy_info.destination = record->device_id;
       break;
     case HIP_API_ID_hipMemcpyDtoHAsync:
       event.type = RocmTracerEventType::MemcpyD2H;
-      event.name = "MemcpyD2H";
+      event.name = name;
       event.memcpy_info.num_bytes = record->bytes;
       event.memcpy_info.async = true;
-      // ROCM TODO: verify if this field is properly populated.
       event.memcpy_info.destination = record->device_id;
       break;
     case HIP_API_ID_hipMemcpyHtoD:
       event.type = RocmTracerEventType::MemcpyH2D;
-      event.name = "MemcpyH2D";
+      event.name = name;
       event.memcpy_info.num_bytes = record->bytes;
       event.memcpy_info.async = false;
-      // ROCM TODO: verify if this field is properly populated.
       event.memcpy_info.destination = record->device_id;
       break;
     case HIP_API_ID_hipMemcpyHtoDAsync:
       event.type = RocmTracerEventType::MemcpyH2D;
-      event.name = "MemcpyH2D";
+      event.name = name;
       event.memcpy_info.num_bytes = record->bytes;
       event.memcpy_info.async = true;
-      // ROCM TODO: verify if this field is properly populated.
       event.memcpy_info.destination = record->device_id;
       break;
     case HIP_API_ID_hipMemcpyDtoD:
       event.type = RocmTracerEventType::MemcpyD2D;
-      event.name = "MemcpyD2D";
+      event.name = name;
       event.memcpy_info.num_bytes = record->bytes;
       event.memcpy_info.async = false;
-      // ROCM TODO: verify if this field is properly populated.
+      // ROCM TODO: figure out a way to properly populate this field.
       event.memcpy_info.destination = record->device_id;
       break;
     case HIP_API_ID_hipMemcpyDtoDAsync:
       event.type = RocmTracerEventType::MemcpyD2D;
-      event.name = "MemcpyD2D";
+      event.name = name;
       event.memcpy_info.num_bytes = record->bytes;
       event.memcpy_info.async = true;
-      // ROCM TODO: verify if this field is properly populated.
+      // ROCM TODO: figure out a way to properly populate this field.
       event.memcpy_info.destination = record->device_id;
       break;
     default:
       event.type = RocmTracerEventType::MemcpyOther;
-      event.name = "MemcpyOther";
+      event.name = name;
       event.memcpy_info.num_bytes = record->bytes;
       event.memcpy_info.async = false;
-      // ROCM TODO: verify if this field is properly populated.
       event.memcpy_info.destination = record->device_id;
       break;
   }
@@ -309,7 +323,28 @@ void AddMemcpyActivityEvent(RocmTraceCollector *collector,
   event.start_time_ns = record->begin_ns;
   event.end_time_ns = record->end_ns;
 
-  // ROCM TODO: verify if these 2 fields are properly populated.
+  event.correlation_id = record->correlation_id;
+  event.annotation = annotation_map->LookUp(event.correlation_id);
+  collector->AddEvent(std::move(event));
+}
+
+void AddHccMemcpyActivityEvent(RocmTraceCollector *collector,
+                               AnnotationMap *annotation_map,
+                               const void *data) {
+  const roctracer_record_t *record = reinterpret_cast<const roctracer_record_t*>(data);
+  const char * name = roctracer_op_string(record->domain, record->op, record->kind);
+
+  RocmTracerEvent event;
+  event.source = RocmTracerEventSource::Activity;
+  event.start_time_ns = record->begin_ns;
+  event.end_time_ns = record->end_ns;
+
+  // Set MemcpyOther here. The field won't really be used when we aggregate
+  // with other RocmTracerEvent instances coming from API callbacks.
+  event.type = RocmTracerEventType::MemcpyOther;
+
+  event.domain = RocmTracerEventDomain::HCC;
+  event.name = name;
   event.device_id = record->device_id;
   event.stream_id = record->queue_id;
 
@@ -366,12 +401,15 @@ class RocmApiHookImpl : public RocmApiHook {
     case HIP_API_ID_hipMemcpyDtoDAsync:
       AddNormalMemcpyEventUponApiExit(collector, cbid, cbdata);
       break;
-    case HIP_API_ID_hipMalloc:
-    case HIP_API_ID_hipFree:
-      AddMallocEventUponApiExit(collector, cbid, cbdata);
-      break;
+    // ROCM TODO: decide whether to log these API events.
+    //case HIP_API_ID_hipMalloc:
+    //case HIP_API_ID_hipFree:
+    //  AddMallocEventUponApiExit(collector, cbid, cbdata);
+    //  break;
+    //default:
+    //  AddGenericEventUponApiExit(collector, cbid, cbdata);
+    //  break;
     default:
-      AddGenericEventUponApiExit(collector, cbid, cbdata);
       break;
   }
   return Status::OK();
@@ -477,17 +515,15 @@ Status RocmTracer::EnableApiTracing() {
   if (api_tracing_enabled_) return Status::OK();
   api_tracing_enabled_ = true;
 
-  // ROCM TODO: do more selected filtering later on.
-  //if (!option_->cbids_selected.empty()) {
-  //  for (auto cbid : option_->cbids_selected) {
-  //    // ROCM TODO: determine the best domain(s) to monitor.
-  //    RETURN_IF_ROCTRACER_ERROR(roctracer_enable_op_callback(
-  //        ACTIVITY_DOMAIN_HIP_API, cbid, ApiCallback, this));
-  //  }
-  //} else {  // select all callback ids.
+  if (!option_->cbids_selected.empty()) {
+    for (auto cbid : option_->cbids_selected) {
+      RETURN_IF_ROCTRACER_ERROR(roctracer_enable_op_callback(
+          ACTIVITY_DOMAIN_HIP_API, cbid, ApiCallback, this));
+    }
+  } else {  // select all callback ids.
     RETURN_IF_ROCTRACER_ERROR(roctracer_enable_callback(
         ApiCallback, this));
-  //}
+  }
   return Status::OK();
 }
 
@@ -547,7 +583,6 @@ Status RocmTracer::DisableActivityTracing() {
 
     VLOG(1) << "Flushing roctracer activity buffer";
     RETURN_IF_ROCTRACER_ERROR(roctracer_flush_activity());
-    LOG(INFO) << "roctracer activity buffer flushed";
   }
   activity_tracing_enabled_ = false;
   return Status::OK();
@@ -558,15 +593,8 @@ Status RocmTracer::Finalize() {
 }
 
 /*static*/ uint64 RocmTracer::GetTimestamp() {
-  // uint64_t tsc;
   // ROCM TODO: revise with HIP or ROCR API
-  // RocmInterface *cupti_interface = GetRocmInterface();
-  // if (cupti_interface && cupti_interface->GetTimestamp(&tsc) ==
-  // CUPTI_SUCCESS) {
-  //  return tsc;
-  //}
-  // Return 0 on error. If an activity timestamp is 0, the activity will be
-  // dropped during time normalization.
+  // uint64_t tsc;
   return 0;
 }
 
@@ -574,13 +602,12 @@ Status RocmTracer::HandleCallback(uint32_t domain, uint32_t cbid,
                                   const void *cbdata) {
   if (!api_tracing_enabled_) return Status::OK();  // already unsubscribed.
   if (domain != ACTIVITY_DOMAIN_HIP_API) return Status::OK();
-  if (internalRocmCall) return Status::OK();
 
   const hip_api_data_t *data = reinterpret_cast<const hip_api_data_t*>(cbdata);
 
   const char *name = roctracer_op_string(domain, cbid, 0);
-  LOG(INFO) << "HIP API: " << name;
-  LOG(INFO) << "domain: " << domain << " op: " << cbid << " correlation_id: " << data->correlation_id;
+  VLOG(3) << "HIP API: " << name;
+  VLOG(3) << "domain: " << domain << " op: " << cbid << " correlation_id: " << data->correlation_id;
 
   if (data->phase == ACTIVITY_API_PHASE_ENTER) {
     TF_RETURN_IF_ERROR(
@@ -608,21 +635,45 @@ Status RocmTracer::ProcessActivityRecord(const char *begin, const char *end) {
   const roctracer_record_t *end_record = reinterpret_cast<const roctracer_record_t*>(end);
   while (record < end_record) {
     const char *name = roctracer_op_string(record->domain, record->op, record->kind);
-    LOG(INFO) << "activity: " << name;
-    LOG(INFO) << "domain: " << record->domain << " op: " << record->op << " correlation_id: " << record->correlation_id << " begin_ns: " << record->begin_ns << " end_ns: " << record->end_ns;
+    VLOG(3) << "activity: " << name;
+    VLOG(3) << "domain: " << record->domain << " op: " << record->op << " correlation_id: " << record->correlation_id << " begin_ns: " << record->begin_ns << " end_ns: " << record->end_ns;
 
-    switch (record->op) {
-      case HIP_API_ID_hipModuleLaunchKernel:
-        AddKernelActivityEvent(collector_, &*annotation_map_, record);
+    switch (record->domain) {
+      // HIP API activities.
+      case ACTIVITY_DOMAIN_HIP_API:
+        switch (record->op) {
+          case HIP_API_ID_hipModuleLaunchKernel:
+            AddHipKernelActivityEvent(collector_, &*annotation_map_, record);
+            break;
+
+          case HIP_API_ID_hipMemcpyDtoH:
+          case HIP_API_ID_hipMemcpyHtoD:
+          case HIP_API_ID_hipMemcpyDtoD:
+          case HIP_API_ID_hipMemcpyDtoHAsync:
+          case HIP_API_ID_hipMemcpyHtoDAsync:
+          case HIP_API_ID_hipMemcpyDtoDAsync:
+            AddHipMemcpyActivityEvent(collector_, &*annotation_map_, record);
+            break;
+          default:
+            break;
+        } // switch (record->op).
         break;
 
-      case HIP_API_ID_hipMemcpyDtoH:
-      case HIP_API_ID_hipMemcpyHtoD:
-      case HIP_API_ID_hipMemcpyDtoD:
-      case HIP_API_ID_hipMemcpyDtoHAsync:
-      case HIP_API_ID_hipMemcpyHtoDAsync:
-      case HIP_API_ID_hipMemcpyDtoDAsync:
-        AddMemcpyActivityEvent(collector_, &*annotation_map_, record);
+     // HCC ops activities.
+     case ACTIVITY_DOMAIN_HCC_OPS:
+        switch (record->op) {
+          case 0: // dispatch
+            AddHccKernelActivityEvent(collector_, &*annotation_map_, record);
+            break;
+          case 1: // copy
+            AddHccMemcpyActivityEvent(collector_, &*annotation_map_, record);
+            break;
+          // ROCM TODO: decide whther to log these activities later.
+          //case 2: // barrier / marker
+          //  break;
+          default:
+            break;
+        } // switch (record->op).
         break;
     }
 
