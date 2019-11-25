@@ -1692,6 +1692,7 @@ class MIOpenRnnDescriptor : public MIOpenDescriptorCommon<dnn::RnnDescriptor> {
                       miopenRNNDirectionMode_t direction_mode,
                       miopenRNNMode_t rnn_mode, miopenDataType_t data_type,
                       float dropout, uint64 seed,
+                      const dnn::AlgorithmConfig& algorithm_config,
                       ScratchAllocator* state_allocator)
       : rnn_desc_(nullptr),
         num_layers_(num_layers),
@@ -1700,7 +1701,8 @@ class MIOpenRnnDescriptor : public MIOpenDescriptorCommon<dnn::RnnDescriptor> {
         input_mode_(input_mode),
         direction_mode_(direction_mode),
         rnn_mode_(rnn_mode),
-        data_type_(data_type) {
+        data_type_(data_type),
+        algorithm_config_(algorithm_config) {
     // Create the RNN handle
     auto status = wrap::miopenCreateRNNDescriptor(&rnn_desc_);
     RETURN_IF_MIOPEN_ERROR(status, "Unable to create RNN descriptor");
@@ -1736,6 +1738,9 @@ class MIOpenRnnDescriptor : public MIOpenDescriptorCommon<dnn::RnnDescriptor> {
   miopenRNNDirectionMode_t direction_mode() const { return direction_mode_; }
   miopenRNNMode_t rnn_mode() const { return rnn_mode_; }
   miopenDataType_t data_type() const { return data_type_; }
+  const dnn::AlgorithmConfig& algorithm_config() const {
+    return algorithm_config_;
+  }
   int64 ParamsSizeInBytes() const override {
     return miopen_params_desc_->params_size_in_bytes();
   }
@@ -1761,6 +1766,7 @@ class MIOpenRnnDescriptor : public MIOpenDescriptorCommon<dnn::RnnDescriptor> {
   miopenRNNDirectionMode_t direction_mode_;
   miopenRNNMode_t rnn_mode_;
   miopenDataType_t data_type_;
+  dnn::AlgorithmConfig algorithm_config_;
   port::Status status_;
   // no dropout in MIOpen.
   // std::unique_ptr<miopenDropoutDescriptor> miopen_dropout_desc_;
@@ -2021,7 +2027,8 @@ bool MIOpenSupport::DoRnnForwardImpl(
     const MIOpenRnnStateTensorDescriptor& output_c_desc,
     DeviceMemory<T>* output_c_data, bool is_training,
     ScratchAllocator* reserve_space_allocator,
-    ScratchAllocator* workspace_allocator) {
+    ScratchAllocator* workspace_allocator,
+    dnn::ProfileResult* output_profile_result) {
   // extract model parameters
   RnnModelDims model_dims;
   bool res = ExtractAndCheckRnnForward(
@@ -2078,6 +2085,19 @@ bool MIOpenSupport::DoRnnForwardImpl(
     }
   }
 
+  std::unique_ptr<GpuTimer, GpuTimerDeleter> timer;
+  const bool is_profiling = output_profile_result != nullptr;
+  if (is_profiling) {
+    timer.reset(new GpuTimer(parent_));
+    // The start and stop of the timer should be as close to the Cudnn call as
+    // possible. It is still possible for other threads to issue workload on
+    // to this stream. So it could take multiple profiling measurements.
+    if (!timer->Init() || !timer->Start(AsGpuStream(stream))) {
+      LOG(ERROR) << "Failed to start timer";
+      return false;
+    }
+  }
+
   // make the forward call
   if (!is_training) {
     auto status = wrap::miopenRNNForwardInference(
@@ -2117,6 +2137,18 @@ bool MIOpenSupport::DoRnnForwardImpl(
       return false;
     }
   }
+
+  if (is_profiling) {
+    if (!timer->Stop(AsGpuStream(stream))) {
+      LOG(ERROR) << "Failed to stop timer";
+      return false;
+    }
+    auto algo_desc = *rnn_desc.algorithm_config().algorithm();
+    output_profile_result->set_algorithm(algo_desc);
+    output_profile_result->set_elapsed_time_in_ms(
+        timer->GetElapsedMilliseconds());
+  }
+
   return true;
 }
 
@@ -2143,7 +2175,8 @@ bool MIOpenSupport::DoRnnBackwardImpl(
     DeviceMemory<T>* input_c_backprop_data,
     DeviceMemory<T>* params_backprop_data,
     DeviceMemory<uint8>* reserve_space_data,
-    ScratchAllocator* workspace_allocator) {
+    ScratchAllocator* workspace_allocator,
+    dnn::ProfileResult* output_profile_result) {
   // extract model parameters
   RnnModelDims model_dims;
   bool res = ExtractAndCheckRnnForward(
@@ -2189,6 +2222,19 @@ bool MIOpenSupport::DoRnnBackwardImpl(
   if ((size_data > 0) && (input_c_backprop_data->opaque() != nullptr))
     stream->ThenMemZero(input_c_backprop_data, size_data * sizeof(float));
 
+  std::unique_ptr<GpuTimer, GpuTimerDeleter> timer;
+  const bool is_profiling = output_profile_result != nullptr;
+  if (is_profiling) {
+    timer.reset(new GpuTimer(parent_));
+    // The start and stop of the timer should be as close to the Cudnn call as
+    // possible. It is still possible for other threads to issue workload on
+    // to this stream. So it could take multiple profiling measurements.
+    if (!timer->Init() || !timer->Start(AsGpuStream(stream))) {
+      LOG(ERROR) << "Failed to start timer";
+      return false;
+    }
+  }
+
   // make the backward data call
   auto status = wrap::miopenRNNBackwardData(
       miopen.handle() /*handle*/, rnn_desc.handle() /*rnnDesc*/,
@@ -2233,6 +2279,17 @@ bool MIOpenSupport::DoRnnBackwardImpl(
                  << ToString(status);
       return false;
     }
+  }
+
+  if (is_profiling) {
+    if (!timer->Stop(AsGpuStream(stream))) {
+      LOG(ERROR) << "Failed to stop timer";
+      return false;
+    }
+    auto algo_desc = *rnn_desc.algorithm_config().algorithm();
+    output_profile_result->set_algorithm(algo_desc);
+    output_profile_result->set_elapsed_time_in_ms(
+        timer->GetElapsedMilliseconds());
   }
 
   return true;
@@ -2287,15 +2344,22 @@ MIOpenSupport::createRnnDescriptor(
     dnn::DataType data_type, const dnn::AlgorithmConfig& algorithm_config,
     float dropout, uint64 seed, ScratchAllocator* state_allocator,
     bool use_padded_io) {
-  // ROCM TODO: cell_size is ignored for now
-  // ROCM TODO: batch_size is ignored for now
+  // ROCM TODO: cell_size is used to decide hidden size when output project
+  // is supported.
+  // ROCM TODO: batch_size is used in dynamic persistent RNN algorithm and is
+  // not supported by MIOpen now.
+  if (use_padded_io) {
+    return port::Status(port::error::INVALID_ARGUMENT,
+                        "MIOpen only supports packed input output.");
+  }
 
   auto miopen = miopen_->GetHandle(parent_, nullptr);
   std::unique_ptr<MIOpenRnnDescriptor> rnn_desc(new MIOpenRnnDescriptor(
       miopen.handle(), num_layers, hidden_size, input_size,
       ToMIOpenRnnInputMode(input_mode),
       ToMIOpenRnnDirectionMode(direction_mode), ToMIOpenRnnMode(rnn_mode),
-      ToMIOpenDataType(data_type), dropout, seed, state_allocator));
+      ToMIOpenDataType(data_type), dropout, seed, algorithm_config,
+      state_allocator));
   if (!rnn_desc->ok()) {
     return rnn_desc->Status();
   }
@@ -2349,7 +2413,6 @@ bool MIOpenSupport::DoRnnForward(
     ScratchAllocator* reserve_space_allocator,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
-  // ROCM TODO: output_profile_result is ignore for now
 
   const MIOpenRnnDescriptor& miopen_rnn_desc =
       static_cast<const MIOpenRnnDescriptor&>(rnn_desc);
@@ -2371,7 +2434,7 @@ bool MIOpenSupport::DoRnnForward(
       miopen_input_h_desc, input_h_data, miopen_input_c_desc, input_c_data,
       params, miopen_output_desc, output_data, miopen_output_h_desc,
       output_h_data, miopen_output_c_desc, output_c_data, is_training,
-      reserve_space_allocator, workspace_allocator);
+      reserve_space_allocator, workspace_allocator, output_profile_result);
 }
 
 bool MIOpenSupport::DoRnnForward(
@@ -2391,7 +2454,6 @@ bool MIOpenSupport::DoRnnForward(
     ScratchAllocator* reserve_space_allocator,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
-  // ROCM TODO: output_profile_result is ignore for now
 
   const MIOpenRnnDescriptor& miopen_rnn_desc =
       static_cast<const MIOpenRnnDescriptor&>(rnn_desc);
@@ -2413,7 +2475,7 @@ bool MIOpenSupport::DoRnnForward(
       miopen_input_h_desc, input_h_data, miopen_input_c_desc, input_c_data,
       params, miopen_output_desc, output_data, miopen_output_h_desc,
       output_h_data, miopen_output_c_desc, output_c_data, is_training,
-      reserve_space_allocator, workspace_allocator);
+      reserve_space_allocator, workspace_allocator, output_profile_result);
 }
 
 bool MIOpenSupport::DoRnnForward(
@@ -2463,7 +2525,6 @@ bool MIOpenSupport::DoRnnBackward(
     DeviceMemory<uint8>* reserve_space_data,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
-  // ROCM TODO: output_profile_result is ignore for now
 
   const MIOpenRnnDescriptor& miopen_rnn_desc =
       static_cast<const MIOpenRnnDescriptor&>(rnn_desc);
@@ -2487,7 +2548,7 @@ bool MIOpenSupport::DoRnnBackward(
       output_h_data, miopen_output_c_desc, output_c_data, output_backprop_data,
       output_h_backprop_data, output_c_backprop_data, input_backprop_data,
       input_h_backprop_data, input_c_backprop_data, params_backprop_data,
-      reserve_space_data, workspace_allocator);
+      reserve_space_data, workspace_allocator, output_profile_result);
 }
 
 bool MIOpenSupport::DoRnnBackward(
@@ -2514,7 +2575,6 @@ bool MIOpenSupport::DoRnnBackward(
     DeviceMemory<uint8>* reserve_space_data,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
-  // ROCM TODO: output_profile_result is ignore for now
 
   const MIOpenRnnDescriptor& miopen_rnn_desc =
       static_cast<const MIOpenRnnDescriptor&>(rnn_desc);
@@ -2538,7 +2598,7 @@ bool MIOpenSupport::DoRnnBackward(
       output_h_data, miopen_output_c_desc, output_c_data, output_backprop_data,
       output_h_backprop_data, output_c_backprop_data, input_backprop_data,
       input_h_backprop_data, input_c_backprop_data, params_backprop_data,
-      reserve_space_data, workspace_allocator);
+      reserve_space_data, workspace_allocator, output_profile_result);
 }
 
 bool MIOpenSupport::DoRnnBackward(
@@ -2965,7 +3025,16 @@ bool MIOpenSupport::GetConvolveAlgorithms(
 
 bool MIOpenSupport::GetRnnAlgorithms(
     std::vector<dnn::AlgorithmDesc>* out_algorithms) {
-  // ROCM TODO: implement this with proper MIOpen API
+  std::vector<dnn::AlgorithmDesc::Index> algo_types = {
+      // clang-format off
+    miopenRNNdefault,
+      // clang-format on
+  };
+
+  out_algorithms->clear();
+  for (auto i : algo_types) {
+    out_algorithms->push_back({i, /*use_tensor_ops=*/false});
+  }
   return true;
 }
 
