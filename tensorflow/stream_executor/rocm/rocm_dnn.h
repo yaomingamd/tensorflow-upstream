@@ -51,7 +51,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       dnn::RnnDirectionMode direction_mode, dnn::RnnMode rnn_mode,
       dnn::DataType data_type, const dnn::AlgorithmConfig& algorithm_config,
       float dropout, uint64 seed, ScratchAllocator* state_allocator,
-      bool use_padded_io);
+      bool use_padded_io) override;
 
   port::StatusOr<std::unique_ptr<dnn::RnnSequenceTensorDescriptor>>
   createRnnSequenceTensorDescriptor(int seq_length, int batch_size,
@@ -683,7 +683,9 @@ class MIOpenSupport : public dnn::DnnSupport {
                         const MIOpenRnnStateTensorDescriptor& output_c_desc,
                         DeviceMemory<T>* output_c_data, bool is_training,
                         ScratchAllocator* reserve_space_allocator,
-                        ScratchAllocator* workspace_allocator);
+                        ScratchAllocator* workspace_allocator,
+                        dnn::ProfileResult* output_profile_result);
+
   template <class T>
   bool DoRnnBackwardImpl(Stream* stream, const MIOpenRnnDescriptor& rnn_desc,
                          const MIOpenRnnSequenceTensorDescriptor& input_desc,
@@ -707,7 +709,8 @@ class MIOpenSupport : public dnn::DnnSupport {
                          DeviceMemory<T>* input_c_backprop_data,
                          DeviceMemory<T>* params_backprop_data,
                          DeviceMemory<uint8>* reserve_space_data,
-                         ScratchAllocator* workspace_allocator);
+                         ScratchAllocator* workspace_allocator,
+                         dnn::ProfileResult* output_profile_result);
 
   template <typename T>
   bool DoFusedConvolutionBiasActivationImpl(
