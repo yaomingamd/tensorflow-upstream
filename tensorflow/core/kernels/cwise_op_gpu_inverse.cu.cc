@@ -21,7 +21,8 @@ limitations under the License.
 namespace tensorflow {
 namespace functor {
 DEFINE_UNARY4(inverse, Eigen::half, float, double, int64);
-DEFINE_SIMPLE_BINARY3(inverse_grad, Eigen::half, float, double);
+// XXX disable inverse_grad on ROCm for now.
+//DEFINE_SIMPLE_BINARY3(inverse_grad, Eigen::half, float, double);
 }  // namespace functor
 }  // namespace tensorflow
 

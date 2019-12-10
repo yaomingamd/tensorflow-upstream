@@ -50,8 +50,9 @@ REGISTER3(BinaryOp, GPU, "RealDiv", functor::div, float, Eigen::half, double);
 REGISTER5(BinaryOp, GPU, "DivNoNan", functor::div_no_nan, Eigen::half, float,
           double, complex64, complex128);
 #elif TENSORFLOW_USE_ROCM
-REGISTER3(BinaryOp, GPU, "DivNoNan", functor::div_no_nan, Eigen::half, float,
-          double);
+// XXX disable div_no_nan on ROCm for now.
+//REGISTER3(BinaryOp, GPU, "DivNoNan", functor::div_no_nan, Eigen::half, float,
+//          double);
 #endif
 
 // A special GPU kernel for int32.

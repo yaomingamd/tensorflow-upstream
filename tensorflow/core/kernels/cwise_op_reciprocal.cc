@@ -26,8 +26,9 @@ REGISTER4(UnaryOp, GPU, "Inv", functor::inverse, float, Eigen::half, double,
 REGISTER5(SimpleBinaryOp, CPU, "InvGrad", functor::inverse_grad, float,
           Eigen::half, double, complex64, complex128);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-REGISTER3(SimpleBinaryOp, GPU, "InvGrad", functor::inverse_grad, float,
-          Eigen::half, double);
+// XXX disable inverse_grad on ROCm for now.
+//REGISTER3(SimpleBinaryOp, GPU, "InvGrad", functor::inverse_grad, float,
+//          Eigen::half, double);
 #endif
 
 REGISTER5(UnaryOp, CPU, "Reciprocal", functor::inverse, float, Eigen::half,
@@ -43,8 +44,9 @@ REGISTER(UnaryOp, SYCL, "Reciprocal", functor::inverse, float);
 REGISTER5(SimpleBinaryOp, CPU, "ReciprocalGrad", functor::inverse_grad, float,
           Eigen::half, double, complex64, complex128);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-REGISTER3(SimpleBinaryOp, GPU, "ReciprocalGrad", functor::inverse_grad, float,
-          Eigen::half, double);
+// XXX disable inverse_grad on ROCm for now.
+//REGISTER3(SimpleBinaryOp, GPU, "ReciprocalGrad", functor::inverse_grad, float,
+//          Eigen::half, double);
 #endif
 #ifdef TENSORFLOW_USE_SYCL
 REGISTER(SimpleBinaryOp, SYCL, "ReciprocalGrad", functor::inverse_grad, float);

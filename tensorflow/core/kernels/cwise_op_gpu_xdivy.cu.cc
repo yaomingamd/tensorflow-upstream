@@ -19,7 +19,8 @@ limitations under the License.
 
 namespace tensorflow {
 namespace functor {
-DEFINE_BINARY5(xdivy, Eigen::half, float, double, complex64, complex128);
+// XXX disable xdivy on ROCm for now.
+//DEFINE_BINARY5(xdivy, Eigen::half, float, double, complex64, complex128);
 }  // namespace functor
 }  // namespace tensorflow
 

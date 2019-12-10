@@ -29,8 +29,9 @@ REGISTER2(UnaryOp, SYCL, "Rsqrt", functor::rsqrt, float, double);
 REGISTER5(SimpleBinaryOp, CPU, "RsqrtGrad", functor::rsqrt_grad, float,
           Eigen::half, double, complex64, complex128);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-REGISTER3(SimpleBinaryOp, GPU, "RsqrtGrad", functor::rsqrt_grad, float,
-          Eigen::half, double);
+// XXX disable rsqrt_grad on ROCm for now.
+//REGISTER3(SimpleBinaryOp, GPU, "RsqrtGrad", functor::rsqrt_grad, float,
+//          Eigen::half, double);
 #endif
 #ifdef TENSORFLOW_USE_SYCL
 REGISTER2(SimpleBinaryOp, SYCL, "RsqrtGrad", functor::rsqrt_grad, float,

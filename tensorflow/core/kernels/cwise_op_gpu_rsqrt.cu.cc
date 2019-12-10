@@ -21,7 +21,8 @@ limitations under the License.
 namespace tensorflow {
 namespace functor {
 DEFINE_UNARY3(rsqrt, Eigen::half, float, double);
-DEFINE_SIMPLE_BINARY3(rsqrt_grad, Eigen::half, float, double);
+// XXX disable rsqrt_grad on ROCm for now.
+//DEFINE_SIMPLE_BINARY3(rsqrt_grad, Eigen::half, float, double);
 }  // namespace functor
 }  // namespace tensorflow
 
