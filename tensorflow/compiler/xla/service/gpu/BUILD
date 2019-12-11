@@ -1183,6 +1183,7 @@ cc_library(
         "amdgpu_compiler.h"
     ],
     deps = [
+        ":gemm_rewriter",
         ":gpu_compiler",
         ":gpu_conv_algorithm_picker",
         "//tensorflow/core/platform:rocm_rocdl_path",
