@@ -54,6 +54,7 @@ void GuardedPhiloxRandom::Init(random::PhiloxRandom::ResultType counter,
 void GuardedPhiloxRandom::ResetSeeds(int64 seed, int64 seed2) {
   mutex_lock lock(mu_);
   generator_ = random::PhiloxRandom(seed, seed2);
+  initialized_ = true;
 }
 
 random::PhiloxRandom GuardedPhiloxRandom::ReserveSamples128(int64 samples) {

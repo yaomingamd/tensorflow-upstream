@@ -330,8 +330,9 @@ REGISTER_OP("Dropout")
     .Input("input: T")
     .Input("rate: T")
     .Input("noise_shape: int32")
-    .Input("seed: int64")
     .Output("output: T")
+    .Attr("seed: int = 0")
+    .Attr("seed2: int = 0")
     .Attr("T: {float, half}")
     .SetShapeFn(shape_inference::UnchangedShape);
 
@@ -339,8 +340,9 @@ REGISTER_OP("DropoutGrad")
     .Input("gradients: T")
     .Input("rate: T")
     .Input("noise_shape: int32")
-    .Input("seed: int64")
     .Output("backprops: T")
+    .Attr("seed: int = 0")
+    .Attr("seed2: int = 0")
     .Attr("T: {float, half}")
     .SetShapeFn(shape_inference::UnchangedShape);
 
