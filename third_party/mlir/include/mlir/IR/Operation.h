@@ -63,12 +63,19 @@ public:
   static Operation *create(Location location, OperationName name,
                            ArrayRef<Type> resultTypes,
                            ArrayRef<Value *> operands,
-                           const NamedAttributeList &attributes,
+                           NamedAttributeList attributes,
                            ArrayRef<Block *> successors, unsigned numRegions,
                            bool resizableOperandList);
 
   /// Create a new Operation from the fields stored in `state`.
   static Operation *create(const OperationState &state);
+
+  /// Create a new Operation with the specific fields.
+  static Operation *
+  create(Location location, OperationName name, ArrayRef<Type> resultTypes,
+         ArrayRef<Value *> operands, NamedAttributeList attributes,
+         ArrayRef<Block *> successors = {}, RegionRange regions = {},
+         bool resizableOperandList = false);
 
   /// The name of an operation is the key identifier for it.
   OperationName getName() { return name; }
@@ -184,9 +191,9 @@ public:
   void dropAllDefinedValueUses();
 
   /// Unlink this operation from its current block and insert it right before
-  /// `existingInst` which may be in the same or another block in the same
+  /// `existingOp` which may be in the same or another block in the same
   /// function.
-  void moveBefore(Operation *existingInst);
+  void moveBefore(Operation *existingOp);
 
   /// Unlink this operation from its current block and insert it right before
   /// `iterator` in the specified block.
@@ -199,7 +206,7 @@ public:
   /// take O(N) where N is the number of operations within the parent block.
   bool isBeforeInBlock(Operation *other);
 
-  void print(raw_ostream &os);
+  void print(raw_ostream &os, OpPrintingFlags flags = llvm::None);
   void dump();
 
   //===--------------------------------------------------------------------===//
@@ -213,9 +220,7 @@ public:
   /// Replace the current operands of this operation with the ones provided in
   /// 'operands'. If the operands list is not resizable, the size of 'operands'
   /// must be less than or equal to the current number of operands.
-  void setOperands(ArrayRef<Value *> operands) {
-    getOperandStorage().setOperands(this, operands);
-  }
+  void setOperands(ValueRange operands);
 
   unsigned getNumOperands() { return getOperandStorage().size(); }
 
@@ -438,6 +443,23 @@ public:
   /// index.
   unsigned getSuccessorOperandIndex(unsigned index);
 
+  /// Return a pair (successorIndex, successorArgIndex) containing the index
+  /// of the successor that `operandIndex` belongs to and the index of the
+  /// argument to that successor that `operandIndex` refers to.
+  ///
+  /// If `operandIndex` is not a successor operand, None is returned.
+  Optional<std::pair<unsigned, unsigned>>
+  decomposeSuccessorOperandIndex(unsigned operandIndex);
+
+  /// Returns the `BlockArgument*` corresponding to operand `operandIndex` in
+  /// some successor, or None if `operandIndex` isn't a successor operand index.
+  Optional<BlockArgument *> getSuccessorBlockArgument(unsigned operandIndex) {
+    auto decomposed = decomposeSuccessorOperandIndex(operandIndex);
+    if (!decomposed.hasValue())
+      return None;
+    return getSuccessor(decomposed->first)->getArgument(decomposed->second);
+  }
+
   //===--------------------------------------------------------------------===//
   // Accessors for various properties of operations
   //===--------------------------------------------------------------------===//
@@ -549,6 +571,26 @@ public:
   InFlightDiagnostic emitRemark(const Twine &message = {});
 
 private:
+  //===--------------------------------------------------------------------===//
+  // Ordering
+  //===--------------------------------------------------------------------===//
+
+  /// This value represents an invalid index ordering for an operation within a
+  /// block.
+  static constexpr unsigned kInvalidOrderIdx = -1;
+
+  /// This value represents the stride to use when computing a new order for an
+  /// operation.
+  static constexpr unsigned kOrderStride = 5;
+
+  /// Update the order index of this operation of this operation if necessary,
+  /// potentially recomputing the order of the parent block.
+  void updateOrderIfNecessary();
+
+  /// Returns true if this operation has a valid order.
+  bool hasValidOrder() { return orderIndex != kInvalidOrderIdx; }
+
+private:
   Operation(Location location, OperationName name, unsigned numResults,
             unsigned numSuccessors, unsigned numRegions,
             const NamedAttributeList &attributes);
@@ -563,7 +605,7 @@ private:
   }
 
   /// Provide a 'getParent' method for ilist_node_with_parent methods.
-  /// We mark it as const function because ilist_node_with_parent specifically
+  /// We mark it as a const function because ilist_node_with_parent specifically
   /// requires a 'getParent() const' method. Once ilist_node removes this
   /// constraint, we should drop the const to fit the rest of the MLIR const
   /// model.
@@ -751,6 +793,76 @@ inline auto Operation::result_type_end() -> result_type_iterator {
 inline auto Operation::getResultTypes() -> result_type_range {
   return {result_type_begin(), result_type_end()};
 }
+
+/// This class provides an abstraction over the different types of ranges over
+/// Value*s. In many cases, this prevents the need to explicitly materialize a
+/// SmallVector/std::vector. This class should be used in places that are not
+/// suitable for a more derived type (e.g. ArrayRef) or a template range
+/// parameter.
+class ValueRange {
+  /// The type representing the owner of this range. This is either a list of
+  /// values, operands, or results.
+  using OwnerT = llvm::PointerUnion<Value *const *, OpOperand *, OpResult *>;
+
+public:
+  ValueRange(const ValueRange &) = default;
+  ValueRange(ValueRange &&) = default;
+  ValueRange &operator=(const ValueRange &) = default;
+
+  template <typename Arg,
+            typename = typename std::enable_if_t<
+                std::is_constructible<ArrayRef<Value *>, Arg>::value &&
+                !std::is_convertible<Arg, Value *>::value>>
+  ValueRange(Arg &&arg)
+      : ValueRange(ArrayRef<Value *>(std::forward<Arg>(arg))) {}
+  ValueRange(Value *const &value) : ValueRange(&value, /*count=*/1) {}
+  ValueRange(const std::initializer_list<Value *> &values)
+      : ValueRange(ArrayRef<Value *>(values)) {}
+  ValueRange(ArrayRef<Value *> values = llvm::None);
+  ValueRange(iterator_range<OperandIterator> values);
+  ValueRange(iterator_range<ResultIterator> values);
+
+  /// An iterator element of this range.
+  class Iterator : public indexed_accessor_iterator<Iterator, OwnerT, Value *,
+                                                    Value *, Value *> {
+  public:
+    Value *operator*() const;
+
+  private:
+    Iterator(OwnerT owner, unsigned curIndex);
+
+    /// Allow access to the constructor.
+    friend ValueRange;
+  };
+
+  Iterator begin() const { return Iterator(owner, 0); }
+  Iterator end() const { return Iterator(owner, count); }
+  Value *operator[](unsigned index) const {
+    assert(index < size() && "invalid index for value range");
+    return *std::next(begin(), index);
+  }
+
+  /// Return the size of this range.
+  size_t size() const { return count; }
+
+  /// Return if the range is empty.
+  bool empty() const { return size() == 0; }
+
+  /// Drop the first N elements, and keep M elements.
+  ValueRange slice(unsigned n, unsigned m) const;
+  /// Drop the first n elements.
+  ValueRange drop_front(unsigned n = 1) const;
+  /// Drop the last n elements.
+  ValueRange drop_back(unsigned n = 1) const;
+
+private:
+  ValueRange(OwnerT owner, unsigned count) : owner(owner), count(count) {}
+
+  /// The object that owns the provided range of values.
+  OwnerT owner;
+  /// The size from the owning range.
+  unsigned count;
+};
 
 } // end namespace mlir
 

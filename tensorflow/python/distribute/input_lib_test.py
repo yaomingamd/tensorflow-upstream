@@ -25,6 +25,7 @@ from absl.testing import parameterized
 import numpy as np
 
 from tensorflow.python import tf2
+from tensorflow.python.data.experimental.ops.distribute_options import AutoShardPolicy
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.distribute import collective_all_reduce_strategy
 from tensorflow.python.distribute import combinations
@@ -418,6 +419,27 @@ class DistributedIteratorSingleWorkerTest(DistributedIteratorTestBase,
 
   @combinations.generate(
       combinations.combine(
+          mode=["eager"],
+          distribution=[
+              strategy_combinations.one_device_strategy,
+              strategy_combinations.mirrored_strategy_with_one_cpu
+          ]))
+  def testIterableIterator(self, distribution):
+    worker_device_pairs = [("", ["/device:CPU:0"])]
+    devices = nest.flatten([ds for _, ds in worker_device_pairs])
+    device_map = values.ReplicaDeviceMap(devices)
+    input_workers = input_lib.InputWorkers(device_map, worker_device_pairs)
+
+    dataset = dataset_ops.DatasetV2.range(10)
+    dist_dataset = input_lib.get_distributed_dataset(dataset, input_workers,
+                                                     distribution)
+
+    iterator = iter(dist_dataset)
+    for i, element in enumerate(iterator):
+      self.assertEqual(i, element.numpy())
+
+  @combinations.generate(
+      combinations.combine(
           mode=["graph", "eager"],
           input_type=["input_fn", "dataset"],
           api_type=["wrap_into_iterator", "wrap_into_dataset"],
@@ -524,7 +546,8 @@ class DistributedIteratorTensorTypeTest(DistributedIteratorTestBase,
     def dataset_fn(ctx=None):
       ctx = ctx or distribute_lib.InputContext()
       batch_size = ctx.get_per_replica_batch_size(global_batch_size)
-      row_lengths = np.mod(np.arange(20), 4)  # Deal with partial batches.
+      # Use 20 which isn't divisible by 8 to test partial batch behavior.
+      row_lengths = np.mod(np.arange(20), 4).astype(np.int64)
       ragged_tensor = ragged_tensor_lib.RaggedTensor.from_row_lengths(
           np.repeat(np.arange(20, dtype=np.float32), row_lengths), row_lengths)
       dataset = dataset_ops.DatasetV2.from_tensor_slices({
@@ -632,11 +655,11 @@ class DistributedIteratorMultiWorkerTest(
       input_type=["dataset"],
       api_type=["wrap_into_iterator", "wrap_into_dataset"],
       iteration_type=["get_next", "for_loop"],
-      autoshard=[True, False]))
+      auto_shard_policy=[AutoShardPolicy.AUTO, AutoShardPolicy.OFF]))
   def testAutoshardingOption(self, input_type, api_type, iteration_type,
-                             autoshard):
+                             auto_shard_policy):
     ds_option = dataset_ops.Options()
-    ds_option.experimental_distribute.auto_shard = autoshard
+    ds_option.experimental_distribute.auto_shard_policy = auto_shard_policy
     if tf2.enabled():
       dataset_fn = (
           lambda _: dataset_ops.DatasetV2.range(4).with_options(ds_option))
@@ -652,7 +675,7 @@ class DistributedIteratorMultiWorkerTest(
             ["/job:worker/task:0", "/job:worker/task:1"], 1))
     worker_devices = self._cpu_devices()
     with context.graph_mode(), self.cached_session() as sess:
-      if autoshard:
+      if auto_shard_policy == AutoShardPolicy.AUTO:
         expected_values = [[0, 1], [2, 3]]
       else:
         expected_values = [[0, 0], [1, 1], [2, 2], [3, 3]]

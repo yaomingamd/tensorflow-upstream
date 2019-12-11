@@ -24,8 +24,7 @@
 #define MLIR_SUPPORT_STLEXTRAS_H
 
 #include "mlir/Support/LLVM.h"
-#include "llvm/ADT/iterator.h"
-#include <tuple>
+#include "llvm/ADT/STLExtras.h"
 
 namespace mlir {
 
@@ -178,6 +177,12 @@ public:
     return static_cast<DerivedT &>(*this);
   }
 
+  /// Returns the current index of the iterator.
+  ptrdiff_t getIndex() const { return index; }
+
+  /// Returns the current object of the iterator.
+  const ObjectType &getObject() const { return object; }
+
 protected:
   indexed_accessor_iterator(ObjectType object, ptrdiff_t index)
       : object(object), index(index) {}
@@ -185,6 +190,20 @@ protected:
   ptrdiff_t index;
 };
 
+/// Given a container of pairs, return a range over the second elements.
+template <typename ContainerTy> auto make_second_range(ContainerTy &&c) {
+  return llvm::map_range(
+      std::forward<ContainerTy>(c),
+      [](decltype((*std::begin(c))) elt) -> decltype((elt.second)) {
+        return elt.second;
+      });
+}
+
+/// Returns true of the given range only contains a single element.
+template <typename ContainerTy> bool has_single_element(ContainerTy &&c) {
+  auto it = std::begin(c), e = std::end(c);
+  return it != e && std::next(it) == e;
+}
 } // end namespace mlir
 
 // Allow tuples to be usable as DenseMap keys.

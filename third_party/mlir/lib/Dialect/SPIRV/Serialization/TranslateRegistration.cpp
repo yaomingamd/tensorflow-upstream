@@ -42,7 +42,7 @@ using namespace mlir;
 
 // Deserializes the SPIR-V binary module stored in the file named as
 // `inputFilename` and returns a module containing the SPIR-V module.
-OwningModuleRef deserializeModule(std::unique_ptr<llvm::MemoryBuffer> input,
+OwningModuleRef deserializeModule(const llvm::MemoryBuffer *input,
                                   MLIRContext *context) {
   Builder builder(context);
 
@@ -70,9 +70,10 @@ OwningModuleRef deserializeModule(std::unique_ptr<llvm::MemoryBuffer> input,
 }
 
 static TranslateToMLIRRegistration fromBinary(
-    "deserialize-spirv",
-    [](std::unique_ptr<llvm::MemoryBuffer> input, MLIRContext *context) {
-      return deserializeModule(std::move(input), context);
+    "deserialize-spirv", [](llvm::SourceMgr &sourceMgr, MLIRContext *context) {
+      assert(sourceMgr.getNumBuffers() == 1 && "expected one buffer");
+      return deserializeModule(
+          sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID()), context);
     });
 
 //===----------------------------------------------------------------------===//
@@ -85,15 +86,16 @@ LogicalResult serializeModule(ModuleOp module, llvm::raw_ostream &output) {
 
   SmallVector<uint32_t, 0> binary;
 
-  auto spirvModules = module.getOps<spirv::ModuleOp>();
+  SmallVector<spirv::ModuleOp, 1> spirvModules;
+  module.walk([&](spirv::ModuleOp op) { spirvModules.push_back(op); });
 
-  if (spirvModules.begin() == spirvModules.end())
+  if (spirvModules.empty())
     return module.emitError("found no 'spv.module' op");
 
-  if (std::next(spirvModules.begin()) != spirvModules.end())
+  if (spirvModules.size() != 1)
     return module.emitError("found more than one 'spv.module' op");
 
-  if (failed(spirv::serialize(*spirvModules.begin(), binary)))
+  if (failed(spirv::serialize(spirvModules[0], binary)))
     return failure();
 
   output.write(reinterpret_cast<char *>(binary.data()),
@@ -111,13 +113,9 @@ static TranslateFromMLIRRegistration
 // Round-trip registration
 //===----------------------------------------------------------------------===//
 
-LogicalResult roundTripModule(std::unique_ptr<llvm::MemoryBuffer> input,
+LogicalResult roundTripModule(llvm::SourceMgr &sourceMgr,
                               llvm::raw_ostream &output, MLIRContext *context) {
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(input), llvm::SMLoc());
-  SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, context);
-
-  // Parse the memory buffer as a MLIR module.
+  // Parse an MLIR module from the source manager.
   auto srcModule = OwningModuleRef(parseSourceFile(sourceMgr, context));
   if (!srcModule)
     return failure();
@@ -151,7 +149,7 @@ LogicalResult roundTripModule(std::unique_ptr<llvm::MemoryBuffer> input,
 
 static TranslateRegistration
     roundtrip("test-spirv-roundtrip",
-              [](std::unique_ptr<llvm::MemoryBuffer> input,
-                 llvm::raw_ostream &output, MLIRContext *context) {
-                return roundTripModule(std::move(input), output, context);
+              [](llvm::SourceMgr &sourceMgr, llvm::raw_ostream &output,
+                 MLIRContext *context) {
+                return roundTripModule(sourceMgr, output, context);
               });

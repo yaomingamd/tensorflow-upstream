@@ -90,8 +90,8 @@ struct BuiltinDialect : public Dialect {
                   UnknownLoc>();
 
     addTypes<ComplexType, FloatType, FunctionType, IndexType, IntegerType,
-             MemRefType, NoneType, OpaqueType, RankedTensorType, TupleType,
-             UnrankedTensorType, VectorType>();
+             MemRefType, UnrankedMemRefType, NoneType, OpaqueType,
+             RankedTensorType, TupleType, UnrankedTensorType, VectorType>();
 
     // TODO: These operations should be moved to a different dialect when they
     // have been fully decoupled from the core.
@@ -636,7 +636,7 @@ IntegerSet IntegerSet::get(unsigned dimCount, unsigned symbolCount,
   };
 
   // If this instance is uniqued, then we handle it separately so that multiple
-  // threads may simulatenously access existing instances.
+  // threads may simultaneously access existing instances.
   if (constraints.size() < IntegerSet::kUniquingThreshold) {
     auto key = std::make_tuple(dimCount, symbolCount, constraints, eqFlags);
     return safeGetOrCreate(impl.integerSets, key, impl.affineMutex,

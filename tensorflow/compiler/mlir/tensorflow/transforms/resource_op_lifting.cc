@@ -37,6 +37,8 @@ namespace TFDevice {
 
 namespace {
 
+constexpr char kDTypeAttr[] = "dtype";
+
 // This pass lifts resource variable operations outside of device computation.
 // This is useful because a lot of accelerator devices can not interact with
 // resource variables directly..
@@ -49,7 +51,7 @@ namespace {
 //   %init_value = "tf.ReadVariableOp"(%resource_handle)
 //   "tf.AssignAddVariableOp"(%resource_handle, %init_value)
 //   %new_value = "tf.ReadVariableOp"(%resource_handle)
-//   "tf_device.return"(%new_value)
+//   tf_device.return %new_value
 // })
 //
 // After this pass, the computation would become:
@@ -58,7 +60,7 @@ namespace {
 // %init_value = "tf.ReadVariableOp"(%resource_handle)
 // %1:2 = "tf_device.launch"() ( {
 //   %new_value = "tf.AddV2"(%init_value, %init_value)
-//   "tf_device.return"(%new_value, %new_value)
+//   tf_device.return %new_value, %new_value
 // })
 // "tf.AssignVariableOp"(%resource_handle, %1#1)
 //
@@ -74,67 +76,6 @@ namespace {
 struct ResourceOpLiftingPass : public FunctionPass<ResourceOpLiftingPass> {
   void runOnFunction() override;
 };
-
-// Rewrites `tf.AssignAddVariableOp` into a primitive resource/computation ops.
-// Specifically:
-//
-// tf.AssignAddVariableOp(%res, %0)
-//
-// Becomes
-//
-// %res_val = tf.ReadVariableOp(%res)
-// %1 = tf.AddV2(%res_val, %0)
-// tf.AssignVariableOp(%res, %1)
-LogicalResult RewriteAssignAddVariableOp(TF::AssignAddVariableOp assign_add_op,
-                                         OpBuilder* builder) {
-  // Read mangled dtype, which indicates type of data stored in resource
-  // variable. It can then be used to construct type needed for both
-  // ReadVariableOp and AssignVariableOp.
-  StringAttr mangled_dtype_attr =
-      assign_add_op.getAttrOfType<StringAttr>("dtype");
-  std::string type_string = mangled_dtype_attr.getValue();
-  tensorflow::DataType dtype_proto;
-  auto s =
-      tensorflow::mangling_util::DemangleDataType(type_string, &dtype_proto);
-  if (!s.ok()) return assign_add_op.emitError() << s.error_message();
-
-  Type type;
-  s = tensorflow::ConvertDataType(dtype_proto, *builder, &type);
-  if (!s.ok()) return assign_add_op.emitError() << s.error_message();
-  type = builder->getTensorType(type);
-
-  builder->setInsertionPoint(assign_add_op);
-
-  auto read_variable_op = builder->create<TF::ReadVariableOp>(
-      assign_add_op.getLoc(), type, assign_add_op.resource());
-  read_variable_op.setAttr(builder->getIdentifier("dtype"), mangled_dtype_attr);
-
-  auto add_op = builder->create<TF::AddV2Op>(
-      assign_add_op.getLoc(), read_variable_op.value(), assign_add_op.value());
-
-  auto assign_variable_op = builder->create<TF::AssignVariableOp>(
-      assign_add_op.getLoc(), assign_add_op.resource(), add_op.z());
-  assign_variable_op.setAttr(builder->getIdentifier("dtype"),
-                             mangled_dtype_attr);
-
-  assign_add_op.erase();
-  return success();
-}
-
-// Rewrites an operation that updates value of a resource variable into its
-// equivalent primitive ones so that following analysis/rewrite can be easier.
-// If given op is not a composite resource store op or is an unsupported op, no
-// change is applied.
-// TODO(ycao): Explore using pattern rewriter after needed operations are
-// defined.
-// TODO(ycao): Add support for other composite resource store ops.
-LogicalResult MaybeRewriteCompositeResourceStore(Operation* op,
-                                                 OpBuilder* builder) {
-  if (auto assign_add_op = dyn_cast<TF::AssignAddVariableOp>(op)) {
-    return RewriteAssignAddVariableOp(assign_add_op, builder);
-  }
-  return success();
-}
 
 // Performs store-load forwarding. This effectively removes
 // 1) Any resource loads after a store to that same resource is done
@@ -293,10 +234,6 @@ void SinkResourceStores(tf_device::LaunchOp launch_op, OpBuilder* builder) {
 void HoistResourceOpsFromLaunchOp(tf_device::LaunchOp launch_op) {
   ModuleOp m = launch_op.getParentOfType<ModuleOp>();
   OpBuilder builder(m);
-
-  // Rewrite composite resource store operations into primitive ones.
-  launch_op.walk(
-      [&](Operation* op) { MaybeRewriteCompositeResourceStore(op, &builder); });
 
   // Perform store-load forwarding. So that each resource is only loaded with
   // its initial value and is only stored with its final value.

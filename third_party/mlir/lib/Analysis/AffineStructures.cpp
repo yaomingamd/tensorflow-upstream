@@ -659,9 +659,8 @@ LogicalResult FlatAffineConstraints::composeMap(const AffineValueMap *vMap) {
 
   // Add localCst information.
   if (localCst.getNumLocalIds() > 0) {
-    SmallVector<Value *, 8> values(vMap->getOperands().begin(),
-                                   vMap->getOperands().end());
-    localCst.setIdValues(0, localCst.getNumDimAndSymbolIds(), values);
+    localCst.setIdValues(0, /*end=*/localCst.getNumDimAndSymbolIds(),
+                         /*values=*/vMap->getOperands());
     // Align localCst and this.
     mergeAndAlignIds(/*offset=*/0, &localCst, this);
     // Finally, append localCst to this constraint set.
@@ -822,7 +821,7 @@ void FlatAffineConstraints::addInductionVarOrTerminalSymbol(Value *id) {
     return;
 
   // Caller is expected to fully compose map/operands if necessary.
-  assert((isTopLevelSymbol(id) || isForInductionVar(id)) &&
+  assert((isTopLevelValue(id) || isForInductionVar(id)) &&
          "non-terminal symbol / loop IV expected");
   // Outer loop IVs could be used in forOp's bounds.
   if (auto loop = getForInductionVarOwner(id)) {
@@ -916,7 +915,7 @@ findConstraintWithNonZeroAt(const FlatAffineConstraints &constraints,
 }
 
 // Normalizes the coefficient values across all columns in 'rowIDx' by their
-// GCD in equality or inequality contraints as specified by 'isEq'.
+// GCD in equality or inequality constraints as specified by 'isEq'.
 template <bool isEq>
 static void normalizeConstraintByGCD(FlatAffineConstraints *constraints,
                                      unsigned rowIdx) {
@@ -1161,7 +1160,7 @@ bool FlatAffineConstraints::isEmpty() const {
         getBestIdToEliminate(tmpCst, 0, tmpCst.getNumIds()));
     // Check for a constraint explosion. This rarely happens in practice, but
     // this check exists as a safeguard against improperly constructed
-    // constraint systems or artifically created arbitrarily complex systems
+    // constraint systems or artificially created arbitrarily complex systems
     // that aren't the intended use case for FlatAffineConstraints. This is
     // needed since FM has a worst case exponential complexity in theory.
     if (tmpCst.getNumConstraints() >= kExplosionFactor * getNumIds()) {
@@ -1233,7 +1232,7 @@ void FlatAffineConstraints::GCDTightenInequalities() {
   }
 }
 
-// Eliminates all identifer variables in column range [posStart, posLimit).
+// Eliminates all identifier variables in column range [posStart, posLimit).
 // Returns the number of variables eliminated.
 unsigned FlatAffineConstraints::gaussianEliminateIds(unsigned posStart,
                                                      unsigned posLimit) {
@@ -1525,7 +1524,7 @@ void FlatAffineConstraints::removeRedundantInequalities() {
 
 std::pair<AffineMap, AffineMap> FlatAffineConstraints::getLowerAndUpperBound(
     unsigned pos, unsigned offset, unsigned num, unsigned symStartPos,
-    ArrayRef<AffineExpr> localExprs, MLIRContext *context) {
+    ArrayRef<AffineExpr> localExprs, MLIRContext *context) const {
   assert(pos + offset < getNumDimIds() && "invalid dim start pos");
   assert(symStartPos >= (pos + offset) && "invalid sym start pos");
   assert(getNumLocalIds() == localExprs.size() &&
@@ -1712,7 +1711,7 @@ void FlatAffineConstraints::getSliceBounds(unsigned offset, unsigned num,
         // Work on a copy so that we don't update this constraint system.
         if (!tmpClone) {
           tmpClone.emplace(FlatAffineConstraints(*this));
-          // Removing redudnant inequalities is necessary so that we don't get
+          // Removing redundant inequalities is necessary so that we don't get
           // redundant loop bounds.
           tmpClone->removeRedundantInequalities();
         }
@@ -1766,7 +1765,7 @@ FlatAffineConstraints::addLowerOrUpperBound(unsigned pos, AffineMap boundMap,
   if (eq)
     lower = true;
 
-  // Fully commpose map and operands; canonicalize and simplify so that we
+  // Fully compose map and operands; canonicalize and simplify so that we
   // transitively get to terminal symbols or loop IVs.
   auto map = boundMap;
   SmallVector<Value *, 4> operands(boundOperands.begin(), boundOperands.end());
@@ -1996,7 +1995,7 @@ void FlatAffineConstraints::setDimSymbolSeparation(unsigned newSymbolCount) {
   numSymbols = newSymbolCount;
 }
 
-/// Sets the specified identifer to a constant value.
+/// Sets the specified identifier to a constant value.
 void FlatAffineConstraints::setIdToConstant(unsigned pos, int64_t val) {
   unsigned offset = equalities.size();
   equalities.resize(equalities.size() + numReservedCols);
@@ -2006,7 +2005,7 @@ void FlatAffineConstraints::setIdToConstant(unsigned pos, int64_t val) {
   equalities[offset + getNumCols() - 1] = -val;
 }
 
-/// Sets the specified identifer to a constant value; asserts if the id is not
+/// Sets the specified identifier to a constant value; asserts if the id is not
 /// found.
 void FlatAffineConstraints::setIdToConstant(Value &id, int64_t val) {
   unsigned pos;

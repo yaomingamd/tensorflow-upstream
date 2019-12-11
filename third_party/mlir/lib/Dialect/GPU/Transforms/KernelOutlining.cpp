@@ -1,4 +1,4 @@
-//===- KernelOutlining.cpp - Implementation of GPU kernel outling ---------===//
+//===- KernelOutlining.cpp - Implementation of GPU kernel outlining -------===//
 //
 // Copyright 2019 The MLIR Authors.
 //
@@ -24,6 +24,7 @@
 #include "mlir/Dialect/StandardOps/Ops.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
@@ -43,10 +44,10 @@ static void createForAllDimensions(OpBuilder &builder, Location loc,
 static void injectGpuIndexOperations(Location loc, FuncOp kernelFunc) {
   OpBuilder OpBuilder(kernelFunc.getBody());
   SmallVector<Value *, 12> indexOps;
-  createForAllDimensions<gpu::BlockId>(OpBuilder, loc, indexOps);
-  createForAllDimensions<gpu::ThreadId>(OpBuilder, loc, indexOps);
-  createForAllDimensions<gpu::GridDim>(OpBuilder, loc, indexOps);
-  createForAllDimensions<gpu::BlockDim>(OpBuilder, loc, indexOps);
+  createForAllDimensions<gpu::BlockIdOp>(OpBuilder, loc, indexOps);
+  createForAllDimensions<gpu::ThreadIdOp>(OpBuilder, loc, indexOps);
+  createForAllDimensions<gpu::GridDimOp>(OpBuilder, loc, indexOps);
+  createForAllDimensions<gpu::BlockDimOp>(OpBuilder, loc, indexOps);
   // Replace the leading 12 function args with the respective thread/block index
   // operations. Iterate backwards since args are erased and indices change.
   for (int i = 11; i >= 0; --i) {
@@ -56,22 +57,34 @@ static void injectGpuIndexOperations(Location loc, FuncOp kernelFunc) {
   }
 }
 
-// Move all constant arguments of the given kernel function into the function,
-// thereby reducing the number of kernel arguments.
-static gpu::LaunchFuncOp inlineConstants(FuncOp kernelFunc,
-                                         gpu::LaunchFuncOp launch) {
+static bool isInliningBeneficiary(Operation *op) {
+  return isa<ConstantOp>(op) || isa<DimOp>(op);
+}
+
+// Move arguments of the given kernel function into the function if this reduces
+// the number of kernel arguments.
+static gpu::LaunchFuncOp inlineBeneficiaryOps(FuncOp kernelFunc,
+                                              gpu::LaunchFuncOp launch) {
   OpBuilder kernelBuilder(kernelFunc.getBody());
   auto &firstBlock = kernelFunc.getBody().front();
   llvm::SmallVector<Value *, 8> newLaunchArgs;
+  BlockAndValueMapping map;
+  for (int i = 0, e = launch.getNumKernelOperands(); i < e; ++i) {
+    map.map(launch.getKernelOperand(i), kernelFunc.getArgument(i));
+  }
   for (int i = launch.getNumKernelOperands() - 1; i >= 0; --i) {
     auto operandOp = launch.getKernelOperand(i)->getDefiningOp();
-    auto constant = dyn_cast_or_null<ConstantOp>(operandOp);
-    if (!constant) {
+    if (!operandOp || !isInliningBeneficiary(operandOp)) {
       newLaunchArgs.push_back(launch.getKernelOperand(i));
       continue;
     }
-    auto newConstant = kernelBuilder.clone(*operandOp);
-    firstBlock.getArgument(i)->replaceAllUsesWith(newConstant->getResult(0));
+    // Only inline operations that do not create new arguments.
+    if (!llvm::all_of(operandOp->getOperands(),
+                      [map](Value *value) { return map.contains(value); })) {
+      continue;
+    }
+    auto clone = kernelBuilder.clone(*operandOp, map);
+    firstBlock.getArgument(i)->replaceAllUsesWith(clone->getResult(0));
     firstBlock.eraseArgument(i);
   }
   if (newLaunchArgs.size() == launch.getNumKernelOperands())
@@ -102,12 +115,12 @@ static FuncOp outlineKernelFunc(gpu::LaunchOp launchOp) {
   std::string kernelFuncName =
       Twine(launchOp.getParentOfType<FuncOp>().getName(), "_kernel").str();
   FuncOp outlinedFunc = FuncOp::create(loc, kernelFuncName, type);
-  outlinedFunc.getBody().takeBody(launchOp.getBody());
+  outlinedFunc.getBody().takeBody(launchOp.body());
   Builder builder(launchOp.getContext());
   outlinedFunc.setAttr(gpu::GPUDialect::getKernelFuncAttrName(),
                        builder.getUnitAttr());
   injectGpuIndexOperations(loc, outlinedFunc);
-  outlinedFunc.walk([](gpu::Return op) {
+  outlinedFunc.walk([](gpu::ReturnOp op) {
     OpBuilder replacer(op);
     replacer.create<ReturnOp>(op.getLoc());
     op.erase();
@@ -120,12 +133,10 @@ static FuncOp outlineKernelFunc(gpu::LaunchOp launchOp) {
 // constant region arguments inlined.
 static void convertToLaunchFuncOp(gpu::LaunchOp &launchOp, FuncOp kernelFunc) {
   OpBuilder builder(launchOp);
-  SmallVector<Value *, 4> kernelOperandValues(
-      launchOp.getKernelOperandValues());
   auto launchFuncOp = builder.create<gpu::LaunchFuncOp>(
       launchOp.getLoc(), kernelFunc, launchOp.getGridSizeOperandValues(),
-      launchOp.getBlockSizeOperandValues(), kernelOperandValues);
-  inlineConstants(kernelFunc, launchFuncOp);
+      launchOp.getBlockSizeOperandValues(), launchOp.getKernelOperandValues());
+  inlineBeneficiaryOps(kernelFunc, launchFuncOp);
   launchOp.erase();
 }
 
@@ -143,55 +154,62 @@ namespace {
 class GpuKernelOutliningPass : public ModulePass<GpuKernelOutliningPass> {
 public:
   void runOnModule() override {
-    ModuleManager moduleManager(getModule());
+    SymbolTable symbolTable(getModule());
+    bool modified = false;
     for (auto func : getModule().getOps<FuncOp>()) {
       // Insert just after the function.
       Block::iterator insertPt(func.getOperation()->getNextNode());
       func.walk([&](gpu::LaunchOp op) {
         FuncOp outlinedFunc = outlineKernelFunc(op);
 
-        // Potentially renames outlinedFunc to make symbol unique.
-        moduleManager.insert(insertPt, outlinedFunc);
+        // Create nested module and insert outlinedFunc. The module will
+        // originally get the same name as the function, but may be renamed on
+        // insertion into the parent module.
+        auto kernelModule = createKernelModule(outlinedFunc, symbolTable);
+        symbolTable.insert(kernelModule, insertPt);
 
         // Potentially changes signature, pulling in constants.
         convertToLaunchFuncOp(op, outlinedFunc);
-
-        // Create clone and move body from outlinedFunc.
-        auto kernelFunc = outlinedFunc.cloneWithoutRegions();
-        kernelFunc.getBody().takeBody(outlinedFunc.getBody());
-
-        // Create nested module and insert kernelFunc.
-        auto kernelModule = createKernelModule(kernelFunc, moduleManager);
-        getModule().insert(insertPt, kernelModule);
+        modified = true;
       });
     }
+
+    // If any new module was inserted in this module, annotate this module as
+    // a container module.
+    if (modified)
+      getModule().setAttr(gpu::GPUDialect::getContainerModuleAttrName(),
+                          UnitAttr::get(&getContext()));
   }
 
 private:
   // Returns a module containing kernelFunc and all callees (recursive).
   ModuleOp createKernelModule(FuncOp kernelFunc,
-                              const ModuleManager &parentModuleManager) {
+                              const SymbolTable &parentSymbolTable) {
     auto context = getModule().getContext();
-    auto kernelModule = ModuleOp::create(UnknownLoc::get(context));
+    Builder builder(context);
+    auto kernelModule =
+        ModuleOp::create(builder.getUnknownLoc(), kernelFunc.getName());
     kernelModule.setAttr(gpu::GPUDialect::getKernelModuleAttrName(),
-                         UnitAttr::get(context));
-    ModuleManager moduleManager(kernelModule);
+                         builder.getUnitAttr());
+    SymbolTable symbolTable(kernelModule);
+    symbolTable.insert(kernelFunc);
 
-    llvm::SmallVector<FuncOp, 8> funcsToInsert = {kernelFunc};
-    while (!funcsToInsert.empty()) {
-      FuncOp func = funcsToInsert.pop_back_val();
-      moduleManager.insert(func);
+    llvm::SmallVector<Operation *, 8> symbolDefWorklist = {kernelFunc};
+    while (!symbolDefWorklist.empty()) {
+      if (Optional<SymbolTable::UseRange> symbolUses =
+              SymbolTable::getSymbolUses(symbolDefWorklist.pop_back_val())) {
+        for (SymbolTable::SymbolUse symbolUse : *symbolUses) {
+          StringRef symbolName =
+              symbolUse.getSymbolRef().cast<FlatSymbolRefAttr>().getValue();
+          if (symbolTable.lookup(symbolName))
+            continue;
 
-      // TODO(b/141098412): Support any op with a callable interface.
-      func.walk([&](CallOp call) {
-        auto callee = call.callee();
-        if (moduleManager.lookupSymbol<FuncOp>(callee))
-          return;
-
-        auto calleeFromParent =
-            parentModuleManager.lookupSymbol<FuncOp>(callee);
-        funcsToInsert.push_back(calleeFromParent.clone());
-      });
+          Operation *symbolDefClone =
+              parentSymbolTable.lookup(symbolName)->clone();
+          symbolDefWorklist.push_back(symbolDefClone);
+          symbolTable.insert(symbolDefClone);
+        }
+      }
     }
 
     return kernelModule;

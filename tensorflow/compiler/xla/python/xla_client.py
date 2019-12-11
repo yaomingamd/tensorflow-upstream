@@ -25,6 +25,7 @@ import inspect
 import itertools
 import os
 
+from absl import logging
 import numpy as np
 
 import six
@@ -83,12 +84,29 @@ class Backend(object):
     ]
 
   @abc.abstractmethod
-  def make_tuple(self, c_buffers, device_ordinal):
+  def make_tuple(self, c_buffers, device):
     """Makes a tuple from a sequence of backend buffer objects."""
 
   @abc.abstractmethod
   def compile(self, computation, compile_options):
     """Compiles a computation. Returns an executable."""
+
+  @abc.abstractmethod
+  def get_default_device_assignment(self, num_replicas):
+    """Returns the default device assignment that `compile` would use.
+
+    If `compile_options.device_assignment` isn't set, `compile` will pick a
+    deterministic device assignment based on the number of replicas, possibly
+    optimizing for device locality. This method returns that assignment, which
+    is useful for e.g. manually replicating a value before passing it to a
+    compiled executable.
+
+    Args:
+      num_replicas: the number of replicas needed.
+
+    Returns:
+      A list of Devices of length `num_replicas` indexed by replica ID.
+    """
 
 
 class LocalBackend(Backend):
@@ -124,8 +142,8 @@ class LocalBackend(Backend):
       device = self.local_devices()[0]
     return _xla.PyLocalBuffer.from_python(pyval, self.client, device)
 
-  def make_tuple(self, c_buffers, device_ordinal):
-    return _xla.PyLocalBuffer.make_tuple(c_buffers, self.client, device_ordinal)
+  def make_tuple(self, c_buffers, device):
+    return _xla.PyLocalBuffer.make_tuple(c_buffers, self.client, device)
 
   def compile(self, c_computation, compile_options):
     options = _xla.ExecutableBuildOptions()
@@ -141,6 +159,9 @@ class LocalBackend(Backend):
                                         compile_options.argument_layouts,
                                         options, self.client,
                                         compile_options.device_assignment)
+
+  def get_default_device_assignment(self, num_replicas):
+    return self.client.GetDefaultDeviceAssignment(num_replicas)
 
   def serialize(self, executable):
     return self.client.SerializeExecutable(executable)
@@ -213,12 +234,17 @@ def _get_local_backends():
 
   _local_backends = collections.OrderedDict()
   for name, factory in _local_backend_factories.items():
+    logging.vlog(2, "Initializing backend '%s'" % name)
     try:
       backend = factory()
     except RuntimeError:
-      # If the backend isn't built into the binary, or if it has no devices, we
-      # expect a RuntimeError.
-      continue
+      if name == 'cpu':
+        # We always expect CPU to initialize successfully.
+        raise
+      else:
+        # If the backend isn't built into the binary, or if it has no devices,
+        # we expect a RuntimeError.
+        continue
     _local_backends[name] = backend
   return _local_backends
 
@@ -268,6 +294,8 @@ def CurrentSourceInfoMetadata(op_type=None, op_name=None, skip_frames=1):
 
 PrimitiveType = _xla.PrimitiveType
 
+bfloat16 = _xla.bfloat16_dtype()
+
 XLA_ELEMENT_TYPE_TO_DTYPE = {
     PrimitiveType.PRED: np.dtype('bool'),
     PrimitiveType.S8: np.dtype('int8'),
@@ -278,6 +306,7 @@ XLA_ELEMENT_TYPE_TO_DTYPE = {
     PrimitiveType.U16: np.dtype('uint16'),
     PrimitiveType.U32: np.dtype('uint32'),
     PrimitiveType.U64: np.dtype('uint64'),
+    PrimitiveType.BF16: np.dtype(bfloat16),
     PrimitiveType.F16: np.dtype('float16'),
     PrimitiveType.F32: np.dtype('float32'),
     PrimitiveType.F64: np.dtype('float64'),
@@ -392,9 +421,9 @@ class Buffer(object):
     return backend.buffers_from_pyvals(pyvals_and_devices)
 
   @staticmethod
-  def make_tuple(buffers, backend=None, device=0):
+  def make_tuple(buffers, device, backend=None):
     backend = backend or get_local_backend()
-    return backend.make_tuple(buffers, device_ordinal=device)
+    return backend.make_tuple(buffers, device)
 
   # Buffer is not an instantiable type and exists only for its static methods.
   # The underlying buffer objects are C++ object with the following
@@ -585,6 +614,9 @@ class Computation(object):
   def GetReturnValueShape(self):
     return self._c_computation.GetProgramShape().result_shape()
 
+  def Hash(self):
+    return self._c_computation.Hash()
+
 
 # An Executable is a C++ class that duck types with the following API:
 # class Executable(object):
@@ -608,8 +640,7 @@ class Computation(object):
 #       sole, zero'th replica's output is returned instead, as a Buffer.
 #     """
 #
-# There are different implementations of Executable for the Local and XRT
-# backends.
+# There are different implementations of Executable for different backends.
 
 
 def execute_with_python_values(executable, arguments=(), backend=None):
@@ -731,6 +762,17 @@ class ComputationBuilder(object):
   def ClearOpMetadata(self):
     """Clear metadata for operations that are about to be enqueued."""
     self._builder.ClearOpMetadata()
+
+  def SetSharding(self, sharding):
+    """Set sharding that will be attached to all instructions until cleared."""
+    self._builder.SetSharding(sharding)
+
+  def ClearSharding(self):
+    """Clears the sharding.
+
+    Ops will be shared according to the default placement policy.
+    """
+    self._builder.ClearSharding()
 
   def CreateToken(self):
     """Enqueues a CreateToken op onto the computation.
@@ -992,7 +1034,7 @@ class ComputationBuilder(object):
     """
     replica_groups_protos = _get_replica_groups_protos(replica_groups)
     return ops.AllReduce(operand, computation.computation,
-                         replica_groups_protos, None)
+                         replica_groups_protos, None, None)
 
   def AllToAll(self,
                operand,
@@ -1672,6 +1714,7 @@ _BINARY_OPS = [
     'ShiftRightLogical',
     'Atan2',
     'Complex',
+    'NextAfter',
 ]
 
 _OTHER_OPS = [
@@ -1801,6 +1844,20 @@ class ConvolutionDimensionNumbers(object):
     self.output_batch_dimension = 0
     self.output_feature_dimension = 0
     self.output_spatial_dimensions = []
+
+
+class OpSharding(object):
+  """Python representation of a xla.OpSharding protobuf."""
+  __slots__ = ('type', 'tile_assignment_dimensions', 'tile_assignment_devices',
+               'tuple_shardings')
+
+  Type = _xla.OpSharding_Type
+
+  def __init__(self):
+    self.type = self.Type.REPLICATED
+    self.tile_assignment_dimensions = []
+    self.tile_assignment_devices = []
+    self.tuple_shardings = []
 
 
 class PrecisionConfig(object):

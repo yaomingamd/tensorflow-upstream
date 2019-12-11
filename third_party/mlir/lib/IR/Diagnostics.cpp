@@ -25,14 +25,21 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Regex.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
 using namespace mlir::detail;
+
+static llvm::cl::opt<bool> printStackTraceOnDiagnostic(
+    "mlir-print-stacktrace-on-diagnostic",
+    llvm::cl::desc("When a diagnostic is emitted, also print the stack trace "
+                   "as an attached note"));
 
 //===----------------------------------------------------------------------===//
 // DiagnosticArgument
@@ -74,7 +81,7 @@ void DiagnosticArgument::print(raw_ostream &os) const {
     os << getAsInteger();
     break;
   case DiagnosticArgumentKind::Operation:
-    os << getAsOperation();
+    getAsOperation().print(os, OpPrintingFlags().useLocalScope());
     break;
   case DiagnosticArgumentKind::String:
     os << getAsString();
@@ -285,6 +292,18 @@ static InFlightDiagnostic emitDiag(Location location,
   auto diag = diagEngine.emit(location, severity);
   if (!message.isTriviallyEmpty())
     diag << message;
+
+  // Add the stack trace as a note if necessary.
+  if (printStackTraceOnDiagnostic) {
+    std::string bt;
+    {
+      llvm::raw_string_ostream stream(bt);
+      llvm::sys::PrintStackTrace(stream);
+    }
+    if (!bt.empty())
+      diag.attachNote() << "diagnostic emitted with trace:\n" << bt;
+  }
+
   return diag;
 }
 
@@ -551,8 +570,8 @@ struct SourceMgrDiagnosticVerifierHandlerImpl {
   llvm::StringMap<SmallVector<ExpectedDiag, 2>> expectedDiagsPerFile;
 
   /// Regex to match the expected diagnostics format.
-  llvm::Regex expected = llvm::Regex(
-      "expected-(error|note|remark|warning) *(@[+-][0-9]+)? *{{(.*)}}");
+  llvm::Regex expected = llvm::Regex("expected-(error|note|remark|warning) "
+                                     "*(@([+-][0-9]+|above|below))? *{{(.*)}}");
 };
 } // end namespace detail
 } // end namespace mlir
@@ -590,13 +609,28 @@ SourceMgrDiagnosticVerifierHandlerImpl::computeExpectedDiags(
     return llvm::None;
   auto &expectedDiags = expectedDiagsPerFile[buf->getBufferIdentifier()];
 
+  // The number of the last line that did not correlate to a designator.
+  unsigned lastNonDesignatorLine = 0;
+
+  // The indices of designators that apply to the next non designator line.
+  SmallVector<unsigned, 1> designatorsForNextLine;
+
   // Scan the file for expected-* designators.
   SmallVector<StringRef, 100> lines;
   buf->getBuffer().split(lines, '\n');
   for (unsigned lineNo = 0, e = lines.size(); lineNo < e; ++lineNo) {
-    SmallVector<StringRef, 3> matches;
-    if (!expected.match(lines[lineNo], &matches))
+    SmallVector<StringRef, 4> matches;
+    if (!expected.match(lines[lineNo], &matches)) {
+      // Check for designators that apply to this line.
+      if (!designatorsForNextLine.empty()) {
+        for (unsigned diagIndex : designatorsForNextLine)
+          expectedDiags[diagIndex].lineNo = lineNo + 1;
+        designatorsForNextLine.clear();
+      }
+      lastNonDesignatorLine = lineNo;
       continue;
+    }
+
     // Point to the start of expected-*.
     auto expectedStart = llvm::SMLoc::getFromPointer(matches[0].data());
 
@@ -612,16 +646,33 @@ SourceMgrDiagnosticVerifierHandlerImpl::computeExpectedDiags(
       kind = DiagnosticSeverity::Note;
     }
 
-    ExpectedDiag record{kind, lineNo + 1, matches[3], expectedStart, false};
+    ExpectedDiag record{kind, lineNo + 1, matches[4], expectedStart, false};
     auto offsetMatch = matches[2];
     if (!offsetMatch.empty()) {
-      int offset;
+      offsetMatch = offsetMatch.drop_front(1);
+
       // Get the integer value without the @ and +/- prefix.
-      if (!offsetMatch.drop_front(2).getAsInteger(0, offset)) {
-        if (offsetMatch[1] == '+')
+      if (offsetMatch[0] == '+' || offsetMatch[0] == '-') {
+        int offset;
+        offsetMatch.drop_front().getAsInteger(0, offset);
+
+        if (offsetMatch.front() == '+')
           record.lineNo += offset;
         else
           record.lineNo -= offset;
+      } else if (offsetMatch.consume_front("above")) {
+        // If the designator applies 'above' we add it to the last non
+        // designator line.
+        record.lineNo = lastNonDesignatorLine + 1;
+      } else {
+        // Otherwise, this is a 'below' designator and applies to the next
+        // non-designator line.
+        assert(offsetMatch.consume_front("below"));
+        designatorsForNextLine.push_back(expectedDiags.size());
+
+        // Set the line number to the last in the case that this designator ends
+        // up dangling.
+        record.lineNo = e;
       }
     }
     expectedDiags.push_back(record);
@@ -638,7 +689,7 @@ SourceMgrDiagnosticVerifierHandler::SourceMgrDiagnosticVerifierHandler(
   for (unsigned i = 0, e = mgr.getNumBuffers(); i != e; ++i)
     (void)impl->computeExpectedDiags(mgr.getMemoryBuffer(i + 1));
 
-  // Register a handler to verfy the diagnostics.
+  // Register a handler to verify the diagnostics.
   setHandler([&](Diagnostic &diag) {
     // Process the main diagnostics.
     process(diag);
@@ -654,7 +705,7 @@ SourceMgrDiagnosticVerifierHandler::SourceMgrDiagnosticVerifierHandler(
     : SourceMgrDiagnosticVerifierHandler(srcMgr, ctx, llvm::errs()) {}
 
 SourceMgrDiagnosticVerifierHandler::~SourceMgrDiagnosticVerifierHandler() {
-  // Ensure that all expected diagnosics were handled.
+  // Ensure that all expected diagnostics were handled.
   (void)verify();
 }
 

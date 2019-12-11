@@ -124,7 +124,7 @@ class Layer(module.Module):
       using Python control flow. If `False`, we assume that the layer can
       safely be used to generate a static computation graph.
 
-  Read-only properties:
+  Attributes (read-only properties):
     name: The name of the layer (string).
     dtype: The dtype of the layer's computations and weights. If mixed
       precision is used with a `tf.keras.mixed_precision.experimental.Policy`,
@@ -198,6 +198,7 @@ class Layer(module.Module):
     # Provides information about which inputs are compatible with the layer.
     self.input_spec = None
     self.supports_masking = False
+    self._supports_ragged_inputs = False
 
     self._init_set_name(name)
     self._activity_regularizer = kwargs.pop('activity_regularizer', None)
@@ -344,8 +345,8 @@ class Layer(module.Module):
       aggregation: Indicates how a distributed variable will be aggregated.
         Accepted values are constants defined in the class
         `tf.VariableAggregation`.
-      **kwargs: Additional keyword arguments. Accepted values are `getter` and
-        `collections`.
+      **kwargs: Additional keyword arguments. Accepted values are `getter`,
+        `collections`, `experimental_autocast` and `caching_device`.
 
     Returns:
       The created variable. Usually either a `Variable` or `ResourceVariable`
@@ -362,13 +363,16 @@ class Layer(module.Module):
       shape = ()
     # Validate optional keyword arguments.
     for kwarg in kwargs:
-      if kwarg not in ['getter', 'collections', 'experimental_autocast']:
+      if kwarg not in ['getter', 'collections', 'experimental_autocast',
+                       'caching_device']:
         raise TypeError('Unknown keyword argument:', kwarg)
     getter = kwargs.pop('getter', base_layer_utils.make_variable)
     collections_arg = kwargs.pop('collections', None)
     # 'experimental_autocast' can be set to False by the caller to indicate an
     # AutoCastVariable should never be created.
     autocast = kwargs.pop('experimental_autocast', True)
+    # See the docstring for tf.Variable about the details for caching_device.
+    caching_device = kwargs.pop('caching_device', None)
 
     if dtype is None:
       dtype = self.dtype or backend.floatx()
@@ -414,6 +418,13 @@ class Layer(module.Module):
       def getter(*args, **kwargs):  # pylint: disable=function-redefined
         variable = old_getter(*args, **kwargs)
         return autocast_variable.create_autocast_variable(variable)
+      # Also the caching_device does not work with the mixed precision API,
+      # disable it if it is specified.
+      # TODO(b/142020079): Reenable it once the bug is fixed.
+      if caching_device is not None:
+        tf_logging.warn('`caching_device` does not work with mixed precision '
+                        'API. Ignoring user specified `caching_device`.')
+        caching_device = None
 
     variable = self._add_variable_with_custom_getter(
         name=name,
@@ -431,7 +442,8 @@ class Layer(module.Module):
         use_resource=use_resource,
         collections=collections_arg,
         synchronization=synchronization,
-        aggregation=aggregation)
+        aggregation=aggregation,
+        caching_device=caching_device)
     backend.track_variable(variable)
 
     if regularizer is not None:
@@ -723,6 +735,12 @@ class Layer(module.Module):
         # are casted, not before.
         input_spec.assert_input_compatibility(self.input_spec, inputs,
                                               self.name)
+        if (any(isinstance(x, ragged_tensor.RaggedTensor) for x in input_list)
+            and self._supports_ragged_inputs is False):  # pylint: disable=g-bool-id-comparison
+          raise ValueError('Layer %s does not support RaggedTensors as input. '
+                           'Inputs received: %s. You can try converting your '
+                           'input to an uniform tensor.' % (self.name, inputs))
+
         graph = backend.get_graph()
         with graph.as_default(), backend.name_scope(self._name_scope()):
           # Build layer if applicable (if the `build` method has been
@@ -1010,8 +1028,12 @@ class Layer(module.Module):
         (e.g. weight regularization losses).
     """
     def _tag_unconditional(loss):
+      """Process the loss and tag it by setting loss._unconditional_loss."""
       if callable(loss):
-        loss = loss()
+        # We run the loss without autocasting, as regularizers are often
+        # numerically unstable in float16.
+        with base_layer_utils.autocast_context_manager(None):
+          loss = loss()
       if loss is None:
         return None  # Will be filtered out when computing the .losses property
       if not tensor_util.is_tensor(loss):
@@ -1172,8 +1194,17 @@ class Layer(module.Module):
         on this Layer, when executing in Eager mode.
       inputs: Deprecated, will be automatically inferred.
     """
-    if ds_context.has_strategy() and ds_context.in_cross_replica_context():
+    call_context = base_layer_utils.call_context()
+
+    if (ds_context.has_strategy() and
+        ds_context.in_cross_replica_context() and
+        # When saving the model, the distribution strategy context should be
+        # ignored, following the default path for adding updates.
+        not call_context.saving):
       # Updates don't need to be run in a cross-replica context.
+      # TODO(b/142574744): Relax this restriction so that metrics/variables
+      # created outside of a strategy scope can be updated in the cross-replica
+      # context.
       if (ops.executing_eagerly_outside_functions() and
           not base_layer_utils.is_in_keras_graph()):
         raise RuntimeError(  # pylint: disable=g-doc-exception
@@ -1182,7 +1213,6 @@ class Layer(module.Module):
       return
 
     updates = generic_utils.to_list(updates)
-    call_context = base_layer_utils.call_context()
 
     # All updates can be run immediately in Eager or in a tf.function.
     if base_layer_utils.is_in_eager_or_tf_function():
@@ -1234,6 +1264,36 @@ class Layer(module.Module):
   def set_weights(self, weights):
     """Sets the weights of the layer, from Numpy arrays.
 
+    The weights of a layer represent the state of the layer. This function
+    sets the weight values from numpy arrays. The weight values should be
+    passed in the order they are created by the layer. Note that the layer's
+    weights must be instantiated before calling this function by calling
+    the layer.
+
+    For example, a Dense layer returns a list of two values-- per-output
+    weights and the bias value. These can be used to set the weights of another
+    Dense layer:
+
+    >>> a = tf.keras.layers.Dense(1,
+    ...   kernel_initializer=tf.constant_initializer(1.))
+    >>> a_out = a(tf.convert_to_tensor([[1., 2., 3.]]))
+    >>> a.get_weights()
+    [array([[1.],
+           [1.],
+           [1.]], dtype=float32), array([0.], dtype=float32)]
+    >>> b = tf.keras.layers.Dense(1,
+    ...   kernel_initializer=tf.constant_initializer(2.))
+    >>> b_out = b(tf.convert_to_tensor([[10., 20., 30.]]))
+    >>> b.get_weights()
+    [array([[2.],
+           [2.],
+           [2.]], dtype=float32), array([0.], dtype=float32)]
+    >>> b.set_weights(a.get_weights())
+    >>> b.get_weights()
+    [array([[1.],
+           [1.],
+           [1.]], dtype=float32), array([0.], dtype=float32)]
+
     Arguments:
         weights: a list of Numpy arrays. The number
             of arrays and their shape must match
@@ -1283,6 +1343,35 @@ class Layer(module.Module):
 
   def get_weights(self):
     """Returns the current weights of the layer.
+
+    The weights of a layer represent the state of the layer. This function
+    returns both trainable and non-trainable weight values associated with this
+    layer as a list of Numpy arrays, which can in turn be used to load state
+    into similarly parameterized layers.
+
+    For example, a Dense layer returns a list of two values-- per-output
+    weights and the bias value. These can be used to set the weights of another
+    Dense layer:
+
+    >>> a = tf.keras.layers.Dense(1,
+    ...   kernel_initializer=tf.constant_initializer(1.))
+    >>> a_out = a(tf.convert_to_tensor([[1., 2., 3.]]))
+    >>> a.get_weights()
+    [array([[1.],
+           [1.],
+           [1.]], dtype=float32), array([0.], dtype=float32)]
+    >>> b = tf.keras.layers.Dense(1,
+    ...   kernel_initializer=tf.constant_initializer(2.))
+    >>> b_out = b(tf.convert_to_tensor([[10., 20., 30.]]))
+    >>> b.get_weights()
+    [array([[2.],
+           [2.],
+           [2.]], dtype=float32), array([0.], dtype=float32)]
+    >>> b.set_weights(a.get_weights())
+    >>> b.get_weights()
+    [array([[1.],
+           [1.],
+           [1.]], dtype=float32), array([0.], dtype=float32)]
 
     Returns:
         Weights values as a list of numpy arrays.
@@ -1720,6 +1809,7 @@ class Layer(module.Module):
     if (self._autocast and compute_dtype and
         dtypes.as_dtype(compute_dtype).is_floating):
       def f(x):
+        """Cast a single Tensor or TensorSpec to the compute dtype."""
         cast_types = (ops.Tensor, sparse_tensor.SparseTensor,
                       ragged_tensor.RaggedTensor)
         if (isinstance(x, cast_types) and x.dtype.is_floating and
@@ -1727,6 +1817,10 @@ class Layer(module.Module):
           if self._dtype_defaulted_to_floatx:
             self._warn_about_input_casting(x.dtype.base_dtype)
           return math_ops.cast(x, compute_dtype)
+        elif isinstance(x, tensor_spec.TensorSpec) and x.dtype.is_floating:
+          # Inputs may be TensorSpecs when this function is called from
+          # model._set_inputs.
+          return tensor_spec.TensorSpec(x.shape, compute_dtype, x.name)
         else:
           return x
       return nest.map_structure(f, inputs)
@@ -2071,8 +2165,7 @@ class Layer(module.Module):
         except AttributeError:
           pass
         else:
-          self._dtype_policy = policy.with_input_dtype(self._dtype_policy,
-                                                       dtype)
+          self._dtype_policy = policy.Policy(dtype)
       input_shapes = None
       if all(hasattr(x, 'shape') for x in input_list):
         input_shapes = nest.map_structure(lambda x: x.shape, inputs)
@@ -2468,6 +2561,9 @@ class TensorFlowOpLayer(Layer):
   def _make_node_def(self, graph):
     node_def = node_def_pb2.NodeDef()
     node_def.CopyFrom(self.node_def)
+    # Used in TPUReplicateContext to indicate whether this node has been cloned
+    # and to not add TPU attributes.
+    node_def.attr['_cloned'].b = True
     node_def.name = graph.unique_name(node_def.name)
     return node_def
 
