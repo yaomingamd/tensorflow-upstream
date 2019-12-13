@@ -26,13 +26,13 @@ namespace dropout_kernels {
 
 template <typename T>
 __global__ void GenMaskKernel(int nthreads, const T* in0, const T* in1,
-                              unsigned char* out) {
+                              uint8* out) {
   GPU_1D_KERNEL_LOOP(index, nthreads) { out[index] = in0[index] >= *in1; }
 }
 
 template <typename T>
 void GenMask(OpKernelContext* ctx, const T* in0, const T* in1,
-             unsigned char* out, unsigned N) {
+             uint8* out, unsigned N) {
   GPUDevice d = ctx->eigen_device<GPUDevice>();
   GpuLaunchConfig config = GetGpuLaunchConfig(N, d);
   TF_CHECK_OK(GpuLaunchKernel(GenMaskKernel<T>, config.block_count,
@@ -42,10 +42,10 @@ void GenMask(OpKernelContext* ctx, const T* in0, const T* in1,
 
 template
 void GenMask<float>(OpKernelContext* ctx, const float* in0, const float* in1,
-             unsigned char* out, unsigned N);
+             uint8* out, unsigned N);
 template
 void GenMask<Eigen::half>(OpKernelContext* ctx, const Eigen::half* in0,
-             const Eigen::half* in1, unsigned char* out, unsigned N);
+             const Eigen::half* in1, uint8* out, unsigned N);
 
 }  // namespace dropout_kernels
 }  // namespace tensorflow

@@ -26,7 +26,7 @@ namespace dropout_kernels {
 
 template <typename T>
 void GenMask(OpKernelContext* ctx, const T* in0, const T* in1,
-             unsigned char* out, unsigned N);
+             uint8* out, unsigned N);
 
 }  // namespace dropout_kernels
 }  // namespace tensorflow

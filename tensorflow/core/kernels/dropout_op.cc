@@ -82,30 +82,32 @@ class DropoutOp : public OpKernel {
     typedef random::UniformDistribution<random::PhiloxRandom, T> Distribution;
     Distribution dist;
 
-    se::DeviceMemory<unsigned char> random_nums;
+    se::DeviceMemory<uint8> random_nums;
     auto allocated =
         scratch_allocator.AllocateBytes(in0.shape().num_elements() * sizeof(T));
     if (!allocated.ok() || (random_nums = allocated.ValueOrDie()) == nullptr) {
       LOG(ERROR) << "Failed to allocate random numbers for dropout";
       return;
     }
+
+    int64 random_byte_size = random_nums.size() * sizeof(T);
     functor::FillPhiloxRandom<Device, Distribution>()(
         ctx, ctx->eigen_device<Device>(),
         // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
         // it just here.
-        generator_.ReserveRandomOutputs(random_nums.size() * sizeof(T), 256),
+        generator_.ReserveRandomOutputs(random_byte_size, 256),
         static_cast<T*>(random_nums.opaque()), random_nums.size(), dist);
-
-    se::DeviceMemory<unsigned char> mask;
+    se::DeviceMemory<uint8> mask;
     allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
-                                                sizeof(unsigned char));
+                                                sizeof(uint8));
     if (!allocated.ok() || (mask = allocated.ValueOrDie()) == nullptr) {
       LOG(ERROR) << "Failed to allocate dropout mask";
       return;
     }
+
     dropout_kernels::GenMask(ctx, static_cast<const T*>(random_nums.opaque()),
                              static_cast<const T*>(rate_src_ptr.opaque()),
-                             static_cast<unsigned char*>(mask.opaque()),
+                             static_cast<uint8*>(mask.opaque()),
                              in0.shape().num_elements());
     dropout_desc.set_mask(mask);
 
@@ -230,7 +232,7 @@ class DropoutGradOp : public OpKernel {
     typedef random::UniformDistribution<random::PhiloxRandom, T> Distribution;
     Distribution dist;
 
-    se::DeviceMemory<unsigned char> random_nums;
+    se::DeviceMemory<uint8> random_nums;
     auto allocated =
         scratch_allocator.AllocateBytes(in0.shape().num_elements() * sizeof(T));
     if (!allocated.ok() || (random_nums = allocated.ValueOrDie()) == nullptr) {
@@ -238,15 +240,16 @@ class DropoutGradOp : public OpKernel {
       return;
     }
 
+    int64 random_byte_size = random_nums.size() * sizeof(T);
     functor::FillPhiloxRandom<Device, Distribution>()(
         ctx, ctx->eigen_device<Device>(),
         // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
         // it just here.
-        generator_.ReserveRandomOutputs(random_nums.size() * sizeof(T), 256),
+        generator_.ReserveRandomOutputs(random_byte_size, 256),
         static_cast<T*>(random_nums.opaque()), random_nums.size(), dist);
-    se::DeviceMemory<unsigned char> mask;
+    se::DeviceMemory<uint8> mask;
     allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
-                                                sizeof(unsigned char));
+                                                sizeof(uint8));
     if (!allocated.ok() || (mask = allocated.ValueOrDie()) == nullptr) {
       LOG(ERROR) << "Failed to allocate dropout mask";
       return;
@@ -254,7 +257,7 @@ class DropoutGradOp : public OpKernel {
 
     dropout_kernels::GenMask(ctx, static_cast<const T*>(random_nums.opaque()),
                              static_cast<const T*>(rate_src_ptr.opaque()),
-                             static_cast<unsigned char*>(mask.opaque()),
+                             static_cast<uint8*>(mask.opaque()),
                              in0.shape().num_elements());
     dropout_desc.set_mask(mask);
 

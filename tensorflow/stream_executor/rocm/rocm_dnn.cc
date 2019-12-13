@@ -41,6 +41,7 @@ limitations under the License.
 #include "tensorflow/stream_executor/stream.h"
 #include "tensorflow/stream_executor/stream_executor_pimpl.h"
 #include "third_party/eigen3/Eigen/Core"
+#include "tensorflow/core/platform/default/stacktrace.h"
 
 namespace {
 
@@ -51,6 +52,8 @@ NarrowT CheckedNarrowing(const WideT& wide) {
   NarrowT narrow = wide;
   CHECK_EQ(narrow, wide)
       << "checked narrowing failed; values not equal post-conversion";
+  if (narrow != wide)
+    LOG(INFO) << tensorflow::CurrentStackTrace();
   return narrow;
 }
 
