@@ -1,0 +1,35 @@
+/* Copyright 2018 The TensorFlow Authors. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+==============================================================================*/
+
+#ifndef TENSORFLOW_KERNELS_DROPOUT_OP_GPU_H_
+#define TENSORFLOW_KERNELS_DROPOUT_OP_GPU_H_
+
+#ifdef TENSORFLOW_USE_ROCM
+
+#include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/platform/stream_executor.h"
+
+namespace tensorflow {
+namespace dropout_kernels {
+
+template <typename T>
+void GenMask(OpKernelContext* ctx, const T* in0, const T* in1,
+             unsigned char* out, unsigned N);
+
+}  // namespace dropout_kernels
+}  // namespace tensorflow
+
+#endif  // TENSORFLOW_USE_ROCM
+#endif  // TENSORFLOW_KERNELS_DROPOUT_OP_GPU_H_

@@ -659,19 +659,19 @@ class DropoutDescriptor {
     rate_ = value;
     return *this;
   }
-  DropoutDescriptor& set_mask(const std::vector<uint8>& mask) {
+  DropoutDescriptor& set_mask(const DeviceMemory<uint8>& mask) {
     mask_ = mask;
     return *this;
   }
 
   unsigned long long seed() const { return seed_; }
   float rate() const { return rate_; }
-  std::vector<uint8> mask() const { return mask_; }
+  DeviceMemory<uint8> mask() const { return mask_; }
 
  private:
   unsigned long long seed_;
   float rate_;
-  std::vector<uint8> mask_;
+  DeviceMemory<uint8> mask_;  // Owned
 };
 
 // A patch of values in the input can be pooled via either a max or an average

@@ -19,6 +19,7 @@ limitations under the License.
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/conv_ops_gpu.h"
+#include "tensorflow/core/kernels/dropout_op_gpu.h"
 #include "tensorflow/core/kernels/random_op.h"
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/util/guarded_philox_random.h"
@@ -36,10 +37,7 @@ class DropoutOp : public OpKernel {
 
  public:
   explicit DropoutOp(OpKernelConstruction* context) : OpKernel(context) {
-    int64 seed, seed2;
-    auto status = context->GetAttr("seed", &seed);
-    status = context->GetAttr("seed2", &seed2);
-    generator_.ResetSeeds(seed, seed2);
+    generator_.Init(context);
   }
 
   ~DropoutOp() override {}
@@ -73,26 +71,42 @@ class DropoutOp : public OpKernel {
     se::dnn::DropoutDescriptor dropout_desc;
     dropout_desc.set_rate(static_cast<float>(rate));
 
+    static int64 DropoutScratchSize = GetDnnWorkspaceLimit(
+        // default value is in bytes despite the name of the environment
+        // variable
+        "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
+    );
+    DnnScratchAllocator scratch_allocator(DropoutScratchSize, ctx);
+
     // Build random uniform distribution
     typedef random::UniformDistribution<random::PhiloxRandom, T> Distribution;
     Distribution dist;
 
-    std::vector<T> random_nums(in0.shape().num_elements());
-    functor::FillPhiloxRandom<Eigen::ThreadPoolDevice, Distribution>()(
-        ctx, ctx->eigen_device<Eigen::ThreadPoolDevice>(),
+    se::DeviceMemory<unsigned char> random_nums;
+    auto allocated =
+        scratch_allocator.AllocateBytes(in0.shape().num_elements() * sizeof(T));
+    if (!allocated.ok() || (random_nums = allocated.ValueOrDie()) == nullptr) {
+      LOG(ERROR) << "Failed to allocate random numbers for dropout";
+      return;
+    }
+    functor::FillPhiloxRandom<Device, Distribution>()(
+        ctx, ctx->eigen_device<Device>(),
         // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
         // it just here.
         generator_.ReserveRandomOutputs(random_nums.size() * sizeof(T), 256),
-        random_nums.data(), random_nums.size(), dist);
+        static_cast<T*>(random_nums.opaque()), random_nums.size(), dist);
 
-    Eigen::Tensor<T, 1> rate_tensor(random_nums.size());
-    rate_tensor.setConstant(rate);
-    Eigen::TensorMap<Eigen::Tensor<T, 1>> random_tensor(random_nums.data(),
-                                                        random_nums.size());
-    Eigen::Tensor<bool, 1> mask_tensor(random_nums.size());
-    mask_tensor = random_tensor >= rate_tensor;
-    std::vector<uint8> mask = std::vector<uint8>(
-        mask_tensor.data(), mask_tensor.data() + mask_tensor.size());
+    se::DeviceMemory<unsigned char> mask;
+    allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
+                                                sizeof(unsigned char));
+    if (!allocated.ok() || (mask = allocated.ValueOrDie()) == nullptr) {
+      LOG(ERROR) << "Failed to allocate dropout mask";
+      return;
+    }
+    dropout_kernels::GenMask(ctx, static_cast<const T*>(random_nums.opaque()),
+                             static_cast<const T*>(rate_src_ptr.opaque()),
+                             static_cast<unsigned char*>(mask.opaque()),
+                             in0.shape().num_elements());
     dropout_desc.set_mask(mask);
 
     // Allocate output, and exit early if possible
@@ -144,13 +158,6 @@ class DropoutOp : public OpKernel {
     auto output_data =
         AsDeviceMemory(output->flat<T>().data(), output->flat<T>().size());
 
-    static int64 DropoutScratchSize = GetDnnWorkspaceLimit(
-        // default value is in bytes despite the name of the environment
-        // variable
-        "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
-    );
-    DnnScratchAllocator scratch_allocator(DropoutScratchSize, ctx);
-
     bool status = stream
                       ->ThenDropoutForward(dropout_desc, noise_desc, input_desc,
                                            input_data, output_desc,
@@ -178,10 +185,7 @@ class DropoutGradOp : public OpKernel {
 
  public:
   explicit DropoutGradOp(OpKernelConstruction* context) : OpKernel(context) {
-    int64 seed, seed2;
-    auto status = context->GetAttr("seed", &seed);
-    status = context->GetAttr("seed2", &seed2);
-    generator_.ResetSeeds(seed, seed2);
+    generator_.Init(context);
   }
 
   ~DropoutGradOp() override {}
@@ -215,26 +219,43 @@ class DropoutGradOp : public OpKernel {
     se::dnn::DropoutDescriptor dropout_desc;
     dropout_desc.set_rate(static_cast<float>(rate));
 
+    static int64 DropoutScratchSize = GetDnnWorkspaceLimit(
+        // default value is in bytes despite the name of the environment
+        // variable
+        "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
+    );
+    DnnScratchAllocator scratch_allocator(DropoutScratchSize, ctx);
+
     // Build random uniform distribution
     typedef random::UniformDistribution<random::PhiloxRandom, T> Distribution;
     Distribution dist;
 
-    std::vector<T> random_nums(in0.shape().num_elements());
-    functor::FillPhiloxRandom<Eigen::ThreadPoolDevice, Distribution>()(
-        ctx, ctx->eigen_device<Eigen::ThreadPoolDevice>(),
+    se::DeviceMemory<unsigned char> random_nums;
+    auto allocated =
+        scratch_allocator.AllocateBytes(in0.shape().num_elements() * sizeof(T));
+    if (!allocated.ok() || (random_nums = allocated.ValueOrDie()) == nullptr) {
+      LOG(ERROR) << "Failed to allocate random numbers for dropout";
+      return;
+    }
+
+    functor::FillPhiloxRandom<Device, Distribution>()(
+        ctx, ctx->eigen_device<Device>(),
         // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
         // it just here.
         generator_.ReserveRandomOutputs(random_nums.size() * sizeof(T), 256),
-        random_nums.data(), random_nums.size(), dist);
+        static_cast<T*>(random_nums.opaque()), random_nums.size(), dist);
+    se::DeviceMemory<unsigned char> mask;
+    allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
+                                                sizeof(unsigned char));
+    if (!allocated.ok() || (mask = allocated.ValueOrDie()) == nullptr) {
+      LOG(ERROR) << "Failed to allocate dropout mask";
+      return;
+    }
 
-    Eigen::Tensor<T, 1> rate_tensor(random_nums.size());
-    rate_tensor.setConstant(rate);
-    Eigen::TensorMap<Eigen::Tensor<T, 1>> random_tensor(random_nums.data(),
-                                                        random_nums.size());
-    Eigen::Tensor<bool, 1> mask_tensor(random_nums.size());
-    mask_tensor = random_tensor >= rate_tensor;
-    std::vector<uint8> mask = std::vector<uint8>(
-        mask_tensor.data(), mask_tensor.data() + mask_tensor.size());
+    dropout_kernels::GenMask(ctx, static_cast<const T*>(random_nums.opaque()),
+                             static_cast<const T*>(rate_src_ptr.opaque()),
+                             static_cast<unsigned char*>(mask.opaque()),
+                             in0.shape().num_elements());
     dropout_desc.set_mask(mask);
 
     // Allocate output, and exit early if possible
@@ -285,13 +306,6 @@ class DropoutGradOp : public OpKernel {
 
     auto output_data =
         AsDeviceMemory(output->flat<T>().data(), output->flat<T>().size());
-
-    static int64 DropoutScratchSize = GetDnnWorkspaceLimit(
-        // default value is in bytes despite the name of the environment
-        // variable
-        "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
-    );
-    DnnScratchAllocator scratch_allocator(DropoutScratchSize, ctx);
 
     bool status = stream
                       ->ThenDropoutBackward(dropout_desc, noise_desc,

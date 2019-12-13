@@ -769,18 +769,6 @@ class ScopedDropoutDescriptor {
                  << ToString(status);
     }
 
-    if (state_allocator) {
-      size_t mask_sizes_in_bytes = dropout_descriptor.mask().size();
-      auto allocated = state_allocator->AllocateBytes(mask_sizes_in_bytes);
-      if (!allocated.ok() ||
-          (mask_memory_ = allocated.ValueOrDie()) == nullptr) {
-        LOG(ERROR) << "Failed to allocate dropout mask";
-        return;
-      }
-      stream->ThenMemcpy(&mask_memory_, dropout_descriptor.mask().data(),
-                         dropout_descriptor.mask().size());
-    }
-
     // Note that we hard code rng_mode now because there is only one node
     // available, and this option is not part of user API. In the future we may
     // consider exposing this as a field in DropoutDescriptor
@@ -801,8 +789,6 @@ class ScopedDropoutDescriptor {
 
   miopenDropoutDescriptor_t handle() const { return handle_; }
 
-  DeviceMemory<uint8> mask() const { return mask_memory_; }
-
   ~ScopedDropoutDescriptor() {
     auto status = wrap::miopenDestroyDropoutDescriptor(handle_);
     if (status != miopenStatusSuccess) {
@@ -813,7 +799,6 @@ class ScopedDropoutDescriptor {
 
  private:
   miopenDropoutDescriptor_t handle_;  // Owned.
-  DeviceMemory<uint8> mask_memory_;   // Owned
   SE_DISALLOW_COPY_AND_ASSIGN(ScopedDropoutDescriptor);
 };
 
@@ -3923,8 +3908,8 @@ bool MIOpenSupport::DoDropoutForward(
   auto status = wrap::miopenDropoutForward(
       miopen.handle(), dropout_desc.handle(), noise_desc.handle(),
       src_desc.handle(), input_data.opaque(), dest_desc.handle(),
-      output_data->opaque(), dropout_desc.mask().opaque(),
-      dropout_desc.mask().size());
+      output_data->opaque(), dropout_params.mask().opaque(),
+      dropout_params.mask().size());
   if (status != miopenStatusSuccess) {
     LOG(ERROR) << "failed to enqueue forward dropout on stream: "
                << ToString(status);
@@ -3950,8 +3935,8 @@ bool MIOpenSupport::DoDropoutForward(
   auto status = wrap::miopenDropoutForward(
       miopen.handle(), dropout_desc.handle(), noise_desc.handle(),
       src_desc.handle(), input_data.opaque(), dest_desc.handle(),
-      output_data->opaque(), dropout_desc.mask().opaque(),
-      dropout_desc.mask().size());
+      output_data->opaque(), dropout_params.mask().opaque(),
+      dropout_params.mask().size());
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR) << "failed to enqueue forward dropout on stream: "
@@ -3982,7 +3967,7 @@ bool MIOpenSupport::DoDropoutBackward(
       miopen.handle(), dropout_desc.handle(), noise_desc.handle(),
       /*dyDesc*/ input_diff_desc.handle(), /*dy*/ input_diff_data.opaque(),
       /*dxDesc*/ output_diff_desc.handle(), /*dx*/ output_diff_data->opaque(),
-      dropout_desc.mask().opaque(), dropout_desc.mask().size());
+      dropout_params.mask().opaque(), dropout_params.mask().size());
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR) << "failed to enqueue backward dropout on stream: "
@@ -4013,7 +3998,7 @@ bool MIOpenSupport::DoDropoutBackward(
       miopen.handle(), dropout_desc.handle(), noise_desc.handle(),
       /*dyDesc*/ input_diff_desc.handle(), /*dy*/ input_diff_data.opaque(),
       /*dxDesc*/ output_diff_desc.handle(), /*dx*/ output_diff_data->opaque(),
-      dropout_desc.mask().opaque(), dropout_desc.mask().size());
+      dropout_params.mask().opaque(), dropout_params.mask().size());
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR) << "failed to enqueue backward dropout on stream: "
