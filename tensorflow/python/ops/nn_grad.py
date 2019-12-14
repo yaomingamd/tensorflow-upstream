@@ -1081,7 +1081,7 @@ def _DropoutGrad(op, grad):
   dx = 0
   if op.inputs[0].dtype == dtypes.float32 or op.inputs[0].dtype == dtypes.float16:
     dx = gen_nn_ops.dropout_grad(
-          grad, op.inputs[1], op.inputs[2],op.get_attr("seed"),op.get_attr("seed2"))
+          grad, op.inputs[1], noise_shape=array_ops.shape(op.inputs[0]), seed=op.get_attr("seed"), seed2=op.get_attr("seed2"))
   else:
     keep_mask = (op.inputs[0] - op.outputs[0]) < 1e-5
     keep_mask_val = math_ops.cast(keep_mask, op.inputs[0].dtype)

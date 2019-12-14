@@ -151,6 +151,12 @@ class DropoutOp : public OpKernel {
         .set_width(noise_cols)
         .set_layout(se::dnn::DataLayout::kBatchDepthYX);
 
+    for (size_t i = 0; i < noise_dim_size.size(); ++i) {
+      OP_REQUIRES(ctx, noise_dim_size[i] == input_dim_sizes[i],
+                  errors::InvalidArgument(
+                      "Dropout noise shape must be same with input shape."));
+    }
+
     se::dnn::BatchDescriptor output_desc;
     output_desc.CloneFrom(input_desc);
 
@@ -300,6 +306,12 @@ class DropoutGradOp : public OpKernel {
         .set_height(noise_rows)
         .set_width(noise_cols)
         .set_layout(se::dnn::DataLayout::kBatchDepthYX);
+
+    for (size_t i = 0; i < noise_dim_size.size(); ++i) {
+      OP_REQUIRES(ctx, noise_dim_size[i] == input_dim_sizes[i],
+                  errors::InvalidArgument(
+                      "Dropout noise shape must be same with input shape."));
+    }
 
     se::dnn::BatchDescriptor output_desc;
     output_desc.CloneFrom(input_desc);

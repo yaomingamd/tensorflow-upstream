@@ -3904,7 +3904,7 @@ bool MIOpenSupport::DoDropoutForward(
   auto miopen = miopen_->GetHandle(parent_, stream);
   const ScopedTensorDescriptor src_desc{input_dimensions, miopenFloat};
   const ScopedTensorDescriptor dest_desc{output_dimensions, miopenFloat};
-  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenFloat};
+  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenInt32};
   const ScopedDropoutDescriptor dropout_desc{
       stream, miopen.handle(), dropout_params, workspace_allocator};
 
@@ -3932,7 +3932,7 @@ bool MIOpenSupport::DoDropoutForward(
   auto miopen = miopen_->GetHandle(parent_, stream);
   const ScopedTensorDescriptor src_desc{input_dimensions, miopenHalf};
   const ScopedTensorDescriptor dest_desc{output_dimensions, miopenHalf};
-  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenFloat};
+  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenInt32};
   const ScopedDropoutDescriptor dropout_desc{
       stream, miopen.handle(), dropout_params, workspace_allocator};
   auto status = wrap::miopenDropoutForward(
@@ -3962,7 +3962,7 @@ bool MIOpenSupport::DoDropoutBackward(
                                                miopenFloat};
   const ScopedTensorDescriptor output_diff_desc{output_diff_dimensions,
                                                 miopenFloat};
-  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenFloat};
+  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenInt32};
   const ScopedDropoutDescriptor dropout_desc{
       stream, miopen.handle(), dropout_params, workspace_allocator};
 
@@ -3993,7 +3993,7 @@ bool MIOpenSupport::DoDropoutBackward(
                                                miopenHalf};
   const ScopedTensorDescriptor output_diff_desc{output_diff_dimensions,
                                                 miopenHalf};
-  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenFloat};
+  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenInt32};
   const ScopedDropoutDescriptor dropout_desc{
       stream, miopen.handle(), dropout_params, workspace_allocator};
 
