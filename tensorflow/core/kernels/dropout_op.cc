@@ -90,13 +90,13 @@ class DropoutOp : public OpKernel {
       return;
     }
 
-    int64 random_byte_size = random_nums.size() * sizeof(T);
+    int64 random_nums_size = random_nums.size() / sizeof(T);
     functor::FillPhiloxRandom<Device, Distribution>()(
         ctx, ctx->eigen_device<Device>(),
         // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
         // it just here.
-        generator_.ReserveRandomOutputs(random_byte_size, 256),
-        static_cast<T*>(random_nums.opaque()), random_nums.size(), dist);
+        generator_.ReserveRandomOutputs(random_nums_size, 256),
+        static_cast<T*>(random_nums.opaque()), random_nums_size, dist);
     se::DeviceMemory<uint8> mask;
     allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
                                                 sizeof(uint8));
@@ -246,13 +246,13 @@ class DropoutGradOp : public OpKernel {
       return;
     }
 
-    int64 random_byte_size = random_nums.size() * sizeof(T);
+    int64 random_nums_size = random_nums.size() / sizeof(T);
     functor::FillPhiloxRandom<Device, Distribution>()(
         ctx, ctx->eigen_device<Device>(),
         // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
         // it just here.
-        generator_.ReserveRandomOutputs(random_byte_size, 256),
-        static_cast<T*>(random_nums.opaque()), random_nums.size(), dist);
+        generator_.ReserveRandomOutputs(random_nums_size, 256),
+        static_cast<T*>(random_nums.opaque()), random_nums_size, dist);
     se::DeviceMemory<uint8> mask;
     allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
                                                 sizeof(uint8));
