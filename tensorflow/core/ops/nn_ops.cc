@@ -63,6 +63,15 @@ Status FractionalPoolShapeFn(InferenceContext* c) {
   return Status::OK();
 }
 
+Status UnchangedShape(shape_inference::InferenceContext* c) {
+  c->set_output(0, c->input(0));
+  auto* handle_data = c->input_handle_shapes_and_types(0);
+  if (handle_data != nullptr) {
+    c->set_output_handle_shapes_and_types(0, *handle_data);
+  }
+  return Status::OK();
+}
+
 }  // namespace
 
 // --------------------------------------------------------------------------
@@ -331,15 +340,27 @@ REGISTER_OP("Dropout")
     .Input("rate: T")
     .Input("noise_shape: int32")
     .Output("output: T")
+    .Output("reserve_space: uint8")
     .Attr("seed: int = 0")
     .Attr("seed2: int = 0")
     .Attr("T: {float, half}")
-    .SetShapeFn(shape_inference::UnchangedShape);
+    .SetShapeFn([](InferenceContext* c) {
+      c->set_output(0, c->input(0));
+      //c->set_output(1, c->input(0));
+      auto* handle_data = c->input_handle_shapes_and_types(0);
+      if (handle_data != nullptr) {
+        c->set_output_handle_shapes_and_types(0, *handle_data);
+      }
+      return Status::OK();
+    });
+
+//#shape_inference::UnchangedShape);
 
 REGISTER_OP("DropoutGrad")
     .Input("gradients: T")
     .Input("rate: T")
     .Input("noise_shape: int32")
+    .Input("reserve_space: uint8")
     .Output("backprops: T")
     .Attr("seed: int = 0")
     .Attr("seed2: int = 0")

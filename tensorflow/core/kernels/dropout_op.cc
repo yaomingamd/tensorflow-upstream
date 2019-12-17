@@ -97,6 +97,8 @@ class DropoutOp : public OpKernel {
         // it just here.
         generator_.ReserveRandomOutputs(random_nums_size, 256),
         static_cast<T*>(random_nums.opaque()), random_nums_size, dist);
+
+
     se::DeviceMemory<uint8> mask;
     allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
                                                 sizeof(uint8));
@@ -105,16 +107,33 @@ class DropoutOp : public OpKernel {
       return;
     }
 
+    Tensor tmp;
+    AllocationAttributes allocation_attr;
+    Status allocation_status(ctx->allocate_temp(
+        DT_UINT8, TensorShape({in0.shape().num_elements() * sizeof(uint8)}),
+        &tmp, AllocatorAttributes(), allocation_attr));
+    if (!allocation_status.ok()) {
+      LOG(ERROR) << "Failed to allocate the requested memory size.";
+    }
+
     dropout_kernels::GenMask(ctx, static_cast<const T*>(random_nums.opaque()),
                              static_cast<const T*>(rate_src_ptr.opaque()),
-                             static_cast<uint8*>(mask.opaque()),
+                             static_cast<uint8*>(tmp.flat<uint8>().data()),
+                             //static_cast<uint8*>(mask.opaque()),
                              in0.shape().num_elements());
-    dropout_desc.set_mask(mask);
+    //dropout_desc.set_mask(mask);
+    dropout_desc.set_mask(AsDeviceMemory(tmp.flat<uint8>().data(),
+                                         tmp.flat<uint8>().size()));
 
     // Allocate output, and exit early if possible
     Tensor* output;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, in0.shape(), &output));
     if (output->NumElements() == 0) return;
+
+    Tensor* scratch = &tmp;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+                   1, TensorShape({tmp.flat<uint8>().size()}), &scratch));
+    *scratch = tmp;
 
     // Fill one to higher dimensions
     gtl::InlinedVector<int64, 4> input_dim_sizes = in0.shape().dim_sizes();
@@ -189,11 +208,11 @@ TF_CALL_half(REGISTER_DROPOUT_GPU);
 template <typename Device, typename T>
 class DropoutGradOp : public OpKernel {
  private:
-  GuardedPhiloxRandom generator_;
+  //GuardedPhiloxRandom generator_;
 
  public:
   explicit DropoutGradOp(OpKernelConstruction* context) : OpKernel(context) {
-    generator_.Init(context);
+    //generator_.Init(context);
   }
 
   ~DropoutGradOp() override {}
@@ -227,6 +246,11 @@ class DropoutGradOp : public OpKernel {
     se::dnn::DropoutDescriptor dropout_desc;
     dropout_desc.set_rate(static_cast<float>(rate));
 
+    const Tensor& in3 = ctx->input(3);
+    OP_REQUIRES(ctx, in3.dtype() == DT_UINT8,
+                errors::InvalidArgument(
+                    "Dropout reservespace must to UINT8."));
+
     static int64 DropoutScratchSize = GetDnnWorkspaceLimit(
         // default value is in bytes despite the name of the environment
         // variable
@@ -234,38 +258,40 @@ class DropoutGradOp : public OpKernel {
     );
     DnnScratchAllocator scratch_allocator(DropoutScratchSize, ctx);
 
-    // Build random uniform distribution
-    typedef random::UniformDistribution<random::PhiloxRandom, T> Distribution;
-    Distribution dist;
+    //// Build random uniform distribution
+    //typedef random::UniformDistribution<random::PhiloxRandom, T> Distribution;
+    //Distribution dist;
 
-    se::DeviceMemory<uint8> random_nums;
-    auto allocated =
-        scratch_allocator.AllocateBytes(in0.shape().num_elements() * sizeof(T));
-    if (!allocated.ok() || (random_nums = allocated.ValueOrDie()) == nullptr) {
-      LOG(ERROR) << "Failed to allocate random numbers for dropout";
-      return;
-    }
+    //se::DeviceMemory<uint8> random_nums;
+    //auto allocated =
+    //    scratch_allocator.AllocateBytes(in0.shape().num_elements() * sizeof(T));
+    //if (!allocated.ok() || (random_nums = allocated.ValueOrDie()) == nullptr) {
+    //  LOG(ERROR) << "Failed to allocate random numbers for dropout";
+    //  return;
+    //}
 
-    int64 random_nums_size = random_nums.size() / sizeof(T);
-    functor::FillPhiloxRandom<Device, Distribution>()(
-        ctx, ctx->eigen_device<Device>(),
-        // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
-        // it just here.
-        generator_.ReserveRandomOutputs(random_nums_size, 256),
-        static_cast<T*>(random_nums.opaque()), random_nums_size, dist);
-    se::DeviceMemory<uint8> mask;
-    allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
-                                                sizeof(uint8));
-    if (!allocated.ok() || (mask = allocated.ValueOrDie()) == nullptr) {
-      LOG(ERROR) << "Failed to allocate dropout mask";
-      return;
-    }
+    //int64 random_nums_size = random_nums.size() / sizeof(T);
+    //functor::FillPhiloxRandom<Device, Distribution>()(
+    //    ctx, ctx->eigen_device<Device>(),
+    //    // Multiplier 256 is the same as in FillPhiloxRandomTask; do not change
+    //    // it just here.
+    //    generator_.ReserveRandomOutputs(random_nums_size, 256),
+    //    static_cast<T*>(random_nums.opaque()), random_nums_size, dist);
+    //se::DeviceMemory<uint8> mask;
+    //allocated = scratch_allocator.AllocateBytes(in0.shape().num_elements() *
+    //                                            sizeof(uint8));
+    //if (!allocated.ok() || (mask = allocated.ValueOrDie()) == nullptr) {
+    //  LOG(ERROR) << "Failed to allocate dropout mask";
+    //  return;
+    //}
 
-    dropout_kernels::GenMask(ctx, static_cast<const T*>(random_nums.opaque()),
-                             static_cast<const T*>(rate_src_ptr.opaque()),
-                             static_cast<uint8*>(mask.opaque()),
-                             in0.shape().num_elements());
-    dropout_desc.set_mask(mask);
+    //dropout_kernels::GenMask(ctx, static_cast<const T*>(random_nums.opaque()),
+    //                         static_cast<const T*>(rate_src_ptr.opaque()),
+    //                         static_cast<uint8*>(mask.opaque()),
+    //                         in0.shape().num_elements());
+    //dropout_desc.set_mask(mask);
+    dropout_desc.set_mask(AsDeviceMemory(in3.flat<uint8>().data(),
+                                         in3.flat<uint8>().size()));
 
     // Allocate output, and exit early if possible
     Tensor* output;
