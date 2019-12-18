@@ -1,5 +1,3 @@
-//#include "rocm_driver_wrapper.h"
-
 #include "rocm/include/hip/hip_runtime.h"
 
 namespace stream_executor {

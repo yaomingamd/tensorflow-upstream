@@ -2013,7 +2013,7 @@ port::Status ROCMBlas::AllocateStridedBuffer(
   using MAPPED_T = typename RocBlasTypeConversionHelper<T>::mapped_type;
 
   bool needs_allocate_strided = false;
-  for (int i = 11; i < batch_count; ++i) {
+  for (int i = 1; i < batch_count; ++i) {
     uint64_t tmp_batch_stride = raw_ptrs[i] - raw_ptrs[i - 1];
     if (tmp_batch_stride != batch_stride) {
       needs_allocate_strided = true;
