@@ -459,7 +459,6 @@ port::Status ROCMBlas::DoBlasComplex(ScratchAllocator* scratch_allocator,
     SplitComplex(pbs, b, nb, hs, (conj_op & 2));
     SplitComplex(pcs, c, nc, hs, false);
     hipMemsetAsync(pcs+nc*2, 0, nc*2*sizeof(T), hs);
-
     bool ok = true;
     for(int i=0; i<4; i++)
       ok = ok && DoBlasCall(pas + ((i&1) ? na : 0), pbs + ((i&2) ? nb : 0), pcs+i*nc, (const T*)&alpha, (const T*)&beta, rocblas_func, stream, args...);
@@ -1017,7 +1016,7 @@ bool ROCMBlas::DoBlasGemv(Stream *stream, blas::Transpose trans, uint64 m,
                           DeviceMemory<std::complex<float>> *y, int incy) {
   int d1 = (trans == blas::Transpose::kNoTranspose) ? n : m;
   int d2 = (trans == blas::Transpose::kNoTranspose) ? m : n;
-  auto rv = DoBlasComplex(nullptr, stream,
+  auto rv = DoBlasComplex (nullptr, stream,
       (const float*)a.opaque(), (const float*)x.opaque(), (float*) y->opaque(),
       m*n, d1, d2,
       alpha, beta, 
@@ -2028,6 +2027,7 @@ port::Status ROCMBlas::AllocateStridedBuffer(
   if (!needs_allocate_strided) {
     *device_memory = DeviceMemory<MAPPED_T>(
         DeviceMemoryBase(raw_ptrs[0], matrix_batch_byte_size));
+    reallocated = false;
     return port::Status::OK();
   }
 
@@ -2043,6 +2043,8 @@ port::Status ROCMBlas::AllocateStridedBuffer(
     *device_memory =
         DeviceMemory<MAPPED_T>(*(*temp_memory)->mutable_device_memory());
   }
+
+  reallocated = true;
 
   if(copy_data)
       return ReorganizeMemory(stream, device_memory, raw_ptrs, batch_count, batch_stride, true);
@@ -2144,7 +2146,7 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
 
 // specialization for complex types
 template <typename T, typename FuncT>
-port::Status ROCMBlas::DoBlasGemmBatchedInternal(
+port::Status ROCMBlas::DoBlasGemmBatchedInternalCpx(
     FuncT rocblas_func, Stream *stream, blas::Transpose transa,
     blas::Transpose transb, uint64 m, uint64 n, uint64 k, std::complex<T> alpha,
     const port::ArraySlice<DeviceMemory<std::complex<T> > *> &a_ptrs_to_wrappers, int lda,
@@ -2194,7 +2196,7 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
   std::unique_ptr<TemporaryDeviceMemory<MAPPED_T>> a_temp;
   bool reallocated_a, reallocated_b, reallocated_c;
   port::Status a_allocation_status =
-      AllocateStridedBuffer<T>(a_raw_ptrs, batch_count, batch_stride_a,
+      AllocateStridedBuffer<T>(a_raw_ptrs, batch_count, batch_stride_a*2,
                                scratch_allocator, stream, &a_temp, &a, true, reallocated_a);
   if (a_allocation_status != port::Status::OK()) {
     return a_allocation_status;
@@ -2203,7 +2205,7 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
   DeviceMemory<MAPPED_T> b;
   std::unique_ptr<TemporaryDeviceMemory<MAPPED_T>> b_temp;
   port::Status b_allocation_status =
-      AllocateStridedBuffer<T>(b_raw_ptrs, batch_count, batch_stride_b,
+      AllocateStridedBuffer<T>(b_raw_ptrs, batch_count, batch_stride_b*2,
                                scratch_allocator, stream, &b_temp, &b, true, reallocated_b);
   if (b_allocation_status != port::Status::OK()) {
     return b_allocation_status;
@@ -2212,11 +2214,13 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
   DeviceMemory<MAPPED_T> c;
   std::unique_ptr<TemporaryDeviceMemory<MAPPED_T>> c_temp;
   port::Status c_allocation_status =
-      AllocateStridedBuffer<T>(c_raw_ptrs, batch_count, batch_stride_c,
+      AllocateStridedBuffer<T>(c_raw_ptrs, batch_count, batch_stride_c*2,
                                scratch_allocator, stream, &c_temp, &c, true, reallocated_c); // can disable copy if beta=0
   if (c_allocation_status != port::Status::OK()) {
     return c_allocation_status;
   }
+  hipDeviceSynchronize();
+
   auto status = DoBlasComplex(scratch_allocator, stream,
     (const T*)a.opaque(), (const T*)b.opaque(), (T*)c.opaque(),
     batch_stride_a*batch_count, batch_stride_b*batch_count, batch_stride_c*batch_count,
@@ -2229,7 +2233,7 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
   if(status!=port::Status::OK())
     return status;
   if(reallocated_c)
-      return ReorganizeMemory(stream, &c, c_raw_ptrs, batch_count, batch_stride_c, false);
+      return ReorganizeMemory(stream, &c, c_raw_ptrs, batch_count, batch_stride_c*2, false);
   return port::Status::OK();
 }
 
@@ -2297,7 +2301,7 @@ bool ROCMBlas::DoBlasGemmBatched(
     int ldb, std::complex<float> beta,
     const port::ArraySlice<DeviceMemory<std::complex<float>> *> &c_array,
     int ldc, int batch_count, ScratchAllocator *scratch_allocator) {
-  port::Status status = DoBlasGemmBatchedInternal(
+  port::Status status = DoBlasGemmBatchedInternalCpx(
       wrap::rocblas_sgemm_strided_batched, stream, transa, transb, m, n, k,
       alpha, a_array, lda, b_array, ldb, beta, c_array, ldc, batch_count,
       scratch_allocator);
@@ -2316,7 +2320,7 @@ bool ROCMBlas::DoBlasGemmBatched(
     int ldb, std::complex<double> beta,
     const port::ArraySlice<DeviceMemory<std::complex<double>> *> &c_array,
     int ldc, int batch_count, ScratchAllocator *scratch_allocator) {
-  port::Status status = DoBlasGemmBatchedInternal(
+  port::Status status = DoBlasGemmBatchedInternalCpx(
       wrap::rocblas_dgemm_strided_batched, stream, transa, transb, m, n, k,
       alpha, a_array, lda, b_array, ldb, beta, c_array, ldc, batch_count,
       scratch_allocator);

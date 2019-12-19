@@ -233,7 +233,7 @@ class ROCMBlas : public blas::BlasSupport {
       int ldc, int batch_count, ScratchAllocator *scratch_allocator);
 
   template <typename T, typename FuncT>
-  port::Status DoBlasGemmBatchedInternal(
+  port::Status DoBlasGemmBatchedInternalCpx(
     FuncT rocblas_func, Stream *stream, blas::Transpose transa,
     blas::Transpose transb, uint64 m, uint64 n, uint64 k, std::complex<T> alpha,
     const port::ArraySlice<DeviceMemory<std::complex<T> > *> &a_ptrs_to_wrappers, int lda,
