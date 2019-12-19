@@ -220,6 +220,9 @@ public:
   /// has static shape.
   bool hasStaticShape() const;
 
+  /// If this has a static shape and the shape is equal to `shape` return true.
+  bool hasStaticShape(ArrayRef<int64_t> shape) const;
+
   /// If this is a ranked type, return the number of dimensions with dynamic
   /// size. Otherwise, abort.
   int64_t getNumDynamicDims() const;
@@ -461,10 +464,10 @@ public:
                                        Location location);
 
   /// Verify the construction of a unranked memref type.
-  static LogicalResult
-  verifyConstructionInvariants(llvm::Optional<Location> loc,
-                               MLIRContext *context, Type elementType,
-                               unsigned memorySpace);
+  static LogicalResult verifyConstructionInvariants(Optional<Location> loc,
+                                                    MLIRContext *context,
+                                                    Type elementType,
+                                                    unsigned memorySpace);
 
   ArrayRef<int64_t> getShape() const { return llvm::None; }
 

@@ -22,8 +22,10 @@
 #include "mlir/Dialect/Linalg/Transforms/LinalgTransforms.h"
 #include "mlir/Dialect/Linalg/Analysis/DependenceAnalysis.h"
 #include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/Linalg/Utils/Intrinsics.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/VectorOps/VectorOps.h"
+#include "mlir/EDSC/Helpers.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
@@ -35,9 +37,13 @@
 #define DEBUG_TYPE "linalg-transforms"
 
 using namespace mlir;
+using namespace mlir::edsc;
+using namespace mlir::edsc::intrinsics;
 using namespace mlir::linalg;
+using namespace mlir::linalg::intrinsics;
 
 using llvm::dbgs;
+using llvm::SetVector;
 
 // Marker used as attribute name in generated Linalg rewriting transformations.
 const StringLiteral mlir::linalg::LinalgTransforms::kLinalgTransformMarker =
@@ -94,7 +100,7 @@ LogicalResult mlir::linalg::tileAndFuseLinalgOpAndSetMarker(
 
 bool mlir::linalg::detail::isProducedByOpOfTypeImpl(
     Operation *consumerOp, Value *consumedView,
-    llvm::function_ref<bool(Operation *)> isaOpType) {
+    function_ref<bool(Operation *)> isaOpType) {
   LinalgOp consumer = dyn_cast<LinalgOp>(consumerOp);
   if (!consumer)
     return false;
@@ -192,4 +198,50 @@ LogicalResult mlir::linalg::vectorizeGenericOp(PatternRewriter &rewriter,
                               genericOp.iterator_types());
   std_store(vRes, vectorMemRefC);
   return success();
+}
+
+LogicalResult
+mlir::linalg::permuteGenericLinalgOp(PatternRewriter &rewriter, Operation *op,
+                                     ArrayRef<unsigned> permutation,
+                                     StringRef linalgMarker) {
+  // If permutation is empty, there is nothing to be done.
+  if (permutation.empty())
+    return failure();
+
+  auto linOp = cast<LinalgOp>(op);
+  auto permutationMap = inversePermutation(
+      AffineMap::getPermutationMap(permutation, rewriter.getContext()));
+  SmallVector<AffineMap, 4> newIndexingMap;
+  auto indexingMaps = linOp.indexing_maps().getValue();
+  for (unsigned i = 0, e = linOp.getNumInputsAndOutputs(); i != e; ++i) {
+    AffineMap m = indexingMaps[i].cast<AffineMapAttr>().getValue().compose(
+        permutationMap);
+    newIndexingMap.push_back(m);
+  }
+  auto itTypes = linOp.iterator_types().getValue();
+  SmallVector<Attribute, 4> itTypesVector;
+  for (unsigned i = 0, e = itTypes.size(); i != e; ++i)
+    itTypesVector.push_back(itTypes[i]);
+  applyPermutationToVector(itTypesVector, permutation);
+  op->setAttr(getIndexingMapsAttrName(),
+              rewriter.getAffineMapArrayAttr(newIndexingMap));
+  op->setAttr(getIteratorTypesAttrName(), rewriter.getArrayAttr(itTypesVector));
+  op->setAttr(LinalgTransforms::kLinalgTransformMarker,
+              rewriter.getStringAttr(linalgMarker));
+  linOp.clone(rewriter, linOp.getLoc(), op->getOperands());
+  return success();
+}
+
+LogicalResult mlir::linalg::linalgOpPromoteSubviews(PatternRewriter &rewriter,
+                                                    Operation *op) {
+  LinalgOp linOp = dyn_cast<LinalgOp>(op);
+  SetVector<Value *> subViews;
+  for (auto it : linOp.getInputsAndOutputs())
+    if (auto sv = dyn_cast_or_null<SubViewOp>(it->getDefiningOp()))
+      subViews.insert(sv);
+  if (!subViews.empty()) {
+    auto resOp = promoteSubViewOperands(rewriter, linOp, subViews);
+    return success(resOp);
+  }
+  return failure();
 }

@@ -16898,7 +16898,7 @@ func CompareAndBitpack(scope *Scope, input tf.Output, threshold tf.Output) (outp
 //      Considering the batch matrix multiplication equation again
 //      (`bij,bjk->bik`), the contracted axis label is `j`.
 //
-//  (e) Expand Diagonal: If the output subcripts contain repeated (explicit) axis
+//  (e) Expand Diagonal: If the output subscripts contain repeated (explicit) axis
 //      labels, the opposite operation of (a) is applied. For example, in the
 //      equation `i->iii`, and input shape `[3]`, the output of shape `[3, 3, 3]`
 //      are all zeros, except for the (generalized) diagonal which is populated
@@ -16906,7 +16906,7 @@ func CompareAndBitpack(scope *Scope, input tf.Output, threshold tf.Output) (outp
 //      Note: This operation is not supported by `np.einsum` or `tf.einsum`; it is
 //      provided to enable computing the symbolic gradient of `tf.einsum`.
 //
-// The output subcripts must contain only labels appearing in at least one of the
+// The output subscripts must contain only labels appearing in at least one of the
 // input subscripts. Furthermore, all dimensions mapping to the same axis label
 // must be equal.
 //
@@ -16918,7 +16918,7 @@ func CompareAndBitpack(scope *Scope, input tf.Output, threshold tf.Output) (outp
 //
 // The broadcasted dimensions are placed in the corresponding location of the
 // ellipsis in the output subscript. If the broadcasted dimensions are non-empty
-// and the output subcripts do not contain ellipsis, then an InvalidArgument error
+// and the output subscripts do not contain ellipsis, then an InvalidArgument error
 // is raised.
 //
 // @compatibility(numpy)
@@ -18067,11 +18067,11 @@ func ResourceApplyAdamWithAmsgradUseLocking(value bool) ResourceApplyAdamWithAms
 
 // Update '*var' according to the Adam algorithm.
 //
-// $$lr_t := \text{learning\_rate} * \sqrt{1 - beta_2^t} / (1 - beta_1^t)$$
-// $$m_t := beta_1 * m_{t-1} + (1 - beta_1) * g$$
-// $$v_t := beta_2 * v_{t-1} + (1 - beta_2) * g * g$$
-// $$vhat_t := max{vhat_{t-1}, v_t}$$
-// $$variable := variable - lr_t * m_t / (\sqrt{vhat_t} + \epsilon)$$
+// $$\text{lr}_t := \mathrm{learning_rate} * \sqrt{1 - \beta_2^t} / (1 - \beta_1^t)$$
+// $$m_t := \beta_1 * m_{t-1} + (1 - \beta_1) * g$$
+// $$v_t := \beta_2 * v_{t-1} + (1 - \beta_2) * g * g$$
+// $$\hat{v}_t := max{\hat{v}_{t-1}, v_t}$$
+// $$\text{variable} := \text{variable} - \text{lr}_t * m_t / (\sqrt{\hat{v}_t} + \epsilon)$$
 //
 // Arguments:
 //	var_: Should be from a Variable().
@@ -18404,6 +18404,22 @@ func SnapshotDatasetSeed(value int64) SnapshotDatasetAttr {
 func SnapshotDatasetSeed2(value int64) SnapshotDatasetAttr {
 	return func(m optionalAttr) {
 		m["seed2"] = value
+	}
+}
+
+// SnapshotDatasetMode sets the optional mode attribute to value.
+// If not specified, defaults to "auto"
+func SnapshotDatasetMode(value string) SnapshotDatasetAttr {
+	return func(m optionalAttr) {
+		m["mode"] = value
+	}
+}
+
+// SnapshotDatasetSnapshotName sets the optional snapshot_name attribute to value.
+// If not specified, defaults to ""
+func SnapshotDatasetSnapshotName(value string) SnapshotDatasetAttr {
+	return func(m optionalAttr) {
+		m["snapshot_name"] = value
 	}
 }
 
@@ -39805,9 +39821,9 @@ func ResourceApplyKerasMomentumUseNesterov(value bool) ResourceApplyKerasMomentu
 	}
 }
 
-// Update '*var' according to the momentum scheme. Set use_nesterov = True if you
+// Update '*var' according to the momentum scheme.
 //
-// want to use Nesterov momentum.
+// Set use_nesterov = True if you want to use Nesterov momentum.
 //
 // accum = accum * momentum - lr * grad
 // var += accum
@@ -41346,10 +41362,10 @@ func ResourceApplyAdamUseNesterov(value bool) ResourceApplyAdamAttr {
 
 // Update '*var' according to the Adam algorithm.
 //
-// $$lr_t := \text{learning\_rate} * \sqrt{1 - beta_2^t} / (1 - beta_1^t)$$
-// $$m_t := beta_1 * m_{t-1} + (1 - beta_1) * g$$
-// $$v_t := beta_2 * v_{t-1} + (1 - beta_2) * g * g$$
-// $$variable := variable - lr_t * m_t / (\sqrt{v_t} + \epsilon)$$
+// $$\text{lr}_t := \mathrm{learning_rate} * \sqrt{1 - \beta_2^t} / (1 - \beta_1^t)$$
+// $$m_t := \beta_1 * m_{t-1} + (1 - \beta_1) * g$$
+// $$v_t := \beta_2 * v_{t-1} + (1 - \beta_2) * g * g$$
+// $$\text{variable} := \text{variable} - \text{lr}_t * m_t / (\sqrt{v_t} + \epsilon)$$
 //
 // Arguments:
 //	var_: Should be from a Variable().

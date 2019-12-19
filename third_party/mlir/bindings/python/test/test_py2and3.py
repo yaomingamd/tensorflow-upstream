@@ -195,6 +195,22 @@ class EdscTest:
     # CHECK-LABEL: testCondBr
     #       CHECK:   cond_br %{{.*}}, ^bb{{.*}}, ^bb{{.*}}(%{{.*}} : index)
 
+  def testConstantAffineExpr(self):
+    self.setUp()
+    with self.module.function_context("constant_affine", [], []) as fun:
+      a1 = self.module.affine_dim_expr(0)
+      a2 = self.module.affine_dim_expr(1)
+      a3 = a1 + a2 + 3
+      composedExpr = a3.compose(
+          self.module.affine_map(2, 0, [
+              self.module.affine_constant_expr(4),
+              self.module.affine_constant_expr(7)
+          ]))
+      printWithCurrentFunctionName(str(fun))
+      print("constant value : %d" % composedExpr.get_constant_value())
+    # CHECK-LABEL: testConstantAffineExpr
+    #       CHECK: constant value : 14
+
   def testConstants(self):
     self.setUp()
     with self.module.function_context("constants", [], []) as fun:
@@ -330,6 +346,17 @@ class EdscTest:
     printWithCurrentFunctionName(str(self.module))
     # CHECK-LABEL: testFunctionDeclarationWithArrayAttr
     #       CHECK: func @foo(memref<10xf32>, memref<10xf32> {array_attr = [43 : i32, 33 : i32]})
+
+  def testFunctionDeclarationWithFloatAndStringAttr(self):
+    self.setUp()
+    float_attr = self.module.floatAttr(23.3)
+    string_attr = self.module.stringAttr("TEST_STRING")
+
+    f = self.module.declare_function(
+        "foo", [], [], float_attr=float_attr, string_attr=string_attr)
+    printWithCurrentFunctionName(str(self.module))
+    # CHECK-LABEL: testFunctionDeclarationWithFloatAndStringAttr
+    #       CHECK: func @foo() attributes {float_attr = 2.330000e+01 : f32, string_attr = "TEST_STRING"}
 
   def testFunctionMultiple(self):
     self.setUp()

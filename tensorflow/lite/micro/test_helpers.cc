@@ -307,6 +307,18 @@ TfLiteTensor CreateQuantizedTensor(const int8_t* data, TfLiteIntArray* dims,
   return result;
 }
 
+TfLiteTensor CreateQuantizedTensor(const int16_t* data, TfLiteIntArray* dims,
+                                   float scale, int zero_point,
+                                   const char* name, bool is_variable) {
+  TfLiteTensor result = CreateTensor(dims, name, is_variable);
+  result.type = kTfLiteInt16;
+  result.data.i16 = const_cast<int16_t*>(data);
+  result.params = {scale, zero_point};
+  result.quantization = {kTfLiteAffineQuantization, nullptr};
+  result.bytes = ElementCount(*dims) * sizeof(int16_t);
+  return result;
+}
+
 TfLiteTensor CreateQuantizedTensor(const float* input, int8_t* quantized,
                                    TfLiteIntArray* dims, float scale,
                                    int zero_point, const char* name,
@@ -384,6 +396,10 @@ TfLiteTensor CreateSymmetricPerChannelQuantizedTensor(
 
   SignedSymmetricPerChannelQuantize(input, dims, quantized_dimension, quantized,
                                     &scales[1]);
+
+  for (int i = 0; i < channel_count; i++) {
+    zero_points[i + 1] = 0;
+  }
 
   affine_quant->scale = FloatArrayFromFloats(scales);
   affine_quant->zero_point = IntArrayFromInts(zero_points);
