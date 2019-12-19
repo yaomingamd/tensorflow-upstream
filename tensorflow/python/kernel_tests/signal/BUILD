@@ -48,7 +48,6 @@ cuda_py_tests(
     python_version = "PY3",
     shard_count = 8,
     tags = [
-        "no_rocm",
         "optonly",
     ],
 )
@@ -137,7 +136,6 @@ cuda_py_tests(
     ],
     python_version = "PY3",
     tags = [
-        "no_rocm",
         "nomac",
     ],
 )

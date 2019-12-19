@@ -45,6 +45,16 @@ struct RocBlasTypeConversionHelper<Eigen::half> {
   using mapped_type = rocblas_half;
 };
 
+template <>
+struct RocBlasTypeConversionHelper<std::complex<float> > {
+  using mapped_type = rocblas_float_complex;
+};
+
+template <>
+struct RocBlasTypeConversionHelper<std::complex<double> > {
+  using mapped_type = rocblas_double_complex;
+};
+
 // Opaque and unique identifier for the rocBLAS plugin.
 extern const PluginId kRocBlasPlugin;
 
@@ -110,90 +120,7 @@ class ROCMBlas : public blas::BlasSupport {
                               /*err_on_failure=*/false, args...);
   }
 
-
-
-  // simply reorders the arguments
-  // Batched GEMM interface
-  template <typename FuncT, typename T>
-  bool DoBlasCall(const T* a, const T* b, T* c,
-      const T* alpha_ptr, const T* beta_ptr, 
-      FuncT rocblas_func, Stream* stream,
-      rocblas_operation transa, rocblas_operation transb, uint64 m, uint64 n, uint64 k,
-      int lda, int ldb, int ldc)
-  {
-    return ROCMBlas::DoBlasInternal(rocblas_func, stream, true,
-                             transa, transb,
-                             m, n, k, alpha_ptr, a, lda,
-                             b, ldb, 
-                             beta_ptr, c, ldc);
-  }
-  // GEMV interface
-  template <typename FuncT, typename T>
-  bool DoBlasCall(const T* a, const T* x, T* y,
-      const T* alpha_ptr, const T* beta_ptr, 
-      FuncT rocblas_func, Stream* stream,
-      rocblas_operation trans, uint64 m, uint64 n, 
-      int lda, int incx, int incy)
-  {
-    return DoBlasInternal(rocblas_func, stream, true,
-                             trans, m, n, alpha_ptr,
-                             a, lda,
-                             x, incx, 
-                             beta_ptr, y, incy);
-  }
-  // GEMM interface
-  template <typename FuncT, typename T>
-  bool DoBlasCall(const T* a, const T* b, T* c,
-      const T* alpha_ptr, const T* beta_ptr, 
-      FuncT rocblas_func, Stream* stream,
-      rocblas_operation transa, rocblas_operation transb, 
-      int batch_stride_a, int batch_stride_b, int batch_stride_c, int batch_count,
-      uint64 m, uint64 n, uint64 k,
-      int lda, int ldb, int ldc)
-  {
-    return DoBlasInternal(rocblas_func, stream, true,
-                             transa, transb,
-                             m, n, k, alpha_ptr, a, lda,
-                             batch_stride_a, b, ldb, batch_stride_b,
-                             beta_ptr, c, ldc,
-                             batch_stride_c, batch_count);
-  }  
-  // TRSM interface
-  template <typename FuncT, typename T>
-  bool DoBlasCall(const T* a, T* b,
-    const T* alpha_ptr, 
-    FuncT rocblas_func, Stream* stream,
-    rocblas_operation transa, 
-    rocblas_side side, rocblas_fill uplo, 
-                          rocblas_diagonal diag, uint64 m, uint64 n, int lda, int ldb)
-  {
-    return DoBlasInternal(rocblas_func, stream, true,
-        side, uplo, transa, diag, m, n, alpha_ptr, a,
-        lda, b, ldb);
-  }
-
-  template <typename FuncT, typename T, typename... Args> 
-  port::Status DoBlasComplex(ScratchAllocator* scratch_allocator,
-      Stream* stream,
-      const T* a, T* b,
-      uint64_t na, uint64_t nb, 
-      std::complex<T> alpha, 
-      FuncT rocblas_func,
-      int conj_op,
-      Args... args);
-
-  template <typename FuncT, typename T, typename... Args> 
-  port::Status DoBlasComplex(ScratchAllocator* scratch_allocator,
-      Stream* stream,
-      const T* a, const T* b, T* c,
-      uint64_t na, uint64_t nb, uint64_t nc, 
-      std::complex<T> alpha, std::complex<T> beta,
-      FuncT rocblas_func,
-      int conj_op,
-      Args... args);
-
-
-  // A helper allocation funciton to convert raw pointers memory layout to
+  // A helper allocation function to convert raw pointers memory layout to
   // strided flavor
   template <typename T>
   port::Status AllocateStridedBuffer(
@@ -231,9 +158,9 @@ class ROCMBlas : public blas::BlasSupport {
       const port::ArraySlice<DeviceMemory<T> *> &b_ptrs_to_wrappers, int ldb,
       T beta, const port::ArraySlice<DeviceMemory<T> *> &c_ptrs_to_wrappers,
       int ldc, int batch_count, ScratchAllocator *scratch_allocator);
-
+/*
   template <typename T, typename FuncT>
-  port::Status DoBlasGemmBatchedInternalCpx(
+  port::Status DoBlasGemmBatchedInternal(
     FuncT rocblas_func, Stream *stream, blas::Transpose transa,
     blas::Transpose transb, uint64 m, uint64 n, uint64 k, std::complex<T> alpha,
     const port::ArraySlice<DeviceMemory<std::complex<T> > *> &a_ptrs_to_wrappers, int lda,
@@ -241,7 +168,7 @@ class ROCMBlas : public blas::BlasSupport {
     std::complex<T> beta, const port::ArraySlice<DeviceMemory<std::complex<T> > *> &c_ptrs_to_wrappers,
     int ldc, int batch_count, ScratchAllocator *scratch_allocator);
 
-
+*/
   // Helper function for implementing DoBlasGemmWithAlgorithm.
   //
   // We take alpha and beta by const reference because T might be Eigen::half,

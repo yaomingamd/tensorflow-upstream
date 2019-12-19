@@ -370,8 +370,7 @@ class SVDBenchmark(test.Benchmark):
 
 
 if __name__ == "__main__":
-  dtypes_to_test = [np.float32, np.float64]
-  dtypes_to_test += [np.complex64, np.complex128]
+  dtypes_to_test = [np.float32, np.float64, np.complex64, np.complex128]
   for compute_uv in False, True:
     for full_matrices in False, True:
       for dtype in dtypes_to_test:

@@ -5,11 +5,9 @@ load(
     "//tensorflow/stream_executor:build_defs.bzl",
     "stream_executor_friends",
 )
-
 load("//tensorflow:tensorflow.bzl", "tf_copts")
-load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm_is_configured", "rocm_default_copts")
+load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm_is_configured")
 load("//tensorflow/core/platform:build_config_root.bzl", "if_static")
-load("@local_config_cuda//cuda:build_defs.bzl","cuda_library")
 
 package(
     default_visibility = [":friends"],
@@ -156,14 +154,6 @@ cc_library(
     deps = ["//tensorflow/stream_executor:platform"],
 )
 
-cuda_library(
-    name = "rocblas_helpers",
-    srcs = ["rocm_blas.cu.cc"],
-    copts=rocm_default_copts(),
-    deps=["@local_config_rocm//rocm:rocm_headers"],
-    alwayslink = 1
-)
-
 cc_library(
     name = "rocblas_plugin",
     srcs = if_rocm_is_configured(["rocm_blas.cc"]),
@@ -172,7 +162,6 @@ cc_library(
     deps = if_rocm_is_configured([
         ":rocm_gpu_executor",
         ":rocm_platform_id",
-        ":rocblas_helpers",
         "//third_party/eigen3",
         "//tensorflow/core:lib_internal",
         "//tensorflow/stream_executor",
