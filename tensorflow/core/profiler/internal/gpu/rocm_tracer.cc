@@ -593,8 +593,11 @@ Status RocmTracer::Finalize() {
 }
 
 /*static*/ uint64 RocmTracer::GetTimestamp() {
-  // ROCM TODO: revise with HIP or ROCR API
-  // uint64_t tsc;
+  uint64_t ts;
+  if (roctracer_get_timestamp(&ts) == ROCTRACER_STATUS_SUCCESS) {
+    return ts;
+  }
+  // Return 0 on error.
   return 0;
 }
 
