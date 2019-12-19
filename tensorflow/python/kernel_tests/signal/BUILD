@@ -31,7 +31,6 @@ cuda_py_tests(
         "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python/ops/signal",
     ],
-    tags = ["no_rocm"],
 )
 
 cuda_py_tests(
@@ -75,7 +74,6 @@ cuda_py_tests(
         "//tensorflow/python:framework_test_lib",
         "//tensorflow/python/ops/signal",
     ],
-    tags = ["no_rocm"],
 )
 
 cuda_py_tests(
@@ -131,10 +129,7 @@ cuda_py_tests(
         "//tensorflow/python:platform_test",
         "//tensorflow/python/ops/signal",
     ],
-    tags = [
-        "no_rocm",
-        "nomac",
-    ],
+    tags = ["nomac"],
 )
 
 cuda_py_tests(

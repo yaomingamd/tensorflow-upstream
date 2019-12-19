@@ -3537,9 +3537,6 @@ cuda_py_test(
         "@absl_py//absl/testing:parameterized",
         "//tensorflow/python:client_testlib",
     ],
-    tags = [
-        "no_rocm",
-    ],
 )
 
 py_library(
@@ -4636,7 +4633,6 @@ cuda_py_test(
         "//third_party/py/numpy",
     ],
     shard_count = 16,
-    tags = ["no_rocm"],
 )
 
 cuda_py_test(
@@ -5894,6 +5890,10 @@ tf_py_test(
     name = "convert_to_constants_test",
     size = "small",
     srcs = ["framework/convert_to_constants_test.py"],
+    tags = [
+        "no_cuda",
+        "no_rocm",
+    ],
     additional_deps = [
         ":convert_to_constants",
         "client_testlib",
@@ -7247,10 +7247,7 @@ cuda_py_test(
         "//third_party/py/numpy",
         "//tensorflow/core:protos_all_py",
     ],
-    tags = [
-        "grappler",
-        "no_rocm",
-    ],
+    tags = ["grappler"],
     # This test analyzes the graph, but XLA changes the names of nodes.
     xla_enable_strict_auto_jit = False,
 )

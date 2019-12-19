@@ -733,11 +733,16 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     return;
   }
 
+#if GOOGLE_CUDA
   // Tensor Core (NVIDIA Volta+ GPUs) supports efficient convolution with fp16
   // in NHWC data layout. In all other configurations it's more efficient to
   // run computation in NCHW data format.
   const bool compute_in_nhwc =
       DataTypeToEnum<T>::value == DT_HALF && IsVoltaOrLater(*stream->parent());
+#else
+  // fast NHWC implementation is a CUDA only feature
+  const bool compute_in_nhwc = false;
+#endif
 
   // We only do one directional conversion: NHWC->NCHW. We never convert in the
   // other direction. Grappler layout optimizer selects preferred layout and
@@ -953,6 +958,49 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
       AsDeviceMemory(transformed_output.template flat<T>().data(),
                      transformed_output.template flat<T>().size());
 
+  Tensor bfloat16_input, bfloat16_filter, bfloat16_output;
+  se::DeviceMemory<bfloat16> bfloat16_input_ptr, bfloat16_filter_ptr,
+      bfloat16_output_ptr;
+
+  if (TestMIOpenBFloat16Support<T>()) {
+    TensorShape input_shape =
+        ShapeFromFormat(FORMAT_NCHW, in_batch, in_rows, in_cols, in_depths);
+    VLOG(3) << "Allocate temporary memory for bfloat16 input";
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_temp(DT_BFLOAT16, input_shape, &bfloat16_input));
+    functor::ConvertToBFloat16<GPUDevice, T, 4>()(
+        ctx->eigen_device<GPUDevice>(),
+        const_cast<const Tensor&>(input).tensor<T, 4>(),
+        bfloat16_input.tensor<bfloat16, 4>());
+
+    TensorShape filter_shape =
+        TensorShape({filter.dim_size(3), filter.dim_size(2), filter.dim_size(0),
+                     filter.dim_size(1)});
+    VLOG(3) << "Allocate temporary memory for bfloat16 filter";
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_temp(DT_BFLOAT16, filter_shape, &bfloat16_filter));
+    functor::ConvertToBFloat16<GPUDevice, T, 4>()(
+        ctx->eigen_device<GPUDevice>(),
+        const_cast<const Tensor&>(transformed_filter).tensor<T, 4>(),
+        bfloat16_filter.tensor<bfloat16, 4>());
+
+    TensorShape output_shape =
+        ShapeFromFormat(FORMAT_NCHW, out_batch, out_rows, out_cols, out_depths);
+    VLOG(3) << "Allocate temporary memory for bfloat16 output";
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_temp(DT_BFLOAT16, output_shape, &bfloat16_output));
+
+    bfloat16_input_ptr =
+        AsDeviceMemory(bfloat16_input.template flat<bfloat16>().data(),
+                       bfloat16_input.template flat<bfloat16>().size());
+    bfloat16_filter_ptr =
+        AsDeviceMemory(bfloat16_filter.template flat<bfloat16>().data(),
+                       bfloat16_filter.template flat<bfloat16>().size());
+    bfloat16_output_ptr =
+        AsDeviceMemory(bfloat16_output.template flat<bfloat16>().data(),
+                       bfloat16_output.template flat<bfloat16>().size());
+  }
+
   static int64 ConvolveScratchSize = GetDnnWorkspaceLimit(
       // default value is in bytes despite the name of the environment variable
       "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
@@ -960,6 +1008,11 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
 
   int device_id = stream->parent()->device_ordinal();
   DataType dtype = input.dtype();
+#if TENSORFLOW_USE_ROCM
+  if (TestMIOpenBFloat16Support<T>()) {
+    dtype = DT_BFLOAT16;
+  }
+#endif
   ConvParameters conv_parameters = {in_batch,             // batch
                                     in_depths,            // in_depths
                                     {{in_rows,            // in_rows
@@ -1039,28 +1092,76 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
         CheckRedzones(rz_allocator, &result);
       }
     }
+
+#elif TENSORFLOW_USE_ROCM
+    std::vector<AlgorithmDesc> algorithms;
+    if (TestMIOpenBFloat16Support<T>()) {
+      OP_REQUIRES(ctx,
+                  stream->parent()->GetMIOpenConvolveAlgorithms(
+                      se::dnn::ConvolutionKind::FORWARD, stream,
+                      se::dnn::ToDataType<bfloat16>::value, input_desc,
+                      filter_desc, conv_desc, output_desc, &algorithms),
+                  errors::Unknown(
+                      "Failed to get convolution algorithm. This is probably "
+                      "because MIOpen failed to initialize, so try looking to "
+                      "see if a warning log message was printed above."));
+    } else {
+      OP_REQUIRES(ctx,
+                  stream->parent()->GetMIOpenConvolveAlgorithms(
+                      se::dnn::ConvolutionKind::FORWARD, stream,
+                      se::dnn::ToDataType<T>::value, input_desc, filter_desc,
+                      conv_desc, output_desc, &algorithms),
+                  errors::Unknown(
+                      "Failed to get convolution algorithm. This is probably "
+                      "because MIOpen failed to initialize, so try looking to "
+                      "see if a warning log message was printed above."));
+    }
+    se::DeviceMemory<T> output_tensor = output_ptr;
+
+    std::vector<tensorflow::AutotuneResult> results;
+    for (auto profile_algorithm : algorithms) {
+      // TODO(zhengxq): profile each algorithm multiple times to better
+      // accuracy.
+      DnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
+      ProfileResult profile_result;
+      bool miopen_launch_status = false;
+      if (TestMIOpenBFloat16Support<T>()) {
+        miopen_launch_status =
+            stream
+                ->ThenConvolveWithAlgorithm(
+                    input_desc, bfloat16_input_ptr, filter_desc,
+                    bfloat16_filter_ptr, conv_desc, output_desc,
+                    &bfloat16_output_ptr, &scratch_allocator,
+                    AlgorithmConfig(profile_algorithm), &profile_result)
+                .ok();
+      } else {
+        miopen_launch_status =
+            stream
+                ->ThenConvolveWithAlgorithm(
+                    input_desc, input_ptr, filter_desc, filter_ptr, conv_desc,
+                    output_desc, &output_ptr, &scratch_allocator,
+                    AlgorithmConfig(profile_algorithm), &profile_result)
+                .ok();
+      }
+      if (miopen_launch_status && profile_result.is_valid()) {
+        results.emplace_back();
+        auto& result = results.back();
+        result.mutable_conv()->set_algorithm(profile_algorithm.algo_id());
+        result.mutable_conv()->set_tensor_ops_enabled(
+            profile_algorithm.tensor_ops_enabled());
+
+        result.set_scratch_bytes(scratch_allocator.TotalByteSize());
+        *result.mutable_run_time() = proto_utils::ToDurationProto(
+            absl::Milliseconds(profile_result.elapsed_time_in_ms()));
+      }
+    }
+
+#endif
     LogConvAutotuneResults(se::dnn::ConvolutionKind::FORWARD,
                            se::dnn::ToDataType<T>::value, input_ptr, filter_ptr,
                            output_tensor, input_desc, filter_desc, output_desc,
                            conv_desc, stream->parent(), results);
     OP_REQUIRES_OK(ctx, BestCudnnConvAlgorithm(results, &algorithm_config));
-#elif TENSORFLOW_USE_ROCM
-    DnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
-    ProfileResult best_result;
-    bool miopen_find_status =
-        stream
-            ->ThenConvolveWithAlgorithm(input_desc, input_ptr, filter_desc,
-                                        filter_ptr, conv_desc, output_desc,
-                                        &output_ptr, &scratch_allocator,
-                                        AlgorithmConfig(), &best_result)
-            .ok();
-
-    OP_REQUIRES(ctx, miopen_find_status && best_result.is_valid(),
-                errors::NotFound("Failed to find conv algorithm!"));
-
-    algorithm_config.set_algorithm(best_result.algorithm());
-    algorithm_config.set_scratch_size(best_result.scratch_size());
-#endif
     AutoTuneConv::GetInstance()->Insert(conv_parameters, algorithm_config);
   }
 
@@ -1070,18 +1171,37 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
           << algorithm_config.algorithm()->tensor_ops_enabled();
 
   DnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
-  bool cudnn_launch_status =
-      stream
-          ->ThenConvolveWithAlgorithm(input_desc, input_ptr, filter_desc,
-                                      filter_ptr, conv_desc, output_desc,
-                                      &output_ptr, &scratch_allocator,
-                                      algorithm_config, nullptr)
-          .ok();
+  bool cudnn_launch_status = false;
+  if (TestMIOpenBFloat16Support<T>()) {
+    cudnn_launch_status = stream
+                              ->ThenConvolveWithAlgorithm(
+                                  input_desc, bfloat16_input_ptr, filter_desc,
+                                  bfloat16_filter_ptr, conv_desc, output_desc,
+                                  &bfloat16_output_ptr, &scratch_allocator,
+                                  algorithm_config, nullptr)
+                              .ok();
+  } else {
+    cudnn_launch_status =
+        stream
+            ->ThenConvolveWithAlgorithm(input_desc, input_ptr, filter_desc,
+                                        filter_ptr, conv_desc, output_desc,
+                                        &output_ptr, &scratch_allocator,
+                                        algorithm_config, nullptr)
+            .ok();
+  }
 
   if (!cudnn_launch_status) {
     ctx->SetStatus(errors::Internal(
         "cuDNN launch failure : input shape(", input.shape().DebugString(),
         ") filter shape(", filter.shape().DebugString(), ")"));
+  }
+
+  if (TestMIOpenBFloat16Support<T>()) {
+    VLOG(3) << "Convert the output tensor back from bfloat16 to float.";
+    functor::ConvertFromBFloat16<GPUDevice, T, 4>()(
+        ctx->eigen_device<GPUDevice>(),
+        const_cast<const Tensor&>(bfloat16_output).tensor<bfloat16, 4>(),
+        transformed_output.tensor<T, 4>());
   }
 
   if (data_format == FORMAT_NHWC && compute_data_format == FORMAT_NCHW) {

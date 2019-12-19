@@ -522,7 +522,7 @@ def set_cc_opt_flags(environ_cp):
   elif is_windows():
     default_cc_opt_flags = '/arch:AVX'
   else:
-    default_cc_opt_flags = '-march=native -Wno-sign-compare'
+    default_cc_opt_flags = '-march=haswell -Wno-sign-compare'
   question = ('Please specify optimization flags to use during compilation when'
               ' bazel option "--config=opt" is specified [Default is %s]: '
              ) % default_cc_opt_flags
@@ -1158,7 +1158,7 @@ def system_specific_test_config(env):
       'test --test_tag_filters=-benchmark-test,-no_oss,-oss_serial')
   write_to_bazelrc('test --build_tag_filters=-benchmark-test,-no_oss')
   if is_windows():
-    if env.get('TF_NEED_CUDA', None) == '1':
+    if (env.get('TF_NEED_CUDA', None) == '1') or (env.get('TF_NEED_ROCM', None) == '1'):
       write_to_bazelrc(
           'test --test_tag_filters=-no_windows,-no_windows_gpu,-no_gpu')
       write_to_bazelrc(
@@ -1170,7 +1170,7 @@ def system_specific_test_config(env):
     write_to_bazelrc('test --test_tag_filters=-gpu,-nomac,-no_mac')
     write_to_bazelrc('test --build_tag_filters=-gpu,-nomac,-no_mac')
   elif is_linux():
-    if env.get('TF_NEED_CUDA', None) == '1':
+    if (env.get('TF_NEED_CUDA', None) == '1') or (env.get('TF_NEED_ROCM', None) == '1'):
       write_to_bazelrc('test --test_tag_filters=-no_gpu')
       write_to_bazelrc('test --build_tag_filters=-no_gpu')
       write_to_bazelrc('test --test_env=LD_LIBRARY_PATH')
@@ -1413,6 +1413,9 @@ def main():
       environ_cp.get('LD_LIBRARY_PATH') != '1'):
     write_action_env_to_bazelrc('LD_LIBRARY_PATH',
                                 environ_cp.get('LD_LIBRARY_PATH'))
+
+  if (environ_cp.get('TF_NEED_ROCM') == '1' and environ_cp.get('ROCM_TOOLKIT_PATH')):
+    write_action_env_to_bazelrc('ROCM_TOOLKIT_PATH',environ_cp.get('ROCM_TOOLKIT_PATH'))
 
   environ_cp['TF_NEED_CUDA'] = str(
       int(get_var(environ_cp, 'TF_NEED_CUDA', 'CUDA', False)))

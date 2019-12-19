@@ -4,7 +4,7 @@
 load("//tensorflow/compiler/xla/tests:build_defs.bzl", "generate_backend_suites", "generate_backend_test_macros", "xla_test", "xla_test_library")
 load(
     "//tensorflow/core/platform:default/build_config_root.bzl",
-    "tf_cuda_tests_tags",
+    "tf_cuda_tests_tags", "tf_gpu_tests_tags",
 )
 load("//tensorflow:tensorflow.bzl", "tf_cc_binary", "tf_cc_test")
 
@@ -479,6 +479,7 @@ xla_test(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
     ],
+    tags = ["no_rocm"],   # crashes sometimes on CI
 )
 
 xla_test(
@@ -600,6 +601,7 @@ xla_test(
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
     ],
+    tags = ["no_rocm"],
 )
 
 xla_test(
@@ -645,6 +647,7 @@ xla_test(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
+    tags = ["no_rocm"],
 )
 
 xla_test(
@@ -924,6 +927,7 @@ xla_test(
     srcs = ["dot_operation_test.cc"],
     shard_count = 20,
     tags = [
+        "no_rocm",
         "optonly",
     ],
     deps = [
@@ -957,6 +961,7 @@ xla_test(
     backends = ["gpu"],
     shard_count = 20,
     tags = [
+        "no_rocm",
         "optonly",
     ],
     deps = [
@@ -1019,7 +1024,10 @@ xla_test(
         ],
     },
     shard_count = 20,
-    tags = ["optonly"],
+    tags = [
+        "no_rocm",
+	"optonly",
+    ],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array2d",
@@ -1113,7 +1121,7 @@ xla_test(
     timeout = "long",
     srcs = ["convolution_test.cc"],
     shard_count = 40,
-    tags = ["optonly"],
+    tags = ["optonly", "no_rocm"],
     deps = CONVOLUTION_TEST_DEPS + [
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
@@ -1130,7 +1138,7 @@ xla_test(
     args = ["--xla_gpu_disable_autotune"],
     backends = ["gpu"],
     shard_count = 40,
-    tags = ["optonly"],
+    tags = ["optonly", "no_rocm"],
     deps = CONVOLUTION_TEST_DEPS + [
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
@@ -1148,6 +1156,7 @@ xla_test(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
     ],
+    tags = ["no_rocm"],
 )
 
 xla_test(
@@ -1417,9 +1426,7 @@ xla_test(
     name = "reduce_test",
     srcs = ["reduce_test.cc"],
     shard_count = 31,
-    tags = [
-        "optonly",
-    ],
+    tags = ["optonly", "no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array2d",
@@ -1496,9 +1503,7 @@ xla_test(
     name = "select_and_scatter_test",
     timeout = "long",
     srcs = ["select_and_scatter_test.cc"],
-    tags = [
-        "optonly",
-    ],
+    tags = ["optonly", "no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array2d",
@@ -1556,6 +1561,7 @@ xla_test(
 
 xla_test(
     name = "token_hlo_test",
+    tags = ["no_rocm"],
     srcs = ["token_hlo_test.cc"],
     deps = [
         ":test_macros_header",
@@ -1930,6 +1936,7 @@ xla_test(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -2119,7 +2126,6 @@ xla_test(
 tf_cc_test(
     name = "llvm_compiler_test",
     srcs = ["llvm_compiler_test.cc"],
-    tags = tf_cuda_tests_tags(),
     deps = [
         ":verified_hlo_module",
         "//tensorflow/compiler/xla:literal_util",
@@ -2131,10 +2137,11 @@ tf_cc_test(
         "//tensorflow/compiler/xla/service:llvm_compiler",
         "//tensorflow/compiler/xla/service:platform_util",
         "//tensorflow/compiler/xla/service/cpu:cpu_compiler",
-        "//tensorflow/compiler/xla/service/gpu:nvptx_compiler_impl",
+        "//tensorflow/compiler/xla/service/gpu:gpu_compiler",
+        "//tensorflow/compiler/xla/service/gpu:amdgpu_compiler_impl",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/stream_executor",
+        "//tensorflow/core:stream_executor_no_cuda",
         "@com_google_absl//absl/memory",
         "@llvm//:core",
     ],
@@ -2431,7 +2438,6 @@ tf_cc_test(
     name = "sample_file_test",
     srcs = ["sample_file_test.cc"],
     data = ["isolated_convolution.hlo"],
-    tags = tf_cuda_tests_tags(),
     deps = [
         ":hlo_test_base",
         "//tensorflow/compiler/xla:test",
@@ -2543,7 +2549,7 @@ xla_test(
 xla_test(
     name = "cholesky_test",
     srcs = ["cholesky_test.cc"],
-    tags = ["optonly"],
+    tags = ["optonly", "no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array2d",

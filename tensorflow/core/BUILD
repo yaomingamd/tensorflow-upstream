@@ -128,6 +128,10 @@ load(
     "tf_gpu_tests_tags",
 )
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+load(
+    "@local_config_rocm//rocm:build_defs.bzl",
+    "if_rocm"
+)
 load("@local_config_tensorrt//:build_defs.bzl", "if_tensorrt")
 load("@io_bazel_rules_closure//closure:defs.bzl", "closure_proto_library")
 load(
@@ -1398,6 +1402,8 @@ cc_library(
     ]) + if_cuda([
         "//tensorflow/core/grappler/optimizers:gpu_swapping_kernels",
         "//tensorflow/core/grappler/optimizers:gpu_swapping_ops",
+    ]) + if_rocm([
+        "//tensorflow/core/kernels:gpu_fusion_ops",
     ]) + if_nccl([
         "//tensorflow/core/kernels:nccl_kernels",
     ]) + if_tensorrt([
@@ -2829,6 +2835,7 @@ GRAPH_HDRS = [
     "graph/types.h",
     "graph/validate.h",
     "graph/while_context.h",
+    "graph/gpu_fusion_pass.h",
 ]
 
 tf_cuda_library(
@@ -3043,6 +3050,7 @@ tf_cuda_library(
         "graph/mkl_layout_pass.cc",
         "graph/mkl_tfconversion_pass.cc",
         "graph/quantize_training.cc",
+        "graph/gpu_fusion_pass.cc",
         "public/session.h",
         "public/session_options.h",
         "public/version.h",
@@ -4339,7 +4347,7 @@ tf_cc_test(
     size = "small",
     srcs = ["common_runtime/constant_folding_test.cc"],
     linkstatic = tf_kernel_tests_linkstatic(),
-    tags = tf_cuda_tests_tags() + ["no_rocm"],
+    tags = tf_cuda_tests_tags(),
     deps = [
         ":core",
         ":core_cpu",
@@ -4405,7 +4413,6 @@ tf_cuda_cc_test(
     size = "small",
     srcs = ["common_runtime/process_function_library_runtime_test.cc"],
     linkstatic = tf_kernel_tests_linkstatic(),
-    tags = ["no_rocm"],
     deps = [
         ":core_cpu",
         ":core_cpu_internal",

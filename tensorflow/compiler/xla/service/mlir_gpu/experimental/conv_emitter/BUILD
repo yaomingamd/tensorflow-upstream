@@ -58,4 +58,5 @@ tf_cc_test(
         "@local_config_mlir//:StandardDialectRegistration",
         "@local_config_mlir//:Transforms",
     ],
+    tags = ["no_rocm"],
 )

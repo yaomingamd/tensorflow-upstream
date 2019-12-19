@@ -2,6 +2,7 @@
 
 load("//tensorflow:tensorflow.bzl", "sycl_py_test", "tf_custom_op_library", "tf_py_test")
 load("//tensorflow:tensorflow.bzl", "cuda_py_test")
+load("//tensorflow:tensorflow.bzl", "gpu_py_test")
 
 package(
     default_visibility = ["//tensorflow:internal"],
@@ -134,7 +135,6 @@ cuda_py_test(
         "//tensorflow/python:client_testlib",
     ],
     grpc_enabled = True,
-    tags = ["no_rocm"],
 )
 
 cuda_py_test(
@@ -1292,7 +1292,6 @@ cuda_py_test(
     shard_count = 10,
     tags = [
         "no_oss",  # TODO(b/142818120): Re-enable.
-        "no_rocm",
     ],
 )
 
@@ -1627,6 +1626,21 @@ cuda_py_test(
         "//tensorflow/python:math_ops",
     ],
     shard_count = 20,
+)
+
+cuda_py_test(
+    name = "batch_gemm_op_test",
+    size = "small",
+    srcs = ["batch_gemm_op_test.py"],
+    additional_deps = [
+        "//third_party/py/numpy",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:math_ops",
+    ],
+    shard_count = 20,
+    xla_enable_strict_auto_jit = True,
 )
 
 cuda_py_test(
@@ -2737,7 +2751,6 @@ cuda_py_test(
     ],
     flaky = 1,  # create_local_cluster sometimes times out.
     shard_count = 10,
-    tags = ["no_rocm"],
 )
 
 cuda_py_test(
@@ -2907,7 +2920,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "conv_ops_test",
-    size = "medium",
+    size = "large",
     srcs = ["conv_ops_test.py"],
     additional_deps = [
         "//third_party/py/numpy",
@@ -3450,9 +3463,6 @@ cuda_py_test(
         "//tensorflow/python:math_ops",
     ],
     shard_count = 20,
-    tags = [
-        "no_rocm",  # TODO(rocm): feature not supported on ROCm platform
-    ],
 )
 
 cuda_py_test(
@@ -3771,6 +3781,30 @@ cuda_py_test(
     grpc_enabled = True,
 )
 
+gpu_py_test(
+    name = "gpu_fusion_ops_test",
+    size = "small",
+    srcs = ["gpu_fusion_ops_test.py"],
+    additional_deps = [
+        "//third_party/py/numpy",
+        "//tensorflow/core:protos_all_py",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:nn",
+        "//tensorflow/python:nn_grad",
+        "//tensorflow/python:nn_ops",
+        "//tensorflow/python:gradients",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:platform",
+        "//tensorflow/python:random_ops",
+        "//tensorflow/python:variables",
+    ],
+)
+
 cuda_py_test(
     name = "critical_section_test",
     size = "medium",
@@ -3805,7 +3839,6 @@ cuda_py_test(
         "//tensorflow/python:linalg_ops",
     ],
     shard_count = 10,
-    tags = ["no_rocm"],
 )
 
 cuda_py_test(

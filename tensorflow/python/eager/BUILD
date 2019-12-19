@@ -257,7 +257,6 @@ cuda_py_test(
         "//tensorflow/python:training",
     ],
     tags = [
-        "no_rocm",
         "no_windows",  #TODO(b/139745667)
     ],
 )
@@ -713,6 +712,7 @@ tf_xla_py_test(
     srcs = ["def_function_xla_test.py"],
     tags = [
         "no_pip",
+        "no_cuda",
         "no_windows",
         "nomac",
     ],
@@ -790,6 +790,8 @@ tpu_py_test(
     name = "remote_cloud_tpu_test",
     srcs = ["remote_cloud_tpu_test.py"],
     tags = [
+        "no_cuda",
+        "no_rocm",
         "notap",
     ],
     deps = [

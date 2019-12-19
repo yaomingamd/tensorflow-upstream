@@ -108,7 +108,9 @@ tf_py_test(
         "--max_steps=10",
     ],
     main = "fully_connected_feed.py",
-    tags = ["no_pip"],
+    tags = [
+        "no_pip",
+    ],
 )
 
 tf_py_test(

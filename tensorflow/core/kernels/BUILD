@@ -522,7 +522,7 @@ cc_library(
 
 tf_cuda_library(
     name = "gpu_utils",
-    srcs = if_cuda_is_configured(["gpu_utils.cc"]),
+    srcs = if_cuda_or_rocm(["gpu_utils.cc"]),
     hdrs = ["gpu_utils.h"],
     deps = [
         ":gpu_util_hdrs",
@@ -3799,6 +3799,7 @@ cc_library(
         ":aggregate_ops",
         ":argmax_op",
         ":batch_matmul_op",
+        ":batch_gemm_op",
         ":betainc_op",
         ":bincount_op",
         ":bucketize_op",
@@ -3846,6 +3847,14 @@ tf_mkl_kernel_library(
     srcs = ["mkl_batch_matmul_op.cc"],
     hdrs = ["batch_matmul_op_impl.h"],
     deps = MATH_DEPS + mkl_deps(),
+)
+
+tf_kernel_library(
+    name = "batch_gemm_op",
+    prefix = "batch_gemm_op",
+    deps = MATH_DEPS + [
+        ":batch_matmul_op"
+    ],
 )
 
 tf_kernel_library(
@@ -8141,6 +8150,26 @@ tf_kernel_library(
     deps = [
         "//tensorflow/core:framework",
         "@icu//:common",
+    ],
+)
+
+tf_kernel_library(
+    name = "gpu_fusion_ops",
+    prefix = "gpu_fusion_ops",
+    deps = [
+        ":bounds_check",
+        ":conv_2d",
+        ":conv_ops_gpu_hdrs",
+        ":image_resizer_state",
+        ":fill_functor",
+        ":ops_util",
+        ":gpu_util_hdrs",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core:nn_ops_op_lib",
+        "//third_party/eigen3",
     ],
 )
 

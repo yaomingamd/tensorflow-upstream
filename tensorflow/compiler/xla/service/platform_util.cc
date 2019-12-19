@@ -51,7 +51,6 @@ string CanonicalPlatformName(const string& platform_name) {
   if (lowercase_platform_name == "cpu") {
     return "host";
   }
-  // When configured on CUDA, "gpu" and "cuda" mean the same thing.
   // When configured on ROCm, "gpu" and "rocm" mean the same thing.
   if (lowercase_platform_name == "gpu") {
 #if TENSORFLOW_USE_ROCM

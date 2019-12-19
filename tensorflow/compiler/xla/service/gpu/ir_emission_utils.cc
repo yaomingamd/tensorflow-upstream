@@ -64,6 +64,26 @@ bool AreValidGemmShapes(const Shape& lhs_shape, const Shape& rhs_shape,
          !ShapeUtil::IsZeroElementArray(rhs_shape);
 }
 
+bool DotImplementedAsGemm(const HloInstruction& dot) {
+  CHECK_EQ(dot.opcode(), HloOpcode::kDot);
+  const Shape& lhs_shape = dot.operand(0)->shape();
+  const Shape& rhs_shape = dot.operand(1)->shape();
+  const DotDimensionNumbers& dim_numbers = dot.dot_dimension_numbers();
+
+  // If gemm can accept the operand shapes, use it rather than a custom
+  // kernel.
+  if (AreValidGemmShapes(lhs_shape, rhs_shape, dot.shape(),
+                         dim_numbers.lhs_batch_dimensions_size())) {
+    // The size of the reduction dimension should match. The shape inference
+    // guarantees this invariant, so the check here is for programming
+    // errors.
+    CHECK_EQ(lhs_shape.dimensions(dim_numbers.lhs_contracting_dimensions(0)),
+             rhs_shape.dimensions(dim_numbers.rhs_contracting_dimensions(0)));
+    return true;
+  }
+  return false;
+}
+
 // Given a shape and a group of contiguous dimensions in the shape, returns
 // a tuple of three values (major, middle, minor), where major is the size of
 // the dimensions more major then the given dimensions, minor is the size of
@@ -96,6 +116,28 @@ std::array<int64, 3> PartitionShapeByMiddleDimensions(
 }
 
 }  // namespace
+
+bool ImplementedAsGemm(const HloInstruction& hlo) {
+  // For certain types of Dot, we can call pre-canned BLAS gemm.
+  if (hlo.opcode() == HloOpcode::kDot) {
+    return DotImplementedAsGemm(hlo);
+  }
+
+  if (hlo.IsOutputFusion() &&
+      (hlo.fused_expression_root()->opcode() == HloOpcode::kMultiply ||
+       hlo.fused_expression_root()->opcode() == HloOpcode::kAdd)) {
+    // Try to find the dot inside the output fusion node.
+    const HloInstruction* dot = hlo.fused_expression_root()->operand(0);
+    if (dot->opcode() != HloOpcode::kDot) {
+      dot = hlo.fused_expression_root()->operand(1);
+    }
+    if (dot->opcode() == HloOpcode::kDot) {
+      return DotImplementedAsGemm(*dot);
+    }
+  }
+
+  return false;
+}
 
 bool IsMatrixMultiplication(const HloInstruction& dot) {
   if (dot.opcode() != HloOpcode::kDot) {
@@ -172,7 +214,7 @@ bool IsCustomCallToCusolver(const HloInstruction& hlo) {
 }
 
 bool ImplementedAsLibraryCall(const HloInstruction& hlo) {
-  return IsCublasGemm(hlo) || IsCustomCallToDnnBatchNorm(hlo) ||
+  return IsCublasGemm(hlo) || ImplementedAsGemm(hlo) || IsCustomCallToDnnBatchNorm(hlo) ||
          IsCustomCallToDnnConvolution(hlo);
 }
 
@@ -380,6 +422,39 @@ StatusOr<CudnnConvKind> GetCudnnConvKind(
     return CudnnConvKind::kForwardActivation;
   }
   return InternalError("Unexpected call target: %s", target);
+}
+
+StatusOr<se::dnn::ConvolutionKind> GetDnnConvolutionKind(
+    const HloCustomCallInstruction* instr) {
+  absl::string_view target = instr->custom_call_target();
+  if (target == kCudnnConvForwardCallTarget) {
+    return se::dnn::ConvolutionKind::FORWARD;
+  }
+  if (target == kCudnnConvBackwardInputCallTarget) {
+    return se::dnn::ConvolutionKind::BACKWARD_DATA;
+  }
+  if (target == kCudnnConvBackwardFilterCallTarget) {
+    return se::dnn::ConvolutionKind::BACKWARD_FILTER;
+  }
+  return InternalError("Unexpected call target: %s", target);
+}
+
+StatusOr<se::dnn::DataType> GetDnnDataType(
+    const HloCustomCallInstruction* conv) {
+  PrimitiveType output_primitive_type =
+      conv->shape().tuple_shapes(0).element_type();
+  switch (output_primitive_type) {
+    case F16:
+      return se::dnn::ToDataType<Eigen::half>::value;
+    case F32:
+      return se::dnn::ToDataType<float>::value;
+    case F64:
+      return se::dnn::ToDataType<double>::value;
+    default:
+      break;
+  }
+  return InternalError("Unsupported convolution datatype : %s",
+                       conv->ToString());
 }
 
 string CudnnConvKindToString(CudnnConvKind kind) {
