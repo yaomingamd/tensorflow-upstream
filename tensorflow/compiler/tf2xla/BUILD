@@ -7,6 +7,10 @@ load(
     "@local_config_rocm//rocm:build_defs.bzl",
     "if_rocm_is_configured",
 )
+load(
+    "//tensorflow/core/platform:default/build_config.bzl",
+    "tf_proto_library_cc",
+)
 load("//tensorflow/compiler/xla:xla.bzl", "xla_proto_library", "xla_py_proto_library")
 load("//tensorflow:tensorflow.bzl", "tf_portable_proto_library")
 load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm_is_configured")
