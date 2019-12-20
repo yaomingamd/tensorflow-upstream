@@ -218,22 +218,9 @@ class StepStatsRocmTracerAdaptor : public RocmTraceCollector {
         auto elapsed_ns = event.end_time_ns - event.start_time_ns;
         ns->set_op_end_rel_micros(elapsed_ns / 1000);
         ns->set_all_end_rel_micros(elapsed_ns / 1000);
-
-        // ROCM TODO: log stream sync event
-        //if (event.source == RocmTracerEventSource::ApiCallback) {
-        //  DCHECK_EQ(event.name, "hipStreamSynchronize");
-        //  ns->set_node_name(event.name);
-        //  ns->set_timeline_label(absl::StrCat("ThreadId ", event.thread_id));
-        //  ns->set_thread_id(event.thread_id);
-        //  collector->Save(sync_device, ns);
-        //}
-
-        // Get launch information if available.
-        // ROCM TODO: figure out how to set scheudled_micros.
-        //ns->set_scheduled_micros(it->second.enqueue_time_ns / 1000);
         ns->set_thread_id(event.thread_id);
         auto annotation_stack = ParseAnnotationStack(event.annotation);
-        std::string kernel_name = port::MaybeAbiDemangle(event.name.c_str());
+        std::string kernel_name = event.name.c_str();
         std::string activity_name =
             !annotation_stack.empty()
                 ? std::string(annotation_stack.back().name)
@@ -246,12 +233,13 @@ class StepStatsRocmTracerAdaptor : public RocmTraceCollector {
                 event.kernel_info.grid_x, event.kernel_info.grid_y,
                 event.kernel_info.grid_z, event.kernel_info.block_x,
                 event.kernel_info.block_y, event.kernel_info.block_z);
-            ns->set_timeline_label(absl::StrCat(kernel_name, " ", details,
+            ns->set_timeline_label(absl::StrCat(kernel_name, //" ", details,
                                                 "@@", event.annotation));
-            auto nscopy = new NodeExecStats(*ns);
-            collector->Save(absl::StrCat(stream_device, "all"), ns);
-            collector->Save(absl::StrCat(stream_device, event.stream_id),
-                            nscopy);
+            collector->Save(absl::StrCat(stream_device, event.stream_id), ns);
+
+            //auto nscopy = new NodeExecStats(*ns);
+            //collector->Save(absl::StrCat(stream_device, "all"), ns);
+            //collector->Save(absl::StrCat(stream_device, event.stream_id), nscopy);
             break;
           }
           case RocmTracerEventType::MemcpyH2D:

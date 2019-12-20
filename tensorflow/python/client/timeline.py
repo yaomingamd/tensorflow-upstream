@@ -411,7 +411,9 @@ class Timeline(object):
         if l < 0:
           l = len(lanes)
           lanes.append(ns.all_start_micros + ns.all_end_rel_micros)
-        ns.thread_id = l
+        # ROCM TODO: XXX
+        #ns.thread_id = l
+        ns.thread_id = 0
 
   def _emit_op(self, nodestats, pid, is_gputrace):
     """Generates a Chrome Trace event to show Op execution.
@@ -438,6 +440,14 @@ class Timeline(object):
     args = {'name': node_name, 'op': op}
     for i, iname in enumerate(inputs):
       args['input%d' % i] = iname
+
+    # ROCM XXX parse timeline_label
+    if is_gputrace:
+      timeline_labels = nodestats.timeline_label.split('@@')
+      if (len(timeline_labels) >= 2):
+        args['kernel_name'] = timeline_labels[0]
+        args['annotation'] = timeline_labels[1]
+
     self._chrome_trace.emit_region(start, duration, pid, tid, 'Op', op, args)
 
   def _emit_tensor_snapshot(self, tensor, timestamp, pid, tid, value):
