@@ -21,6 +21,7 @@ limitations under the License.
 #define TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCM_FFT_H_
 
 #include "rocm/include/rocfft/hipfft.h"
+#include "rocm/include/rocfft/rocfft.h"
 #include "tensorflow/stream_executor/fft.h"
 #include "tensorflow/stream_executor/platform/port.h"
 #include "tensorflow/stream_executor/plugin_registry.h"
@@ -75,6 +76,8 @@ class ROCMFftPlan : public fft::Plan {
                           uint64 *elem_count, fft::Type type,
                           ScratchAllocator *scratch_allocator);
 
+  int input_size_ = 0;
+  int rank_ = 0;
  protected:
   bool IsInitialized() const { return is_initialized_; }
 

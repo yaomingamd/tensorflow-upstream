@@ -159,13 +159,19 @@ port::Status ROCMFftPlan::Initialize(
     uint64 *input_embed, uint64 input_stride, uint64 input_distance,
     uint64 *output_embed, uint64 output_stride, uint64 output_distance,
     fft::Type type, int batch_count, ScratchAllocator *scratch_allocator) {
+  printf("ROCMFftPlan::Initialize rank %d, batch count %d, input_embed %p, output_embed %p\n", rank, batch_count, input_embed, output_embed);
   if (IsInitialized()) {
     LOG(FATAL) << "Try to repeatedly initialize.";
   }
+  //rocfft_setup();
   is_initialized_ = true;
   int elem_count_[3], input_embed_[3], output_embed_[3];
+  bool identity_embed = true;
+  input_size_ = 1;
+  rank_ = rank;
   for (int i = 0; i < rank; ++i) {
     elem_count_[i] = elem_count[i];
+    input_size_ *= elem_count_[i];
     if (input_embed) {
       input_embed_[i] = input_embed[i];
     }
@@ -201,6 +207,8 @@ port::Status ROCMFftPlan::Initialize(
           return port::Status::OK();
         case 3:
           // hipfftPlan3d
+          printf("hipfftPlan3d %d %d %d\n", elem_count_[0], elem_count_[1],
+                                 elem_count_[2]);
           ret =
               wrap::hipfftPlan3d(parent, &plan_, elem_count_[0], elem_count_[1],
                                  elem_count_[2], ROCMFftType(type));
@@ -253,6 +261,8 @@ port::Status ROCMFftPlan::Initialize(
           }
           break;
         case 3:
+          printf("hipfftPlan3d %d %d %d\n", elem_count_[0], elem_count_[1],
+                                 elem_count_[2]);
           ret = wrap::hipfftMakePlan3d(parent, plan_, elem_count_[0],
                                        elem_count_[1], elem_count_[2],
                                        ROCMFftType(type), &size_in_bytes);
@@ -342,6 +352,7 @@ port::Status ROCMFftPlan::Initialize(
       }
     }
   }
+  printf("ROCMFftPlan::Initialize success\n");
   return port::Status::OK();
 }
 
@@ -445,6 +456,7 @@ std::unique_ptr<fft::Plan> ROCMFft::Create3dPlan(Stream *stream, uint64 num_x,
                                                  bool in_place_fft) {
   std::unique_ptr<ROCMFftPlan> fft_plan_ptr{new ROCMFftPlan()};
   uint64 elem_count[3] = {num_x, num_y, num_z};
+  printf("create3dplan\n");
   port::Status status = fft_plan_ptr->Initialize(
       parent_, stream, 3, elem_count, type, /*scratch_allocator=*/nullptr);
   if (!status.ok()) {
@@ -474,6 +486,7 @@ std::unique_ptr<fft::Plan> ROCMFft::CreateBatchedPlan(
     uint64 input_stride, uint64 input_distance, uint64 *output_embed,
     uint64 output_stride, uint64 output_distance, fft::Type type,
     bool in_place_fft, int batch_count) {
+  printf("CreateBatchedPlan\n");
   std::unique_ptr<ROCMFftPlan> fft_plan_ptr{new ROCMFftPlan()};
   port::Status status = fft_plan_ptr->Initialize(
       parent_, stream, rank, elem_count, input_embed, input_stride,
@@ -492,6 +505,7 @@ std::unique_ptr<fft::Plan> ROCMFft::CreateBatchedPlanWithScratchAllocator(
     uint64 input_stride, uint64 input_distance, uint64 *output_embed,
     uint64 output_stride, uint64 output_distance, fft::Type type,
     bool in_place_fft, int batch_count, ScratchAllocator *scratch_allocator) {
+  printf("CreateBatchedPlanWithScratchAllocator\n");
   std::unique_ptr<ROCMFftPlan> fft_plan_ptr{new ROCMFftPlan()};
   port::Status status = fft_plan_ptr->Initialize(
       parent_, stream, rank, elem_count, input_embed, input_stride,
@@ -514,6 +528,7 @@ template <typename FuncT, typename InputT, typename OutputT>
 bool ROCMFft::DoFftInternal(Stream *stream, fft::Plan *plan, FuncT hipfftExec,
                             const DeviceMemory<InputT> &input,
                             DeviceMemory<OutputT> *output) {
+  printf("dofft\n");
   ROCMFftPlan *rocm_fft_plan = dynamic_cast<ROCMFftPlan *>(plan);
   if (rocm_fft_plan == nullptr) {
     LOG(ERROR) << "the passed-in plan is not a ROCMFftPlan object.";
@@ -522,6 +537,17 @@ bool ROCMFft::DoFftInternal(Stream *stream, fft::Plan *plan, FuncT hipfftExec,
 
   if (!SetStream(parent_, rocm_fft_plan->GetPlan(), stream)) {
     return false;
+  }
+
+  if(rocm_fft_plan->rank_==3 && std::is_same<InputT, OutputT>::value && 
+    (std::is_same<InputT, std::complex<float> >::value ||
+      std::is_same<InputT, std::complex<double> >::value ))
+  {
+    auto ptr = const_cast<InputT*>(GpuMemory(input));
+    hipMemcpy(GpuComplex(GpuMemoryMutable(output)), 
+        GpuComplex(const_cast<InputT*>(GpuMemory(input))),
+        rocm_fft_plan->input_size_ * sizeof(InputT),
+        hipMemcpyDeviceToDevice);
   }
 
   auto ret = hipfftExec(parent_, rocm_fft_plan->GetPlan(),
@@ -541,6 +567,7 @@ bool ROCMFft::DoFftWithDirectionInternal(Stream *stream, fft::Plan *plan,
                                          FuncT hipfftExec,
                                          const DeviceMemory<InputT> &input,
                                          DeviceMemory<OutputT> *output) {
+  printf("dofft2\n");
   ROCMFftPlan *rocm_fft_plan = dynamic_cast<ROCMFftPlan *>(plan);
   if (rocm_fft_plan == nullptr) {
     LOG(ERROR) << "the passed-in plan is not a ROCMFftPlan object.";
@@ -549,6 +576,17 @@ bool ROCMFft::DoFftWithDirectionInternal(Stream *stream, fft::Plan *plan,
 
   if (!SetStream(parent_, rocm_fft_plan->GetPlan(), stream)) {
     return false;
+  }
+
+  if(rocm_fft_plan->rank_==3 && std::is_same<InputT, OutputT>::value && 
+    (std::is_same<InputT, std::complex<float> >::value ||
+      std::is_same<InputT, std::complex<double> >::value ))
+  {
+    auto ptr = const_cast<InputT*>(GpuMemory(input));
+    hipMemcpy(GpuComplex(GpuMemoryMutable(output)), 
+        GpuComplex(const_cast<InputT*>(GpuMemory(input))),
+        rocm_fft_plan->input_size_ * sizeof(InputT),
+        hipMemcpyDeviceToDevice);
   }
 
   auto ret = hipfftExec(parent_, rocm_fft_plan->GetPlan(),
