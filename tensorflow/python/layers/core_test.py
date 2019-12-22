@@ -419,8 +419,7 @@ class DropoutTest(test.TestCase):
 
   @test_util.run_in_graph_and_eager_modes
   def testDynamicNoiseShape(self):
-    if test.is_built_with_rocm:
-      self.skipTest('ROCm dropout donot support noise_shape different than input tensor shape.')
+    #self.skipTest('R.OCm dropout donot support noise_shape different than input tensor shape.')
     inputs = array_ops.ones((5, 3, 2))
     noise_shape = [None, 1, None]
     dp = core_layers.Dropout(0.5, noise_shape=noise_shape, seed=1)
@@ -431,8 +430,7 @@ class DropoutTest(test.TestCase):
     self.assertAllClose(np_output[:, 0, :], np_output[:, 1, :])
 
   def testCustomNoiseShape(self):
-    if test.is_built_with_rocm:
-      self.skipTest('ROCm dropout donot support noise_shape different than input tensor shape.')
+    #self.skipTest('R.OCm dropout donot support noise_shape different than input tensor shape.')
     inputs = array_ops.ones((5, 3, 2))
     noise_shape = [5, 1, 2]
     dp = core_layers.Dropout(0.5, noise_shape=noise_shape, seed=1)

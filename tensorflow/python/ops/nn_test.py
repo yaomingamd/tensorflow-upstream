@@ -393,9 +393,7 @@ class DropoutTest(test_lib.TestCase):
     # that it is producing approximately the right number of ones over a large
     # number of samples, based on the keep probability. This time with shaped
     # noise.
-    if test_lib.is_built_with_rocm():
-      self.skipTest("MIOpen does not support noise_shape with a different dimension")
-
+    #self.skipTest("R.OCm MIOpen does not support noise_shape with a different dimension")
     x_dim = 40 * 30
     y_dim = 3
     num_iter = 10
@@ -420,8 +418,7 @@ class DropoutTest(test_lib.TestCase):
 
   def testShapedDropoutCorrelation(self):
     # Runs a shaped dropout and tests that the correlations are correct.
-    if test_lib.is_built_with_rocm():
-       self.skipTest("MIOpen does not support noise_shape with a different dimension")
+    #self.skipTest("R.OCm MIOpen does not support noise_shape with a different dimension")
 
     x_dim = 40
     y_dim = 30
@@ -479,9 +476,7 @@ class DropoutTest(test_lib.TestCase):
     self.assertEqual(x.get_shape(), dropout_x.get_shape())
 
   def testPartialShapedDropout(self):
-    if test_lib.is_built_with_rocm():
-       self.skipTest("MIOpen does not support noise_shape with a different dimension")
-
+    #self.skipTest("R.OCm MIOpen does not support noise_shape with a different dimension")
     x_dim = 40 * 30
     y_dim = 3
     num_iter = 10
@@ -545,9 +540,7 @@ class DropoutTest(test_lib.TestCase):
 
   @test_util.run_deprecated_v1
   def testShapedDropoutShapeError(self):
-    if test_lib.is_built_with_rocm():
-       self.skipTest("MIOpen does not support noise_shape with a different dimension")
-
+    #self.skipTest("R.OCm MIOpen does not support noise_shape with a different dimension")
     # Runs shaped dropout and verifies an error is thrown on misshapen noise.
     x_dim = 40
     y_dim = 30
@@ -1338,9 +1331,9 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test1DNumpy(self):
-    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # explicilty use float32 for R.OCm, as MIOpen does not yet support float64
     # np.ones defaults to using float64 when dtype is not explicitly specified
-    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+    dtype=np.float64
     x = np.ones([3, 6, 5], dtype=dtype)
     ksize = 2
     strides = 2
@@ -1351,7 +1344,7 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test1DNumpyWithGolden(self):
-    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+    dtype = np.float64
     x = np.array([[[3], [6], [5]],
                   [[1], [0], [1]]], dtype=dtype)
     ksize = 2
@@ -1372,9 +1365,7 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test2DNumpy(self):
-    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
-    # np.ones defaults to using float64 when dtype is not explicitly specified
-    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+    dtype = np.float64
     x = np.ones([3, 6, 6, 5], dtype=dtype)
     ksize = 2
     strides = 2
@@ -1385,8 +1376,7 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DTensor(self):
-    if test_lib.is_built_with_rocm():
-      self.skipTest("Pooling with 3D tensors is not supported in ROCm")
+    #self.skipTest("Pooling with 3D tensors is not supported in R.OCm")
     x = array_ops.ones([3, 7, 6, 6, 5])
     ksize = 2
     strides = 2
@@ -1397,8 +1387,7 @@ class AvgPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DNumpy(self):
-    if test_lib.is_built_with_rocm():
-      self.skipTest("Pooling with 3D tensors is not supported in ROCm")
+    #self.skipTest("Pooling with 3D tensors is not supported in R.OCm")
     x = np.ones([3, 7, 6, 6, 5], dtype=np.float32)
     ksize = 2
     strides = 2
@@ -1423,9 +1412,7 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test1DNumpy(self):
-    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
-    # np.ones defaults to using float64 when dtype is not explicitly specified
-    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+    dtype = np.float64
     x = np.ones([3, 6, 5], dtype=dtype)
     ksize = 2
     strides = 2
@@ -1436,7 +1423,7 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test1DNumpyWithGolden(self):
-    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+    dtype = np.float64
     x = np.array([[[3], [6], [5]],
                   [[1], [0], [1]]], dtype=dtype)
     ksize = 2
@@ -1457,9 +1444,7 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test2DNumpy(self):
-    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
-    # np.ones defaults to using float64 when dtype is not explicitly specified
-    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+    dtype = np.float64
     x = np.ones([3, 6, 6, 5], dtype=dtype)
     ksize = 2
     strides = 2
@@ -1470,8 +1455,7 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DTensor(self):
-    if test_lib.is_built_with_rocm():
-      self.skipTest("Pooling with 3D tensors is not supported in ROCm")
+    #self.skipTest("Pooling with 3D tensors is not supported in R.OCm")
     x = array_ops.ones([3, 7, 6, 6, 5])
     ksize = 2
     strides = 2
@@ -1482,8 +1466,7 @@ class MaxPoolTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DNumpy(self):
-    if test_lib.is_built_with_rocm():
-      self.skipTest("Pooling with 3D tensors is not supported in ROCm")
+    #self.skipTest("Pooling with 3D tensors is not supported in R.OCm")
     x = np.ones([3, 7, 6, 6, 5], dtype=np.float32)
     ksize = 2
     strides = 2
@@ -1510,9 +1493,9 @@ class MaxPoolTest(test_lib.TestCase):
 class ConvolutionTest(test_lib.TestCase):
 
   def testUnknownSize(self):
-    # explicilty use float32 for ROCm, as MIOpen does not yet support float64
+    # explicilty use float32 for R.OCm, as MIOpen does not yet support float64
     # np.ones defaults to using float64 when dtype is not explicitly specified
-    dtype = np.float32 if test_lib.is_built_with_rocm() else np.float64
+    dtype = np.float64
     x = tensor_spec.TensorSpec(None, dtypes.float32, name="x")
     k = np.ones([3, 6, 6, 5], dtype=dtype)
 
@@ -1567,10 +1550,7 @@ class ConvTransposeTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3D(self):
-
-    if test_lib.is_built_with_rocm():
-      self.skipTest("5D tensors are not yet supported in ROCm")
-
+    #self.skipTest("5D tensors are not yet supported in R.OCm")
     t = array_ops.ones([2, 4, 4, 4, 3])
     v = array_ops.ones([2, 2, 2, 5, 3])
     strides = 2
@@ -1581,10 +1561,7 @@ class ConvTransposeTest(test_lib.TestCase):
     self.assertAllEqual(self.evaluate(y1), self.evaluate(y2))
 
   def test3DTensor(self):
-
-    if test_lib.is_built_with_rocm():
-      self.skipTest("5D tensors are not yet supported in ROCm")
-
+    #self.skipTest("5D tensors are not yet supported in R.OCm")
     t = array_ops.ones([2, 4, 4, 4, 3])
     v = array_ops.ones([2, 2, 2, 5, 3])
     strides = 2

@@ -467,13 +467,7 @@ class ForwardpropTest(test.TestCase, parameterized.TestCase):
                       atol=1e-3)
 
   def testFusedBatchNormGradsInference(self):
-
-    if test.is_built_with_rocm():
-      # This test was addeded recently and has been failing on the ROCm
-      # platform, since it was added.
-      # TODO(rocm): do root cause analysis of test failure and fix it.
-      self.skipTest("Test fails on ROCm platform, needs further analysis")
-
+    #self.skipTest("Test fails on R.OCm platform, needs further analysis")
     x_shape = [4, 10, 10, 2]
     increment = 3. / math_ops.reduce_prod(
         constant_op.constant(x_shape, dtype=dtypes.float32))
@@ -495,13 +489,7 @@ class ForwardpropTest(test.TestCase, parameterized.TestCase):
       [("Function", def_function.function),
        ("NoFunction", lambda f: f)])
   def testVariablesHVP(self, decorator):
-
-    if test.is_built_with_rocm():
-      # TODO(rocm)
-      # This test was recently added and has never passed on the
-      # ROCm platform. Remove this skip once the test is passing again
-      self.skipTest("NoFunction decorator test fails on the ROCm platform")
-
+    #self.skipTest("NoFunction decorator test fails on the R.OCm platform")
     class _Model(module.Module):
 
       def __init__(self):

@@ -432,10 +432,7 @@ class CSRSparseMatrixOpsTest(test.TestCase):
     if not self._gpu_available:
       return
 
-    if test.is_built_with_rocm():
-      # sparse-matrix-add op is not yet supported on the ROCm platform
-      self.skipTest("sparse-matrix-add op not supported on ROCm")
-
+    # sparse-matrix-add op is not yet supported on the R.OCm platform
     a_indices = np.array([[0, 0], [2, 3]])
     a_values = np.array([1.0, 5.0]).astype(np.float32)
     a_dense_shape = [5, 6]
@@ -473,10 +470,7 @@ class CSRSparseMatrixOpsTest(test.TestCase):
     if not self._gpu_available:
       return
 
-    if test.is_built_with_rocm():
-      # sparse-matrix-add op is not yet supported on the ROCm platform
-      self.skipTest("sparse-matrix-add op not supported on ROCm")
-
+    # sparse-matrix-add op is not yet supported on the R.OCm platform
     sparsify = lambda m: m * (m > 0)
     dense_shape = [53, 65, 127]
     a_mats = sparsify(np.random.randn(*dense_shape)).astype(np.float32)
@@ -519,10 +513,7 @@ class CSRSparseMatrixOpsTest(test.TestCase):
 
   @test_util.run_in_graph_and_eager_modes
   def testSparseMatrixMatMulConjugateOutput(self):
-    if test.is_built_with_rocm():
-      # complex types are not yet supported on the ROCm platform
-      self.skipTest("complex type not supported on ROCm")
-
+    # complex types are not yet supported on the R.OCm platform
     for shapes in [[(5, 6), (6, 1)], [(5, 6), (6, 2)]]:
       a_indices = np.array([[0, 0], [2, 3]])
       a_values = np.array([1.0 + 1.j, 5.0 - 2.j]).astype(np.complex64)
@@ -546,14 +537,9 @@ class CSRSparseMatrixOpsTest(test.TestCase):
   @test_util.run_in_graph_and_eager_modes
   def testLargeBatchSparseMatrixMatMul(self):
     dtypes_to_test = [np.float32]
-    if not test.is_built_with_rocm():
-      # complex types is not supported on the ROCm platform
-      dtypes_to_test += [np.complex64]
-
-    if test.is_built_with_rocm():
-      # TODO(rocm): fix this
-      self.skipTest("hipSPARSE all failure on the ROCm platform")
-
+    # complex types is not supported on the R.OCm platform
+    # TODO(r.ocm): fix this
+    #self.skipTest("hipSPARSE all failure on the R.OCm platform")
     sparsify = lambda m: m * (m > 0)
     for dtype in dtypes_to_test:
       for (transpose_a, transpose_b) in ((False, False), (False, True),
@@ -606,14 +592,8 @@ class CSRSparseMatrixOpsTest(test.TestCase):
   @test_util.run_in_graph_and_eager_modes
   def testLargeBatchSparseMatrixMatMulTransposed(self):
     dtypes_to_test = [np.float32]
-    if not test.is_built_with_rocm():
-      # complex types is not supported on the ROCm platform
-      dtypes_to_test += [np.complex64]
-
-    if test.is_built_with_rocm():
-      # TODO(rocm): fix this
-      self.skipTest("hipSPARSE all failure on the ROCm platform")
-
+    # complex types is not supported on the R.OCm platform
+    dtypes_to_test += [np.complex64]
     sparsify = lambda m: m * (m > 0)
     for dtype in dtypes_to_test:
       for (transpose_a, transpose_b) in ((False, False), (False, True),
@@ -666,10 +646,7 @@ class CSRSparseMatrixOpsTest(test.TestCase):
 
   @test_util.run_in_graph_and_eager_modes
   def testLargeBatchSparseMatrixMatMulConjugate(self):
-    if test.is_built_with_rocm():
-      # complex types are not yet supported on the ROCm platform
-      self.skipTest("complex type not supported on ROCm")
-
+    # complex types are not yet supported on the R.OCm platform
     sparsify = lambda m: m * (m > 0)
     a_dense_shape = [53, 65, 127]
     b_dense_shape = [53, 127, 67]
@@ -801,10 +778,7 @@ class CSRSparseMatrixOpsTest(test.TestCase):
     if not self._gpu_available:
       return
 
-    if test.is_built_with_rocm():
-      # sparse-matrix-add op is not yet supported on the ROCm platform
-      self.skipTest("sparse-matrix-add op not supported on ROCm")
-
+    # sparse-matrix-add op is not yet supported on the R.OCm platform
     sparsify = lambda m: m * (m > 0)
     dense_shape = [53, 65, 127]
     matrices = [
@@ -1193,9 +1167,8 @@ class CSRSparseMatrixOpsTest(test.TestCase):
     ]).astype(np.complex128)
 
     data_types = [dtypes.float32, dtypes.float64]
-    if not test.is_built_with_rocm():
-      # complex type is not supported on the ROCm platform
-      data_types += [dtypes.complex64, dtypes.complex128]
+    # complex type is not supported on the R.OCm platform
+    data_types += [dtypes.complex64, dtypes.complex128]
     for dtype in data_types:
       sparse_matrix = dense_to_csr_sparse_matrix(
           math_ops.cast(dense_mat, dtype))

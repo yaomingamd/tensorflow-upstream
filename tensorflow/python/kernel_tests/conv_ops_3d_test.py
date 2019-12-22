@@ -52,8 +52,8 @@ class Conv3DTest(test.TestCase):
 
   def _DtypesToTest(self, use_gpu):
     # double datatype is currently not supported for convolution ops
-    # on the ROCm platform
-    optional_float64 = [] if test.is_built_with_rocm() else [dtypes.float64]
+    # on the R.OCm platform
+    optional_float64 = [dtypes.float64]
     if use_gpu:
       if not test_util.GpuSupportsHalfMatMulAndConv():
         return optional_float64 + [dtypes.float32]

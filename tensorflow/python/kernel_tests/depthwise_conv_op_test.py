@@ -214,8 +214,8 @@ class DepthwiseConv2DTest(test.TestCase):
           "Testing DepthwiseConv2D, %dth config: %r * %r, stride: %d, padding: "
           "%s", index, input_size, filter_size, stride, padding)
       # double datatype is currently not supported for convolution ops
-      # on the ROCm platform
-      optional_float64 = [] if test.is_built_with_rocm() else [dtypes.float64]
+      # on the R.OCm platform
+      optional_float64 = [dtypes.float64]
       for data_type in ([dtypes.float32] + optional_float64):
         tf_logging.info("Testing without grouped_conv")
         self._VerifyValues(
@@ -255,8 +255,8 @@ class DepthwiseConv2DTest(test.TestCase):
           "Testing DepthwiseConv2DFormat, %dth config: %r * %r, stride: %d, "
           "padding: %s", index, input_size, filter_size, stride, padding)
       # double datatype is currently not supported for convolution ops
-      # on the ROCm platform
-      optional_float64 = [] if test.is_built_with_rocm() else [dtypes.float64]
+      # on the R.OCm platform
+      optional_float64 = [dtypes.float64]
       for data_type in ([dtypes.float32] + optional_float64):
         self._VerifyValues(
             input_size,
@@ -492,8 +492,8 @@ class DepthwiseConv2DTest(test.TestCase):
           "Testing DepthwiseConv2DInputGrad, %dth config: %r * %r, stride: %d, "
           "padding: %s", index, input_size, filter_size, stride, padding)
       # double datatype is currently not supported for convolution ops
-      # on the ROCm platform
-      optional_float64 = [] if test.is_built_with_rocm() else [dtypes.float64]
+      # on the R.OCm platform
+      optional_float64 = [dtypes.float64]
       for data_type in ([dtypes.float32] + optional_float64):
         self._ConstructAndTestGradient(
             input_size,
@@ -527,8 +527,8 @@ class DepthwiseConv2DTest(test.TestCase):
           "stride: %d, padding: %s", index, input_size, filter_size, stride,
           padding)
       # double datatype is currently not supported for convolution ops
-      # on the ROCm platform
-      optional_float64 = [] if test.is_built_with_rocm() else [dtypes.float64]
+      # on the R.OCm platform
+      optional_float64 = [dtypes.float64]
       for data_type in ([dtypes.float32] + optional_float64):
         self._ConstructAndTestGradient(
             input_size,
@@ -582,8 +582,8 @@ class DepthwiseConv2DTest(test.TestCase):
           "Testing DepthwiseConv2DFilterGrad, %dth config: %r * %r, stride: "
           "%d, padding: %s", index, input_size, filter_size, stride, padding)
       # double datatype is currently not supported for convolution ops
-      # on the ROCm platform
-      optional_float64 = [] if test.is_built_with_rocm() else [dtypes.float64]
+      # on the R.OCm platform
+      optional_float64 = [dtypes.float64]
       for data_type in ([dtypes.float32] + optional_float64):
         self._ConstructAndTestGradient(
             input_size,
@@ -607,8 +607,8 @@ class DepthwiseConv2DTest(test.TestCase):
           "stride: %d, padding: %s", index, input_size, filter_size, stride,
           padding)
       # double datatype is currently not supported for convolution ops
-      # on the ROCm platform
-      optional_float64 = [] if test.is_built_with_rocm() else [dtypes.float64]
+      # on the R.OCm platform
+      optional_float64 = [dtypes.float64]
       for data_type in ([dtypes.float32] + optional_float64):
         self._ConstructAndTestGradient(
             input_size,
@@ -671,9 +671,7 @@ class DepthwiseConv2DTest(test.TestCase):
       self._CompareBackpropInputFloat(input_size, filter_size, output_size,
                                       stride, padding)
       # double datatype is currently not supported for convolution ops
-      # on the ROCm platform
-      if test.is_built_with_rocm():
-        continue
+      # on the R.OCm platform
       self._CompareBackpropInputDouble(input_size, filter_size, output_size,
                                        stride, padding)
 
@@ -727,9 +725,7 @@ class DepthwiseConv2DTest(test.TestCase):
       self._CompareBackpropFilterFloat(input_size, filter_size, output_size,
                                        stride, padding)
       # double datatype is currently not supported for convolution ops
-      # on the ROCm platform
-      if test.is_built_with_rocm():
-        continue
+      # on the R.OCm platform
       self._CompareBackpropFilterDouble(input_size, filter_size, output_size,
                                         stride, padding)
 

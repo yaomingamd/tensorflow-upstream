@@ -343,6 +343,8 @@ Status RecursivelyHandleOp(const NodeDef& node, int64 num_workers, int64 index,
   if (IsDatasetNodeOfType(node, kMultipleInputsDatasetOps)) {
     for (int i = 0; i < node.input_size(); ++i) {
       const NodeDef* input_node = graph_utils::GetInputNode(node, *graph, i);
+      if(input_node==0)
+        return errors::NotFound("graph_utils::GetInputNode returns null from ", node.DebugString());
       TF_RETURN_IF_ERROR(RecursivelyHandleOp(*input_node, num_workers, index,
                                              flib, graph, nodes_to_delete));
     }
@@ -382,6 +384,8 @@ Status RecursivelyHandleOp(const NodeDef& node, int64 num_workers, int64 index,
   }
 
   const NodeDef* input_node = graph_utils::GetInputNode(node, *graph, 0);
+  if(input_node==0)
+    return errors::NotFound("graph_utils::GetInputNode returns null from ", node.DebugString());
   return RecursivelyHandleOp(*input_node, num_workers, index, flib, graph,
                              nodes_to_delete);
 }
@@ -401,6 +405,8 @@ Status OptimizeGraph(const GrapplerItem& item, int64 num_workers, int64 index,
 
   NodeDef* sink_node;
   TF_RETURN_IF_ERROR(graph_utils::GetFetchNode(graph, item, &sink_node));
+  if(sink_node==0)
+    return errors::NotFound("graph_utils::GetFetchNode returns null");
 
   // The basic approach here is to walk the graph from sink to source, and find
   // the latest occurrence of a ReaderDataset (e.g. CSVDataset, TFRecordDataset,

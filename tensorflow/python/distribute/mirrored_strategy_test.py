@@ -1354,8 +1354,6 @@ class FunctionTest(test.TestCase):
       self.assertSetEqual(devices_for_this_node, set(devices))
 
   def testFuctionPreservesAutoGraph(self):
-    if build_info.is_rocm_build:
-      self.skipTest("This test fails on ROCm but is not related to ROCm changes.")
     config.set_logical_device_configuration(
         config.list_physical_devices("CPU")[0],
         [context.LogicalDeviceConfiguration()] * 2)
