@@ -845,8 +845,7 @@ class ScopedPoolingDescriptor {
                    &CheckedNarrowing<int64, int>);
 
     if (nd != 2) {
-      LOG(FATAL) << "miopen requires pooling dimensions be 2"
-                 << ToString(status);
+      LOG(FATAL) << "miopen requires pooling dimensions be 2";
     }
 
     status = wrap::miopenSet2dPoolingDescriptor(
@@ -1657,6 +1656,8 @@ miopenDataType_t ToMIOpenDataType(
     case dnn::DataType::kHalf:
       return miopenHalf;
     case dnn::DataType::kDouble:
+      LOG(FATAL) << "MIOpen does not support the double type yet";
+      break;
     default:
       LOG(FATAL) << "Invalid DNN data type: " << static_cast<int>(data_type);
   }
@@ -1704,6 +1705,7 @@ miopenRNNMode_t ToMIOpenRnnMode(dnn::RnnMode rnn_mode) {
     default:
       LOG(FATAL) << "Invalid RNN Mode: " << static_cast<int>(rnn_mode);
   }
+  return (miopenRNNMode_t)0;
 }
 
 int MIOpenDataTypeToByteSize(miopenDataType_t data_type) {
@@ -1717,6 +1719,7 @@ int MIOpenDataTypeToByteSize(miopenDataType_t data_type) {
     default:
       LOG(FATAL) << "Invalid DNN data type: " << static_cast<int>(data_type);
   }
+  return (miopenDataType_t)0;
 }
 
 template <typename Base>
@@ -4029,14 +4032,262 @@ bool MIOpenSupport::DoDropoutBackward(
   return true;
 }
 
+void split3DPooling(const dnn::PoolingDescriptor& pooling_dimensions,
+    const dnn::BatchDescriptor& input_dimensions,
+    const dnn::BatchDescriptor& output_dimensions,
+    dnn::PoolingDescriptor& stage1, dnn::PoolingDescriptor& stage2,
+    dnn::BatchDescriptor& stage1_in,
+    dnn::BatchDescriptor& stage1_out,
+    dnn::BatchDescriptor& stage2_in,
+    dnn::BatchDescriptor& stage2_out,
+    uint64& temp_size
+    )
+{
+    auto nd = input_dimensions.ndims();
+    int window_x = pooling_dimensions.window(dnn::DimIndex::X);
+    int window_y = pooling_dimensions.window(dnn::DimIndex::Y);
+    int window_z = pooling_dimensions.window(dnn::DimIndex::Z);
+    int padding_x = pooling_dimensions.padding(dnn::DimIndex::X);
+    int padding_y = pooling_dimensions.padding(dnn::DimIndex::Y);
+    int padding_z = pooling_dimensions.padding(dnn::DimIndex::Z);
+    int stride_x = pooling_dimensions.stride(dnn::DimIndex::X);
+    int stride_y = pooling_dimensions.stride(dnn::DimIndex::Y);
+    int stride_z = pooling_dimensions.stride(dnn::DimIndex::Z);
+
+    stage1.set_pooling_mode(pooling_dimensions.mode());
+    stage1.set_window_width(window_x);
+    stage1.set_horizontal_padding(padding_x);
+    stage1.set_horizontal_stride(stride_x);
+    stage1.set_window_height(window_y);
+    stage1.set_vertical_padding(padding_y);
+    stage1.set_vertical_stride(stride_y);
+    stage1.set_propagate_nans(pooling_dimensions.propagate_nans());
+
+    stage2.set_pooling_mode(pooling_dimensions.mode());
+    stage2.set_window_width(1);
+    stage2.set_horizontal_padding(0);
+    stage2.set_horizontal_stride(1);
+    stage2.set_window_height(window_z);
+    stage2.set_vertical_padding(padding_z);
+    stage2.set_vertical_stride(stride_z);
+    stage2.set_propagate_nans(pooling_dimensions.propagate_nans());
+
+    int64 in_w = input_dimensions.width();
+    int64 in_h = input_dimensions.height();
+    int64 out_w = output_dimensions.width();
+    int64 out_h = output_dimensions.height();
+    int64 in_z = input_dimensions.spatial_dim(dnn::DimIndex::Z);
+    int64 out_z = output_dimensions.spatial_dim(dnn::DimIndex::Z);
+
+    stage1_in.set_layout(input_dimensions.layout())
+              .set_count(1).set_width(in_w).set_height(in_h);
+
+    uint64 elements = input_dimensions.count()*input_dimensions.feature_map_count();
+    for(int i=3; i<nd; i++)
+      elements *= input_dimensions.spatial_dim((dnn::DimIndex)i);
+    stage1_in.set_feature_map_count(elements*in_z);
+
+    stage1_out.CloneFrom(stage1_in);
+    stage1_out.set_width(out_w)
+                   .set_height(out_h);
+   
+    stage2_in.set_layout(input_dimensions.layout())
+              .set_count(1)
+              .set_feature_map_count(elements)
+              .set_width(out_w*out_h)
+              .set_height(in_z);
+    
+    stage2_out.CloneFrom(stage2_in);
+    stage2_out.set_height(out_z);  
+
+    temp_size = elements*in_z*out_w*out_h;
+}
+
+template <class T>
+void rocmPooling2D(void* stream, T* out, const T* in,
+  int batches, int width, int height, 
+      int window_x, int window_y,
+      int width_out, int height_out,
+      int padding_x, int stride_x,
+      int padding_y, int stride_y, bool maxpool, bool propagate_nans);
+
+
+// Helper method that allocates scratch memory whether or not workspace_allocator is 0.
+// Allocated memory is guaranteed to be freed when temp_memory goes out of scope if the allocator is 0,
+// or when the allocator is destructed otherwise.
+template <class T>
+bool rocmHelperAlloc(DeviceMemory<T>& temp_tensor, uint64 bytes, 
+    std::unique_ptr<TemporaryDeviceMemory<uint8> >& temp_memory,
+    Stream* stream, ScratchAllocator* workspace_allocator)
+{
+    if(workspace_allocator==0) {
+      temp_memory = stream->AllocateTemporaryArray<uint8>(bytes).ConsumeValueOrDie();
+      temp_tensor=DeviceMemory<T>(*temp_memory->mutable_device_memory());
+    }
+    else {
+      DeviceMemory<uint8> temp_u8_tensor;
+      auto allocated = workspace_allocator->AllocateBytes(bytes);
+      if (!allocated.ok() || (temp_u8_tensor = allocated.ValueOrDie()) == nullptr) {
+        LOG(ERROR) << "Failed to allocate forward pooling workspace";
+        return false;
+      }
+      temp_tensor = DeviceMemory<T>(temp_u8_tensor);
+    }
+    return true;
+}
+
+
+void printBatchDesc(const dnn::BatchDescriptor& b)
+{
+  int nd = b.ndims();
+  printf("Count %lld features %lld layout %d\n", b.count(), b.feature_map_count(), b.layout());
+  for(int i=0; i<nd; i++)
+    printf("%d ", b.spatial_dim((dnn::DimIndex)i));
+  printf("\n");
+  const auto& fulldims = b.full_dims(dnn::DataLayout::kBatchDepthYX);
+  printf("fulldims:\n");
+  for(auto x: fulldims)
+    printf("%lld ", x);
+  printf("\n");
+  const auto& strides = b.full_strides(dnn::DataLayout::kBatchDepthYX);
+  printf("strides:\n");
+  for(auto x: strides)
+    printf("%lld ", x);
+  printf("\n");
+  fflush(stdout);
+}
+    
+void printPoolDesc(const dnn::PoolingDescriptor& b)
+{
+  int nd = b.ndims();
+  for(int i=0; i<nd; i++)
+    printf("window %lld padding %lld stride %lld\n",
+      b.window((dnn::DimIndex)i),
+      b.padding((dnn::DimIndex)i),
+      b.stride((dnn::DimIndex)i));
+  printf("\n");
+  fflush(stdout);
+}
+
+#include <chrono>
+uint64_t get_us()
+{
+    auto tn = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration_cast<std::chrono::microseconds>(tn.time_since_epoch()).count();
+}
+
+
+template <class M, class T>
+bool MIOpenSupport::DoPoolForward_internal(M& miopen,
+    Stream* stream, const dnn::PoolingDescriptor& pooling_dimensions,
+    const dnn::BatchDescriptor& input_dimensions,
+    const DeviceMemory<T>& input_data,
+    const dnn::BatchDescriptor& output_dimensions,
+    DeviceMemory<T>* output_data, ScratchAllocator* workspace_allocator)
+{
+
+  // Alpha is the scaling factor for input.
+  float alpha = 1.0;
+  // Beta is the scaling factor for output.
+  float beta = 0.0;
+  auto miopenType = std::is_same<T,float>::value ? miopenFloat : miopenHalf;
+
+  if(pooling_dimensions.ndims() == 3)
+  {
+    printf("Pooling3D split\n");
+    if(input_dimensions.layout() != output_dimensions.layout())
+    {
+      LOG(ERROR) << "Can't change layout during pooling";
+      return false;
+    }
+    if(input_dimensions.layout() != dnn::DataLayout::kBatchDepthYX)
+    {
+      LOG(ERROR) << "Don't know how to do 3D pooling with data layout " << input_dimensions.layout();
+      return false;
+    }
+
+    dnn::PoolingDescriptor stage1(2), stage2(2);
+    dnn::BatchDescriptor stage1_in, stage1_out, stage2_in, stage2_out;
+    uint64 temp_size;
+    split3DPooling(pooling_dimensions,  input_dimensions,
+      output_dimensions, stage1, stage2, stage1_in,
+      stage1_out, stage2_in, stage2_out, temp_size);
+    uint64 temp_bytes = temp_size*sizeof(T);
+
+    DeviceMemory<T> temp_tensor;
+    std::unique_ptr<TemporaryDeviceMemory<uint8> > temp_memory;
+    if(!rocmHelperAlloc(temp_tensor, temp_bytes, temp_memory, stream, workspace_allocator)) {
+        LOG(ERROR) << "Failed to allocate forward pooling workspace";
+        return false;
+    }
+    if(!DoPoolForward_internal(miopen, stream, stage1, stage1_in, input_data,
+      stage1_out, &temp_tensor, workspace_allocator))
+      return false;
+    if(!DoPoolForward_internal(miopen, stream, stage2, stage2_in, temp_tensor,
+      stage2_out, output_data, workspace_allocator))
+      return false;
+    return true;
+  }
+  //printf("pooling_forward_internal\n");
+  if(std::is_same<T,double>::value) {
+    if(input_dimensions.layout() != dnn::DataLayout::kBatchDepthYX)
+    {
+      LOG(ERROR) << "Don't know how to do double pooling with data layout " << input_dimensions.layout();
+      return false;
+    }
+    if(input_dimensions.ndims()!=2) {
+      LOG(ERROR) << "Don't know how to do double pooling with " << input_dimensions.ndims() << " dims";
+      return false;
+    }
+    if(pooling_dimensions.stride(dnn::DimIndex::X)!=1 || pooling_dimensions.stride(dnn::DimIndex::Y)!=1)
+    {
+      //printf("ROCm_DNN forward pooling at stride!=1\n");
+      //LOG(ERROR) << "ROCm_DNN pooling pathway untested with stride!=1";
+      //return false;
+    }    
+    rocmPooling2D<T>(AsGpuStreamValue(stream), (T*)output_data->opaque(), (const T*)input_data.opaque(),
+      input_dimensions.feature_map_count()*input_dimensions.count(),
+      input_dimensions.width(), input_dimensions.height(),
+      pooling_dimensions.window_width(), pooling_dimensions.window_height(),
+      output_dimensions.width(), output_dimensions.height(),      
+      pooling_dimensions.padding(dnn::DimIndex::X), pooling_dimensions.stride(dnn::DimIndex::X), 
+      pooling_dimensions.padding(dnn::DimIndex::Y), pooling_dimensions.stride(dnn::DimIndex::Y), 
+      pooling_dimensions.mode() == dnn::PoolingMode::kMaximum,
+      pooling_dimensions.propagate_nans());
+    return true;
+  }
+  else {
+    ScopedTensorDescriptor src_desc{input_dimensions, miopenType};
+    ScopedTensorDescriptor dest_desc{output_dimensions, miopenType};
+    ScopedPoolingDescriptor pooling_desc{pooling_dimensions};
+
+    auto status = wrap::miopenPoolingForward(
+        miopen.handle(), pooling_desc.handle(), &alpha, src_desc.handle(),
+        input_data.opaque(), &beta, dest_desc.handle(), output_data->opaque(),
+        false, nullptr, 0);
+    if (status != miopenStatusSuccess) {
+      LOG(ERROR) << "failed to enqueue forward pooling on stream: "
+                 << ToString(status);
+      return false;
+    }
+    return true;
+  }
+}
+
+
 bool MIOpenSupport::DoPoolForward(
     Stream* stream, const dnn::PoolingDescriptor& pooling_dimensions,
     const dnn::BatchDescriptor& input_dimensions,
     const DeviceMemory<double>& input_data,
     const dnn::BatchDescriptor& output_dimensions,
     DeviceMemory<double>* output_data, ScratchAllocator* workspace_allocator) {
-  LOG(ERROR) << "miopen does not support pooling for dobule type yet";
-  return false;
+  auto miopen = miopen_->GetHandle(parent_, stream);
+  return DoPoolForward_internal(miopen, 
+     stream,  pooling_dimensions,
+     input_dimensions,
+     input_data,
+     output_dimensions,
+     output_data, workspace_allocator);
 }
 
 bool MIOpenSupport::DoPoolForward(
@@ -4046,26 +4297,12 @@ bool MIOpenSupport::DoPoolForward(
     const dnn::BatchDescriptor& output_dimensions,
     DeviceMemory<float>* output_data, ScratchAllocator* workspace_allocator) {
   auto miopen = miopen_->GetHandle(parent_, stream);
-
-  // Alpha is the scaling factor for input.
-  float alpha = 1.0;
-  // Beta is the scaling factor for output.
-  float beta = 0.0;
-
-  ScopedTensorDescriptor src_desc{input_dimensions, miopenFloat};
-  ScopedTensorDescriptor dest_desc{output_dimensions, miopenFloat};
-  ScopedPoolingDescriptor pooling_desc{pooling_dimensions};
-
-  auto status = wrap::miopenPoolingForward(
-      miopen.handle(), pooling_desc.handle(), &alpha, src_desc.handle(),
-      input_data.opaque(), &beta, dest_desc.handle(), output_data->opaque(),
-      false, nullptr, 0);
-  if (status != miopenStatusSuccess) {
-    LOG(ERROR) << "failed to enqueue forward pooling on stream: "
-               << ToString(status);
-    return false;
-  }
-  return true;
+  return DoPoolForward_internal(miopen, 
+     stream,  pooling_dimensions,
+     input_dimensions,
+     input_data,
+     output_dimensions,
+     output_data, workspace_allocator);
 }
 
 bool MIOpenSupport::DoPoolForward(
@@ -4076,24 +4313,188 @@ bool MIOpenSupport::DoPoolForward(
     DeviceMemory<Eigen::half>* output_data,
     ScratchAllocator* workspace_allocator) {
   auto miopen = miopen_->GetHandle(parent_, stream);
+  return DoPoolForward_internal(miopen, 
+     stream,  pooling_dimensions,
+     input_dimensions,
+     input_data,
+     output_dimensions,
+     output_data, workspace_allocator);
+}
 
-  // Alpha is the scaling factor for input.
-  float alpha = 1.0;
-  // Beta is the scaling factor for output.
-  float beta = 0.0;
+template <class T>
+void rocmBackwardPooling2D(void* stream, const T* out, const T* in,
+      const T* pgrad_out, T* pgrad_in,
+      int batches, int width, int height, 
+      int window_x, int window_y,
+      int width_out, int height_out,
+      int padding_x, int stride_x,
+      int padding_y, int stride_y, bool maxpool, bool propagate_nans);
 
-  ScopedTensorDescriptor src_desc{input_dimensions, miopenHalf};
-  ScopedTensorDescriptor dest_desc{output_dimensions, miopenHalf};
-  ScopedPoolingDescriptor pooling_desc{pooling_dimensions};
+template <class M, class T>
+bool MIOpenSupport::DoPoolBackward_internal(M& miopen,
+    Stream* stream, const dnn::PoolingDescriptor& pooling_dimensions,
+    const dnn::BatchDescriptor& input_dimensions,
+    const DeviceMemory<T>& input_data,
+    const dnn::BatchDescriptor& output_dimensions,
+    const DeviceMemory<T>& output_data,
+    const DeviceMemory<T>& input_diff_data,
+    DeviceMemory<T>* output_diff_data,
+    ScratchAllocator* workspace_allocator)
+{
+  auto miopenType = std::is_same<T,float>::value ? miopenFloat : miopenHalf;
+  if(pooling_dimensions.ndims()==3)
+  {
+    if(input_dimensions.layout() != output_dimensions.layout())
+    {
+      LOG(ERROR) << "Can't change layout during pooling";
+      return false;
+    }
+    if(input_dimensions.layout() != dnn::DataLayout::kBatchDepthYX)
+    {
+      LOG(ERROR) << "Don't know how to do 3D pooling with data layout " << input_dimensions.layout();
+      return false;
+    }
 
-  auto status = wrap::miopenPoolingForward(
-      miopen.handle(), pooling_desc.handle(), &alpha, src_desc.handle(),
-      input_data.opaque(), &beta, dest_desc.handle(), output_data->opaque(),
-      false, nullptr, 0);
-  if (status != miopenStatusSuccess) {
-    LOG(ERROR) << "failed to enqueue forward pooling on stream: "
-               << ToString(status);
-    return false;
+    dnn::PoolingDescriptor stage1(2), stage2(2);
+    dnn::BatchDescriptor stage1_in, stage1_out, stage2_in, stage2_out;
+    uint64 temp_size;
+    split3DPooling(pooling_dimensions,  input_dimensions,
+      output_dimensions, stage1, stage2, stage1_in,
+      stage1_out, stage2_in, stage2_out, temp_size);
+    uint64 temp_bytes = temp_size*sizeof(T);
+
+
+    DeviceMemory<T> temp_tensor, temp_diff;
+    std::unique_ptr<TemporaryDeviceMemory<uint8> > temp_memory;
+    std::unique_ptr<TemporaryDeviceMemory<uint8> > temp_diff_memory;
+    if(!rocmHelperAlloc(temp_tensor, temp_bytes, temp_memory, stream, workspace_allocator)
+      || !rocmHelperAlloc(temp_diff, temp_bytes, temp_diff_memory, stream, workspace_allocator)) {
+        LOG(ERROR) << "Failed to allocate forward pooling workspace";
+        return false;
+    }
+    // can be improved - as currently implemented, stage 1 of forward pooling gets executed twice
+    if(!DoPoolForward_internal(miopen, stream, stage1, stage1_in, input_data, stage1_out, &temp_tensor, workspace_allocator))
+      return false;
+    if(!DoPoolBackward_internal(miopen, stream, stage2, stage2_in, temp_tensor, stage2_out, output_data, input_diff_data, &temp_diff, workspace_allocator))
+      return false;
+    if(!DoPoolBackward_internal(miopen, stream, stage1, stage1_in, input_data, stage1_out, temp_tensor, temp_diff, output_diff_data, workspace_allocator))
+      return false;
+    return true;
+  }
+
+  std::vector<int64> dims64 =
+      output_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
+  std::unique_ptr<TemporaryDeviceMemory<uint8> > temp_memory2;
+
+  DeviceMemory<uint8> dest2;  // duplicated dest from forward:
+  int dest2_size = 0;
+  // miopen does not use strides and must have 4D tensor.
+  std::vector<int> dims(4);
+
+  std::transform(dims64.cbegin(), dims64.cend(), dims.begin(),
+                 &CheckedNarrowing<int64, int>);
+
+  dest2_size = dims[0] * dims[1] * dims[2] * dims[3] * sizeof(T);
+ 
+  if (dest2_size > 0) {
+    if(!rocmHelperAlloc(dest2, dest2_size, temp_memory2, stream, workspace_allocator)) {
+      LOG(ERROR) << "Failed to allocate backward pooling workspace";
+      return false;
+    }
+  } else {
+    LOG(ERROR) << "Failed to calcuate tensor size to chain forward and "
+                  "backward pooling";
+  }  
+
+  if(std::is_same<T,double>::value
+    //|| std::is_same<T,float>::value
+    )
+  {
+    if(input_dimensions.layout() != dnn::DataLayout::kBatchDepthYX)
+    {
+      LOG(ERROR) << "Don't know how to do double pooling with data layout " << input_dimensions.layout();
+      return false;
+    }
+
+    rocmPooling2D<T>(AsGpuStreamValue(stream), (T*)dest2.opaque(), (const T*)input_data.opaque(),
+      input_dimensions.feature_map_count()*input_dimensions.count(),
+      input_dimensions.width(), input_dimensions.height(),
+      pooling_dimensions.window_width(), pooling_dimensions.window_height(),
+      output_dimensions.width(), output_dimensions.height(),      
+      pooling_dimensions.padding(dnn::DimIndex::X), pooling_dimensions.stride(dnn::DimIndex::X), 
+      pooling_dimensions.padding(dnn::DimIndex::Y), pooling_dimensions.stride(dnn::DimIndex::Y), 
+      pooling_dimensions.mode() == dnn::PoolingMode::kMaximum,
+      pooling_dimensions.propagate_nans());
+
+    rocmBackwardPooling2D<T>(AsGpuStreamValue(stream), 
+      (const T*)dest2.opaque(), (const T*)input_data.opaque(),
+      (const T*)input_diff_data.opaque(), (T*)output_diff_data->opaque(),
+      input_dimensions.feature_map_count()*input_dimensions.count(),
+      input_dimensions.width(), input_dimensions.height(),
+      pooling_dimensions.window_width(), pooling_dimensions.window_height(),
+      output_dimensions.width(), output_dimensions.height(),      
+      pooling_dimensions.padding(dnn::DimIndex::X), pooling_dimensions.stride(dnn::DimIndex::X), 
+      pooling_dimensions.padding(dnn::DimIndex::Y), pooling_dimensions.stride(dnn::DimIndex::Y), 
+      pooling_dimensions.mode() == dnn::PoolingMode::kMaximum,
+      pooling_dimensions.propagate_nans());
+  }
+  else {
+    // Alpha is the scaling factor for input.
+    float alpha = 1.0;
+    // Beta is the scaling factor for output.
+    float beta = 0.0;
+
+    ScopedTensorDescriptor src_desc{input_dimensions, miopenType};
+    ScopedTensorDescriptor dest_desc{output_dimensions, miopenType};
+    ScopedPoolingDescriptor pooling_desc{pooling_dimensions};
+
+    DeviceMemory<uint8> workspace;
+    size_t workspace_size_in_bytes = 0;
+    auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
+                                                      &workspace_size_in_bytes);
+
+    if (status != miopenStatusSuccess) {
+      LOG(ERROR)
+          << "failed to obtain workspace size for backward pooling on stream: "
+          << ToString(status);
+      return false;
+    }
+
+    std::unique_ptr<TemporaryDeviceMemory<uint8> > temp_memory;
+
+    // miopen requires the strides and dims to be ordered as BDYX.
+
+    if (workspace_size_in_bytes > 0) {
+      if(!rocmHelperAlloc(workspace, workspace_size_in_bytes, temp_memory, stream, workspace_allocator)) {
+        LOG(ERROR) << "Failed to allocate backward pooling workspace";
+        return false;
+      }
+    }
+
+    // todo: only necessary for maxpooling(?)
+    status = wrap::miopenPoolingForward(
+        miopen.handle(), pooling_desc.handle(), &alpha, src_desc.handle(),
+        input_data.opaque(), &beta, dest_desc.handle(), dest2.opaque(), true,
+        workspace.opaque(), workspace_size_in_bytes);
+
+    if (status != miopenStatusSuccess) {
+      LOG(ERROR)
+          << "failed to enqueue forward pooling (before backward) on stream: "
+          << ToString(status);
+      return false;
+    }
+
+    status = wrap::miopenPoolingBackward(
+        miopen.handle(), pooling_desc.handle(), &alpha, dest_desc.handle(),
+        dest2.opaque(), dest_desc.handle(), input_diff_data.opaque(),
+        src_desc.handle(), input_data.opaque(), &beta, src_desc.handle(),
+        output_diff_data->opaque(), workspace.opaque());
+
+    if (status != miopenStatusSuccess) {
+      LOG(ERROR) << "failed to enqueue backward pooling on stream: "
+                 << ToString(status);
+      return false;
+    }
   }
   return true;
 }
@@ -4107,8 +4508,10 @@ bool MIOpenSupport::DoPoolBackward(
     const DeviceMemory<double>& input_diff_data,
     DeviceMemory<double>* output_diff_data,
     ScratchAllocator* workspace_allocator) {
-  LOG(ERROR) << "miopen does not support backward pooling on double type yet";
-  return false;
+  auto miopen = miopen_->GetHandle(parent_, stream);
+  return DoPoolBackward_internal(miopen, stream, pooling_dimensions,
+    input_dimensions, input_data, output_dimensions, output_data,
+    input_diff_data, output_diff_data, workspace_allocator);
 }
 
 bool MIOpenSupport::DoPoolBackward(
@@ -4121,90 +4524,9 @@ bool MIOpenSupport::DoPoolBackward(
     DeviceMemory<float>* output_diff_data,
     ScratchAllocator* workspace_allocator) {
   auto miopen = miopen_->GetHandle(parent_, stream);
-
-  // Alpha is the scaling factor for input.
-  float alpha = 1.0;
-  // Beta is the scaling factor for output.
-  float beta = 0.0;
-
-  ScopedTensorDescriptor src_desc{input_dimensions, miopenFloat};
-  ScopedTensorDescriptor dest_desc{output_dimensions, miopenFloat};
-  ScopedPoolingDescriptor pooling_desc{pooling_dimensions};
-
-  DeviceMemory<uint8> workspace;
-  size_t workspace_size_in_bytes = 0;
-  auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
-                                                    &workspace_size_in_bytes);
-
-  if (status != miopenStatusSuccess) {
-    LOG(ERROR)
-        << "failed to obtain workspace size for backward pooling on stream: "
-        << ToString(status);
-    return false;
-  }
-
-  // Allocate the workspace.
-  if (workspace_size_in_bytes > 0) {
-    assert(workspace_allocator);
-    auto allocated =
-        workspace_allocator->AllocateBytes(workspace_size_in_bytes);
-    if (!allocated.ok() || (workspace = allocated.ValueOrDie()) == nullptr) {
-      LOG(ERROR) << "Failed to allocate backward pooling workspace";
-      return false;
-    }
-  }
-
-  DeviceMemory<uint8> dest2;  // duplicated dest from forward:
-  int dest2_size = 0;
-
-  // miopen requires the strides and dims to be ordered as BDYX.
-  std::vector<int64> dims64 =
-      output_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
-
-  // miopen does not use strides and must have 4D tensor.
-  std::vector<int> dims(4);
-
-  std::transform(dims64.cbegin(), dims64.cend(), dims.begin(),
-                 &CheckedNarrowing<int64, int>);
-
-  dest2_size = dims[0] * dims[1] * dims[2] * dims[3] * sizeof(float);
-
-  if (dest2_size > 0) {
-    assert(workspace_allocator);
-    auto allocated = workspace_allocator->AllocateBytes(dest2_size);
-    if (!allocated.ok() || (dest2 = allocated.ValueOrDie()) == nullptr) {
-      LOG(ERROR) << "Failed to allocate backward pooling workspace";
-      return false;
-    }
-  } else {
-    LOG(ERROR) << "Failed to calcuate tensor size to chain forward and "
-                  "backward pooling";
-  }
-
-  status = wrap::miopenPoolingForward(
-      miopen.handle(), pooling_desc.handle(), &alpha, src_desc.handle(),
-      input_data.opaque(), &beta, dest_desc.handle(), dest2.opaque(), true,
-      workspace.opaque(), workspace_size_in_bytes);
-
-  if (status != miopenStatusSuccess) {
-    LOG(ERROR)
-        << "failed to enqueue forward pooling (before backward) on stream: "
-        << ToString(status);
-    return false;
-  }
-
-  status = wrap::miopenPoolingBackward(
-      miopen.handle(), pooling_desc.handle(), &alpha, dest_desc.handle(),
-      dest2.opaque(), dest_desc.handle(), input_diff_data.opaque(),
-      src_desc.handle(), input_data.opaque(), &beta, src_desc.handle(),
-      output_diff_data->opaque(), workspace.opaque());
-
-  if (status != miopenStatusSuccess) {
-    LOG(ERROR) << "failed to enqueue backward pooling on stream: "
-               << ToString(status);
-    return false;
-  }
-  return true;
+  return DoPoolBackward_internal(miopen, stream, pooling_dimensions,
+    input_dimensions, input_data, output_dimensions, output_data,
+    input_diff_data, output_diff_data, workspace_allocator);
 }
 
 bool MIOpenSupport::DoPoolBackward(
@@ -4217,90 +4539,9 @@ bool MIOpenSupport::DoPoolBackward(
     DeviceMemory<Eigen::half>* output_diff_data,
     ScratchAllocator* workspace_allocator) {
   auto miopen = miopen_->GetHandle(parent_, stream);
-
-  // Alpha is the scaling factor for input.
-  float alpha = 1.0;
-  // Beta is the scaling factor for output.
-  float beta = 0.0;
-
-  ScopedTensorDescriptor src_desc{input_dimensions, miopenHalf};
-  ScopedTensorDescriptor dest_desc{output_dimensions, miopenHalf};
-  ScopedPoolingDescriptor pooling_desc{pooling_dimensions};
-
-  DeviceMemory<uint8> workspace;
-  size_t workspace_size_in_bytes = 0;
-  auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
-                                                    &workspace_size_in_bytes);
-
-  if (status != miopenStatusSuccess) {
-    LOG(ERROR)
-        << "failed to obtain workspace size for backward pooling on stream: "
-        << ToString(status);
-    return false;
-  }
-
-  // Allocate the workspace.
-  if (workspace_size_in_bytes > 0) {
-    assert(workspace_allocator);
-    auto allocated =
-        workspace_allocator->AllocateBytes(workspace_size_in_bytes);
-    if (!allocated.ok() || (workspace = allocated.ValueOrDie()) == nullptr) {
-      LOG(ERROR) << "Failed to allocate backward pooling workspace";
-      return false;
-    }
-  }
-
-  DeviceMemory<uint8> dest2;  // duplicated dest from forward:
-  int dest2_size = 0;
-
-  // miopen requires the strides and dims to be ordered as BDYX.
-  std::vector<int64> dims64 =
-      output_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
-
-  // miopen does not use strides and must have 4D tensor.
-  std::vector<int> dims(4);
-
-  std::transform(dims64.cbegin(), dims64.cend(), dims.begin(),
-                 &CheckedNarrowing<int64, int>);
-
-  dest2_size = dims[0] * dims[1] * dims[2] * dims[3] * sizeof(float);
-
-  if (dest2_size > 0) {
-    assert(workspace_allocator);
-    auto allocated = workspace_allocator->AllocateBytes(dest2_size);
-    if (!allocated.ok() || (dest2 = allocated.ValueOrDie()) == nullptr) {
-      LOG(ERROR) << "Failed to allocate backward pooling workspace";
-      return false;
-    }
-  } else {
-    LOG(ERROR) << "Failed to calcuate tensor size to chain forward and "
-                  "backward pooling";
-  }
-
-  status = wrap::miopenPoolingForward(
-      miopen.handle(), pooling_desc.handle(), &alpha, src_desc.handle(),
-      input_data.opaque(), &beta, dest_desc.handle(), dest2.opaque(), true,
-      workspace.opaque(), workspace_size_in_bytes);
-
-  if (status != miopenStatusSuccess) {
-    LOG(ERROR)
-        << "failed to enqueue forward pooling (before backward) on stream: "
-        << ToString(status);
-    return false;
-  }
-
-  status = wrap::miopenPoolingBackward(
-      miopen.handle(), pooling_desc.handle(), &alpha, dest_desc.handle(),
-      dest2.opaque(), dest_desc.handle(), input_diff_data.opaque(),
-      src_desc.handle(), input_data.opaque(), &beta, src_desc.handle(),
-      output_diff_data->opaque(), workspace.opaque());
-
-  if (status != miopenStatusSuccess) {
-    LOG(ERROR) << "failed to enqueue backward pooling on stream: "
-               << ToString(status);
-    return false;
-  }
-  return true;
+  return DoPoolBackward_internal(miopen, stream, pooling_dimensions,
+    input_dimensions, input_data, output_dimensions, output_data,
+    input_diff_data, output_diff_data, workspace_allocator);
 }
 
 bool MIOpenSupport::DoNormalizeWithDimensions(

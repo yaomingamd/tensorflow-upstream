@@ -467,6 +467,26 @@ class MIOpenSupport : public dnn::DnnSupport {
       DeviceMemory<Eigen::half>* output_data,
       ScratchAllocator* workspace_allocator = nullptr) override;
 
+  template <class M, class T>
+  static bool DoPoolForward_internal(M& miopen,
+    Stream* stream, const dnn::PoolingDescriptor& pooling_dimensions,
+    const dnn::BatchDescriptor& input_dimensions,
+    const DeviceMemory<T>& input_data,
+    const dnn::BatchDescriptor& output_dimensions,
+    DeviceMemory<T>* output_data, ScratchAllocator* workspace_allocator);
+
+  template <class M, class T>
+  static bool DoPoolBackward_internal(M& miopen,
+    Stream* stream, const dnn::PoolingDescriptor& pooling_dimensions,
+    const dnn::BatchDescriptor& input_dimensions,
+    const DeviceMemory<T>& input_data,
+    const dnn::BatchDescriptor& output_dimensions,
+    const DeviceMemory<T>& output_data,
+    const DeviceMemory<T>& input_diff_data,
+    DeviceMemory<T>* output_diff_data,
+    ScratchAllocator* workspace_allocator);
+
+
   bool DoPoolForward(Stream* stream,
                      const dnn::PoolingDescriptor& pooling_dimensions,
                      const dnn::BatchDescriptor& input_dimensions,
