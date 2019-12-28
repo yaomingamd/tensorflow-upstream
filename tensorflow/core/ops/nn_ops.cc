@@ -731,7 +731,7 @@ REGISTER_OP("MaxPool3D")
     .Attr("strides: list(int) >= 5")
     .Attr(GetPaddingAttrString())
     .Attr(GetConvnet3dDataFormatAttrString())
-    .Attr("T: {half, bfloat16, float}")
+    .Attr("T: {half, bfloat16, float, double}")
     .SetShapeFn(shape_inference::Pool3DShape);
 
 REGISTER_OP("MaxPool3DGrad")
@@ -743,8 +743,8 @@ REGISTER_OP("MaxPool3DGrad")
     .Attr("strides: list(int) >= 5")
     .Attr(GetPaddingAttrString())
     .Attr(GetConvnet3dDataFormatAttrString())
-    .Attr("T: {half, bfloat16, float} = DT_FLOAT")
-    .Attr("TInput: {half, bfloat16, float} = DT_FLOAT")
+    .Attr("T: {half, bfloat16, float, double} = DT_FLOAT")
+    .Attr("TInput: {half, bfloat16, float, double} = DT_FLOAT")
     .SetShapeFn([](InferenceContext* c) {
       return UnchangedShapeWithRank(c, 5);
     });
