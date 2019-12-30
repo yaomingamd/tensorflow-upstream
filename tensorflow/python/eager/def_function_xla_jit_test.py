@@ -41,9 +41,8 @@ class DefFunctionTest(test.TestCase):
 
     inputs = constant_op.constant([1, 2, 2, 3, 3])
     self.assertAllClose([2, 3, 3, 4, 4], func(inputs, 1))
-    if not test.is_built_with_rocm():
-      # XLA support is not yet enabled for TF ROCm
-      self.assertAllClose([2, 3, 3, 4, 4], xla_func(inputs, 1))
+    # XLA support is not yet enabled for TF R.OCm
+    self.assertAllClose([2, 3, 3, 4, 4], xla_func(inputs, 1))
 
   def testUnsupportedOps(self):
 
@@ -77,9 +76,8 @@ class DefFunctionTest(test.TestCase):
       self.assertAllClose(3.0, dy)
 
     run_and_check(func)
-    if not test.is_built_with_rocm():
-      # XLA support is not yet enabled for TF ROCm
-      run_and_check(xla_func)
+    # XLA support is not yet enabled for TF R.OCm
+    run_and_check(xla_func)
 
   def testControlFlow(self):
 

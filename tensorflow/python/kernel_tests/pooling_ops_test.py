@@ -1281,31 +1281,38 @@ class PoolingTest(test.TestCase):
   def _testMaxPoolGradDirect(self, input_data, output_backprop,
                              expected_input_backprop, input_sizes, output_sizes,
                              window_rows, window_cols, row_stride, col_stride,
-                             padding, use_gpu, v2):
-    pool_func = gen_nn_ops.max_pool_v2 if v2 else nn_ops.max_pool
-    with self.cached_session(use_gpu=use_gpu):
-      input_tensor = variables.Variable(
-          np.array(input_data, dtype=np.float32).reshape(input_sizes))
-      self.evaluate(variables.global_variables_initializer())
-      output_tensor = pool_func(input_tensor, [1, window_rows, window_cols, 1],
-                                [1, row_stride, col_stride, 1], padding)
-      output_backprop_tensor = constant_op.constant(
-          output_backprop, shape=output_sizes)
+                             padding, use_gpu, v2, nan_test=None):
+   for dtype in [np.float32, np.float64]:
+      # ROCm only supports NaN_propagate 1 with floats
+      if test.is_built_with_rocm and nan_test=="0" and dtype==np.float32:
+        continue
+      input_data = np.array(input_data, dtype)
+      output_backprop = np.array(output_backprop, dtype)
+      expected_input_backprop = np.array(expected_input_backprop, dtype)
+      pool_func = gen_nn_ops.max_pool_v2 if v2 else nn_ops.max_pool
+      with self.cached_session(use_gpu=use_gpu):
+        input_tensor = variables.Variable(
+            np.array(input_data, dtype=dtype).reshape(input_sizes))
+        self.evaluate(variables.global_variables_initializer())
+        output_tensor = pool_func(input_tensor, [1, window_rows, window_cols, 1],
+                                  [1, row_stride, col_stride, 1], padding)
+        output_backprop_tensor = constant_op.constant(
+            output_backprop, shape=output_sizes)
 
-      input_backprop_tensor = self._MaxPoolGrad(
-          input_tensor, output_tensor, output_backprop_tensor, window_rows,
-          window_cols, row_stride, col_stride, padding, v2)
+        input_backprop_tensor = self._MaxPoolGrad(
+            input_tensor, output_tensor, output_backprop_tensor, window_rows,
+            window_cols, row_stride, col_stride, padding, v2)
 
-      actual_input_backprop = self.evaluate(input_backprop_tensor)
-      self.assertShapeEqual(actual_input_backprop, input_backprop_tensor)
-      actual_input_backprop = actual_input_backprop.flatten()
-      actual_input_backprop = self._GetNdArray(actual_input_backprop)
+        actual_input_backprop = self.evaluate(input_backprop_tensor)
+        self.assertShapeEqual(actual_input_backprop, input_backprop_tensor)
+        actual_input_backprop = actual_input_backprop.flatten()
+        actual_input_backprop = self._GetNdArray(actual_input_backprop)
 
-      actual_output = self.evaluate(output_tensor).flatten()
-      actual_output = self._GetNdArray(actual_output)
+        actual_output = self.evaluate(output_tensor).flatten()
+        actual_output = self._GetNdArray(actual_output)
 
-      self.assertAllClose(
-          expected_input_backprop, actual_input_backprop, rtol=1e-6, atol=1e-6)
+        self.assertAllClose(
+            expected_input_backprop, actual_input_backprop, rtol=1e-6, atol=1e-6)
 
   def _testMaxPoolGradDirect1_1(self):
     input_data = [
@@ -1473,7 +1480,8 @@ class PoolingTest(test.TestCase):
           col_stride=1,
           padding="VALID",
           use_gpu=True,
-          v2=v2)
+          v2=v2,
+          nan_test="0")
 
     # Propagate the diff in cases of NaNs
     os.environ["TF_ENABLE_MAXPOOL_NANPROP"] = "1"
@@ -1492,7 +1500,8 @@ class PoolingTest(test.TestCase):
           col_stride=1,
           padding="VALID",
           use_gpu=True,
-          v2=v2)
+          v2=v2,
+          nan_test="1")
 
     if saved_nanprop:
       os.environ["TF_ENABLE_MAXPOOL_NANPROP"] = saved_nanprop
@@ -1558,7 +1567,8 @@ class PoolingTest(test.TestCase):
           col_stride=1,
           padding="VALID",
           use_gpu=True,
-          v2=v2)
+          v2=v2,
+          nan_test="0")
 
     # Propagate the diff in cases of NaNs
     os.environ["TF_ENABLE_MAXPOOL_NANPROP"] = "1"
@@ -1577,7 +1587,8 @@ class PoolingTest(test.TestCase):
           col_stride=1,
           padding="VALID",
           use_gpu=True,
-          v2=v2)
+          v2=v2,
+          nan_test="1")
 
     if saved_nanprop:
       os.environ["TF_ENABLE_MAXPOOL_NANPROP"] = saved_nanprop
@@ -1586,10 +1597,15 @@ class PoolingTest(test.TestCase):
 
   @test_util.run_deprecated_v1
   def testMaxPoolGradDirect(self):
+    print("1_1")
     self._testMaxPoolGradDirect1_1()
+    print("1_2")
     self._testMaxPoolGradDirect1_2()
+    print("1_3")
     self._testMaxPoolGradDirect1_3()
+    print("Nans2_1")
     self._testMaxPoolGradDirectWithNans2_1()
+    print("Nans2_2")
     self._testMaxPoolGradDirectWithNans2_2()
 
   def _testMaxPoolGradGradValidPadding1_1(self, data_format, use_gpu):
