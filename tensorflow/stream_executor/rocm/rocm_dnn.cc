@@ -165,7 +165,8 @@ namespace wrap {
   __macro(miopenFindConvolutionForwardAlgorithm)           \
   __macro(miopenCreateTensorDescriptor)                    \
   __macro(miopenDestroyTensorDescriptor)                   \
-  __macro(miopenSet2dPoolingDescriptor)                    \
+  __macro(miopenSetNdPoolingDescriptor)                    \
+  __macro(miopenSetPoolingIndexType)                       \
   __macro(miopenSetLRNDescriptor)                          \
   __macro(miopenLRNGetWorkSpaceSize)                       \
   __macro(miopenCreateConvolutionDescriptor)               \
@@ -192,7 +193,7 @@ namespace wrap {
   __macro(miopenSetTensorDescriptor)                       \
   __macro(miopenGetTensorDescriptorSize)                   \
   __macro(miopenPoolingForward)                            \
-  __macro(miopenPoolingGetWorkSpaceSize)                   \
+  __macro(miopenPoolingGetWorkSpaceSizeV2)                 \
   __macro(miopenPoolingBackward)                           \
   __macro(miopenLRNForward)                                \
   __macro(miopenLRNBackward)                               \
@@ -731,17 +732,19 @@ class ScopedPoolingDescriptor {
     std::transform(shape64.cbegin(), shape64.cend(), shape.begin(),
                    &CheckedNarrowing<int64, int>);
 
-    if (nd != 2) {
-      LOG(FATAL) << "miopen requires pooling dimensions be 2"
-                 << ToString(status);
-    }
-
-    status = wrap::miopenSet2dPoolingDescriptor(
+    status = wrap::miopenSetNdPoolingDescriptor(
         handle_,
         (pooling_descriptor.mode() == dnn::PoolingMode::kMaximum
              ? miopenPoolingMax
              : miopenPoolingAverage),
-        shape[0], shape[1], padding[0], padding[1], strides[0], strides[1]);
+        nd, shape.data(), padding.data(), strides.data());
+
+    // Note: The index type has to be uint32 type for now because MIOpen
+    // API assumes all input indexes to be the same type. Since a tensor
+    // descriptor can only use int32 type, the index type here need to be
+    // aligned with the tensor index type of the (input) tensor descritptor
+    status = wrap::miopenSetPoolingIndexType(handle_, miopenIndexUint32);
+
     if (status != miopenStatusSuccess) {
       LOG(FATAL) << "could not set miopen pooling descriptor: "
                  << ToString(status);
@@ -3660,8 +3663,8 @@ bool MIOpenSupport::DoPoolBackward(
 
   DeviceMemory<uint8> workspace;
   size_t workspace_size_in_bytes = 0;
-  auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
-                                                    &workspace_size_in_bytes);
+  auto status = wrap::miopenPoolingGetWorkSpaceSizeV2(
+      pooling_desc.handle(), dest_desc.handle(), &workspace_size_in_bytes);
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR)
@@ -3682,19 +3685,17 @@ bool MIOpenSupport::DoPoolBackward(
   }
 
   DeviceMemory<uint8> dest2;  // duplicated dest from forward:
-  int dest2_size = 0;
+  int64 dest2_size = 0;
 
   // miopen requires the strides and dims to be ordered as BDYX.
   std::vector<int64> dims64 =
       output_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
-
   // miopen does not use strides and must have 4D tensor.
-  std::vector<int> dims(4);
+  std::vector<int> dims(pooling_dimensions.ndims() + 2);
 
-  std::transform(dims64.cbegin(), dims64.cend(), dims.begin(),
-                 &CheckedNarrowing<int64, int>);
-
-  dest2_size = dims[0] * dims[1] * dims[2] * dims[3] * sizeof(float);
+  dest2_size = sizeof(float);
+  for(auto& x: dims64)
+     dest2_size *= x;
 
   if (dest2_size > 0) {
     assert(workspace_allocator);
@@ -3756,8 +3757,8 @@ bool MIOpenSupport::DoPoolBackward(
 
   DeviceMemory<uint8> workspace;
   size_t workspace_size_in_bytes = 0;
-  auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
-                                                    &workspace_size_in_bytes);
+  auto status = wrap::miopenPoolingGetWorkSpaceSizeV2(
+      pooling_desc.handle(), dest_desc.handle(), &workspace_size_in_bytes);
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR)
@@ -3778,19 +3779,20 @@ bool MIOpenSupport::DoPoolBackward(
   }
 
   DeviceMemory<uint8> dest2;  // duplicated dest from forward:
-  int dest2_size = 0;
+  int64 dest2_size = 0;
 
   // miopen requires the strides and dims to be ordered as BDYX.
   std::vector<int64> dims64 =
       output_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
-
   // miopen does not use strides and must have 4D tensor.
-  std::vector<int> dims(4);
+  std::vector<int> dims(pooling_dimensions.ndims() + 2);
 
   std::transform(dims64.cbegin(), dims64.cend(), dims.begin(),
                  &CheckedNarrowing<int64, int>);
 
-  dest2_size = dims[0] * dims[1] * dims[2] * dims[3] * sizeof(float);
+  dest2_size = 2;
+  for(auto& x: dims)
+     dest2_size *= x;
 
   if (dest2_size > 0) {
     assert(workspace_allocator);
