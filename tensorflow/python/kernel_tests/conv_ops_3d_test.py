@@ -350,6 +350,29 @@ class Conv3DTest(test.TestCase):
       values = self.evaluate(conv)
       self.assertEqual(values.shape, tensor_shape.TensorShape(output_shape))
 
+  # Tests that the 3D convo algorithm is sane and the TF is capable of performing 
+  # the convolution without running out of memory
+  def testConv3DLargeTensor(self):
+    input_shape = [1, 128, 128, 128, 1]
+    filter_shape = [8, 8, 8, 4, 1]
+    input_data = 1
+    filter_data = 1
+    for data_type in self._DtypesToTest(False):
+      input_tensor = constant_op.constant(
+          input_data, shape=input_shape, dtype=data_type, name="input")
+      filter_tensor = constant_op.constant(
+          filter_data, shape=filter_shape, dtype=data_type, name="filter")
+      conv = nn_ops.conv3d(
+          input_tensor,
+          filter_tensor,
+          strides=[1, 1, 1, 1, 1],
+          dilations=[1, 1, 1, 1, 1],
+          padding="SAME",
+          data_format="NDHWC",
+          name="conv")
+      values = self.evaluate(conv)
+      print(values)
+
   def testKernelSmallerThanStride(self):
     expected_output = [
         0.03703704, 0.11111111, 0.25925926, 0.33333333, 0.7037037, 0.77777778,
