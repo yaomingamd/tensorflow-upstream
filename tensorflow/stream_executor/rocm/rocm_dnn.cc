@@ -165,7 +165,6 @@ namespace wrap {
   __macro(miopenFindConvolutionForwardAlgorithm)           \
   __macro(miopenCreateTensorDescriptor)                    \
   __macro(miopenDestroyTensorDescriptor)                   \
-  __macro(miopenSet2dPoolingDescriptor)                    \
   __macro(miopenSetNdPoolingDescriptor)                    \
   __macro(miopenSetPoolingIndexType)                       \
   __macro(miopenSetLRNDescriptor)                          \
@@ -194,7 +193,7 @@ namespace wrap {
   __macro(miopenSetTensorDescriptor)                       \
   __macro(miopenGetTensorDescriptorSize)                   \
   __macro(miopenPoolingForward)                            \
-  __macro(miopenPoolingGetWorkSpaceSize)                   \
+  __macro(miopenPoolingGetWorkSpaceSizeV2)                 \
   __macro(miopenPoolingBackward)                           \
   __macro(miopenLRNForward)                                \
   __macro(miopenLRNBackward)                               \
@@ -3664,8 +3663,8 @@ bool MIOpenSupport::DoPoolBackward(
 
   DeviceMemory<uint8> workspace;
   size_t workspace_size_in_bytes = 0;
-  auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
-                                                    &workspace_size_in_bytes);
+  auto status = wrap::miopenPoolingGetWorkSpaceSizeV2(
+      pooling_desc.handle(), dest_desc.handle(), &workspace_size_in_bytes);
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR)
@@ -3760,8 +3759,8 @@ bool MIOpenSupport::DoPoolBackward(
 
   DeviceMemory<uint8> workspace;
   size_t workspace_size_in_bytes = 0;
-  auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
-                                                    &workspace_size_in_bytes);
+  auto status = wrap::miopenPoolingGetWorkSpaceSizeV2(
+      pooling_desc.handle(), dest_desc.handle(), &workspace_size_in_bytes);
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR)
