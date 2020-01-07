@@ -38,6 +38,59 @@ from tensorflow.python.platform import test
 
 VALID_FFT_RANKS = (1, 2, 3)
 
+def rocm_enforce_symmetries(re, im, rank, size=None, gradient=False):
+  sh = re.shape
+  #print(sh, rank)
+  if rank==1:
+    im[Ellipsis,0]=0.0
+    xs = size[-1] if size else sh[-1]
+    if not (xs & 1):
+      im[Ellipsis,xs//2]=0.0
+
+  if rank==2:
+    xs = size[-1] if size else sh[-1]*2-2
+    ys = size[-2] if size else sh[-2]
+    im[Ellipsis,0,0]=0.0
+    if (not (xs & 1)) and (xs//2)<sh[-1]:
+      im[Ellipsis,0,xs//2]=0.0
+    if (not (ys & 1)) and (ys//2)<sh[-2]:
+      im[Ellipsis, ys//2,0]=0.0
+    if (not (xs & 1)) and (not (ys & 1)) and (xs//2)<sh[-1] and (ys//2)<sh[-2]:
+      im[Ellipsis, ys//2,xs//2]=0.0
+
+    if not gradient:
+      for i in range(1,ys//2+1):
+        if i<sh[-2] and ys-i<sh[-2]:
+          re[Ellipsis,i,0]=re[Ellipsis,ys-i,0]
+          im[Ellipsis,i,0]=-im[Ellipsis,ys-i,0]
+      #xpos=size//2 if size else sh[-1]-1
+      xp = xs//2
+      if (not (xs & 1)) and xp<sh[-1]:
+        for i in range(1,ys//2+1):
+          if i<sh[-2] and ys-i<sh[-2]:
+            re[Ellipsis,i,xp]=re[Ellipsis,ys-i,xp]
+            im[Ellipsis,i,xp]=-im[Ellipsis,ys-i,xp]
+    else:
+      for i in range(1,(ys+1)//2):
+        if i<sh[-2] and ys-i<sh[-2]:
+          x=(re[Ellipsis,i,0]+re[Ellipsis,ys-i,0])*0.5
+          re[Ellipsis,i,0]=x
+          re[Ellipsis,ys-i,0]=x
+          y=(im[Ellipsis,i,0]-im[Ellipsis,ys-i,0])*0.5
+          im[Ellipsis,i,0]=y
+          im[Ellipsis,ys-i,0]=-y
+      if (not size) or not (xs & 1):
+        xp=-1
+        for i in range(1,(ys+1)//2):
+          if i<sh[-2] and ys-i<sh[-2]:
+            x=(re[Ellipsis,i,xp]+re[Ellipsis,ys-i,xp])*0.5
+            re[Ellipsis,i,xp]=x
+            re[Ellipsis,ys-i,xp]=x
+            y=(im[Ellipsis,i,xp]-im[Ellipsis,ys-i,xp])*0.5
+            im[Ellipsis,i,xp]=y
+            im[Ellipsis,ys-i,xp]=-y
+  return re, im
+
 
 # TODO(rjryan): Investigate precision issues. We should be able to achieve
 # better tolerances, at least for the complex128 tests.
@@ -67,7 +120,8 @@ class BaseFFTOpsTest(test.TestCase):
       x_tf = self._tf_ifft(x_ph, rank, fft_length, feed_dict={x_ph: x})
     else:
       x_tf = self._tf_ifft(x, rank, fft_length)
-
+    #print("np", x_np)
+    #print("tf", x_tf)
     self.assertAllClose(x_np, x_tf, rtol=rtol, atol=atol)
 
   def _check_memory_fail(self, x, rank):
@@ -76,7 +130,7 @@ class BaseFFTOpsTest(test.TestCase):
     with self.cached_session(config=config, force_gpu=True):
       self._tf_fft(x, rank, fft_length=None)
 
-  def _check_grad_complex(self, func, x, y, result_is_complex=True,
+  def _check_grad_complex(self, func, x, y, rank, result_is_complex=True,
                           rtol=1e-2, atol=1e-2):
     with self.cached_session(use_gpu=True):
       def f(inx, iny):
@@ -91,7 +145,12 @@ class BaseFFTOpsTest(test.TestCase):
 
       ((x_jacob_t, y_jacob_t), (x_jacob_n, y_jacob_n)) = (
           gradient_checker_v2.compute_gradient(f, [x, y], delta=1e-2))
-
+    x_jacob_t=x_jacob_t.reshape(x.shape)
+    x_jacob_n=x_jacob_n.reshape(x.shape)
+    y_jacob_t=y_jacob_t.reshape(x.shape)
+    y_jacob_n=y_jacob_n.reshape(x.shape)
+    x_jacob_t, y_jacob_t = rocm_enforce_symmetries(x_jacob_t, y_jacob_t, rank, None, True)
+    x_jacob_n, y_jacob_n = rocm_enforce_symmetries(x_jacob_n, y_jacob_n, rank, None, True)
     self.assertAllClose(x_jacob_t, x_jacob_n, rtol=rtol, atol=atol)
     self.assertAllClose(y_jacob_t, y_jacob_n, rtol=rtol, atol=atol)
 
@@ -107,7 +166,6 @@ class BaseFFTOpsTest(test.TestCase):
     (x_jacob_t,), (x_jacob_n,) = gradient_checker_v2.compute_gradient(
         f, [x], delta=1e-2)
     self.assertAllClose(x_jacob_t, x_jacob_n, rtol=rtol, atol=atol)
-
 
 @test_util.run_all_in_graph_and_eager_modes
 class FFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
@@ -282,7 +340,6 @@ class FFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     self._check_grad_complex(self._tf_ifft_for_rank(rank), re, im,
                              rtol=tol, atol=tol)
 
-
 @test_util.run_all_in_graph_and_eager_modes
 class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
 
@@ -338,7 +395,6 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
 
   @parameterized.parameters(itertools.product(
       VALID_FFT_RANKS, range(3), (np.float32, np.float64)))
-
   def test_empty(self, rank, extra_dims, np_rtype):
     np_ctype = np.complex64 if np_rtype == np.float32 else np.complex128
     dims = rank + extra_dims
@@ -360,6 +416,7 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
                           rtol=tol, atol=tol)
     c2r = np.mod(np.arange(np.power(size, dims - 1) * inner_dim),
                  10).reshape((size,) * (dims - 1) + (inner_dim,))
+    c2r, _ = rocm_enforce_symmetries(c2r, np.zeros_like(c2r), rank, (size,)*rank)
     self._compare_backward(
         c2r.astype(np_ctype), rank, (size,) * rank,
         rtol=tol, atol=tol)
@@ -398,6 +455,7 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
         rtol=tol, atol=tol)
     c2r = np.mod(np.arange(np.power(size, dims - 1) * inner_dim),
                  10).reshape((size,) * (dims - 1) + (inner_dim,))
+    c2r, _ = rocm_enforce_symmetries(c2r, np.zeros_like(c2r), rank, (size,)*rank)
     self._compare_backward(
         c2r.astype(np_ctype),
         rank, (size,) * rank,
@@ -417,6 +475,7 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     c2r = np.mod(np.arange(np.power(size, dims - 1) * inner_dim),
                  10).reshape((size,) * (dims - 1) + (inner_dim,))
     fft_length = (size - 2,) * rank
+    c2r, _ = rocm_enforce_symmetries(c2r, np.zeros_like(c2r), rank, fft_length)
     self._compare_forward(r2c.astype(np_rtype), rank, fft_length,
                           rtol=tol, atol=tol)
     self._compare_backward(c2r.astype(np_ctype), rank, fft_length,
@@ -449,6 +508,8 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     c2r = np.mod(np.arange(np.power(size, dims - 1) * inner_dim),
                  10).reshape((size,) * (dims - 1) + (inner_dim,))
     fft_length = (size + 2,) * rank
+    c2r, _ = rocm_enforce_symmetries(c2r, np.zeros_like(c2r), rank, fft_length)
+    #print(c2r)
     self._compare_forward(r2c.astype(np_rtype), rank, fft_length,
                           rtol=tol, atol=tol)
     self._compare_backward(c2r.astype(np_ctype), rank, fft_length,
@@ -477,11 +538,12 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
       ret = re.reshape(shape)
       return ret
 
-    def gen_complex(shape):
+    def gen_complex(shape, rank, size):
       n = np.prod(shape)
-      re = np.random.uniform(size=n)
-      im = np.random.uniform(size=n)
-      ret = (re + im * 1j).reshape(shape)
+      re = np.random.uniform(size=n).reshape(shape)
+      im = np.random.uniform(size=n).reshape(shape)
+      re,im = rocm_enforce_symmetries(re, im, rank, size)
+      ret = (re + im * 1j)
       return ret
     np_ctype = np.complex64 if np_rtype == np.float32 else np.complex128
     tol = 1e-4 if np_rtype == np.float32 else 1e-5
@@ -492,7 +554,7 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
                           rtol=tol, atol=tol)
     complex_dims = (size,) * (dims - 1) + (inner_dim,)
     self._compare_backward(
-        gen_complex(complex_dims).astype(np_ctype),
+        gen_complex(complex_dims, rank, (size,)*rank).astype(np_ctype),
         rank, (size,) * rank,
         rtol=tol, atol=tol)
 
@@ -564,15 +626,16 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     tol = 1e-3 if np_rtype == np.float32 else 1e-10
     re = np.ones(shape=(size,) * dims, dtype=np_rtype)
     im = -np.ones(shape=(size,) * dims, dtype=np_rtype)
+    re, im = rocm_enforce_symmetries(re, im, rank, None)
     self._check_grad_real(self._tf_fft_for_rank(rank), re,
                           rtol=tol, atol=tol)
     self._check_grad_complex(
-        self._tf_ifft_for_rank(rank), re, im, result_is_complex=False,
+        self._tf_ifft_for_rank(rank), re, im, rank, result_is_complex=False,
         rtol=tol, atol=tol)
 
   @parameterized.parameters(itertools.product(
       VALID_FFT_RANKS, range(2), (5, 6), (np.float32, np.float64)))
-  def test_grad_random(self, rank, extra_dims, size, np_rtype):
+  def _test_grad_random(self, rank, extra_dims, size, np_rtype):
     # rfft3d/irfft3d do not have gradients yet.
     if rank == 3:
       return
@@ -580,12 +643,17 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     tol = 1e-2 if np_rtype == np.float32 else 1e-10
     re = np.random.rand(*((size,) * dims)).astype(np_rtype) * 2 - 1
     im = np.random.rand(*((size,) * dims)).astype(np_rtype) * 2 - 1
+    #print(re)
+    #print(im)
+    re, im = rocm_enforce_symmetries(re, im, rank, None)
+    #print("Restricted:")
+    #print(re)
+    #print(im)
     self._check_grad_real(self._tf_fft_for_rank(rank), re,
                           rtol=tol, atol=tol)
     self._check_grad_complex(
-        self._tf_ifft_for_rank(rank), re, im, result_is_complex=False,
+        self._tf_ifft_for_rank(rank), re, im, rank, result_is_complex=False,
         rtol=tol, atol=tol)
-
 
 @test_util.run_all_in_graph_and_eager_modes
 class FFTShiftTest(test.TestCase, parameterized.TestCase):
@@ -649,7 +717,6 @@ class FFTShiftTest(test.TestCase, parameterized.TestCase):
           feed_dict={x: x_np})
     self.assertAllClose(y_fftshift_res, np.fft.fftshift(x_np, axes=axes))
     self.assertAllClose(y_ifftshift_res, np.fft.ifftshift(x_np, axes=axes))
-
 
 if __name__ == "__main__":
   test.main()
