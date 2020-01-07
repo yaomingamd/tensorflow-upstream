@@ -22,6 +22,19 @@ limitations under the License.
 namespace stream_executor {
 namespace dnn {
 
+template <>
+constexpr DataType ToDataType<float>::value;
+template <>
+constexpr DataType ToDataType<double>::value;
+template <>
+constexpr DataType ToDataType<Eigen::half>::value;
+template <>
+constexpr DataType ToDataType<int8>::value;
+template <>
+constexpr DataType ToDataType<int32>::value;
+template <>
+constexpr DataType ToDataType<tensorflow::bfloat16>::value;
+
 uint64 AlgorithmDesc::hash() const {
   auto p = std::make_pair(algo_id(), tensor_ops_enabled());
   return absl::Hash<decltype(p)>()(p);
