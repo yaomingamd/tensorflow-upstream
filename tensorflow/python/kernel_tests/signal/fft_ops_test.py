@@ -36,15 +36,15 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops.signal import fft_ops
 from tensorflow.python.platform import test
 
-VALID_FFT_RANKS = (1, 2, 3)
+VALID_FFT_RANKS = (2, )
 
 def rocm_enforce_symmetries(re, im, rank, size=None, gradient=False):
   sh = re.shape
-  #print(sh, rank)
+  print(sh, rank)
   if rank==1:
     im[Ellipsis,0]=0.0
-    xs = size[-1] if size else sh[-1]
-    if not (xs & 1):
+    xs = size[-1] if size else sh[-1]*2-2
+    if (not (xs & 1)) and xs//2<sh[-1]:
       im[Ellipsis,xs//2]=0.0
 
   if rank==2:
@@ -145,12 +145,13 @@ class BaseFFTOpsTest(test.TestCase):
 
       ((x_jacob_t, y_jacob_t), (x_jacob_n, y_jacob_n)) = (
           gradient_checker_v2.compute_gradient(f, [x, y], delta=1e-2))
-    x_jacob_t=x_jacob_t.reshape(x.shape)
-    x_jacob_n=x_jacob_n.reshape(x.shape)
-    y_jacob_t=y_jacob_t.reshape(x.shape)
-    y_jacob_n=y_jacob_n.reshape(x.shape)
-    x_jacob_t, y_jacob_t = rocm_enforce_symmetries(x_jacob_t, y_jacob_t, rank, None, True)
-    x_jacob_n, y_jacob_n = rocm_enforce_symmetries(x_jacob_n, y_jacob_n, rank, None, True)
+    if not result_is_complex:
+      x_jacob_t=x_jacob_t.reshape(x.shape)
+      x_jacob_n=x_jacob_n.reshape(x.shape)
+      y_jacob_t=y_jacob_t.reshape(x.shape)
+      y_jacob_n=y_jacob_n.reshape(x.shape)
+      x_jacob_t, y_jacob_t = rocm_enforce_symmetries(x_jacob_t, y_jacob_t, rank, None, True)
+      x_jacob_n, y_jacob_n = rocm_enforce_symmetries(x_jacob_n, y_jacob_n, rank, None, True)
     self.assertAllClose(x_jacob_t, x_jacob_n, rtol=rtol, atol=atol)
     self.assertAllClose(y_jacob_t, y_jacob_n, rtol=rtol, atol=atol)
 
@@ -323,9 +324,9 @@ class FFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     dims = rank + extra_dims
     re = np.ones(shape=(4,) * dims, dtype=np_type) / 10.0
     im = np.zeros(shape=(4,) * dims, dtype=np_type)
-    self._check_grad_complex(self._tf_fft_for_rank(rank), re, im,
+    self._check_grad_complex(self._tf_fft_for_rank(rank), re, im, rank,
                              rtol=tol, atol=tol)
-    self._check_grad_complex(self._tf_ifft_for_rank(rank), re, im,
+    self._check_grad_complex(self._tf_ifft_for_rank(rank), re, im, rank,
                              rtol=tol, atol=tol)
 
   @parameterized.parameters(itertools.product(
@@ -335,9 +336,9 @@ class FFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     tol = 1e-2 if np_type == np.float32 else 1e-10
     re = np.random.rand(*((3,) * dims)).astype(np_type) * 2 - 1
     im = np.random.rand(*((3,) * dims)).astype(np_type) * 2 - 1
-    self._check_grad_complex(self._tf_fft_for_rank(rank), re, im,
-                             rtol=tol, atol=tol)
-    self._check_grad_complex(self._tf_ifft_for_rank(rank), re, im,
+    self._check_grad_complex(self._tf_fft_for_rank(rank), re, im, rank,
+                             rtol=tol, atol=tol)  
+    self._check_grad_complex(self._tf_ifft_for_rank(rank), re, im, rank,
                              rtol=tol, atol=tol)
 
 @test_util.run_all_in_graph_and_eager_modes
@@ -635,7 +636,7 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
 
   @parameterized.parameters(itertools.product(
       VALID_FFT_RANKS, range(2), (5, 6), (np.float32, np.float64)))
-  def _test_grad_random(self, rank, extra_dims, size, np_rtype):
+  def  test_grad_random(self, rank, extra_dims, size, np_rtype):
     # rfft3d/irfft3d do not have gradients yet.
     if rank == 3:
       return
