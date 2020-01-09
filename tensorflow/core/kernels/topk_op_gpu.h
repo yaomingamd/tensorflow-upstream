@@ -15,17 +15,22 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_TOPK_OP_GPU_H_
 #define TENSORFLOW_CORE_KERNELS_TOPK_OP_GPU_H_
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #define EIGEN_USE_GPU
 
 #include <cmath>
 #include <vector>
+#include <string>
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#if GOOGLE_CUDA
 #include "third_party/cub/device/device_segmented_radix_sort.cuh"
 #include "third_party/cub/iterator/counting_input_iterator.cuh"
 #include "third_party/cub/iterator/transform_input_iterator.cuh"
+#else
+#include "rocm/include/hipcub/hipcub.hpp"
+#endif
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -36,6 +41,22 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 
+#if GOOGLE_CUDA
+using cub::DeviceSegmentedRadixSort;
+using cub::CountingInputIterator;
+using cub::TransformInputIterator;
+#else
+using hipcub::DeviceSegmentedRadixSort;
+using hipcub::CountingInputIterator;
+using hipcub::TransformInputIterator;
+#define cudaSuccess 0
+#define cudaGetLastError hipGetLastError
+typedef hipStream_t cudaStream_t;
+typedef int cudaError;
+static std::string cudaGetErrorString(int err) { return std::to_string(err); }
+#endif
+
+#if GOOGLE_CUDA
 // Required for sorting Eigen::half
 namespace cub {
 template <>
@@ -43,6 +64,14 @@ struct NumericTraits<Eigen::half>
     : BaseTraits<FLOATING_POINT, true, false, unsigned short int, Eigen::half> {
 };
 }  // namespace cub
+#else
+namespace rocprim {
+  namespace detail {
+    template<>
+    struct radix_key_codec_base<Eigen::half> : radix_key_codec_floating<Eigen::half, unsigned short> { };
+  };
+};
+#endif
 
 namespace tensorflow {
 
@@ -94,7 +123,7 @@ struct IndirectLinearData {
   Entry* const backing_data;
 };
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <typename T>
 struct StridedData {
   typedef impl::Entry<T> Entry;
@@ -116,6 +145,7 @@ template <HeapType heapType, PreferIndices preferIndices,
 struct IndexedHeap {
   typedef typename Data<T>::Entry Entry;
   const Data<T> data;
+  __device__ IndexedHeap(const Data<T>& d) : data(d) {}
 
   __device__ bool is_above(int left, int right) {
     T left_value = data.get_value(left);
@@ -338,12 +368,18 @@ __device__ void mergeShards(int num_shards, int k,
   }
 }
 
-extern __shared__ char shared_memory[];
+#if GOOGLE_CUDA
+__shared__ char shared_memory[];
+#endif
 
 template <typename T>
 __global__ void TopKKernel(const T* __restrict__ input, int length, int k,
                            bool sorted, T* __restrict__ output,
                            int* __restrict__ indices) {
+#if TENSORFLOW_USE_ROCM
+  HIP_DYNAMIC_SHARED(char, shared_memory);
+#endif
+
   const int batch_index = blockIdx.x;
   const T* batch_input = input + batch_index * length;
 
@@ -449,9 +485,9 @@ Status LaunchSortKernel(OpKernelContext* ctx, const T* input, int num_rows,
   input_indices_t.device(d) =
       input_indices_t.generate(ColumnIndexCreator(num_cols));
 
-  cub::CountingInputIterator<int> counting_iter(0);
-  cub::TransformInputIterator<int, SegmentOffsetCreator,
-                              cub::CountingInputIterator<int>>
+  CountingInputIterator<int> counting_iter(0);
+  TransformInputIterator<int, SegmentOffsetCreator,
+                              CountingInputIterator<int>>
       segment_offsets_t(counting_iter, SegmentOffsetCreator(num_cols));
 
   Tensor temp_values;
@@ -473,7 +509,7 @@ Status LaunchSortKernel(OpKernelContext* ctx, const T* input, int num_rows,
     sorted_values_ptr = temp_values.flat<T>().data();
   }
 
-  auto err = cub::DeviceSegmentedRadixSort::SortPairsDescending(
+  auto err = DeviceSegmentedRadixSort::SortPairsDescending(
       /* d_temp_storage */ nullptr,
       /* temp_storage_bytes */ temp_storage_bytes,
       /* d_keys_in */ input,
@@ -498,7 +534,7 @@ Status LaunchSortKernel(OpKernelContext* ctx, const T* input, int num_rows,
   TF_RETURN_IF_ERROR(ctx->allocate_temp(
       DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
       &temp_storage));
-  err = cub::DeviceSegmentedRadixSort::SortPairsDescending(
+  err = DeviceSegmentedRadixSort::SortPairsDescending(
       /* d_temp_storage */ temp_storage.flat<int8>().data(),
       /* temp_storage_bytes */ temp_storage_bytes,
       /* d_keys_in */ input,
@@ -568,6 +604,6 @@ struct TopKFunctor<GPUDevice, T> {
 }  // end namespace functor
 }  // namespace tensorflow
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #endif  // TENSORFLOW_CORE_KERNELS_TOPK_OP_GPU_H_

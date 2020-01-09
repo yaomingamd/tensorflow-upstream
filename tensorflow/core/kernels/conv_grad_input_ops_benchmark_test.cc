@@ -157,7 +157,7 @@ BENCHMARK_DTYPE(NHWC, 8, fp32, cpu);
 BENCHMARK_DTYPE(NHWC, 16, fp32, cpu);
 BENCHMARK_DTYPE(NHWC, 32, fp32, cpu);
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // -------------------------------------------------------------------------- //
 // The following benchmarks are used to compare different data format
 // performance for different data types. They make sense only when CUDA enabled,
@@ -176,6 +176,6 @@ BENCHMARK_DTYPE(NCHW, 64, fp32, gpu);
 BENCHMARK_DTYPE(NHWC, 64, fp16, gpu);
 BENCHMARK_DTYPE(NCHW, 64, fp16, gpu);
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace tensorflow

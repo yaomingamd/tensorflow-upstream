@@ -505,7 +505,7 @@ BM_FusedConv2DWithBatchNormAndRelu(16, 32, 32, 128, 3, 3, 1024, cpu,
 BM_FusedConv2DWithBatchNormAndRelu(32, 32, 32, 128, 3, 3, 1024, cpu,
                                    "3x3 /b 32");
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // -------------------------------------------------------------------------- //
 // 1x1 Convolution
 // -------------------------------------------------------------------------- //
@@ -569,7 +569,7 @@ BM_FusedConv2DWithBiasAndRelu(32, 32, 32, 128, 3, 3, 1024, gpu, "3x3 /b 32");
   }                                                                           \
   BENCHMARK(BM_LONG_NAME(BM_Conv2D, type, T, FORMAT, N, H, W, C, FW, FH, FC));
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 using fp32 = float;
 using fp16 = Eigen::half;
 
@@ -625,6 +625,6 @@ BENCHMARK_DTYPE(NCHW, 64, fp32);
 BENCHMARK_DTYPE(NHWC, 64, fp16);
 BENCHMARK_DTYPE(NCHW, 64, fp16);
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // namespace tensorflow

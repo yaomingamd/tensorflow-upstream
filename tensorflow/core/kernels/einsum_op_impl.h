@@ -516,6 +516,7 @@ struct EinsumHelper {
     TF_RETURN_IF_ERROR(
         ctx->allocate_temp(DataTypeToEnum<T>::value, output_shape, output));
     using Reducer = Eigen::internal::SumReducer<T>;
+    //using ReducerActual = Eigen::internal::SumReducer<typename functor::CpxMapT<T>::TM>;
     using Index = typename TTypes<T>::Tensor::Index;
     // Reduce along the last axis (i.e axis 1) of the rank-2 Tensor.
     const int64 output_size = reshape[kBroadcasting] * reshape[kBatch] *
@@ -773,11 +774,8 @@ namespace functor {
 DECLARE_GPU_SPECS(Eigen::half);
 DECLARE_GPU_SPECS(double);
 DECLARE_GPU_SPECS(float);
-// TODO(rocm): Enable once complex types are supported.
-#if GOOGLE_CUDA
 DECLARE_GPU_SPECS(complex64);
 DECLARE_GPU_SPECS(complex128);
-#endif
 #undef DECLARE_GPU_SPEC
 #undef DECLARE_GPU_SPECS
 }  // namespace functor

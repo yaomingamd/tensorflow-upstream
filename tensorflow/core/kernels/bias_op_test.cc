@@ -81,7 +81,7 @@ BM_BiasAddGradNHWC(32, 64, 64, 256, cpu);
 BM_BiasAddGradNHWC(32, 64, 64, 512, cpu);
 BM_BiasAddGradNHWC(32, 64, 64, 1024, cpu);
 
-#ifdef GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 BM_BiasAddGradNHWC(32, 32, 32, 128, gpu);
 BM_BiasAddGradNHWC(32, 32, 32, 256, gpu);
 BM_BiasAddGradNHWC(32, 32, 32, 512, gpu);
@@ -91,6 +91,6 @@ BM_BiasAddGradNHWC(32, 64, 64, 128, gpu);
 BM_BiasAddGradNHWC(32, 64, 64, 256, gpu);
 BM_BiasAddGradNHWC(32, 64, 64, 512, gpu);
 BM_BiasAddGradNHWC(32, 64, 64, 1024, gpu);
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 }  // end namespace tensorflow

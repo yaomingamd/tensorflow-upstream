@@ -363,7 +363,7 @@ static Graph* Matmul(int m, int k, int n, bool transpose_a, bool transpose_b,
   }                                                                            \
   BENCHMARK(BM_Matmul##_##M##_##K##_##N##_##TA##_##TB##_##TFTYPE##_##DEVICE);
 
-#ifdef GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #define BM_Matmul(M, K, N, TA, TB)                                       \
   BM_MatmulDev(M, K, N, TA, TB, float, DT_FLOAT, cpu);                   \
@@ -382,7 +382,7 @@ static Graph* Matmul(int m, int k, int n, bool transpose_a, bool transpose_b,
   BM_MatmulDev(M, K, N, TA, TB, float, DT_FLOAT, cpu); \
   BM_MatmulDev(M, K, N, TA, TB, std::complex<float>, DT_COMPLEX64, cpu);
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 // Batch size of 1 included for inference.
 // Typical fully connected layers
