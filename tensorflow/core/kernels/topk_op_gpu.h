@@ -432,9 +432,16 @@ cudaError LaunchTopKKernel(const cudaStream_t& stream, int num_shards,
     }
     if (num_shards <= 0) {
       num_shards = 1;
+#if GOOGLE_CUDA      
     } else if (num_shards > 1024) {
       num_shards = 1024;
     }
+#else
+    // ROCm produces incorrect results with the default limits. Investigate
+    } else if (num_shards > 256) {
+      num_shards = 256;
+    }
+#endif    
   }
   // We are limited by the amount of shared memory we have per block.
   auto shared_memory_size = (num_shards + 1) * k * sizeof(Entry<T>);
