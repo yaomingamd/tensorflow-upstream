@@ -516,7 +516,6 @@ struct EinsumHelper {
     TF_RETURN_IF_ERROR(
         ctx->allocate_temp(DataTypeToEnum<T>::value, output_shape, output));
     using Reducer = Eigen::internal::SumReducer<T>;
-    //using ReducerActual = Eigen::internal::SumReducer<typename functor::CpxMapT<T>::TM>;
     using Index = typename TTypes<T>::Tensor::Index;
     // Reduce along the last axis (i.e axis 1) of the rank-2 Tensor.
     const int64 output_size = reshape[kBroadcasting] * reshape[kBatch] *
