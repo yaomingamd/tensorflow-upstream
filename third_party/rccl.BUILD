@@ -32,9 +32,9 @@ genrule(
     srcs = ["inc/rccl-version.h.in"],
     outs = ["inc/rccl-version.h"],
     cmd = ("sed " +
-           "-e 's/@rccl_VERSION_MAJOR@/0/g' " +
-           "-e 's/@rccl_VERSION_MINOR@/7/g' " +
-           "-e 's/@rccl_VERSION_PATCH@/1/g' " +
+           "-e 's/@rccl_VERSION_MAJOR@/3/g' " +
+           "-e 's/@rccl_VERSION_MINOR@/0/g' " +
+           "-e 's/@rccl_VERSION_PATCH@/0/g' " +
            "-e 's/@rccl_VERSION_TWEAK@//g' " +
            "$< >$@"),
 )
