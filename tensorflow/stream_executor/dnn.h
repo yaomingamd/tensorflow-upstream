@@ -30,6 +30,7 @@ limitations under the License.
 
 #include "absl/types/optional.h"
 #include "absl/types/span.h"
+#include "tensorflow/core/lib/bfloat16/bfloat16.h"
 #include "tensorflow/stream_executor/device_memory.h"
 #include "tensorflow/stream_executor/dnn.pb.h"
 #include "tensorflow/stream_executor/lib/array_slice.h"
@@ -132,6 +133,10 @@ struct ToDataType<int8> {
 template <>
 struct ToDataType<int32> {
   static constexpr DataType value = DataType::kInt32;
+};
+template <>
+struct ToDataType<tensorflow::bfloat16> {
+  static constexpr DataType value = DataType::kBFloat16;
 };
 
 // Specifies the types of a RNN model.
@@ -1346,11 +1351,14 @@ class DnnSupport {
       std::vector<AlgorithmDesc>* out_algorithms);
 
   virtual bool GetMIOpenConvolveAlgorithms(
-      dnn::ConvolutionKind kind, Stream* stream, dnn::DataType element_type,
-      const dnn::BatchDescriptor& input_descriptor,
+      dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
+      const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data,
       const dnn::FilterDescriptor& filter_descriptor,
-      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      DeviceMemoryBase filter_data,
       const dnn::BatchDescriptor& output_descriptor,
+      DeviceMemoryBase output_data,
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      ScratchAllocator* scratch_allocator,
       std::vector<ProfileResult>* out_algorithms);
 
   // Returns a list of supported rnn algorithms.
