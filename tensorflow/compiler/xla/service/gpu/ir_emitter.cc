@@ -50,6 +50,21 @@ limitations under the License.
 #include "tensorflow/compiler/xla/window_util.h"
 #include "tensorflow/core/lib/core/errors.h"
 
+namespace {
+
+static llvm::Value* MayAddrSpaceCastArg(llvm::Value* arg, llvm::IRBuilder<>& builder) {
+  llvm::Type* arg_type = arg->getType();
+  CHECK_EQ(true, arg_type->isPointerTy());
+  if (arg_type->getPointerAddressSpace() != 0) {
+    llvm::Type* generic_arg_type = arg_type->getPointerElementType()->getPointerTo(0);
+    llvm::Value* addrspacecast_arg = builder.CreateAddrSpaceCast(arg, generic_arg_type);
+    return addrspacecast_arg;
+  }
+  return arg;
+}
+
+}
+
 namespace xla {
 
 using llvm_ir::IrName;
@@ -164,8 +179,19 @@ Status IrEmitter::EmitCallToNestedComputation(
     emitted_function = ir_emitter_nested.GetEmittedFunction();
   }
 
-  std::vector<llvm::Value*> arguments(operands.begin(), operands.end());
-  arguments.push_back(output);
+  // For AMDGPU target, may need to addrspacecast alloca variables from
+  // addrspace 5 to addrspace 0
+  std::vector<llvm::Value*> arguments;
+  for (auto& arg : operands) {
+    llvm::Value* casted_arg = MayAddrSpaceCastArg(arg, b_);
+    arguments.push_back(casted_arg);
+  }
+
+  llvm::Value* casted_output = MayAddrSpaceCastArg(output, b_);
+  arguments.push_back(casted_output);
+
+  // temp buffer base is always in addrspace 0 so it's not required to
+  // do addrspacecast
   arguments.push_back(bindings_.GetTempBufferBase());
   Call(emitted_function, arguments);
 
@@ -318,10 +344,10 @@ Status IrEmitter::EmitAtomicOperationUsingCAS(const HloComputation& computation,
   // cas_old_output_address and cas_new_output_address point to the scratch
   // memory where we store the old and new values for the repeated atomicCAS
   // operations.
-  llvm::Value* cas_old_output_address = llvm_ir::EmitAllocaAtFunctionEntry(
-      atomic_type, /*ArraySize=nullptr,*/ "cas_old_output_address", &b_);
-  llvm::Value* cas_new_output_address = llvm_ir::EmitAllocaAtFunctionEntry(
-      atomic_type, /*ArraySize=nullptr,*/ "cas_new_output_address", &b_);
+  llvm::Value* cas_old_output_address =
+        Alloca(atomic_type, /**ArraySize=*/nullptr, "cas_old_output_address");
+  llvm::Value* cas_new_output_address =
+        Alloca(atomic_type, /**ArraySize=*/nullptr, "cas_new_output_address");
 
   // Emit preparation code to the preheader.
   llvm::BasicBlock* loop_preheader_bb = b_.GetInsertBlock();
@@ -344,19 +370,11 @@ Status IrEmitter::EmitAtomicOperationUsingCAS(const HloComputation& computation,
         IntToPtr(atomic_memory_address, atomic_address_type);
     binop_output_address =
         Add(PtrToInt(cas_new_output_address, address_int_type), offset);
-    binop_output_address = IntToPtr(
-        binop_output_address,
-        llvm::PointerType::get(
-            element_type,
-            cas_new_output_address->getType()->getPointerAddressSpace()));
+    binop_output_address = IntToPtr(binop_output_address, element_address_type);
   } else {
-    atomic_memory_address =
-        PointerBitCastOrAddrSpaceCast(output_address, atomic_address_type);
-    binop_output_address = PointerBitCastOrAddrSpaceCast(
-        cas_new_output_address,
-        llvm::PointerType::get(
-            element_type,
-            cas_new_output_address->getType()->getPointerAddressSpace()));
+    atomic_memory_address = BitCast(output_address, atomic_address_type);
+    binop_output_address =
+      BitCast(cas_new_output_address, element_address_type);
   }
 
   // Use the value from the memory that atomicCAS operates on to initialize
