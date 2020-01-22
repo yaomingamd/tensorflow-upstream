@@ -121,7 +121,7 @@ class ROCMBlas : public blas::BlasSupport {
       std::unique_ptr<TemporaryDeviceMemory<
           typename RocBlasTypeConversionHelper<T>::mapped_type>> *temp_memory,
       DeviceMemory<typename RocBlasTypeConversionHelper<T>::mapped_type>
-          *device_memory);
+          *device_memory, bool copy_data, bool& reallocated);
 
   // A helper function to implement DoBlasGemmBatched interfaces for generic
   // types.
