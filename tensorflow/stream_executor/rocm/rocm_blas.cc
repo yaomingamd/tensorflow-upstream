@@ -48,6 +48,9 @@ namespace gpu {
 
 PLUGIN_REGISTRY_DEFINE_PLUGIN_ID(kRocBlasPlugin);
 
+extern void broadcast_fp32(void* stream, float* dst, int dst_stride, int batches,
+  float* src, int size);
+
 namespace wrap {
 
 #ifdef PLATFORM_GOOGLE
@@ -1858,49 +1861,69 @@ port::Status ROCMBlas::AllocateStridedBuffer(
     *device_memory =
         DeviceMemory<MAPPED_T>(*(*temp_memory)->mutable_device_memory());
   }
-
-  char* src_ptr=0;
-  char* dst_ptr=0;
-  uint64_t cur_size=0;
-
+  assert(batch_count > 0);
   char *device_memory_ptr = static_cast<char *>(device_memory->opaque());
-  for (int i = 0; i < batch_count; ++i) {
-    if(cur_size==0)
-    {
-      src_ptr = static_cast<char *>raw_ptrs[i];
+  char* src_ptr = reinterpret_cast<char *>(raw_ptrs[0]);
+  char* dst_ptr = device_memory_ptr;
+  uint64_t cur_stride_size = matrix_byte_size;
+
+  struct write_op
+  {
+    char* src_ptr;	
+    char* dst_ptr;
+    uint64_t size;
+  };
+  std::vector<write_op> write_ops;
+
+  for (int i = 1; i < batch_count; ++i) {
+    if(reinterpret_cast<char *>(raw_ptrs[i]) == src_ptr+cur_stride_size)
+      cur_stride_size += matrix_byte_size;
+    else {
+      write_ops.push_back(write_op{src_ptr,dst_ptr,cur_stride_size});
+      src_ptr = reinterpret_cast<char *>(raw_ptrs[i]);
       dst_ptr = device_memory_ptr + i * matrix_byte_size;
-      cur_size = matrix_byte_size;
+      cur_stride_size = matrix_byte_size;
     }
-    else if(static_cast<char *>raw_ptrs[i] == src_ptr+cur_size)
-    {
-      cur_size += matrix_byte_size;    
+  }  
+  write_ops.push_back(write_op{src_ptr,dst_ptr,cur_stride_size});
+
+  // the broadcast kernel is not guaranteed to be as optimized as hipMemcpy.
+  // therefore, only take the shortcut if we're expecting high launch overhead
+  // (TODO: benchmark this to pick the optimal parameters?)
+  if(write_ops.size()>=4
+      && write_ops[0].size < 10000000) {
+    bool is_broadcast = true;
+    int stride = write_ops[1].dst_ptr - write_ops[0].dst_ptr;
+    for(int i=1; i<write_ops.size(); i++) {
+      if(write_ops[i].src_ptr != write_ops[0].src_ptr
+          || write_ops[i].size!=write_ops[0].size
+          || write_ops[i].dst_ptr - write_ops[i-1].dst_ptr != stride) {
+        is_broadcast = false;
+        break;
+      }
     }
-    else
-    {
-      DeviceMemoryBase src_mem = DeviceMemoryBase(src_ptr, cur_size);
-      DeviceMemoryBase target_mem = DeviceMemoryBase(dst_ptr, cur_size);
+    if(is_broadcast && !(stride & 3)) {
+        broadcast_fp32(AsGpuStreamValue(stream), 
+          reinterpret_cast<float*>(write_ops[0].dst_ptr), 
+          stride>>2, 
+          write_ops.size(),
+          reinterpret_cast<float*>(write_ops[0].src_ptr), 
+          write_ops[0].size >> 2);
+        return port::Status::OK();
+    }
+  }
+
+  for(auto& x: write_ops)
+  {
+      DeviceMemoryBase src_mem = DeviceMemoryBase(x.src_ptr, x.size);
+      DeviceMemoryBase target_mem = DeviceMemoryBase(x.dst_ptr, x.size);
       bool a_status =
-          stream->ThenMemcpy(&target_mem, src_mem, cur_size).ok();
+          stream->ThenMemcpy(&target_mem, src_mem, x.size).ok();
       if (!a_status) {
         return port::Status(
             port::error::INTERNAL,
             "failed to copy device memory in ROCMBlas::DoBlasGemmBatched");
       }
-      src_ptr = (char*)raw_ptrs[i];
-      dst_ptr = device_memory_ptr + i * matrix_byte_size;
-      cur_size = matrix_byte_size;
-    }
-  }
-  if(cur_size!=0)
-  {
-      DeviceMemoryBase src_mem = DeviceMemoryBase(src_ptr, cur_size);
-      DeviceMemoryBase target_mem = DeviceMemoryBase(dst_ptr, cur_size);
-      bool a_status =
-          stream->ThenMemcpy(&target_mem, src_mem, cur_size).ok();
-      if (!a_status)
-        return port::Status(
-            port::error::INTERNAL,
-            "failed to copy device memory in ROCMBlas::DoBlasGemmBatched");
   }
   return port::Status::OK();
 }
