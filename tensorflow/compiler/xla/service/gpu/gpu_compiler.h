@@ -62,9 +62,9 @@ class GpuCompiler : public LLVMCompiler {
       HloModule* hlo_module, se::StreamExecutor* stream_exec,
       se::DeviceMemoryAllocator* device_allocator) = 0;
 
-  virtual Status OptimizeHloPostLayoutAssignment(
+  Status OptimizeHloPostLayoutAssignment(
       HloModule* hlo_module, se::StreamExecutor* stream_exec,
-      se::DeviceMemoryAllocator* device_allocator) = 0;
+      se::DeviceMemoryAllocator* device_allocator);
 
   virtual HloDataflowAnalysis::CanShareBuffer GetCanShareBuffer() {
     return
