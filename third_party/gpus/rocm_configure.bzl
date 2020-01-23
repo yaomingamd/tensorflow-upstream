@@ -167,6 +167,12 @@ def _rocm_include_path(repository_ctx, rocm_config):
     inc_dirs.append("/opt/rocm/include/hip/hcc_detail")
     inc_dirs.append("/opt/rocm/hip/include")
 
+    # Add HIP-Clang headers
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/8.0/include")
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/9.0.0/include")
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/10.0.0/include")
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/11.0.0/include")
+
     # Add rocrand and hiprand headers
     inc_dirs.append("/opt/rocm/rocrand/include")
     inc_dirs.append("/opt/rocm/hiprand/include")
@@ -199,6 +205,10 @@ def _rocm_include_path(repository_ctx, rocm_config):
     # Support hcc based off clang 10.0.0.
     inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/10.0.0/include/")
     inc_dirs.append("/opt/rocm/hcc/lib/clang/10.0.0/include")
+
+    # Support hcc based off clang 11.0.0, included in ROCm3.1
+    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/11.0.0/include/")
+    inc_dirs.append("/opt/rocm/hcc/lib/clang/11.0.0/include")
 
     inc_entries = []
     for inc_dir in inc_dirs:
