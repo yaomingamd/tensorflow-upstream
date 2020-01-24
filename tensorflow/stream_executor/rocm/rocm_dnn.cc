@@ -3721,7 +3721,6 @@ bool MIOpenSupport::DoPoolForward_internal(M& miopen,
 
   if(pooling_dimensions.ndims() == 3)
   {
-    printf("Pooling3D split\n");
     if(input_dimensions.layout() != output_dimensions.layout())
     {
       LOG(ERROR) << "Can't change layout during pooling";
@@ -3755,7 +3754,6 @@ bool MIOpenSupport::DoPoolForward_internal(M& miopen,
       return false;
     return true;
   }
-  //printf("pooling_forward_internal\n");
   if(std::is_same<T,double>::value) {
     if(input_dimensions.layout() != dnn::DataLayout::kBatchDepthYX)
     {
@@ -3766,12 +3764,6 @@ bool MIOpenSupport::DoPoolForward_internal(M& miopen,
       LOG(ERROR) << "Don't know how to do double pooling with " << input_dimensions.ndims() << " dims";
       return false;
     }
-    if(pooling_dimensions.stride(dnn::DimIndex::X)!=1 || pooling_dimensions.stride(dnn::DimIndex::Y)!=1)
-    {
-      //printf("ROCm_DNN forward pooling at stride!=1\n");
-      //LOG(ERROR) << "ROCm_DNN pooling pathway untested with stride!=1";
-      //return false;
-    }    
     rocmPooling2D<T>(AsGpuStreamValue(stream), (T*)output_data->opaque(), (const T*)input_data.opaque(),
       input_dimensions.feature_map_count()*input_dimensions.count(),
       input_dimensions.width(), input_dimensions.height(),

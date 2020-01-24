@@ -97,10 +97,21 @@ void DnnPooling3dOp<T>::Compute(OpKernelContext* context,
 
   auto* stream = context->op_device_context()->stream();
   OP_REQUIRES(context, stream, errors::Internal("No GPU stream available."));
+#if TENSORFLOW_USE_ROCM
+  static int64 PoolingScratchSize = GetDnnWorkspaceLimit(
+      // default value is in bytes despite the name of the environment variable
+      "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
+  );
+  
+  DnnScratchAllocator scratch_allocator(PoolingScratchSize, context);
+  DnnScratchAllocator* allocator_ptr = &scratch_allocator;
+#else
+  DnnScratchAllocator* allocator_ptr = nullptr;
+#endif
 
   bool status = stream
                     ->ThenPoolForward(pooling_desc, input_desc, input_data,
-                                      output_desc, &output_data)
+                                      output_desc, &output_data, allocator_ptr)
                     .ok();
   OP_REQUIRES(context, status,
               errors::Internal("dnn PoolForward launch failed"));
@@ -224,16 +235,25 @@ void DnnPooling3dGradOp<T>::Compute(
 
   auto* stream = context->op_device_context()->stream();
   OP_REQUIRES(context, stream, errors::Internal("No GPU stream available."));
+#if TENSORFLOW_USE_ROCM
+  static int64 PoolingScratchSize = GetDnnWorkspaceLimit(
+      // default value is in bytes despite the name of the environment variable
+      "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
+  );
 
+  DnnScratchAllocator scratch_allocator(PoolingScratchSize, context);
+  DnnScratchAllocator* allocator_ptr = &scratch_allocator;
+#else
+  DnnScratchAllocator* allocator_ptr = nullptr;
+#endif
   bool status =
       stream
           ->ThenPoolBackward(pooling_desc, orig_input_desc, orig_input_data,
                              orig_output_desc, orig_output_data,
-                             output_backprop_data, &input_backprop_data)
+                             output_backprop_data, &input_backprop_data, allocator_ptr)
           .ok();
   OP_REQUIRES(context, status,
               errors::Internal("dnn PoolBackward launch failed"));
-
   if (data_format == FORMAT_NHWC) {
     auto toConstTensor = [](const Tensor& x) -> const Tensor { return x; };
     functor::NCHWToNHWC<GPUDevice, T, 5>()(
