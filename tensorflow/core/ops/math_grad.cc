@@ -24,6 +24,58 @@ namespace tensorflow {
 
 typedef FunctionDefHelper FDH;
 
+Status FusedMulAddGrad(const AttrSlice& attrs, FunctionDef* g) {
+  std::vector<FDH::Node> nodes = {
+    {{"sx1"}, "Shape", {"x1"}},
+    {{"sx2"}, "Shape", {"x2"}},
+    {{"sy1"}, "Shape", {"y1"}},
+    {{"gx1"}, "Mul", {"dz", "y1"}},  // dz * y2
+    {{"gy1"}, "Mul", {"x1", "dz"}},  // x2 * dz
+    {{"gx2"}, "Identity", {"dz"}},  // dz 
+
+    {{"rx1", "rx2", "ry1"}, "BroadcastGradientArgs", {"sx1", "sx2", "sy1"}},
+    {{"sum_gx1"}, "Sum", {"gx1", "rx1"}},
+    {{"dx1"}, "Reshape", {"sum_gx1", "sx1"}},
+    {{"sum_gy1"}, "Sum", {"gy1", "ry1"}},
+    {{"dy1"}, "Reshape", {"sum_gy1", "sy1"}},
+    {{"sum_gx2"}, "Sum", {"gx2", "rx2"}},
+    {{"dx2"}, "Reshape", {"sum_gx2", "sx2"}},
+  };
+
+  // clang-format on
+  for (auto& n : nodes) {
+    // "BroadcastGradientArgs" doesn't need any attrs.
+    if (n.attr.empty() && n.op != "BroadcastGradientArgs") {
+      n.attr = {{"T", "$T"}};
+    }
+  }
+  *g = FDH::Define(
+      // Arg defs
+      {"x1: T", "y1: T", "x2: T", "dz: T"},
+      // Ret val defs
+      {"dx1: T", "dy1: T", "dx2: T"},
+      // Attr defs
+      {{"T: {half, float, double}"}},
+      // Nodes
+      nodes);
+
+  return Status::OK();
+}
+ 
+REGISTER_OP_GRADIENT("FusedMulAdd", FusedMulAddGrad);
+/*
+Status FusedMulAdd2Grad(const AttrSlice& attrs, FunctionDef* g) {
+  // clang-format off
+  return GradForBinaryCwise(g, {
+      {{"gx1"}, "Mul", {"dz", "y1"}},  // dz * y2
+      {{"gy1"}, "Mul", {"x1", "dz"}},  // x2 * dz
+      {{"gx2"}, "Mul", {"dz", "y2"}},  // dz * y2
+      {{"gy2"}, "Mul", {"x2", "dz"}},  // x2 * dz
+  });
+  // clang-format on
+}
+REGISTER_OP_GRADIENT("FusedMulAdd2", FusedMulAdd2Grad);
+*/
 // Cwise binary ops
 Status GradForUnaryCwise(FunctionDef* g, std::vector<FDH::Node> nodes) {
   for (auto& n : nodes) {
@@ -472,6 +524,7 @@ Status MulGrad(const AttrSlice& attrs, FunctionDef* g) {
   }
 }
 REGISTER_OP_GRADIENT("Mul", MulGrad);
+
 
 Status MulNoNanGrad(const AttrSlice& attrs, FunctionDef* g) {
   // clang-format off
