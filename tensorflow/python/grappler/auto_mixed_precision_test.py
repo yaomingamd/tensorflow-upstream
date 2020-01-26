@@ -419,10 +419,17 @@ class AutoMixedPrecisionTest(test.TestCase):
         node_map = _build_node_map(cost_graph.node)
         self._assert_output_fp16(node_map, 'Conv2D')
         self._assert_output_fp16(node_map, 'FusedBatchNormV3')
-        self._assert_output_fp16(node_map, 'dropout/mul')
+        # We do not assert dropout's dtype because we do not want to rely on the
+        # node names of dropout's internal implementation.
+        # self._assert_output_fp16(node_map, 'dropout/mul')
+        for x in node_map:
+          print(x)
+        if test.is_built_with_rocm: # rocm fuses addition
+          self._assert_output_fp16(node_map, 
+          'dropout/Mul_1addition/y-0-CastToFp16-AutoMixedPrecision')
+        else:
+          self._assert_output_fp16(node_map, 'addition')
         self._assert_output_fp16(node_map, 'Conv2D_1')
-
-        output_val_ref, output_val, cost_graph = self._run(output)
         # Bump up the tolerance for the ROCm platform
         # The default tolerance (1e-3) results in a tiny fraction (<1%) of
         # miscompares on ROCm platform, and hence the tolerance bump
