@@ -1893,3 +1893,38 @@ def _NextAfterGrad(op, grad):
         math_ops.reduce_sum(partial_x1 * grad, r_x1), s_x1),
             array_ops.reshape(
                 math_ops.reduce_sum(partial_x2 * grad, r_x2), s_x2))
+
+@ops.RegisterGradient("FusedMulAdd")
+def _FusedMulAddGrad(op, grad):
+  x1 = op.inputs[0]
+  y1 = op.inputs[1]
+  x2 = op.inputs[2]
+  (sx1, rx1, must_reduce_x1), _= SmartBroadcastGradientArgs(x1, grad, grad)
+  (sy1, ry1, must_reduce_y1), _= SmartBroadcastGradientArgs(y1, grad, grad)
+  (sx2, rx2, must_reduce_x2), _= SmartBroadcastGradientArgs(x2, grad, grad)
+  gx1 = gen_math_ops.mul(grad, y1)
+  gy1 = gen_math_ops.mul(grad, x1)
+  gx2 = grad[:]
+  return [gx1 if not must_reduce_x1 else math_ops.reduce_sum(gx1,rx1), \
+      gy1 if not must_reduce_y1 else math_ops.reduce_sum(gy1,ry1), \
+      gx2 if not must_reduce_x2 else math_ops.reduce_sum(gx2,rx2)]
+
+@ops.RegisterGradient("FusedMulAdd2")
+def _FusedMulAdd2Grad(op, grad):
+  x1 = op.inputs[0]
+  y1 = op.inputs[1]
+  x2 = op.inputs[2]
+  y2 = op.inputs[3]
+  (sx1, rx1, must_reduce_x1), _= SmartBroadcastGradientArgs(x1, grad, grad)
+  (sy1, ry1, must_reduce_y1), _= SmartBroadcastGradientArgs(y1, grad, grad)
+  (sx2, rx2, must_reduce_x2), _= SmartBroadcastGradientArgs(x2, grad, grad)
+  (sy2, ry2, must_reduce_y2), _= SmartBroadcastGradientArgs(y2, grad, grad)
+  gx1 = gen_math_ops.mul(grad, y1)
+  gy1 = gen_math_ops.mul(grad, x1)
+  gx2 = gen_math_ops.mul(grad, y2)
+  gy2 = gen_math_ops.mul(grad, x2)
+  return [gx1 if not must_reduce_x1 else math_ops.reduce_sum(gx1,rx1), \
+      gy1 if not must_reduce_y1 else math_ops.reduce_sum(gy1,ry1), \
+      gx2 if not must_reduce_x2 else math_ops.reduce_sum(gx2,rx2),
+      gy2 if not must_reduce_y2 else math_ops.reduce_sum(gy2,ry2)
+      ]

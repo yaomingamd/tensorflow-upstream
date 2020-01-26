@@ -30,6 +30,7 @@ from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_math_ops
 from tensorflow.python.ops import gradient_checker
+from tensorflow.python.ops import gradient_checker_v2
 from tensorflow.python.ops import gradients_impl
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_grad  # pylint: disable=unused-import
@@ -54,6 +55,7 @@ _OR = lambda x, y: x | y
 _XOR = lambda x, y: x ^ y
 _INV = lambda x: ~x
 
+_FMA = lambda x1,y1,x2,y2: gen_math_ops.fused_mul_add(x1,y1,x2,y2)
 
 # TODO(zongheng): it'd be great to factor out this function and various random
 # SparseTensor gen funcs.
@@ -851,6 +853,48 @@ class MathOpsOverloadTest(test.TestCase):
     # Mod only works for int32 and int64.
     for dtype in [dtypes_lib.int32, dtypes_lib.int64]:
       self._compareBinary(10, 3, dtype, np.mod, _MOD)
+
+  def testFMA(self):
+    dtypes = [
+        np.float16,
+        np.float32,
+        np.float64,
+        ]
+    with self.cached_session():
+      test_count = 0
+      for dtype in dtypes:
+        for shape in ((1,), (4,), (5,5), (100,14), (3,7,15), (5,2081), (3,3,3,3)):
+          for bcast in (0,2,4,6,7,8,11):
+            x1 = np.random.normal(size=(1,) if (bcast & 1) else shape).astype(dtype)
+            y1 = np.random.normal(size=(1,) if (bcast & 2) else shape).astype(dtype)
+            x2 = np.random.normal(size=(1,) if (bcast & 4) else shape).astype(dtype)
+            y2 = np.random.normal(size=(1,) if (bcast & 8) else shape).astype(dtype)
+            self.assertAllClose(x1*y1+x2, gen_math_ops.fused_mul_add(x1,y1,x2))
+            self.assertAllClose(x1*y1+x2*y2, gen_math_ops.fused_mul_add2(x1,y1,x2,y2))
+            if np.prod(shape)<100 and not (test_count % 5):
+              inx1 = ops.convert_to_tensor(x1)
+              iny1 = ops.convert_to_tensor(y1)
+              inx2 = ops.convert_to_tensor(x2)
+              iny2 = ops.convert_to_tensor(y2)
+              jacob_t, jacob_n = gradient_checker_v2.compute_gradient(
+                  gen_math_ops.fused_mul_add, [inx1, iny1, inx2],
+                  delta=0.2 if dtype==np.float16 else 0.01)
+              if dtype==np.float16:
+                self.assertAllClose(jacob_t, jacob_n, rtol=0.01, atol=0.01)
+              elif dtype!=np.float64:
+                self.assertAllClose(jacob_t, jacob_n, rtol=1e-5, atol=1e-5)
+              else:
+                self.assertAllClose(jacob_t, jacob_n, rtol=1e-7, atol=1e-7)
+              jacob_t, jacob_n = gradient_checker_v2.compute_gradient(
+                  gen_math_ops.fused_mul_add2, [inx1, iny1, inx2, iny2],
+                  delta=0.2 if dtype==np.float16 else 0.01)
+              if dtype==np.float16:
+                self.assertAllClose(jacob_t, jacob_n, rtol=0.01, atol=0.01)
+              elif dtype!=np.float64:
+                self.assertAllClose(jacob_t, jacob_n, rtol=1e-5, atol=1e-5)
+              else:
+                self.assertAllClose(jacob_t, jacob_n, rtol=1e-7, atol=1e-7)
+            test_count += 1
 
   def testOverloadComparisons(self):
     dtypes = [
