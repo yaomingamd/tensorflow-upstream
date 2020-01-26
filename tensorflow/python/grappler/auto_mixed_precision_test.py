@@ -419,7 +419,15 @@ class AutoMixedPrecisionTest(test.TestCase):
         node_map = _build_node_map(cost_graph.node)
         self._assert_output_fp16(node_map, 'Conv2D')
         self._assert_output_fp16(node_map, 'FusedBatchNormV3')
-        self._assert_output_fp16(node_map, 'dropout/mul')
+        # We do not assert dropout's dtype because we do not want to rely on the
+        # node names of dropout's internal implementation.
+        for x in node_map:
+          print(x)
+        if test.is_built_with_rocm: # rocm fuses addition
+          self._assert_output_fp16(node_map, 
+            'dropout/Mul_1addition/y-0-CastToFp16-AutoMixedPrecision')
+        else:
+          self._assert_output_fp16(node_map, 'addition')
         self._assert_output_fp16(node_map, 'Conv2D_1')
 
         output_val_ref, output_val, cost_graph = self._run(output)
