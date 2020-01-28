@@ -109,24 +109,10 @@ void DnnPooling3dOp<T>::Compute(OpKernelContext* context,
   DnnScratchAllocator* allocator_ptr = nullptr;
 #endif
 
-#if TENSORFLOW_USE_ROCM
-  static int64 PoolingScratchSize = GetDnnWorkspaceLimit(
-      // default value is in bytes despite the name of the environment variable
-      "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
-  );
-
-  DnnScratchAllocator scratch_allocator(PoolingScratchSize, context);
-  bool status =
-      stream
-          ->ThenPoolForward(pooling_desc, input_desc, input_data, output_desc,
-                            &output_data, &scratch_allocator)
-          .ok();
-#else
   bool status = stream
                     ->ThenPoolForward(pooling_desc, input_desc, input_data,
                                       output_desc, &output_data, allocator_ptr)
                     .ok();
-#endif
 
   OP_REQUIRES(context, status,
               errors::Internal("dnn PoolForward launch failed"));
