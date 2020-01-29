@@ -1848,6 +1848,72 @@ class FuseSquaredDiffStage : public ArithmeticOptimizerStage {
   }
 };
 
+
+// Performs the conversions:
+// Add(Mul(x,y), z) => FusedMulAdd(Identity(x),y,z)
+// Add(Mul(x,y), Mul(z,t)) => FusedMulAdd(Identity(x),y,Identity(z),t)
+class FuseMulAddStage : public ArithmeticOptimizerStage {
+ public:
+  explicit FuseMulAddStage(const GraphOptimizerContext& ctx,
+                                const ArithmeticOptimizerContext& ctx_ext)
+      : ArithmeticOptimizerStage("FuseMulAddStage", ctx, ctx_ext) {}
+  ~FuseMulAddStage() override = default;
+
+  bool IsSupported(const NodeDef* node) const override {
+    if(!IsAdd(*node) && !IsSub(*node))
+      return false; 
+    auto dtype = GetDataTypeFromAttr(*node, "T");
+    return (dtype==DT_HALF || dtype==DT_FLOAT || dtype==DT_DOUBLE);
+  }
+
+  Status TrySimplify(NodeDef* node, string* simplified_node_name) override {
+    NodeDef* b, *c;
+    TF_RETURN_IF_ERROR(GetInputNode(node->input(0), &b));
+    TF_RETURN_IF_ERROR(GetInputNode(node->input(1), &c));
+    // Optimize only if base is a Mul whose output is not being consumed
+    // elsewhere.
+    bool add = IsAdd(*node);
+    bool can_absorb_b = (IsMul(*b) && !IsInPreserveSet(*b) &&
+        (NumNonControlOutputs(*b, *ctx().node_map) == 1));
+    bool can_absorb_c = (IsMul(*c) && !IsInPreserveSet(*c) &&
+        (NumNonControlOutputs(*c, *ctx().node_map) == 1));
+    VLOG(1)<<"FuseMulAddSimplify "<<node->name()<<" "
+        <<node->input(0)<<" "<<node->input(1);
+    if(can_absorb_b && can_absorb_c) {
+      node->set_op(add ? "FusedMulAdd2" : "FusedMulSub2");
+      node->add_input(node->input(1));
+      node->add_input(c->input(1));
+      node->set_input(1, b->input(1));
+      b->set_op("Identity");
+      c->set_op("Identity");
+      AddToOptimizationQueue(node);
+      AddToOptimizationQueue(b);
+      AddToOptimizationQueue(c);
+    }
+    else if(can_absorb_b) {
+      node->set_op(add ? "FusedMulAdd" : "FusedMulSub");
+      node->add_input(node->input(1));
+      node->set_input(1, b->input(1));
+      // 0 stays b
+      b->set_op("Identity");
+      AddToOptimizationQueue(node);
+      AddToOptimizationQueue(b);
+    } else if(can_absorb_c) {
+      node->set_op(add ? "FusedMulAdd" : "FusedMulSubRev");
+      auto x1 = c->input(0);
+      auto y1 = c->input(1);
+      auto x2 = node->input(0);
+      node->add_input(x2);
+      node->set_input(0, x1);
+      node->set_input(1, y1);
+      c->set_op("Identity");
+      AddToOptimizationQueue(node);
+      AddToOptimizationQueue(c);
+    }
+    return Status::OK();
+  }
+};
+
 // Performs the conversion:
 // Log(Softmax(x)) => LogSoftmax(x)
 class LogSoftmaxStage : public ArithmeticOptimizerStage {
@@ -3593,6 +3659,8 @@ Status ArithmeticOptimizer::SimplifyArithmeticOps(bool can_use_shapes) {
     pipeline.AddStage<RemoveStackStridedSliceSameAxis>(ctx, ctx_ext);
   if (options_.fuse_squared_diff)
     pipeline.AddStage<FuseSquaredDiffStage>(ctx, ctx_ext);
+  if (options_.fuse_mul_add)
+    pipeline.AddStage<FuseMulAddStage>(ctx, ctx_ext);
 
   VLOG(1) << "Run " << pipeline.NumStages() << " arithmetic optimizer stages: "
           << absl::StrJoin(pipeline.StageNames(), ", ");

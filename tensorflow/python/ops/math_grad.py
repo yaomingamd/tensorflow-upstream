@@ -1894,8 +1894,7 @@ def _NextAfterGrad(op, grad):
             array_ops.reshape(
                 math_ops.reduce_sum(partial_x2 * grad, r_x2), s_x2))
 
-@ops.RegisterGradient("FusedMulAdd")
-def _FusedMulAddGrad(op, grad):
+def _FusedMulAddSubGrad(op, grad, sgn):
   x1 = op.inputs[0]
   y1 = op.inputs[1]
   x2 = op.inputs[2]
@@ -1905,12 +1904,16 @@ def _FusedMulAddGrad(op, grad):
   gx1 = gen_math_ops.mul(grad, y1)
   gy1 = gen_math_ops.mul(grad, x1)
   gx2 = grad[:]
+  if sgn==-1:
+    gx2=math_ops.negative(gx2)
+  elif sgn==0:
+    gx1=math_ops.negative(gx1)
+    gy1=math_ops.negative(gy1)
   return [gx1 if not must_reduce_x1 else math_ops.reduce_sum(gx1,rx1), \
       gy1 if not must_reduce_y1 else math_ops.reduce_sum(gy1,ry1), \
       gx2 if not must_reduce_x2 else math_ops.reduce_sum(gx2,rx2)]
 
-@ops.RegisterGradient("FusedMulAdd2")
-def _FusedMulAdd2Grad(op, grad):
+def _FusedMulAddSub2Grad(op, grad, sgn):
   x1 = op.inputs[0]
   y1 = op.inputs[1]
   x2 = op.inputs[2]
@@ -1921,10 +1924,30 @@ def _FusedMulAdd2Grad(op, grad):
   (sy2, ry2, must_reduce_y2), _= SmartBroadcastGradientArgs(y2, grad, grad)
   gx1 = gen_math_ops.mul(grad, y1)
   gy1 = gen_math_ops.mul(grad, x1)
-  gx2 = gen_math_ops.mul(grad, y2)
-  gy2 = gen_math_ops.mul(grad, x2)
+  gx2 = gen_math_ops.mul(grad, y2)*sgn
+  gy2 = gen_math_ops.mul(grad, x2)*sgn
   return [gx1 if not must_reduce_x1 else math_ops.reduce_sum(gx1,rx1), \
       gy1 if not must_reduce_y1 else math_ops.reduce_sum(gy1,ry1), \
       gx2 if not must_reduce_x2 else math_ops.reduce_sum(gx2,rx2),
       gy2 if not must_reduce_y2 else math_ops.reduce_sum(gy2,ry2)
       ]
+
+@ops.RegisterGradient("FusedMulAdd")
+def _FusedMulAddGrad(op, grad):
+  return _FusedMulAddSubGrad(op, grad, 1)
+
+@ops.RegisterGradient("FusedMulAdd2")
+def _FusedMulAdd2Grad(op, grad):
+  return _FusedMulAddSub2Grad(op, grad, 1)
+
+@ops.RegisterGradient("FusedMulSub")
+def _FusedMulSubGrad(op, grad):
+  return _FusedMulAddSubGrad(op, grad, -1)
+
+@ops.RegisterGradient("FusedMulSubRev")
+def _FusedMulSubRevGrad(op, grad):
+  return _FusedMulAddSubGrad(op, grad, 0)
+
+@ops.RegisterGradient("FusedMulSub2")
+def _FusedMulSub2Grad(op, grad):
+  return _FusedMulAddSub2Grad(op, grad, -1)

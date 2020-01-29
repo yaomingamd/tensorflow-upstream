@@ -508,18 +508,6 @@ Status BroadcastFMAOpOutputShape(InferenceContext* c) {
   out = c->input(0);
   c->Merge(out, c->input(1), &out);
   c->Merge(out, c->input(2), &out);
-  /*
-  DimensionHandle d0, d1, d2;
-  d0 = c->NumElements(c->input(0));
-  d1 = c->NumElements(c->input(1));
-  d2 = c->NumElements(c->input(2));
-  if(!c->ValueKnown(d0) || c->Value(d0)!=1)
-    out = c->input(0);
-  else if(!c->ValueKnown(d1) || c->Value(d1)!=1)
-    out = c->input(1);
-  else
-    out = c->input(2);
-*/
   c->set_output(0, out);
 
   return Status::OK();
@@ -527,6 +515,7 @@ Status BroadcastFMAOpOutputShape(InferenceContext* c) {
 
 Status BroadcastFMA2OpOutputShape(InferenceContext* c) {
   ShapeHandle out;
+  /*
   DimensionHandle d0, d1, d2;
   d0 = c->NumElements(c->input(0));
   d1 = c->NumElements(c->input(1));
@@ -539,6 +528,12 @@ Status BroadcastFMA2OpOutputShape(InferenceContext* c) {
     out = c->input(2);
   else
     out = c->input(3);
+    */
+  out = c->input(0);
+  c->Merge(out, c->input(1), &out);
+  c->Merge(out, c->input(2), &out);
+  c->Merge(out, c->input(3), &out);
+
   c->set_output(0, out);
   return Status::OK();
 }
@@ -552,6 +547,31 @@ REGISTER_OP("FusedMulAdd")
     .SetShapeFn(BroadcastFMAOpOutputShape);
 
 REGISTER_OP("FusedMulAdd2")
+    .Input("x1: T")
+    .Input("y1: T")
+    .Input("x2: T")
+    .Input("y2: T")
+    .Output("z: T")
+    .Attr("T: {bfloat16, half, float, double}")
+    .SetShapeFn(BroadcastFMA2OpOutputShape);
+
+REGISTER_OP("FusedMulSub")
+    .Input("x1: T")
+    .Input("y1: T")
+    .Input("x2: T")
+    .Output("z: T")
+    .Attr("T: {bfloat16, half, float, double}")
+    .SetShapeFn(BroadcastFMAOpOutputShape);
+
+REGISTER_OP("FusedMulSubRev")
+    .Input("x1: T")
+    .Input("y1: T")
+    .Input("x2: T")
+    .Output("z: T")
+    .Attr("T: {bfloat16, half, float, double}")
+    .SetShapeFn(BroadcastFMAOpOutputShape);
+
+REGISTER_OP("FusedMulSub2")
     .Input("x1: T")
     .Input("y1: T")
     .Input("x2: T")
