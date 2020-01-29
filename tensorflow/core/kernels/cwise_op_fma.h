@@ -19,124 +19,83 @@ limitations under the License.
 namespace tensorflow {
 
 template <typename Device, typename T, int SGN>
-class LaunchFusedMulAddOp
-{
-public:
-	void operator()(const Device& device,
-		T* out,
-		const T* x1, const T* y1, const T* x2,
-		uint64 elements, 
-		bool broadcast_x1, bool broadcast_y1, 
-		bool broadcast_x2);
-}; 
+class LaunchFusedMulAddOp {
+ public:
+  void operator()(const Device& device, T* out, const T* x1, const T* y1,
+                  const T* x2, uint64 elements, bool broadcast_x1,
+                  bool broadcast_y1, bool broadcast_x2);
+};
 
 template <typename Device, typename T, int SGN>
-class LaunchFusedMulAdd2Op
-{
-public:
-	void operator()(const Device& device,
-		T* out,
-		const T* x1, const T* y1, const T* x2, const T* y2,
-		uint64 elements,
-		bool broadcast_x1, bool broadcast_y1, 
-		bool broadcast_x2, bool broadcast_y2);
-}; 
-
+class LaunchFusedMulAdd2Op {
+ public:
+  void operator()(const Device& device, T* out, const T* x1, const T* y1,
+                  const T* x2, const T* y2, uint64 elements, bool broadcast_x1,
+                  bool broadcast_y1, bool broadcast_x2, bool broadcast_y2);
+};
 
 template <typename Device, typename T, int SGN>
-class FallbackLaunchFusedMulAddOp
-{
-public:
-	void operator()(const Device& device,
-		T* out,
-		const T* x1, const T* y1, const T* x2,
-		int64 dims[5],
-		uint8 broadcast_masks[5]);
-}; 
+class FallbackLaunchFusedMulAddOp {
+ public:
+  void operator()(const Device& device, T* out, const T* x1, const T* y1,
+                  const T* x2, int64 dims[5], uint8 broadcast_masks[5]);
+};
 
 template <typename Device, typename T, int SGN>
-class FallbackLaunchFusedMulAdd2Op
-{
-public:
-	void operator()(const Device& device,
-		T* out,
-		const T* x1, const T* y1, const T* x2, const T* y2,
-		int64 dims[5],
-		uint8 broadcast_masks[5]);
-}; 
-
+class FallbackLaunchFusedMulAdd2Op {
+ public:
+  void operator()(const Device& device, T* out, const T* x1, const T* y1,
+                  const T* x2, const T* y2, int64 dims[5],
+                  uint8 broadcast_masks[5]);
+};
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 typedef Eigen::GpuDevice GPUDevice;
 
 template <typename T, int SGN>
-class LaunchFusedMulAddOp<GPUDevice, T, SGN>
-{
-public:
-	typedef void exec_fun(const GPUDevice& device, T* out,
-		const T* x1, const T* y1, const T* x2,
-		uint64 elements);
+class LaunchFusedMulAddOp<GPUDevice, T, SGN> {
+ public:
+  typedef void exec_fun(const GPUDevice& device, T* out, const T* x1,
+                        const T* y1, const T* x2, uint64 elements);
 
-	template <int N>
-	static void execute(const GPUDevice& device, T* out,
-		const T* x1, const T* y1, const T* x2,
-		uint64 elements);
+  template <int N>
+  static void execute(const GPUDevice& device, T* out, const T* x1, const T* y1,
+                      const T* x2, uint64 elements);
 
-	void operator()(const GPUDevice& device,
-		T* out,
-		const T* x1, const T* y1, const T* x2,
-		uint64 elements,
-		bool broadcast_x1, bool broadcast_y1, 
-		bool broadcast_x2);
-}; 
-
-template <typename T, int SGN>
-class LaunchFusedMulAdd2Op<GPUDevice, T, SGN>
-{
-public:
-	typedef void exec_fun(const GPUDevice& device,
-		T* out,
-		const T* x1, const T* y1, const T* x2, const T* y2,
-		uint64 elements);
-	template <int N>
-	static void execute(const GPUDevice& device,
-		T* out,
-		const T* x1, const T* y1, const T* x2, const T* y2,
-		uint64 elements);
-	void operator()(const GPUDevice& device,
-		T* out,
-		const T* x1, const T* y1, const T* x2, const T* y2,
-		uint64 elements,
-		bool broadcast_x1, bool broadcast_y1, 
-		bool broadcast_x2, bool broadcast_y2);
+  void operator()(const GPUDevice& device, T* out, const T* x1, const T* y1,
+                  const T* x2, uint64 elements, bool broadcast_x1,
+                  bool broadcast_y1, bool broadcast_x2);
 };
 
 template <typename T, int SGN>
-class FallbackLaunchFusedMulAddOp<GPUDevice, T, SGN>
-{
-public:
-  void operator()(const GPUDevice& device,
-    T* out,
-    const T* x1, const T* y1, const T* x2,
-    int64 dims[5],
-    uint8 broadcast_masks[5]);
-}; 
-
-template <typename T, int SGN>
-class FallbackLaunchFusedMulAdd2Op<GPUDevice, T, SGN>
-{
-public:
-  void operator()(const GPUDevice& device,
-    T* out,
-    const T* x1, const T* y1, const T* x2, const T* y2,
-    int64 dims[5],
-    uint8 broadcast_masks[5]);
-}; 
-#endif
-
-
-
+class LaunchFusedMulAdd2Op<GPUDevice, T, SGN> {
+ public:
+  typedef void exec_fun(const GPUDevice& device, T* out, const T* x1,
+                        const T* y1, const T* x2, const T* y2, uint64 elements);
+  template <int N>
+  static void execute(const GPUDevice& device, T* out, const T* x1, const T* y1,
+                      const T* x2, const T* y2, uint64 elements);
+  void operator()(const GPUDevice& device, T* out, const T* x1, const T* y1,
+                  const T* x2, const T* y2, uint64 elements, bool broadcast_x1,
+                  bool broadcast_y1, bool broadcast_x2, bool broadcast_y2);
 };
 
+template <typename T, int SGN>
+class FallbackLaunchFusedMulAddOp<GPUDevice, T, SGN> {
+ public:
+  void operator()(const GPUDevice& device, T* out, const T* x1, const T* y1,
+                  const T* x2, int64 dims[5], uint8 broadcast_masks[5]);
+};
+
+template <typename T, int SGN>
+class FallbackLaunchFusedMulAdd2Op<GPUDevice, T, SGN> {
+ public:
+  void operator()(const GPUDevice& device, T* out, const T* x1, const T* y1,
+                  const T* x2, const T* y2, int64 dims[5],
+                  uint8 broadcast_masks[5]);
+};
 #endif
 
+};  // namespace tensorflow
+
+#endif
