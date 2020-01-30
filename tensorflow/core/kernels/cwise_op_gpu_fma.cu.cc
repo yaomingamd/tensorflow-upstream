@@ -117,6 +117,7 @@ struct Fallback_FMA_Arg {
   uint32 broadcast_mask;
 };
 
+
 template <typename T, int SGN>
 __global__ void FallbackLaunchFusedMulAddKernel(T* out, const T* x1,
                                                 const T* y1, const T* x2,
@@ -138,6 +139,43 @@ __global__ void FallbackLaunchFusedMulAddKernel(T* out, const T* x1,
 
   for (int32 y = threadIdx.y; y < arg.dims[1]; y += blockDim.y) {
     for (int32 x = threadIdx.x; x < arg.dims[0]; x += blockDim.x) {
+      T m1 = x1[(arg.broadcast_mask & 1) ? x : 0] *
+             y1[(arg.broadcast_mask & 2) ? x : 0];
+      T m2 = x2[(arg.broadcast_mask & 4) ? x : 0];
+      if (SGN == 1)
+        out[x] = m1 + m2;
+      else if (SGN == -1)
+        out[x] = m1 - m2;
+      else
+        out[x] = m2 - m1;
+    }
+    out += blockDim.y * arg.shifts[0][0];
+    x1 += blockDim.y * arg.shifts[1][0];
+    y1 += blockDim.y * arg.shifts[2][0];
+    x2 += blockDim.y * arg.shifts[3][0];
+  }
+}
+
+template <typename T, int SGN>
+__global__ void FallbackLaunchFusedMulAddKernel4D(T* out, const T* x1,
+                                                const T* y1, const T* x2,
+                                                Fallback_FMA_Arg<4> arg) {
+  int32 v = blockIdx.y;
+  int32 z = threadIdx.z + blockIdx.x * blockDim.z;
+  if (z >= arg.dims[2]) return;
+
+  out += arg.shifts[0][1] * z + arg.shifts[0][2] * v;
+  x1 += arg.shifts[1][1] * z + arg.shifts[1][2] * v ;
+  y1 += arg.shifts[2][1] * z + arg.shifts[2][2] * v ;
+  x2 += arg.shifts[3][1] * z + arg.shifts[3][2] * v ;
+
+  out += threadIdx.y * arg.shifts[0][0];
+  x1 += threadIdx.y * arg.shifts[1][0];
+  y1 += threadIdx.y * arg.shifts[2][0];
+  x2 += threadIdx.y * arg.shifts[3][0];
+
+  for (int32 y = threadIdx.y; y < arg.dims[1]; y += blockDim.y) {
+    for (int32 x = threadIdx.x + blockDim.x*blockIdx.z; x < arg.dims[0]; x += blockDim.x*gridDim.z) {
       T m1 = x1[(arg.broadcast_mask & 1) ? x : 0] *
              y1[(arg.broadcast_mask & 2) ? x : 0];
       T m2 = x2[(arg.broadcast_mask & 4) ? x : 0];
@@ -280,6 +318,20 @@ void FallbackLaunchFusedMulAddOp<GPUDevice, T, SGN>::operator()(
     TF_CHECK_OK(GpuLaunchKernel(FallbackLaunchFusedMulAddKernel2D<T, SGN>,
                                 dim3(dims[1], 1, 1),
                                 dim3(dims[0] > 256 ? 256 : dims[0], 1, 1), 0,
+                                device.stream(), out, x1, y1, x2, arg));
+  } else if(dims[4]==1 && dims[0]/256 > dims[2]*dims[3]) {
+    int block_x = min(256, dims[0]);
+    int block_y = min(256 / block_x, dims[1]);
+    int block_z = min(256 / (block_x * block_y), dims[2]);
+    int grid_x = (dims[2] + block_z - 1) / block_z;
+    int grid_y = dims[3];
+    int grid_z = max(1, dims[0]/256);
+    // printf("%d %d %d x %d %d %d\n", block_x, block_y, block_z, grid_x,
+    // grid_y, grid_z);
+
+    TF_CHECK_OK(GpuLaunchKernel(FallbackLaunchFusedMulAddKernel4D<T, SGN>,
+                                dim3(grid_x, grid_y, grid_z),
+                                dim3(block_x, block_y, block_z), 0,
                                 device.stream(), out, x1, y1, x2, arg));
   } else {
     int block_x = min(256, dims[0]);
