@@ -16,6 +16,10 @@ load(
     "find_cuda_define",
     "matches_version",
 )
+load(
+    "//third_party/gpus:rocm_configure.bzl",
+    "enable_rocm",
+)
 
 _CUDA_TOOLKIT_PATH = "CUDA_TOOLKIT_PATH"
 _NCCL_HDR_PATH = "NCCL_HDR_PATH"

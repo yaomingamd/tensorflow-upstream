@@ -60,7 +60,6 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
     git_configure(name = "local_config_git")
     sycl_configure(name = "local_config_sycl")
     syslibs_configure(name = "local_config_syslibs")
-    rocm_configure(name="local_config_rocm")
     python_configure(name = "local_config_python")
     rocm_configure(name = "local_config_rocm")
 
