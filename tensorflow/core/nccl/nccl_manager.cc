@@ -37,6 +37,7 @@ using se::rocm::ScopedActivateExecutorContext;
 #define cudaStream_t hipStream_t
 #define cudaGetErrorString hipGetErrorString
 #define cudaGetDevice hipGetDevice
+#define cudaGetDeviceCount hipGetDeviceCount
 #define cudaSetDevice hipSetDevice
 #define cudaSuccess hipSuccess
 #endif
