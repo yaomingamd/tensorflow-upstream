@@ -16,6 +16,11 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_CWISE_OP_FMA_H_
 #define TENSORFLOW_CORE_KERNELS_CWISE_OP_FMA_H_
 
+#define EIGEN_USE_THREADS
+
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#include "tensorflow/core/platform/types.h"
+
 namespace tensorflow {
 
 template <typename Device, typename T, int SGN>
