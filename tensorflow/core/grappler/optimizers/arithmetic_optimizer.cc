@@ -1862,6 +1862,7 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
   bool IsSupported(const NodeDef* node) const override {
     if(!IsAdd(*node) && !IsSub(*node))
       return false; 
+    // todo: handle rank>5
     auto dtype = GetDataTypeFromAttr(*node, "T");
     return (dtype==DT_HALF || dtype==DT_FLOAT || dtype==DT_DOUBLE);
   }
@@ -1870,15 +1871,42 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
     NodeDef* b, *c;
     TF_RETURN_IF_ERROR(GetInputNode(node->input(0), &b));
     TF_RETURN_IF_ERROR(GetInputNode(node->input(1), &c));
-    // Optimize only if base is a Mul whose output is not being consumed
-    // elsewhere.
+    auto dtype = GetDataTypeFromAttr(*node, "T");
     bool add = IsAdd(*node);
     bool can_absorb_b = (IsMul(*b) && !IsInPreserveSet(*b) &&
         (NumNonControlOutputs(*b, *ctx().node_map) == 1));
     bool can_absorb_c = (IsMul(*c) && !IsInPreserveSet(*c) &&
         (NumNonControlOutputs(*c, *ctx().node_map) == 1));
+    if(GetDataTypeFromAttr(*b, "T") != dtype
+      ||GetDataTypeFromAttr(*c, "T") != dtype) {
+      VLOG(1)<<"Input dtype mismatch"; // apparently this can happen
+      return Status::OK();
+    }
+
+    if(can_absorb_b) {
+      NodeDef *b0, *b1;
+      TF_RETURN_IF_ERROR(GetInputNode(b->input(0), &b0));
+      TF_RETURN_IF_ERROR(GetInputNode(b->input(1), &b1));
+      auto dtype_b0 = GetDataTypeFromAttr(*b0, "T");
+      auto dtype_b1 = GetDataTypeFromAttr(*b1, "T");
+      if(dtype_b0!=dtype || dtype_b1!=dtype) {
+        VLOG(1)<<"Input 1 inputs dtype mismatch";
+        can_absorb_b = false;
+      }
+    }
+    if(can_absorb_c) {
+      NodeDef *b0, *b1;
+      TF_RETURN_IF_ERROR(GetInputNode(c->input(0), &b0));
+      TF_RETURN_IF_ERROR(GetInputNode(c->input(1), &b1));
+      auto dtype_b0 = GetDataTypeFromAttr(*b0, "T");
+      auto dtype_b1 = GetDataTypeFromAttr(*b1, "T");
+      if(dtype_b0!=dtype || dtype_b1!=dtype) {
+        VLOG(1)<<"Input 2 inputs dtype mismatch";
+        can_absorb_c = false;
+      }
+    }
     VLOG(1)<<"FuseMulAddSimplify "<<node->name()<<" "
-        <<node->input(0)<<" "<<node->input(1);
+        <<node->input(0)<<" "<<node->input(1)<<" "<<can_absorb_b<<" "<<can_absorb_c<<"\n"<<node->DebugString()<<"\n"<<b->DebugString()<<"\n"<<c->DebugString();
     if(can_absorb_b && can_absorb_c) {
       node->set_op(add ? "FusedMulAdd2" : "FusedMulSub2");
       node->add_input(node->input(1));
@@ -1896,6 +1924,7 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
       node->set_input(1, b->input(1));
       // 0 stays b
       b->set_op("Identity");
+      VLOG(1)<<node->input(0)<<" "<<node->input(1)<<" "<<node->input(2);
       AddToOptimizationQueue(node);
       AddToOptimizationQueue(b);
     } else if(can_absorb_c) {
@@ -1903,6 +1932,7 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
       auto x1 = c->input(0);
       auto y1 = c->input(1);
       auto x2 = node->input(0);
+      VLOG(1)<<x1<<" "<<y1<<" "<<x2;
       node->add_input(x2);
       node->set_input(0, x1);
       node->set_input(1, y1);
