@@ -18,6 +18,7 @@ limitations under the License.
 
 namespace tensorflow {
 
+//#define FMA_TRACE
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
@@ -39,8 +40,7 @@ void LaunchFusedMulAddOp<Device,T,Type>::operator()(const Device& device,
 		bool broadcast_x1, bool broadcast_y1, 
 		bool broadcast_x2)
 {
-  //printf("LaunchFusedMulAddOp %d %p <- %p %p %p\n", elements, out, x1, y1, x2);
-	for(uint64 i=0; i<elements; i++)
+  for(uint64 i=0; i<elements; i++)
 	{
     out[i]=fma_op<Type>(x1[broadcast_x1 ? 0 : i]*y1[broadcast_y1 ? 0 : i],
         x2[broadcast_x2 ? 0 : i]);
@@ -69,7 +69,9 @@ void FallbackLaunchFusedMulAddOp<Device, T, Type>::operator()(const Device& devi
     int64 dims[5],
     uint8 broadcast_masks[5])
 {
-  //printf("FallbackLaunchFusedMulAddOpCPU\n");
+#ifdef FMA_TRACE
+  printf("FallbackLaunchFusedMulAddOpCPU %p %p %p %p\n", out, x1, y1, x2);
+#endif
   int64 strides[3][4];
   for(int i=0; i<3; i++)
   {
@@ -185,33 +187,22 @@ class FusedMulAddBase {
     int64 in_elements[N];
     int in_ranks[N];
     int rank=0;
+    bool scalars[N];
  
     for(int i=0; i<N; i++) {
       in_elements[i] = inputs[i]->NumElements();
       in_ranks[i] = inputs[i]->dims();
+      scalars[i]=(in_ranks[i]==0);
       rank = (rank>in_ranks[i]) ? rank : in_ranks[i];
-     /*
+#ifdef FMA_TRACE
       printf("Input %d: %d dimensions, %d elements\n", i, in_ranks[i], in_elements[i]);
       for(int j=0; j<in_ranks[i]; j++)
         printf("%d ", inputs[i]->shape().dim_size(j));
       printf("\n");
-     */
+#endif
     }
     if(rank>5)
       return false;
-    //for(int i=0; i<N; i++) 
-    //  if(in_ranks[i]!=0 && in_ranks[i]!=1 && in_ranks[i]!=dims)
-    //    return false;
-/*
-    OP_REQUIRES(ctx, dims<=5, errors::InvalidArgument("FusedMulAddOp does "
-      "not support ", dims, "dimensions"));
-    for(int i=0; i<N; i++) 
-      OP_REQUIRES(ctx, (in_ranks[i]==1 || in_ranks[i]==dims),
-        errors::InvalidArgument("FusedMulAddOp with inputs of incompatible "
-        "dimension counts ", in_ranks[i], dims));
-*/        
-
-
     int64 xds[5][N];
     for(int i=0; i<rank; i++) {
       int64 max_dim = 0;
@@ -221,7 +212,7 @@ class FusedMulAddBase {
           xds[i][j] = inputs[j]->shape().dim_size(in_ranks[j]-ii-1);
         else
           xds[i][j] = 1;
-        if(xds[i][j] == 0)
+        if(scalars[j])
           xds[i][j] = 1;
         max_dim = (max_dim>xds[i][j]) ? max_dim : xds[i][j];
       }
@@ -230,13 +221,12 @@ class FusedMulAddBase {
           return false;
         broadcast_masks[rank-i-1]|=(xds[i][j]!=1 ? 1 : 0)<<j;
       }
-      max_dim = (max_dim>1) ? max_dim : 1;
       out_shape.AddDim(max_dim);
       out_dims[rank-i-1]=max_dim;
     }
     out_elements = out_shape.num_elements();
     pure_broadcast = true;
-    if(out_elements==1)
+    if(out_elements<=1)
       return true;
 
     for(int i=0; i<N; i++)
@@ -249,11 +239,11 @@ class FusedMulAddBase {
           broadcast_masks[0]|=1<<i;
       return true;
     }
-    /*
+#ifdef FMA_TRACE
     printf("%d elements, broadcast %s\n", out_elements, pure_broadcast?"true":"false");
     for(int i=0; i<5; i++)      
       printf("out_dim[%d] = %d mask %d\n", i, out_dims[i], (int)broadcast_masks[i]);
-    */
+#endif
     // folding dimensions from the highest down
     // [50,10,10]x[50,10,10]x[50,1,1] -> [50,100]x[50,100]x[50,1]
     bool folded = false;
@@ -271,13 +261,13 @@ class FusedMulAddBase {
         broadcast_masks[rank-1]=0;
       }
     }
-    /*
+#ifdef FMA_TRACE
     if(folded) {
       printf("After folding:\n");
       for(int i=0; i<5; i++)
         printf("out_dim[%d] = %d mask %d\n", i, out_dims[i], (int)broadcast_masks[i]);
     }
-    */
+#endif
     return true;
   }
 };
@@ -305,6 +295,8 @@ class FusedMulAddOp : public OpKernel, public FusedMulAddBase<Device, 3> {
     Tensor* output = nullptr;
     // todo: an OP_REQUIRES to check that all dims fit in 32 bit
   	OP_REQUIRES_OK(ctx, ctx->allocate_output(0, out_shape, &output));
+    if(out_elements==0)
+      return;
     if(pure_broadcast)
     	LaunchFusedMulAddOp<Device,T,Type>()(ctx->eigen_device<Device>(), 
     		output->flat<T>().data(), 
@@ -329,7 +321,6 @@ class FusedMulAdd2Op : public OpKernel, public FusedMulAddBase<Device, 4> {
 
   void Compute(OpKernelContext* ctx) override {
     const Tensor* inputs[4];
-    //printf("FusedMulAdd2\n");
     OP_REQUIRES_OK(ctx, ctx->input("x1", &inputs[0]));
     OP_REQUIRES_OK(ctx, ctx->input("y1", &inputs[1]));
     OP_REQUIRES_OK(ctx, ctx->input("x2", &inputs[2]));
@@ -345,6 +336,8 @@ class FusedMulAdd2Op : public OpKernel, public FusedMulAddBase<Device, 4> {
     //pure_broadcast=false;
     Tensor* output = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, out_shape, &output));
+    if(out_elements==0)
+      return;
     if(pure_broadcast)
       LaunchFusedMulAdd2Op<Device,T,Type>()(ctx->eigen_device<Device>(), 
         output->flat<T>().data(), 
