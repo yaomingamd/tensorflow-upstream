@@ -1862,7 +1862,7 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
   bool IsSupported(const NodeDef* node) const override {
     if(!IsAdd(*node) && !IsSub(*node))
       return false; 
-    // todo: handle rank>5
+    // todo: can we reject if node output is 7+ dim?
     auto dtype = GetDataTypeFromAttr(*node, "T");
     return (dtype==DT_HALF || dtype==DT_FLOAT || dtype==DT_DOUBLE);
   }
@@ -1906,12 +1906,19 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
       }
     }
     VLOG(1)<<"FuseMulAddSimplify "<<node->name()<<" "
-        <<node->input(0)<<" "<<node->input(1)<<" "<<can_absorb_b<<" "<<can_absorb_c<<"\n"<<node->DebugString()<<"\n"<<b->DebugString()<<"\n"<<c->DebugString();
+        <<node->input(0)<<" "<<node->input(1)<<" "<<can_absorb_b<<" "
+        <<can_absorb_c<<"\n"<<node->DebugString()<<"\n"<<b->DebugString()
+        <<"\n"<<c->DebugString();
     if(can_absorb_b && can_absorb_c) {
-      node->set_op(add ? "FusedMulAdd2" : "FusedMulSub2");
-      node->add_input(node->input(1));
-      node->add_input(c->input(1));
-      node->set_input(1, b->input(1));
+      node->set_op(add ? "_FusedMulAdd2" : "_FusedMulSub2");
+      //auto x1 = node->input(0);
+      auto y1 = b->input(1);
+      auto x2 = node->input(1);
+      auto y2 = c->input(1);
+      // 0 stays b
+      node->set_input(1, y1);
+      node->add_input(x2);
+      node->add_input(y2);
       b->set_op("Identity");
       c->set_op("Identity");
       AddToOptimizationQueue(node);
@@ -1919,16 +1926,19 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
       AddToOptimizationQueue(c);
     }
     else if(can_absorb_b) {
-      node->set_op(add ? "FusedMulAdd" : "FusedMulSub");
-      node->add_input(node->input(1));
-      node->set_input(1, b->input(1));
+      node->set_op(add ? "_FusedMulAdd" : "_FusedMulSub");
+      //auto x1 = node->input(0);
+      auto y1 = b->input(1);
+      auto x2 = node->input(1);
       // 0 stays b
+      node->set_input(1, y1);
+      node->add_input(x2);
       b->set_op("Identity");
       VLOG(1)<<node->input(0)<<" "<<node->input(1)<<" "<<node->input(2);
       AddToOptimizationQueue(node);
       AddToOptimizationQueue(b);
     } else if(can_absorb_c) {
-      node->set_op(add ? "FusedMulAdd" : "FusedMulSubRev");
+      node->set_op(add ? "_FusedMulAdd" : "_FusedMulSubRev");
       auto x1 = c->input(0);
       auto y1 = c->input(1);
       auto x2 = node->input(0);

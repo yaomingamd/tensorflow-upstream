@@ -63,8 +63,8 @@ public:
 	void operator()(const Device& device,
 		T* out,
 		const T* x1, const T* y1, const T* x2,
-		int64 dims[5],
-		uint8 broadcast_masks[5]);
+		int64 dims[6],
+		uint8 broadcast_masks[6]);
 }; 
 
 template <typename Device, typename T, FMAType Type>
@@ -74,8 +74,8 @@ public:
 	void operator()(const Device& device,
 		T* out,
 		const T* x1, const T* y1, const T* x2, const T* y2,
-		int64 dims[5],
-		uint8 broadcast_masks[5]);
+		int64 dims[6],
+		uint8 broadcast_masks[6]);
 }; 
 
 
@@ -131,8 +131,8 @@ public:
   void operator()(const GPUDevice& device,
     T* out,
     const T* x1, const T* y1, const T* x2,
-    int64 dims[5],
-    uint8 broadcast_masks[5]);
+    int64 dims[6],
+    uint8 broadcast_masks[6]);
 }; 
 
 template <typename T, FMAType Type>
@@ -142,8 +142,8 @@ public:
   void operator()(const GPUDevice& device,
     T* out,
     const T* x1, const T* y1, const T* x2, const T* y2,
-    int64 dims[5],
-    uint8 broadcast_masks[5]);
+    int64 dims[6],
+    uint8 broadcast_masks[6]);
 }; 
 #endif
 

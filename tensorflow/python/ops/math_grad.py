@@ -1932,22 +1932,22 @@ def _FusedMulAddSub2Grad(op, grad, sgn):
       gy2 if not must_reduce_y2 else math_ops.reduce_sum(gy2,ry2)
       ]
 
-@ops.RegisterGradient("FusedMulAdd")
+@ops.RegisterGradient("_FusedMulAdd")
 def _FusedMulAddGrad(op, grad):
   return _FusedMulAddSubGrad(op, grad, 1)
 
-@ops.RegisterGradient("FusedMulAdd2")
+@ops.RegisterGradient("_FusedMulAdd2")
 def _FusedMulAdd2Grad(op, grad):
   return _FusedMulAddSub2Grad(op, grad, 1)
 
-@ops.RegisterGradient("FusedMulSub")
+@ops.RegisterGradient("_FusedMulSub")
 def _FusedMulSubGrad(op, grad):
   return _FusedMulAddSubGrad(op, grad, -1)
 
-@ops.RegisterGradient("FusedMulSubRev")
+@ops.RegisterGradient("_FusedMulSubRev")
 def _FusedMulSubRevGrad(op, grad):
   return _FusedMulAddSubGrad(op, grad, 0)
 
-@ops.RegisterGradient("FusedMulSub2")
+@ops.RegisterGradient("_FusedMulSub2")
 def _FusedMulSub2Grad(op, grad):
   return _FusedMulAddSub2Grad(op, grad, -1)
