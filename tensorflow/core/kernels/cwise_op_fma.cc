@@ -15,10 +15,10 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/cwise_ops_common.h"
 #include "tensorflow/core/kernels/cwise_op_fma.h"
-
+#include <vector>
 namespace tensorflow {
 
-//#define FMA_TRACE
+#define FMA_TRACE
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
@@ -66,52 +66,57 @@ template <typename Device, typename T, FMAType Type>
 void FallbackLaunchFusedMulAddOp<Device, T, Type>::operator()(const Device& device,
     T* out,
     const T* x1, const T* y1, const T* x2,
-    int64 dims[5],
-    uint8 broadcast_masks[5])
+    int64 dims[6],
+    uint8 broadcast_masks[6])
 {
 #ifdef FMA_TRACE
   printf("FallbackLaunchFusedMulAddOpCPU %p %p %p %p\n", out, x1, y1, x2);
 #endif
-  int64 strides[3][4];
+  int64 strides[3][5];
   for(int i=0; i<3; i++)
   {
     int64 s = 1;
-    for(int j=0; j<4; j++) {
+    for(int j=0; j<5; j++) {
       int b = broadcast_masks[j] & (1<<i);
       int b_next = broadcast_masks[j+1] & (1<<i);
       s *= b ? dims[j] : 1;
       strides[i][j] = s * ((b_next - b)>>i);
     }
   };
-  for(uint64 u=0; u<dims[4]; u++) {
-    for(uint64 v=0; v<dims[3]; v++) {
-      for(uint64 z=0; z<dims[2]; z++) {
-        for(uint64 y=0; y<dims[1]; y++) {
-          for(uint64 x=0; x<dims[0]; x++) {
-            *out = fma_op<Type>((*x1)*(*y1), (*x2));
-            out++;
-            if(broadcast_masks[0] & 1)
-              x1++;
-            if(broadcast_masks[0] & 2)
-              y1++;
-            if(broadcast_masks[0] & 4)
-              x2++;
+  for(uint64 t=0; t<dims[5]; t++) {
+    for(uint64 u=0; u<dims[4]; u++) {
+      for(uint64 v=0; v<dims[3]; v++) {
+        for(uint64 z=0; z<dims[2]; z++) {
+          for(uint64 y=0; y<dims[1]; y++) {
+            for(uint64 x=0; x<dims[0]; x++) {
+              *out = fma_op<Type>((*x1)*(*y1), (*x2));
+              out++;
+              if(broadcast_masks[0] & 1)
+                x1++;
+              if(broadcast_masks[0] & 2)
+                y1++;
+              if(broadcast_masks[0] & 4)
+                x2++;
+            }
+            x1 += strides[0][0]; 
+            y1 += strides[1][0];
+            x2 += strides[2][0];
           }
-          x1 += strides[0][0]; 
-          y1 += strides[1][0];
-          x2 += strides[2][0];
+          x1 += strides[0][1]; 
+          y1 += strides[1][1];
+          x2 += strides[2][1];
         }
-        x1 += strides[0][1]; 
-        y1 += strides[1][1];
-        x2 += strides[2][1];
+        x1 += strides[0][2]; 
+        y1 += strides[1][2];
+        x2 += strides[2][2];
       }
-      x1 += strides[0][2]; 
-      y1 += strides[1][2];
-      x2 += strides[2][2];
+      x1 += strides[0][3]; 
+      y1 += strides[1][3];
+      x2 += strides[2][3];
     }
-    x1 += strides[0][3]; 
-    y1 += strides[1][3];
-    x2 += strides[2][3];
+    x1 += strides[0][4]; 
+    y1 += strides[1][4];
+    x2 += strides[2][4];
   }
 }
 
@@ -120,8 +125,8 @@ template <typename Device, typename T, FMAType Type>
 void FallbackLaunchFusedMulAdd2Op<Device, T, Type>::operator()(const Device& device,
     T* out,
     const T* x1, const T* y1, const T* x2, const T* y2,
-    int64 dims[5],
-    uint8 broadcast_masks[5])
+    int64 dims[6],
+    uint8 broadcast_masks[6])
 {
   int64 strides[4][4];
   for(int i=0; i<4; i++)
@@ -180,8 +185,8 @@ class FusedMulAddBase {
   bool DoShapeAnalysis(OpKernelContext* ctx, 
     const Tensor** inputs,
     bool& pure_broadcast,
-    uint8* broadcast_masks,
-    int64* out_dims,
+    std::vector<uint8>& broadcast_masks,
+    std::vector<int64>& out_dims,
     TensorShape& out_shape,
     int64& out_elements) {
     int64 in_elements[N];
@@ -201,25 +206,27 @@ class FusedMulAddBase {
       printf("\n");
 #endif
     }
-    if(rank>5)
-      return false;
-    int64 xds[5][N];
+    broadcast_masks.resize(rank);
+    out_dims.resize(rank);
+
     for(int i=0; i<rank; i++) {
+      int64 xds[N];
       int64 max_dim = 0;
       int ii = rank-i-1;
+
+      // find the largest dimension of all inputs at this index
       for(int j=0; j<N; j++) {
-        if(ii < in_ranks[j])
-          xds[i][j] = inputs[j]->shape().dim_size(in_ranks[j]-ii-1);
-        else
-          xds[i][j] = 1;
-        if(scalars[j])
-          xds[i][j] = 1;
-        max_dim = (max_dim>xds[i][j]) ? max_dim : xds[i][j];
+        xds[j] = (scalars[j] || ii>=in_ranks[j])
+          ? 1
+          : inputs[j]->shape().dim_size(in_ranks[j]-ii-1);
+        max_dim = (max_dim>xds[j]) ? max_dim : xds[j];
       }
+
       for(int j=0; j<N; j++) {
-        if(!(xds[i][j]==1 || xds[i][j]==max_dim))
+        // make sure dimensions are compatible
+        if(!(xds[j]==1 || xds[j]==max_dim))
           return false;
-        broadcast_masks[rank-i-1]|=(xds[i][j]!=1 ? 1 : 0)<<j;
+        broadcast_masks[rank-i-1]|=(xds[j]!=1 ? 1 : 0)<<j;
       }
       out_shape.AddDim(max_dim);
       out_dims[rank-i-1]=max_dim;
@@ -237,38 +244,47 @@ class FusedMulAddBase {
       for(int i=0; i<N; i++)
         if(in_elements[i]!=1)
           broadcast_masks[0]|=1<<i;
+#ifdef FMA_TRACE
+      printf("%d elements, pure broadcast\n", out_elements);
+#endif
       return true;
     }
 #ifdef FMA_TRACE
     printf("%d elements, broadcast %s\n", out_elements, pure_broadcast?"true":"false");
-    for(int i=0; i<5; i++)      
+    for(int i=0; i<6; i++)      
       printf("out_dim[%d] = %d mask %d\n", i, out_dims[i], (int)broadcast_masks[i]);
 #endif
     // folding dimensions from the highest down
     // [50,10,10]x[50,10,10]x[50,1,1] -> [50,100]x[50,100]x[50,1]
     bool folded = false;
+
+    while(rank>1 && out_dims.back()==1) {
+      out_dims.pop_back();
+      broadcast_masks.pop_back();
+      rank--;
+    }
+
     for(int i=rank-1; i>0; i--) {
-      if(out_dims[i]==1)
-        continue;
-      if(broadcast_masks[i] == broadcast_masks[i-1]) {
+      if(out_dims[i]==1 || broadcast_masks[i] == broadcast_masks[i-1]) {
         folded = true;
         out_dims[i-1]*=out_dims[i];
         for(int j=i; j<rank-1; j++) {
           out_dims[j] = out_dims[j+1];
           broadcast_masks[j] = broadcast_masks[j+1];
         }
-        out_dims[rank-1]=1;
-        broadcast_masks[rank-1]=0;
+        out_dims.pop_back();
+        broadcast_masks.pop_back();
+        rank--;
       }
     }
 #ifdef FMA_TRACE
     if(folded) {
       printf("After folding:\n");
-      for(int i=0; i<5; i++)
+      for(int i=0; i<rank; i++)
         printf("out_dim[%d] = %d mask %d\n", i, out_dims[i], (int)broadcast_masks[i]);
     }
 #endif
-    return true;
+    return (rank<=6);
   }
 };
 
@@ -284,13 +300,22 @@ class FusedMulAddOp : public OpKernel, public FusedMulAddBase<Device, 3> {
     OP_REQUIRES_OK(ctx, ctx->input("y1", &inputs[1]));
     OP_REQUIRES_OK(ctx, ctx->input("x2", &inputs[2]));
     bool pure_broadcast=true;
-    uint8 broadcast_masks[5]={0,0,0,0,0};
-    int64 out_dims[5]={1,1,1,1,1};
+
+    std::vector<uint8> broadcast_masks;
+    std::vector<int64> out_dims;
+//    uint8 broadcast_masks[6]={0,0,0,0,0,0};
+//    int64 out_dims[6]={1,1,1,1,1,1};
     TensorShape out_shape;
     int64 out_elements=0;
     bool ok = FusedMulAddBase<Device,3>::DoShapeAnalysis(ctx, inputs, pure_broadcast, broadcast_masks, out_dims,
       out_shape, out_elements);
     OP_REQUIRES(ctx, ok, errors::InvalidArgument("FusedMulAdd with incompatible shapes"));
+    OP_REQUIRES(ctx, pure_broadcast || broadcast_masks.size()<=6, errors::InvalidArgument("FusedMulAdd with ", broadcast_masks.size(),
+      " broadcast ranks not supported"));
+    while(broadcast_masks.size()<6) {
+      broadcast_masks.push_back(0);
+      out_dims.push_back(1);
+    }
     //pure_broadcast=false;
     Tensor* output = nullptr;
     // todo: an OP_REQUIRES to check that all dims fit in 32 bit
@@ -310,7 +335,7 @@ class FusedMulAddOp : public OpKernel, public FusedMulAddBase<Device, 3> {
         output->flat<T>().data(), 
         inputs[0]->flat<T>().data(), inputs[1]->flat<T>().data(), 
         inputs[2]->flat<T>().data(), 
-        out_dims, broadcast_masks);
+        &out_dims[0], &broadcast_masks[0]);
   }
 };
 
@@ -326,13 +351,22 @@ class FusedMulAdd2Op : public OpKernel, public FusedMulAddBase<Device, 4> {
     OP_REQUIRES_OK(ctx, ctx->input("x2", &inputs[2]));
     OP_REQUIRES_OK(ctx, ctx->input("y2", &inputs[3]));
     bool pure_broadcast=true;
-    uint8 broadcast_masks[5]={0,0,0,0,0};
-    int64 out_dims[5]={1,1,1,1,1};
+    std::vector<uint8> broadcast_masks;
+    std::vector<int64> out_dims;
     TensorShape out_shape;
     int64 out_elements=0;
     bool ok = FusedMulAddBase<Device,4>::DoShapeAnalysis(ctx, inputs, pure_broadcast, broadcast_masks, out_dims,
       out_shape, out_elements);
+#ifdef TRACE_FMA
+    fflush(stdout);
+#endif
     OP_REQUIRES(ctx, ok, errors::InvalidArgument("FusedMulAdd2 with incompatible shapes"));
+    OP_REQUIRES(ctx, pure_broadcast || broadcast_masks.size()<=6, errors::InvalidArgument("FusedMulAdd with ", broadcast_masks.size(),
+      " broadcast ranks not supported"));
+    while(broadcast_masks.size()<6) {
+      broadcast_masks.push_back(0);
+      out_dims.push_back(1);
+    }
     //pure_broadcast=false;
     Tensor* output = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, out_shape, &output));
@@ -351,25 +385,25 @@ class FusedMulAdd2Op : public OpKernel, public FusedMulAddBase<Device, 4> {
         output->flat<T>().data(), 
         inputs[0]->flat<T>().data(), inputs[1]->flat<T>().data(), 
         inputs[2]->flat<T>().data(), inputs[3]->flat<T>().data(),
-        out_dims, broadcast_masks);
+        &out_dims[0], &broadcast_masks[0]);
   }
 };
 
 #define REGISTER_CPU_KERNEL(type)                                          \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulAdd").Device(DEVICE_CPU).TypeConstraint<type>("T"),    \
+      Name("_FusedMulAdd").Device(DEVICE_CPU).TypeConstraint<type>("T"),    \
       FusedMulAddOp<CPUDevice, type, FMAType_Add>);                        \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulAdd2").Device(DEVICE_CPU).TypeConstraint<type>("T"),   \
+      Name("_FusedMulAdd2").Device(DEVICE_CPU).TypeConstraint<type>("T"),   \
       FusedMulAdd2Op<CPUDevice, type, FMAType_Add>);                       \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulSub").Device(DEVICE_CPU).TypeConstraint<type>("T"),    \
+      Name("_FusedMulSub").Device(DEVICE_CPU).TypeConstraint<type>("T"),    \
       FusedMulAddOp<CPUDevice, type, FMAType_Sub>);                        \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulSubRev").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
+      Name("_FusedMulSubRev").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
       FusedMulAddOp<CPUDevice, type, FMAType_SubRev>);                     \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulSub2").Device(DEVICE_CPU).TypeConstraint<type>("T"),   \
+      Name("_FusedMulSub2").Device(DEVICE_CPU).TypeConstraint<type>("T"),   \
       FusedMulAdd2Op<CPUDevice, type, FMAType_Sub>);
 
 REGISTER_CPU_KERNEL(Eigen::half);
@@ -379,19 +413,19 @@ REGISTER_CPU_KERNEL(double);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #define REGISTER_GPU_KERNEL(type)                                          \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulAdd").Device(DEVICE_GPU).TypeConstraint<type>("T"),    \
+      Name("_FusedMulAdd").Device(DEVICE_GPU).TypeConstraint<type>("T"),    \
       FusedMulAddOp<GPUDevice, type, FMAType_Add>);                        \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulAdd2").Device(DEVICE_GPU).TypeConstraint<type>("T"),   \
+      Name("_FusedMulAdd2").Device(DEVICE_GPU).TypeConstraint<type>("T"),   \
       FusedMulAdd2Op<GPUDevice, type, FMAType_Add>);                       \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulSub").Device(DEVICE_GPU).TypeConstraint<type>("T"),    \
+      Name("_FusedMulSub").Device(DEVICE_GPU).TypeConstraint<type>("T"),    \
       FusedMulAddOp<GPUDevice, type, FMAType_Sub>);                        \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulSubRev").Device(DEVICE_GPU).TypeConstraint<type>("T"), \
+      Name("_FusedMulSubRev").Device(DEVICE_GPU).TypeConstraint<type>("T"), \
       FusedMulAddOp<GPUDevice, type, FMAType_SubRev>);                     \
   REGISTER_KERNEL_BUILDER(                                                 \
-      Name("FusedMulSub2").Device(DEVICE_GPU).TypeConstraint<type>("T"),   \
+      Name("_FusedMulSub2").Device(DEVICE_GPU).TypeConstraint<type>("T"),   \
       FusedMulAdd2Op<GPUDevice, type, FMAType_Sub>);
 
 REGISTER_GPU_KERNEL(Eigen::half);

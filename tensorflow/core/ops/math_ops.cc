@@ -544,7 +544,7 @@ Status BroadcastFMA2OpOutputShape(InferenceContext* c) {
   return Status::OK();
 }
 
-REGISTER_OP("FusedMulAdd")
+REGISTER_OP("_FusedMulAdd")
     .Input("x1: T")
     .Input("y1: T")
     .Input("x2: T")
@@ -552,7 +552,7 @@ REGISTER_OP("FusedMulAdd")
     .Attr("T: {bfloat16, half, float, double}")
     .SetShapeFn(BroadcastFMAOpOutputShape);
 
-REGISTER_OP("FusedMulAdd2")
+REGISTER_OP("_FusedMulAdd2")
     .Input("x1: T")
     .Input("y1: T")
     .Input("x2: T")
@@ -561,7 +561,7 @@ REGISTER_OP("FusedMulAdd2")
     .Attr("T: {bfloat16, half, float, double}")
     .SetShapeFn(BroadcastFMA2OpOutputShape);
 
-REGISTER_OP("FusedMulSub")
+REGISTER_OP("_FusedMulSub")
     .Input("x1: T")
     .Input("y1: T")
     .Input("x2: T")
@@ -569,7 +569,7 @@ REGISTER_OP("FusedMulSub")
     .Attr("T: {bfloat16, half, float, double}")
     .SetShapeFn(BroadcastFMAOpOutputShape);
 
-REGISTER_OP("FusedMulSubRev")
+REGISTER_OP("_FusedMulSubRev")
     .Input("x1: T")
     .Input("y1: T")
     .Input("x2: T")
@@ -577,7 +577,7 @@ REGISTER_OP("FusedMulSubRev")
     .Attr("T: {bfloat16, half, float, double}")
     .SetShapeFn(BroadcastFMAOpOutputShape);
 
-REGISTER_OP("FusedMulSub2")
+REGISTER_OP("_FusedMulSub2")
     .Input("x1: T")
     .Input("y1: T")
     .Input("x2: T")

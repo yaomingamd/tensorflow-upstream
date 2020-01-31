@@ -126,8 +126,8 @@ template <typename T, FMAType type, int N>
   T* out;
   const T* ptrs[N-1];
    // uint64 has high overhead
-  int32 shifts[N][4];
-  int32 dims[5]; 
+  int32 shifts[N][5];
+  int32 dims[6];
   //uint32 broadcast_mask;
   uint32 x_mask[N-1];
   __device__ void shift(int dim, int delta) {
@@ -135,8 +135,9 @@ template <typename T, FMAType type, int N>
     for(int i=0; i<N-1; i++)
       ptrs[i] += shifts[i+1][dim-1]*delta;
   }
-  void construct(const int64 dims[5], const uint8 broadcast_masks[5]);
+  void construct(const int64 dims[6], const uint8 broadcast_masks[6]);
 
+  // todo: __half2 optimizations
   __device__ void x_loop(int start, int x_step) {
       for (int x = start; x < dims[0]; x += x_step) {
         T m1 = ptrs[0][x & x_mask[0]] *
@@ -151,10 +152,11 @@ template <typename T, FMAType type, int N>
 
 
 template <typename T, FMAType type, int N>
-void Fallback_FMA_Arg<T,type,N>::construct(const int64 _dims[5], const uint8 broadcast_masks[5])
+void Fallback_FMA_Arg<T,type,N>::construct(const int64 _dims[6], const uint8 broadcast_masks[6])
 {
-  for (int y = 0; y < N; y++) {
+  for(int y=0; y<6; y++)
     dims[y] = (int32)_dims[y];
+  for (int y = 0; y < N; y++) {
     int b0, b1, b2;
     if (y == 0)
       b0 = b1 = b2 = 1;
@@ -165,7 +167,7 @@ void Fallback_FMA_Arg<T,type,N>::construct(const int64 _dims[5], const uint8 bro
     }
     int stride = (b0 ? _dims[0] : 1) * (b1 ? _dims[1] : 1);
     shifts[y][1] = b2 ? stride : 0;
-    for (int x = 1; x < 3; x++) {
+    for (int x = 1; x < 4; x++) {
       int b = (y == 0) ? 1 : (broadcast_masks[x + 1] & (1 << (y - 1)));
       int bn = (y == 0) ? 1 : (broadcast_masks[x + 2] & (1 << (y - 1)));
       if (b) stride *= _dims[x + 1];
@@ -188,7 +190,7 @@ void Fallback_FMA_Arg<T,type,N>::construct(const int64 _dims[5], const uint8 bro
 
 // "Fallback fallback" case
 template <typename T, FMAType Type, int N>
-__global__ void FallbackLaunchFusedMulAddKernel(Fallback_FMA_Arg<T, Type, N> arg) {
+__global__ void FallbackLaunchFusedMulAddKernel6D(Fallback_FMA_Arg<T, Type, N> arg) {
   arg.shift(4, blockIdx.z);
   arg.shift(3, blockIdx.y);
   int32 z = threadIdx.z + blockIdx.x * blockDim.z;
@@ -196,14 +198,20 @@ __global__ void FallbackLaunchFusedMulAddKernel(Fallback_FMA_Arg<T, Type, N> arg
     return;
   arg.shift(2, z);
   arg.shift(1, threadIdx.y);
-  for (int32 y = threadIdx.y; y < arg.dims[1]; y += blockDim.y) {
-    arg.x_loop(threadIdx.x, blockDim.x);
-    arg.shift(1, blockDim.y);
+  for(int32_t t=0; t<arg.dims[5]; t++) {
+    int y_count = 0;
+    for (int32 y = threadIdx.y; y < arg.dims[1]; y += blockDim.y) {
+      arg.x_loop(threadIdx.x, blockDim.x);
+      arg.shift(1, blockDim.y);
+      y_count++;
+    }
+    arg.shift(1, -blockDim.y*y_count);
+    arg.shift(5, 1);
   }
 }
 
 // Optimized version for shapes like [100000, 10, 2], where ..AddKernel2D can't 
-// be used, but ..AddKernel underperforms due to poor utilization
+// be used, but ..AddKernel6D underperforms due to poor utilization
 template <typename T, FMAType Type, int N>
 __global__ void FallbackLaunchFusedMulAddKernel4D(Fallback_FMA_Arg<T, Type, N> arg) {
   arg.shift(3, blockIdx.y);
@@ -224,14 +232,14 @@ __global__ void FallbackLaunchFusedMulAddKernel2D(Fallback_FMA_Arg<T, Type, N> a
 }
 
 template <typename T, FMAType type, int N>
-void Fallback_FMA_execute(const GPUDevice& device, int64 dims[5], Fallback_FMA_Arg<T, type, N>& arg)
+void Fallback_FMA_execute(const GPUDevice& device, int64 dims[6], Fallback_FMA_Arg<T, type, N>& arg)
 {
-  if (dims[2] == 1 && dims[3] == 1 && dims[4] == 1) {
+  if (dims[2] == 1 && dims[3] == 1 && dims[4] == 1 && dims[5] == 1) {
     TF_CHECK_OK(GpuLaunchKernel(FallbackLaunchFusedMulAddKernel2D<T, type, N>,
                                 dim3(dims[1], 1, 1),
                                 dim3(dims[0] > 256 ? 256 : dims[0], 1, 1), 0,
                                 device.stream(), arg));
-  } else if (dims[4] == 1 && dims[0] / 256 > dims[2] * dims[3]) {
+  } else if (dims[4] == 1 && dims[5] == 1 && dims[0] / 256 > dims[2] * dims[3]) {
     int block_x = min(256, dims[0]);
     int block_y = min(256 / block_x, dims[1]);
     int block_z = min(256 / (block_x * block_y), dims[2]); 
@@ -249,7 +257,7 @@ void Fallback_FMA_execute(const GPUDevice& device, int64 dims[5], Fallback_FMA_A
     int grid_x = (dims[2] + block_z - 1) / block_z;
     int grid_y = dims[3];
     int grid_z = dims[4];
-    TF_CHECK_OK(GpuLaunchKernel(FallbackLaunchFusedMulAddKernel<T, type, N>,
+    TF_CHECK_OK(GpuLaunchKernel(FallbackLaunchFusedMulAddKernel6D<T, type, N>,
                                 dim3(grid_x, grid_y, grid_z),
                                 dim3(block_x, block_y, block_z), 0,
                                 device.stream(), arg));
@@ -260,7 +268,7 @@ void Fallback_FMA_execute(const GPUDevice& device, int64 dims[5], Fallback_FMA_A
 template <typename T, FMAType Type>
 void FallbackLaunchFusedMulAddOp<GPUDevice, T, Type>::operator()(
     const GPUDevice& device, T* out, const T* x1, const T* y1, const T* x2,
-    int64 dims[5], uint8 broadcast_masks[5]) {
+    int64 dims[6], uint8 broadcast_masks[6]) {
   // printf("FallbackFusedMulAdd %d %d %d\n", broadcast_masks[0],
   // broadcast_masks[1], broadcast_masks[2]); printf("Dims %ld %ld %ld %ld
   // %ld\n", dims[0], dims[1], dims[2], dims[3], dims[4]);
@@ -277,16 +285,7 @@ void FallbackLaunchFusedMulAddOp<GPUDevice, T, Type>::operator()(
 template <typename T, FMAType Type>
 void FallbackLaunchFusedMulAdd2Op<GPUDevice, T, Type>::operator()(
     const GPUDevice& device, T* out, const T* x1, const T* y1, const T* x2,
-    const T* y2, int64 dims[5], uint8 broadcast_masks[5]) {
-  // printf("FallbackFusedMulAdd2 %d %d %d\n", broadcast_masks[0],
-  // broadcast_masks[1], broadcast_masks[2]);
-  int block_x = min(256, dims[0]);
-  int block_y = min(256 / block_x, dims[1]);
-  int block_z = min(256 / (block_x * block_y), dims[2]);
-  int grid_x = (dims[2] + block_z - 1) / block_z;
-  int grid_y = dims[3];
-  int grid_z = dims[4];
-
+    const T* y2, int64 dims[6], uint8 broadcast_masks[6]) {
   Fallback_FMA_Arg<T, Type, 5> arg;
   arg.out = out;
   arg.ptrs[0]=x1;
