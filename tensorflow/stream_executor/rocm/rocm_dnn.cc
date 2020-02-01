@@ -3689,7 +3689,7 @@ bool MIOpenSupport::DoPoolBackward(
 
   // miopen requires the strides and dims to be ordered as BDYX.
   std::vector<int64> dims64 =
-      output_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
+      input_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
 
   // miopen does not use strides and must have 4D tensor.
   std::vector<int> dims(4);
@@ -3710,7 +3710,7 @@ bool MIOpenSupport::DoPoolBackward(
     LOG(ERROR) << "Failed to calcuate tensor size to chain forward and "
                   "backward pooling";
   }
-
+/*
   status = wrap::miopenPoolingForward(
       miopen.handle(), pooling_desc.handle(), &alpha, src_desc.handle(),
       input_data.opaque(), &beta, dest_desc.handle(), dest2.opaque(), true,
@@ -3722,10 +3722,10 @@ bool MIOpenSupport::DoPoolBackward(
         << ToString(status);
     return false;
   }
-
+*/
   status = wrap::miopenPoolingBackward(
       miopen.handle(), pooling_desc.handle(), &alpha, dest_desc.handle(),
-      dest2.opaque(), dest_desc.handle(), input_diff_data.opaque(),
+      output_data.opaque(), dest_desc.handle(), input_diff_data.opaque(),
       src_desc.handle(), input_data.opaque(), &beta, src_desc.handle(),
       output_diff_data->opaque(), workspace.opaque());
 
