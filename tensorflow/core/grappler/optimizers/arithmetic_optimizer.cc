@@ -1885,6 +1885,8 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
   bool IsSupported(const NodeDef* node) const override {
     if(!IsAdd(*node) && !IsSub(*node))
       return false; 
+    if(node->input_size()!=2)
+      return false;
     // todo: can we reject if node output is 7+ dim?
     auto dtype = GetDataTypeFromAttr(*node, "T");
     return (dtype==DT_HALF || dtype==DT_FLOAT || dtype==DT_DOUBLE);
@@ -1950,7 +1952,7 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
     }
     else if(can_absorb_b) {
       node->set_op(add ? "_FusedMulAdd" : "_FusedMulSub");
-      //auto x1 = node->input(0);
+      //auto x1 = node->input(0); 
       auto y1 = b->input(1);
       auto x2 = node->input(1);
       // 0 stays b
