@@ -41,6 +41,7 @@ from tensorflow.python.ops import nn_grad  # pylint: disable=unused-import
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import tf_logging
 from tensorflow.python.platform import test
+from tensorflow.python.eager import def_function
 
 _ADD = lambda x, y: x + y
 _SUB = lambda x, y: x - y
@@ -62,8 +63,26 @@ _INV = lambda x: ~x
 
 #_FMA2 = lambda x1,y1,x2,y2: gen_math_ops.fused_mul_add(x1,y1,x2,y2)
 #_FMA2 = lambda x1,y1,x2,y2: gen_math_ops.fused_mul_add(x1,y1,x2,y2)
-_FMA = lambda x1,y1,x2: x1*y1+x2
-_FMA2 = lambda x1,y1,x2,y2: x1*y1+x2*y2
+
+@def_function.function
+def _FMA(x1,y1,x2):
+  return x1*y1+x2
+
+@def_function.function
+def _FMS(x1,y1,x2):
+  return x1*y1-x2
+
+@def_function.function
+def _FMSR(x1,y1,x2):
+  return x2-x1*y1
+
+@def_function.function
+def _FMA2(x1,y1,x2,y2):
+  return x1*y1+x2*y2
+
+@def_function.function
+def _FMS2(x1,y1,x2,y2):
+  return x1*y1-x2*y2
 
 # TODO(zongheng): it'd be great to factor out this function and various random
 # SparseTensor gen funcs.
@@ -886,15 +905,16 @@ class MathOpsOverloadTest(test.TestCase):
         np.float64,
         ]
     #with test_util.device(use_gpu=True), self.cached_session():
-    config = self._grappler_all_off_config()
-    with self.session(config=config, use_gpu=True):
-      test_count = 0
-      for sgn in (-1,0,1):
-        for dtype in dtypes:
-          # special case:
-          #for shape in ((1,), (4,), (5,5), (100,14), (3,7,15), (5,2081), (2081, 5), (3,3,3,3), (3,3,3,3,3)):
-          for shape in ((1,), (4,), (5,5), (100,14), (3,3,3,3), (3,3,3,3,3)):
-            for bcast in (0,2,4,6,7,8,11,15,15,15):
+    #config = self._grappler_all_off_config()
+    print("Running the test")
+    test_count = 0
+    for sgn in (-1,0,1):
+      for dtype in dtypes:
+        # special case:
+        #for shape in ((1,), (4,), (5,5), (100,14), (3,7,15), (5,2081), (2081, 5), (3,3,3,3), (3,3,3,3,3)):
+        for shape in ((1,), (4,), (5,5), (100,14), (3,3,3,3), (3,3,3,3,3)):
+          for bcast in (0,2,4,6,7,8,11,15,15,15):
+            with self.session(use_gpu=True):
               print(sgn,  dtype, shape, bcast)
               if bcast!=15:
                 x1 = np.random.normal(size=(1,) if (bcast & 1) else shape).astype(dtype)
@@ -907,23 +927,23 @@ class MathOpsOverloadTest(test.TestCase):
                 x2=self._gen_random_for_broadcast(shape, dtype)
                 y2=self._gen_random_for_broadcast(shape, dtype)
                 print(x1.shape,y1.shape,x2.shape)
+              inx1 = ops.convert_to_tensor(x1)
+              iny1 = ops.convert_to_tensor(y1)
+              inx2 = ops.convert_to_tensor(x2)
+              iny2 = ops.convert_to_tensor(y2)
+              print(inx1,iny1)
+              print(_FMA(inx1,iny1,inx2))
               if sgn>0:
-                self.assertAllClose(x1*y1+x2, gen_math_ops.fused_mul_add(x1,y1,x2))
-                self.assertAllClose(x1*y1+x2*y2, gen_math_ops.fused_mul_add2(x1,y1,x2,y2))
+                self.assertAllClose(x1*y1+x2, _FMA(inx1,iny1,inx2))
+                self.assertAllClose(x1*y1+x2*y2, _FMA2(inx1,iny1,inx2,iny2))
               elif sgn<0:
-                self.assertAllClose(x1*y1-x2, gen_math_ops.fused_mul_sub(x1,y1,x2))
-                self.assertAllClose(x1*y1-x2*y2, gen_math_ops.fused_mul_sub2(x1,y1,x2,y2))
+                self.assertAllClose(x1*y1-x2, _FMS(inx1,iny1,inx2))
+                self.assertAllClose(x1*y1-x2*y2, _FMS2(inx1,iny1,inx2,iny2))
               else:
-                self.assertAllClose(x2-x1*y1, gen_math_ops.fused_mul_sub_rev(x1,y1,x2))
+                self.assertAllClose(x2-x1*y1, _FMSR(inx1,iny1,inx2))
               if np.prod(shape)<100 and not (test_count % 5):
-                inx1 = ops.convert_to_tensor(x1)
-                iny1 = ops.convert_to_tensor(y1)
-                inx2 = ops.convert_to_tensor(x2)
-                iny2 = ops.convert_to_tensor(y2)
                 jacob_t, jacob_n = gradient_checker_v2.compute_gradient(
-                    gen_math_ops.fused_mul_add if sgn>0 \
-                    else (gen_math_ops.fused_mul_sub if sgn<0 \
-                        else gen_math_ops.fused_mul_sub_rev),
+                    _FMA if sgn>0 else (_FMS if sgn<0 else _FMSR),
                     [inx1, iny1, inx2],
                     delta=0.2 if dtype==np.float16 else 0.01)
                 if dtype==np.float16:
@@ -933,8 +953,8 @@ class MathOpsOverloadTest(test.TestCase):
                 else:
                   self.assertAllClose(jacob_t, jacob_n, rtol=1e-7, atol=1e-7)
                 jacob_t, jacob_n = gradient_checker_v2.compute_gradient(
-                    gen_math_ops.fused_mul_add2 if sgn>0 \
-                    else gen_math_ops.fused_mul_sub2, [inx1, iny1, inx2, iny2],
+                    _FMA2 if sgn>0 else _FMS2, 
+                    [inx1, iny1, inx2, iny2],
                     delta=0.2 if dtype==np.float16 else 0.01)
                 if dtype==np.float16:
                   self.assertAllClose(jacob_t, jacob_n, rtol=0.01, atol=0.01)
@@ -1431,7 +1451,7 @@ class FMABenchmark(test.Benchmark):
     config.graph_options.rewrite_options.arithmetic_optimization = off
     config.graph_options.rewrite_options.dependency_optimization = off
     return config
-  def _run(self, op, feed_dict=None, num_iters=500, name=None, **kwargs):
+  def _run(self, op, feed_dict=None, num_iters=20, name=None, **kwargs):
     config = self._grappler_all_off_config()
     with session.Session(config=config) as sess:    
     #with session.Session() as sess:
@@ -1462,44 +1482,72 @@ class FMABenchmark(test.Benchmark):
   def benchmarkFmaShortcut(self):
     os.environ['TF_CPP_MIN_LOG_LEVEL']='1' # to suppress repeat info about detected GPUs
     dtypes = [
-        np.float16,
+        #np.float16,
         np.float32,
-        np.float64,
+        #np.float64,
         ]
+
+
+    size=2000000
+    dims=[4,20,400,8000,160000]
+    def find_shapes(budget, max_len):
+      shapes=[]
+      for y in dims:
+        if y<budget:
+          shapes.append([y,])
+          if max_len>1:
+            ext = find_shapes(budget//y, max_len-1)
+            shapes+=[[y,]+z for z in ext]
+      return shapes
+    all_shapes=find_shapes(size,5)
+    print(len(all_shapes))
+
+
+    roll_count=0
+    tests=[]
+    for x in all_shapes:
+      length=1
+      for y in x:
+        length*=y
+      if length<50000:
+        continue
+      for n in range(2**len(x)):
+        s1=x[:]
+        s2=x[:]
+        s3=x[:]
+        for k in range(len(s1)):
+          if (n>>k) & 1:
+            roll = 1 + (roll_count % 6)
+            if (roll & 1):
+              s1[k]=1
+            if (roll & 2):
+              s2[k]=1
+            if (roll & 4):
+              s3[k]=1
+        tests.append((s1,s2,s3))
+      #print(len(tests))
     n_repeats=500
-    with ops.Graph().as_default():
-      with ops.device("/gpu:0"):
-        for test_reference in (True,False):
-          for test_fma2 in (True,False):
-            for dtype in dtypes:
-              for shape in (1000,100), (100,1000), (5000,20), (20,5000), (80,80,80), (20,20,20,20):
-                for bcast in (15,):#(0,2,6,11,15):
-                  if bcast!=15:
-                    x1 = np.random.normal(size=(1,) if (bcast & 1) else shape).astype(dtype)
-                    y1 = np.random.normal(size=(1,) if (bcast & 2) else shape).astype(dtype)
-                    x2 = np.random.normal(size=(1,) if (bcast & 4) else shape).astype(dtype)
-                    y2 = np.random.normal(size=(1,) if (bcast & 8) else shape).astype(dtype)
-                  else:
-                    shape_x1=[(1 if (n&1) else shape[n]) for n in range(len(shape))]
-                    shape_y1=[(1 if not (n&1) else shape[n]) for n in range(len(shape))]
-                    x1 = np.random.normal(shape_x1).astype(dtype)
-                    y1 = np.random.normal(shape_y1).astype(dtype)
-                    x2 = np.random.normal(shape).astype(dtype)
-                    y2 = np.random.normal(shape).astype(dtype)
+    for test_reference in (False,True):
+        #for test_fma2 in (True,False):
+          for dtype in dtypes:
+            for test in tests:
+              with ops.Graph().as_default():
+                with ops.device("/gpu:0"):
+                  #print(test)
+                  strform='('
+                  strform+='_'.join([str(z) for z in test[0]])
+                  strform+=')('
+                  strform+='_'.join([str(z) for z in test[1]])
+                  strform+=')('
+                  strform+='_'.join([str(z) for z in test[2]])
+                  strform+=')'
+                  x1 = np.random.uniform(test[0]).astype(dtype)
+                  y1 = np.random.uniform(test[1]).astype(dtype)
+                  x2 = np.random.uniform(test[2]).astype(dtype)
                   x1 = ops.convert_to_tensor(x1)
                   y1 = ops.convert_to_tensor(y1)
                   x2 = ops.convert_to_tensor(x2)
-                  y2 = ops.convert_to_tensor(y2)
-                  if test_reference:
-                    if test_fma2:
-                      self._run(self._apply_n_times(_FMA2, n_repeats, x1, y1, x2, y2), name="FMA2_ref_"+str(dtype)+"_"+str(bcast)+"_("+'_'.join([str(x) for x in shape])+")")
-                    else:
-                      self._run(self._apply_n_times(_FMA, n_repeats, x1, y1, x2), name="FMA_ref_"+str(dtype)+"_"+str(bcast)+"_("+'_'.join([str(x) for x in shape])+")")
-                  else:
-                    if test_fma2:
-                      self._run(self._apply_n_times(gen_math_ops.fused_mul_add2, n_repeats, x1, y1, x2, y2), name="FMA2_"+str(dtype)+"_"+str(bcast)+"_("+'_'.join([str(x) for x in shape])+")")
-                    else:
-                      self._run(self._apply_n_times(gen_math_ops.fused_mul_add, n_repeats, x1, y1, x2), name="FMA_"+str(dtype)+"_"+str(bcast)+"_("+'_'.join([str(x) for x in shape])+")")
+                  self._run(self._apply_n_times(_FMA, n_repeats, x1, y1, x2), name="FMA_ref_"+str(dtype)+"_"+strform)
 
 
 if __name__ == "__main__":

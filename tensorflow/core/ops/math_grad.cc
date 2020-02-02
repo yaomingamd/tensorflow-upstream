@@ -24,23 +24,44 @@ namespace tensorflow {
 
 typedef FunctionDefHelper FDH;
 
+template <int T>
 Status FusedMulAddGrad(const AttrSlice& attrs, FunctionDef* g) {
   std::vector<FDH::Node> nodes = {
     {{"sx1"}, "Shape", {"x1"}},
     {{"sx2"}, "Shape", {"x2"}},
     {{"sy1"}, "Shape", {"y1"}},
+    {{"sz"}, "Shape", {"dz"}},
     {{"gx1"}, "Mul", {"dz", "y1"}},  // dz * y2
     {{"gy1"}, "Mul", {"x1", "dz"}},  // x2 * dz
     {{"gx2"}, "Identity", {"dz"}},  // dz 
 
-    {{"rx1", "rx2", "ry1"}, "BroadcastGradientArgs", {"sx1", "sx2", "sy1"}},
+    {{"rx1", "dummy1"}, "BroadcastGradientArgs", {"sx1", "sz"}},
+    {{"ry1", "dummy2"}, "BroadcastGradientArgs", {"sy1", "sz"}},
+    {{"rx2", "dummy3"}, "BroadcastGradientArgs", {"sx2", "sz"}},
     {{"sum_gx1"}, "Sum", {"gx1", "rx1"}},
-    {{"dx1"}, "Reshape", {"sum_gx1", "sx1"}},
-    {{"sum_gy1"}, "Sum", {"gy1", "ry1"}},
-    {{"dy1"}, "Reshape", {"sum_gy1", "sy1"}},
     {{"sum_gx2"}, "Sum", {"gx2", "rx2"}},
-    {{"dx2"}, "Reshape", {"sum_gx2", "sx2"}},
+    {{"sum_gy1"}, "Sum", {"gy1", "ry1"}},
   };
+
+  // Add
+  if(T==0) {
+    nodes.emplace_back(FDH::Node{{"dx1"}, "Reshape", {"sum_gx1", "sx1"}});
+    nodes.emplace_back(FDH::Node{{"dy1"}, "Reshape", {"sum_gy1", "sy1"}});
+    nodes.emplace_back(FDH::Node{{"dx2"}, "Reshape", {"sum_gx2", "sx2"}});
+  } // Sub
+  else if(T==1) {
+    nodes.emplace_back(FDH::Node{{"sum_gx2_neg"}, "Neg", {"sum_gx2"}});
+    nodes.emplace_back(FDH::Node{{"dx1"}, "Reshape", {"sum_gx1", "sx1"}});
+    nodes.emplace_back(FDH::Node{{"dy1"}, "Reshape", {"sum_gy1", "sy1"}});
+    nodes.emplace_back(FDH::Node{{"dx2"}, "Reshape", {"sum_gx2_neg", "sx2"}});
+  }
+  else {
+    nodes.emplace_back(FDH::Node{{"sum_gx1_neg"}, "Neg", {"sum_gx1"}});
+    nodes.emplace_back(FDH::Node{{"sum_gy1_neg"}, "Neg", {"sum_gy1"}});
+    nodes.emplace_back(FDH::Node{{"dx1"}, "Reshape", {"sum_gx1_neg", "sx1"}});
+    nodes.emplace_back(FDH::Node{{"dy1"}, "Reshape", {"sum_gy1_neg", "sy1"}});
+    nodes.emplace_back(FDH::Node{{"dx2"}, "Reshape", {"sum_gx2", "sx2"}});
+  }
 
   // clang-format on
   for (auto& n : nodes) {
@@ -62,20 +83,68 @@ Status FusedMulAddGrad(const AttrSlice& attrs, FunctionDef* g) {
   return Status::OK();
 }
  
-REGISTER_OP_GRADIENT("FusedMulAdd", FusedMulAddGrad);
-/*
+template <int T>
 Status FusedMulAdd2Grad(const AttrSlice& attrs, FunctionDef* g) {
-  // clang-format off
-  return GradForBinaryCwise(g, {
-      {{"gx1"}, "Mul", {"dz", "y1"}},  // dz * y2
-      {{"gy1"}, "Mul", {"x1", "dz"}},  // x2 * dz
-      {{"gx2"}, "Mul", {"dz", "y2"}},  // dz * y2
-      {{"gy2"}, "Mul", {"x2", "dz"}},  // x2 * dz
-  });
+  std::vector<FDH::Node> nodes = {
+    {{"sx1"}, "Shape", {"x1"}},
+    {{"sx2"}, "Shape", {"x2"}},
+    {{"sy1"}, "Shape", {"y1"}},
+    {{"sy2"}, "Shape", {"y2"}},
+    {{"sz"}, "Shape", {"dz"}},
+    {{"gx1"}, "Mul", {"dz", "y1"}},  // dz * y2
+    {{"gy1"}, "Mul", {"x1", "dz"}},  // x2 * dz
+    {{"gx2"}, "Mul", {"dz", "y2"}},  // dz * y2
+    {{"gy2"}, "Mul", {"x2", "dz"}},  // x2 * dz
+
+    {{"rx1", "dummy1"}, "BroadcastGradientArgs", {"sx1", "sz"}},
+    {{"ry1", "dummy2"}, "BroadcastGradientArgs", {"sy1", "sz"}},
+    {{"rx2", "dummy3"}, "BroadcastGradientArgs", {"sx2", "sz"}},
+    {{"rxy", "dummy4"}, "BroadcastGradientArgs", {"sy2", "sz"}},
+    {{"sum_gx1"}, "Sum", {"gx1", "rx1"}},
+    {{"sum_gx2"}, "Sum", {"gx2", "rx2"}},
+    {{"sum_gy1"}, "Sum", {"gy1", "ry1"}},
+    {{"sum_gy2"}, "Sum", {"gy2", "ry2"}},
+    {{"dx1"}, "Reshape", {"sum_gx1", "sx1"}},
+    {{"dy1"}, "Reshape", {"sum_gy1", "sy1"}},
+  };
+
+  // Add
+  if(T==0) {
+    nodes.emplace_back(FDH::Node{{"dx2"}, "Reshape", {"sum_gx2", "sx2"}});
+    nodes.emplace_back(FDH::Node{{"dy2"}, "Reshape", {"sum_gy2", "sy2"}});
+  } // Sub
+  else {
+    nodes.emplace_back(FDH::Node{{"sum_gx2_neg"}, "Neg", {"sum_gx2"}});
+    nodes.emplace_back(FDH::Node{{"sum_gy2_neg"}, "Neg", {"sum_gy2"}});
+    nodes.emplace_back(FDH::Node{{"dx2"}, "Reshape", {"sum_gx2_neg", "sx2"}});
+    nodes.emplace_back(FDH::Node{{"dy2"}, "Reshape", {"sum_gy2_neg", "sy2"}});
+  }
+
   // clang-format on
+  for (auto& n : nodes) {
+    // "BroadcastGradientArgs" doesn't need any attrs.
+    if (n.attr.empty() && n.op != "BroadcastGradientArgs") {
+      n.attr = {{"T", "$T"}};
+    }
+  }
+  *g = FDH::Define(
+      // Arg defs
+      {"x1: T", "y1: T", "x2: T", "y2: T", "dz: T"},
+      // Ret val defs
+      {"dx1: T", "dy1: T", "dx2: T", "dy2: T"},
+      // Attr defs
+      {{"T: {half, float, double}"}},
+      // Nodes
+      nodes);
+
+  return Status::OK();
 }
-REGISTER_OP_GRADIENT("FusedMulAdd2", FusedMulAdd2Grad);
-*/
+
+
+REGISTER_OP_GRADIENT("_FusedMulAdd", FusedMulAddGrad<0>);
+REGISTER_OP_GRADIENT("_FusedMulSub", FusedMulAddGrad<1>);
+REGISTER_OP_GRADIENT("_FusedMulSubRev", FusedMulAddGrad<2>);
+
 // Cwise binary ops
 Status GradForUnaryCwise(FunctionDef* g, std::vector<FDH::Node> nodes) {
   for (auto& n : nodes) {
