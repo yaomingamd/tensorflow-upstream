@@ -18,7 +18,7 @@ limitations under the License.
 #include <vector>
 namespace tensorflow {
 
-#define FMA_TRACE
+//#define FMA_TRACE
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
@@ -213,7 +213,7 @@ class FusedMulAddBase {
       int64 xds[N];
       int64 max_dim = 0;
       int ii = rank-i-1;
-
+      bool null_shape = false;
       // find the largest dimension of all inputs at this index
       for(int j=0; j<N; j++) {
         xds[j] = (scalars[j] || ii>=in_ranks[j])
@@ -224,10 +224,14 @@ class FusedMulAddBase {
 
       for(int j=0; j<N; j++) {
         // make sure dimensions are compatible
-        if(!(xds[j]==1 || xds[j]==max_dim))
+        if(!(xds[j]==0 || xds[j]==1 || xds[j]==max_dim))
           return false;
+        if(xds[j]==0)
+          null_shape=true;
         broadcast_masks[rank-i-1]|=(xds[j]!=1 ? 1 : 0)<<j;
       }
+      if(null_shape)
+        max_dim=0;
       out_shape.AddDim(max_dim);
       out_dims[rank-i-1]=max_dim;
     }
@@ -251,7 +255,7 @@ class FusedMulAddBase {
     }
 #ifdef FMA_TRACE
     printf("%d elements, broadcast %s\n", out_elements, pure_broadcast?"true":"false");
-    for(int i=0; i<6; i++)      
+    for(int i=0; i<rank; i++)      
       printf("out_dim[%d] = %d mask %d\n", i, out_dims[i], (int)broadcast_masks[i]);
 #endif
     // folding dimensions from the highest down
