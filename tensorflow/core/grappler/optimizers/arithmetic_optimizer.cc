@@ -1935,7 +1935,8 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
         <<can_absorb_c<<"\n"<<node->DebugString()<<"\n"<<b->DebugString()
         <<"\n"<<c->DebugString();
     if(can_absorb_b && can_absorb_c) {
-      node->set_op(add ? "_FusedMulAdd2" : "_FusedMulSub2");
+      const char* new_name =  add ? "_FusedMulAdd2" : "_FusedMulSub2";
+      node->set_op(new_name);
       //auto x1 = node->input(0);
       auto y1 = b->input(1);
       auto x2 = node->input(1);
@@ -1946,12 +1947,15 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
       node->add_input(y2);
       b->set_op("Identity");
       c->set_op("Identity");
+      VLOG(1)<<"Fusing into " << new_name << "; " << node->input(0)
+        <<" "<<node->input(1)<<" "<<node->input(2)<<" " << node->input(3);
       AddToOptimizationQueue(node);
       AddToOptimizationQueue(b);
       AddToOptimizationQueue(c);
     }
     else if(can_absorb_b) {
-      node->set_op(add ? "_FusedMulAdd" : "_FusedMulSub");
+      const char* new_name = add ? "_FusedMulAdd" : "_FusedMulSub";
+      node->set_op(new_name);
       //auto x1 = node->input(0); 
       auto y1 = b->input(1);
       auto x2 = node->input(1);
@@ -1959,19 +1963,22 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
       node->set_input(1, y1);
       node->add_input(x2);
       b->set_op("Identity");
-      VLOG(1)<<node->input(0)<<" "<<node->input(1)<<" "<<node->input(2);
+      VLOG(1)<<"Fusing into " << new_name << "; " << node->input(0)
+        <<" "<<node->input(1)<<" "<<node->input(2);
       AddToOptimizationQueue(node);
       AddToOptimizationQueue(b);
     } else if(can_absorb_c) {
-      node->set_op(add ? "_FusedMulAdd" : "_FusedMulSubRev");
+      const char* new_name = add ? "_FusedMulAdd" : "_FusedMulSubRev";
+      node->set_op(new_name);
       auto x1 = c->input(0);
       auto y1 = c->input(1);
       auto x2 = node->input(0);
-      VLOG(1)<<x1<<" "<<y1<<" "<<x2;
       node->add_input(x2);
       node->set_input(0, x1);
       node->set_input(1, y1);
       c->set_op("Identity");
+      VLOG(1)<<"Fusing into " << new_name << "; " << node->input(0)
+        <<" "<<node->input(1)<<" "<<node->input(2);
       AddToOptimizationQueue(node);
       AddToOptimizationQueue(c);
     }
