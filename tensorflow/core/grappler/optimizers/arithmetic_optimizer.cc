@@ -1851,7 +1851,10 @@ class FuseSquaredDiffStage : public ArithmeticOptimizerStage {
 
 // Performs the conversions:
 // Add(Mul(x,y), z) => FusedMulAdd(Identity(x),y,z)
-// Add(Mul(x,y), Mul(z,t)) => FusedMulAdd(Identity(x),y,Identity(z),t)
+// Add(Mul(x,y), Mul(z,t)) => FusedMulAdd2(Identity(x),y,Identity(z),t)
+// Sub(Mul(x,y), z) => FusedMulSub(Identity(x),y,z)
+// Sub(Mul(x,y), Mul(z,t)) => FusedMulSub2(Identity(x),y,Identity(z),t)
+// Sub(x, Mul(y,z)) => FusedMulSubRev(Mul(y,z),x)
 class FuseMulAddStage : public ArithmeticOptimizerStage {
  public:
   explicit FuseMulAddStage(const GraphOptimizerContext& ctx,
@@ -1879,9 +1882,14 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
         (NumNonControlOutputs(*b, *ctx().node_map) == 1));
     bool can_absorb_c = (IsMul(*c) && !IsInPreserveSet(*c) &&
         (NumNonControlOutputs(*c, *ctx().node_map) == 1));
-    if(GetDataTypeFromAttr(*b, "T") != dtype
-      ||GetDataTypeFromAttr(*c, "T") != dtype) {
-      VLOG(1)<<"Input dtype mismatch"; // apparently this can happen
+
+    // TODO: can any of these mismatches happen?
+    // TODO: do I need to insert manual cast ops whenever I see a DT_INVALID?
+    auto type_b = GetDataTypeFromAttr(*b, "T");
+    auto type_c = GetDataTypeFromAttr(*c, "T");
+    if((type_b != DT_INVALID && type_b != dtype)
+	 || (type_c != DT_INVALID && type_c != dtype)) {
+      VLOG(1)<<"Input dtype mismatch";
       return Status::OK();
     }
 
@@ -1891,19 +1899,21 @@ class FuseMulAddStage : public ArithmeticOptimizerStage {
       TF_RETURN_IF_ERROR(GetInputNode(b->input(1), &b1));
       auto dtype_b0 = GetDataTypeFromAttr(*b0, "T");
       auto dtype_b1 = GetDataTypeFromAttr(*b1, "T");
-      if(dtype_b0!=dtype || dtype_b1!=dtype) {
-        VLOG(1)<<"Input 1 inputs dtype mismatch";
+      if((dtype_b0 != DT_INVALID && dtype_b0!=dtype)
+	 || (dtype_b1 != DT_INVALID && dtype_b1!=dtype)) {
+        VLOG(1)<<"Input 1 inputs dtype mismatch"<<" "<<dtype<<" "<<dtype_b0<<" "<<dtype_b1;
         can_absorb_b = false;
       }
     }
     if(can_absorb_c) {
-      NodeDef *b0, *b1;
-      TF_RETURN_IF_ERROR(GetInputNode(c->input(0), &b0));
-      TF_RETURN_IF_ERROR(GetInputNode(c->input(1), &b1));
-      auto dtype_b0 = GetDataTypeFromAttr(*b0, "T");
-      auto dtype_b1 = GetDataTypeFromAttr(*b1, "T");
-      if(dtype_b0!=dtype || dtype_b1!=dtype) {
-        VLOG(1)<<"Input 2 inputs dtype mismatch";
+      NodeDef *c0, *c1;
+      TF_RETURN_IF_ERROR(GetInputNode(c->input(0), &c0));
+      TF_RETURN_IF_ERROR(GetInputNode(c->input(1), &c1));
+      auto dtype_c0 = GetDataTypeFromAttr(*c0, "T");
+      auto dtype_c1 = GetDataTypeFromAttr(*c1, "T");
+      if((dtype_c0 != DT_INVALID && dtype_c0!=dtype)
+	 || (dtype_c0 != DT_INVALID && dtype_c1!=dtype)) {
+        VLOG(1)<<"Input 2 inputs dtype mismatch"<<" "<<dtype<<" "<<dtype_c0<<" "<<dtype_c1;
         can_absorb_c = false;
       }
     }
