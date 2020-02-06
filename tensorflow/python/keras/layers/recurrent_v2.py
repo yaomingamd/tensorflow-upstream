@@ -1110,6 +1110,8 @@ class LSTM(recurrent.DropoutRNNCellMixin, recurrent.LSTM):
 
     # LSTM does not support constants. Ignore it during process.
     inputs, initial_state, _ = self._process_inputs(inputs, initial_state, None)
+    print("call function")
+    print(inputs, initial_state)
 
     if isinstance(mask, list):
       mask = mask[0]
@@ -1412,6 +1414,7 @@ def cudnn_lstm(inputs, init_h, init_c, kernel, recurrent_kernel, bias, mask,
     sequence_lengths = calculate_sequence_by_mask(mask, time_major)
 
   if sequence_lengths is not None:
+    print(init_h)
     if go_backwards:
       # Three reversals are required. E.g.,
       # normal input = [1, 2, 3, 0, 0]  # where 0 need to be masked

@@ -15,6 +15,7 @@ limitations under the License.
 #define EIGEN_USE_THREADS
 
 #include <stddef.h>
+
 #include <atomic>
 #include <cmath>
 #include <functional>
@@ -22,7 +23,6 @@ limitations under the License.
 #include <string>
 #include <unordered_set>
 
-#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/device_base.h"
 #include "tensorflow/core/framework/kernel_def_builder.h"
 #include "tensorflow/core/framework/op.h"
@@ -45,6 +45,7 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/use_cudnn.h"
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "tensorflow/core/platform/stream_executor.h"
@@ -578,8 +579,11 @@ Status ExtractForwardInput(OpKernelContext* context,
     model_shapes->max_seq_length = (*input)->dim_size(0);
     model_shapes->batch_size = (*input)->dim_size(1);
   } else {
+    std::cout << "time_major is false" << std::endl;
     model_shapes->max_seq_length = (*input)->dim_size(1);
     model_shapes->batch_size = (*input)->dim_size(0);
+    std::cout << "max seq length" << model_shapes->max_seq_length << std::endl;
+    std::cout << "batch size" << model_shapes->max_seq_length << std::endl;
   }
   model_shapes->input_size = (*input)->dim_size(2);
   model_shapes->input_shape = (*input)->shape();
@@ -691,6 +695,7 @@ Status CreateForwardAndBackwardIODescriptors(
     std::unique_ptr<RnnStateTensorDescriptor>* c_state_desc,
     std::unique_ptr<RnnSequenceTensorDescriptor>* output_desc,
     const absl::Span<const int>& seq_lengths, bool time_major) {
+  std::cout << "in creating descriptors" << std::endl;
   StreamExecutor* executor = context->op_device_context()->stream()->parent();
   se::dnn::DataType data_type = ToDataType<T>::value;
 
@@ -701,6 +706,7 @@ Status CreateForwardAndBackwardIODescriptors(
 
   DCHECK_EQ(input_shape.dims(), 3);
   if (seq_lengths.data() != nullptr) {
+    std::cout << "seq length exists" << std::endl;
     if (time_major) {
       auto input_desc_s = executor->createRnnSequenceTensorDescriptor(
           input_shape.dim_size(0), input_shape.dim_size(1),
@@ -715,6 +721,7 @@ Status CreateForwardAndBackwardIODescriptors(
       *input_desc = input_desc_s.ConsumeValueOrDie();
     }
   } else {
+    std::cout << "seq length does not exists" << std::endl;
     auto input_desc_s = executor->createRnnSequenceTensorDescriptor(
         input_shape.dim_size(0), input_shape.dim_size(1),
         input_shape.dim_size(2), data_type);
