@@ -34,11 +34,15 @@ class ArithmeticOptimizer : public GraphOptimizer {
  public:
   ArithmeticOptimizer()
       : opt_level_(RewriterConfig::ON),
-        options_(ArithmeticOptimizerOptions::Default(RewriterConfig::ON)) {}
+        options_(ArithmeticOptimizerOptions::Default(RewriterConfig::ON)),
+        xla_on_(true) {}
 
-  explicit ArithmeticOptimizer(RewriterConfig::Toggle opt_level)
+  explicit ArithmeticOptimizer(RewriterConfig::Toggle opt_level, bool xla_on)
       : opt_level_(opt_level),
-        options_(ArithmeticOptimizerOptions::Default(opt_level)) {}
+        options_(ArithmeticOptimizerOptions::Default(opt_level)),
+        xla_on_(xla_on) {
+    std::cout << "xla is " << xla_on << std::endl;
+  }
 
   ~ArithmeticOptimizer() override {}
 
@@ -129,6 +133,7 @@ class ArithmeticOptimizer : public GraphOptimizer {
 
   RewriterConfig::Toggle opt_level_;
   ArithmeticOptimizerOptions options_;
+  bool xla_on_;
 
   bool fetch_nodes_known_ = false;
   std::unordered_set<string> nodes_to_preserve_;

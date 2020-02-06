@@ -3740,7 +3740,7 @@ Status ArithmeticOptimizer::SimplifyArithmeticOps(bool can_use_shapes) {
     pipeline.AddStage<RemoveStackStridedSliceSameAxis>(ctx, ctx_ext);
   if (options_.fuse_squared_diff)
     pipeline.AddStage<FuseSquaredDiffStage>(ctx, ctx_ext);
-  if (options_.fuse_mul_add)
+  if ((!xla_on_) && (options_.fuse_mul_add))
     pipeline.AddStage<FuseMulAddStage>(ctx, ctx_ext);
 
   VLOG(1) << "Run " << pipeline.NumStages() << " arithmetic optimizer stages: "

@@ -129,6 +129,27 @@ bool AutoMixedPrecisionEnabled(RewriterConfig::Toggle opt_level) {
   return false;
 }
 
+bool IsXlaJitOn(
+    const OptimizerOptions::GlobalJitLevel& jit_level_in_session_opts) {
+  xla_config_registry::XlaGlobalJitLevel xla_global_jit_level =
+      xla_config_registry::GetGlobalJitLevel(jit_level_in_session_opts);
+  bool is_on = (xla_global_jit_level.single_gpu == OptimizerOptions::ON_1 ||
+                xla_global_jit_level.single_gpu == OptimizerOptions::ON_2) ||
+               (xla_global_jit_level.general == OptimizerOptions::ON_1 ||
+                xla_global_jit_level.general == OptimizerOptions::ON_2);
+  if (xla_global_jit_level.single_gpu == OptimizerOptions::DEFAULT) {
+    std::cout << "default optimization level" << std::endl;
+  }
+  if (xla_global_jit_level.single_gpu == OptimizerOptions::OFF) {
+    std::cout << "single off optimization level" << std::endl;
+  }
+  if (xla_global_jit_level.general == OptimizerOptions::OFF) {
+    std::cout << "general off optimization level" << std::endl;
+  }
+
+  return is_on;
+}
+
 bool IsXlaGlobalJitOn(
     const OptimizerOptions::GlobalJitLevel& jit_level_in_session_opts) {
   xla_config_registry::XlaGlobalJitLevel xla_global_jit_level =
@@ -184,7 +205,13 @@ std::unique_ptr<GraphOptimizer> MetaOptimizer::MakeNewOptimizer(
   MK_OPT("auto_mixed_precision",
          new AutoMixedPrecision(cfg_.auto_mixed_precision()));
   MK_OPT("memory", new MemoryOptimizer(RewriterConfig::MANUAL));
-  MK_OPT("arithmetic", new ArithmeticOptimizer(cfg_.arithmetic_optimization()));
+
+  auto global_jit_level =
+      config_proto_.graph_options().optimizer_options().global_jit_level();
+  MK_OPT("arithmetic",
+         new ArithmeticOptimizer(cfg_.arithmetic_optimization(),
+                                 IsXlaJitOn(global_jit_level)));
+
   MK_OPT("autoparallel", new AutoParallel(cfg_.auto_parallel().num_replicas()));
   MK_OPT("loop", new LoopOptimizer(cfg_.loop_optimization(), cpu_device_));
   MK_OPT("dependency", new DependencyOptimizer(cfg_.dependency_optimization()));
@@ -242,8 +269,10 @@ Status MetaOptimizer::InitializeOptimizers(
     optimizers->push_back(MakeUnique<PinToHostOptimizer>());
   }
   if (cfg_.arithmetic_optimization() != RewriterConfig::OFF) {
-    optimizers->push_back(
-        MakeUnique<ArithmeticOptimizer>(cfg_.arithmetic_optimization()));
+    auto global_jit_level =
+        config_proto_.graph_options().optimizer_options().global_jit_level();
+    optimizers->push_back(MakeUnique<ArithmeticOptimizer>(
+        cfg_.arithmetic_optimization(), IsXlaJitOn(global_jit_level)));
   }
   if (cfg_.layout_optimizer() != RewriterConfig::OFF) {
     optimizers->push_back(MakeUnique<GenericLayoutOptimizer>());
