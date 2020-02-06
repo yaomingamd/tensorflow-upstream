@@ -3,6 +3,8 @@
 FROM ubuntu:xenial
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
+ENV ROCM_TOOLKIT_PATH=/opt/rocm-3.1.0
+
 ARG DEB_ROCM_REPO=http://repo.radeon.com/rocm/apt/2.6/
 ARG ROCM_PATH=${ROCM_TOOLKIT_PATH}
 
