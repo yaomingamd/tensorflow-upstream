@@ -144,6 +144,8 @@ Status FusedMulAdd2Grad(const AttrSlice& attrs, FunctionDef* g) {
 REGISTER_OP_GRADIENT("_FusedMulAdd", FusedMulAddGrad<0>);
 REGISTER_OP_GRADIENT("_FusedMulSub", FusedMulAddGrad<1>);
 REGISTER_OP_GRADIENT("_FusedMulSubRev", FusedMulAddGrad<2>);
+REGISTER_OP_GRADIENT("_FusedMulAdd2", FusedMulAdd2Grad<0>);
+REGISTER_OP_GRADIENT("_FusedMulSub2", FusedMulAdd2Grad<1>);
 
 // Cwise binary ops
 Status GradForUnaryCwise(FunctionDef* g, std::vector<FDH::Node> nodes) {
