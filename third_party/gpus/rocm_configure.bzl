@@ -822,7 +822,7 @@ def _create_local_rocm_repository(repository_ctx):
             "%{cpu_compiler}": str(cc),
             "%{hipcc_path}": rocm_config.rocm_toolkit_path + "/bin/hipcc",
             "%{hipcc_env}": _hipcc_env(repository_ctx),
-            "%{hipcc_is_hipclang}": _hipcc_is_hipclang(repository_ctx),
+            "%{hipcc_is_hipclang}": _hipcc_is_hipclang(repository_ctx,rocm_config),
             "%{rocr_runtime_path}": rocm_config.rocm_toolkit_path + "/lib",
             "%{rocr_runtime_library}": "hsa-runtime64",
             "%{hip_runtime_path}": rocm_config.rocm_toolkit_path + "/hip/lib",
