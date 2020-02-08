@@ -3664,7 +3664,7 @@ bool MIOpenSupport::DoPoolBackward(
   DeviceMemory<uint8> workspace;
   size_t workspace_size_in_bytes = 0;
   auto status = wrap::miopenPoolingGetWorkSpaceSizeV2(
-      pooling_desc.handle(), dest_desc.handle(), &workspace_size_in_bytes);
+      pooling_desc.handle(), src_desc.handle(), &workspace_size_in_bytes);
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR)
@@ -3685,19 +3685,20 @@ bool MIOpenSupport::DoPoolBackward(
   }
 
   DeviceMemory<uint8> dest2;  // duplicated dest from forward:
-  int dest2_size = 0;
+  int64 dest2_size = 0;
 
   // miopen requires the strides and dims to be ordered as BDYX.
   std::vector<int64> dims64 =
-      input_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
-
+      output_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
   // miopen does not use strides and must have 4D tensor.
-  std::vector<int> dims(4);
+  std::vector<int> dims(pooling_dimensions.ndims() + 2);
 
   std::transform(dims64.cbegin(), dims64.cend(), dims.begin(),
                  &CheckedNarrowing<int64, int>);
 
-  dest2_size = dims[0] * dims[1] * dims[2] * dims[3] * sizeof(float);
+  dest2_size = sizeof(float);
+  for(auto& x: dims)
+     dest2_size *= x;
 
   if (dest2_size > 0) {
     assert(workspace_allocator);
@@ -3710,7 +3711,7 @@ bool MIOpenSupport::DoPoolBackward(
     LOG(ERROR) << "Failed to calcuate tensor size to chain forward and "
                   "backward pooling";
   }
-/*
+
   status = wrap::miopenPoolingForward(
       miopen.handle(), pooling_desc.handle(), &alpha, src_desc.handle(),
       input_data.opaque(), &beta, dest_desc.handle(), dest2.opaque(), true,
@@ -3722,10 +3723,10 @@ bool MIOpenSupport::DoPoolBackward(
         << ToString(status);
     return false;
   }
-*/
+
   status = wrap::miopenPoolingBackward(
       miopen.handle(), pooling_desc.handle(), &alpha, dest_desc.handle(),
-      output_data.opaque(), dest_desc.handle(), input_diff_data.opaque(),
+      dest2.opaque(), dest_desc.handle(), input_diff_data.opaque(),
       src_desc.handle(), input_data.opaque(), &beta, src_desc.handle(),
       output_diff_data->opaque(), workspace.opaque());
 
@@ -3760,7 +3761,7 @@ bool MIOpenSupport::DoPoolBackward(
   DeviceMemory<uint8> workspace;
   size_t workspace_size_in_bytes = 0;
   auto status = wrap::miopenPoolingGetWorkSpaceSizeV2(
-      pooling_desc.handle(), dest_desc.handle(), &workspace_size_in_bytes);
+      pooling_desc.handle(), src_desc.handle(), &workspace_size_in_bytes);
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR)
@@ -3785,7 +3786,7 @@ bool MIOpenSupport::DoPoolBackward(
 
   // miopen requires the strides and dims to be ordered as BDYX.
   std::vector<int64> dims64 =
-      output_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
+      input_dimensions.full_dims(dnn::DataLayout::kBatchDepthYX);
 
   // miopen does not use strides and must have 4D tensor.
   std::vector<int> dims(4);
