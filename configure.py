@@ -50,7 +50,7 @@ _TF_WORKSPACE_ROOT = ''
 _TF_BAZELRC = ''
 _TF_CURRENT_BAZEL_VERSION = None
 _TF_MIN_BAZEL_VERSION = '0.24.1'
-_TF_MAX_BAZEL_VERSION = '0.29.1'
+_TF_MAX_BAZEL_VERSION = '0.26.1'
 
 NCCL_LIB_PATHS = [
     'lib64/', 'lib/powerpc64le-linux-gnu/', 'lib/x86_64-linux-gnu/', ''
@@ -107,7 +107,6 @@ def get_input(question):
 
 def symlink_force(target, link_name):
   """Force symlink, equivalent of 'ln -sf'.
-
   Args:
     target: items to link to.
     link_name: name of the link.
@@ -124,7 +123,6 @@ def symlink_force(target, link_name):
 
 def sed_in_place(filename, old, new):
   """Replace old string with new string in file.
-
   Args:
     filename: string for filename.
     old: string to replace.
@@ -271,7 +269,6 @@ def reset_tf_configure_bazelrc():
 
 def cleanup_makefile():
   """Delete any leftover BUILD files from the Makefile build.
-
   These files could interfere with Bazel parsing.
   """
   makefile_download_dir = os.path.join(_TF_WORKSPACE_ROOT, 'tensorflow',
@@ -291,10 +288,8 @@ def get_var(environ_cp,
             yes_reply=None,
             no_reply=None):
   """Get boolean input from user.
-
   If var_name is not set in env, ask user to enable query_item or not. If the
   response is empty, use the default.
-
   Args:
     environ_cp: copy of the os.environ.
     var_name: string for name of environment variable, e.g. "TF_NEED_CUDA".
@@ -304,10 +299,8 @@ def get_var(environ_cp,
     question: optional string for how to ask for user input.
     yes_reply: optional string for reply when feature is enabled.
     no_reply: optional string for reply when feature is disabled.
-
   Returns:
     boolean value of the variable.
-
   Raises:
     UserInputError: if an environment variable is set, but it cannot be
       interpreted as a boolean indicator, assume that the user has made a
@@ -374,10 +367,8 @@ def set_build_var(environ_cp,
                   enabled_by_default,
                   bazel_config_name=None):
   """Set if query_item will be enabled for the build.
-
   Ask user if query_item will be enabled. Default is used if no input is given.
   Set subprocess environment variable and write to .bazelrc if enabled.
-
   Args:
     environ_cp: copy of the os.environ.
     var_name: string for name of environment variable, e.g. "TF_NEED_CUDA".
@@ -410,10 +401,8 @@ def set_action_env_var(environ_cp,
                        no_reply=None,
                        bazel_config_name=None):
   """Set boolean action_env variable.
-
   Ask user if query_item will be enabled. Default is used if no input is given.
   Set environment variable and write to .bazelrc.
-
   Args:
     environ_cp: copy of the os.environ.
     var_name: string for name of environment variable, e.g. "TF_NEED_CUDA".
@@ -438,13 +427,10 @@ def set_action_env_var(environ_cp,
 
 def convert_version_to_int(version):
   """Convert a version number to a integer that can be used to compare.
-
   Version strings of the form X.YZ and X.Y.Z-xxxxx are supported. The
   'xxxxx' part, for instance 'homebrew' on OS/X, is ignored.
-
   Args:
     version: a version to be converted
-
   Returns:
     An integer if converted successfully, otherwise return None.
   """
@@ -463,11 +449,9 @@ def convert_version_to_int(version):
 
 def check_bazel_version(min_version, max_version):
   """Check installed bazel version is between min_version and max_version.
-
   Args:
     min_version: string for minimum bazel version (must exist!).
     max_version: string for maximum bazel version (must exist!).
-
   Returns:
     The bazel version detected.
   """
@@ -510,9 +494,7 @@ def check_bazel_version(min_version, max_version):
 
 def set_cc_opt_flags(environ_cp):
   """Set up architecture-dependent optimization flags.
-
   Also append CC optimization flags to bazel.rc..
-
   Args:
     environ_cp: copy of the os.environ.
   """
@@ -532,13 +514,12 @@ def set_cc_opt_flags(environ_cp):
     write_to_bazelrc('build:opt --copt=%s' % opt)
   # It should be safe on the same build host.
   if not is_ppc64le() and not is_windows():
-    write_to_bazelrc('build:opt --host_copt=-march=native')
+    write_to_bazelrc('build:opt --host_copt=-march=haswell')
   write_to_bazelrc('build:opt --define with_default_optimizations=true')
 
 
 def set_tf_cuda_clang(environ_cp):
   """set TF_CUDA_CLANG action_env.
-
   Args:
     environ_cp: copy of the os.environ.
   """
@@ -575,16 +556,13 @@ def set_tf_download_clang(environ_cp):
 def get_from_env_or_user_or_default(environ_cp, var_name, ask_for_var,
                                     var_default):
   """Get var_name either from env, or user or default.
-
   If var_name has been set as environment variable, use the preset value, else
   ask for user input. If no input is provided, the default is used.
-
   Args:
     environ_cp: copy of the os.environ.
     var_name: string for name of environment variable, e.g. "TF_NEED_CUDA".
     ask_for_var: string for how to ask for user input.
     var_default: default value string.
-
   Returns:
     string value for var_name
   """
@@ -629,11 +607,9 @@ def prompt_loop_or_load_from_env(environ_cp,
                                  suppress_default_error=False,
                                  n_ask_attempts=_DEFAULT_PROMPT_ASK_ATTEMPTS):
   """Loop over user prompts for an ENV param until receiving a valid response.
-
   For the env param var_name, read from the environment or verify user input
   until receiving valid input. When done, set var_name in the environ_cp to its
   new value.
-
   Args:
     environ_cp: (Dict) copy of the os.environ.
     var_name: (String) string for name of environment variable, e.g. "TF_MYVAR".
@@ -649,10 +625,8 @@ def prompt_loop_or_load_from_env(environ_cp,
       one from the check_success function.
     n_ask_attempts: (Integer) Number of times to query for valid input before
       raising an error and quitting.
-
   Returns:
     [String] The value of var_name after querying for input.
-
   Raises:
     UserInputError: if a query has been attempted n_ask_attempts times without
       success, assume that the user has made a scripting error, and will
@@ -845,17 +819,14 @@ def set_gcc_host_compiler_path(environ_cp):
 
 def reformat_version_sequence(version_str, sequence_count):
   """Reformat the version string to have the given number of sequences.
-
   For example:
   Given (7, 2) -> 7.0
         (7.0.1, 2) -> 7.0
         (5, 1) -> 5
         (5.0.3.2, 1) -> 5
-
   Args:
       version_str: String, the version string.
       sequence_count: int, an integer.
-
   Returns:
       string, reformatted version string.
   """
@@ -966,10 +937,8 @@ def set_tf_nccl_version(environ_cp):
 
 def get_native_cuda_compute_capabilities(environ_cp):
   """Get native cuda compute capabilities.
-
   Args:
     environ_cp: copy of the os.environ.
-
   Returns:
     string of native cuda compute capabilities, separated by comma.
   """
@@ -1145,6 +1114,78 @@ def set_trisycl_include_dir(environ_cp):
   write_action_env_to_bazelrc('TRISYCL_INCLUDE_DIR', trisycl_include_dir)
 
 
+def set_mpi_home(environ_cp):
+  """Set MPI_HOME."""
+
+  default_mpi_home = which('mpirun') or which('mpiexec') or ''
+  default_mpi_home = os.path.dirname(os.path.dirname(default_mpi_home))
+
+  def valid_mpi_path(mpi_home):
+    exists = (
+        os.path.exists(os.path.join(mpi_home, 'include')) and
+        (os.path.exists(os.path.join(mpi_home, 'lib')) or
+         os.path.exists(os.path.join(mpi_home, 'lib64')) or
+         os.path.exists(os.path.join(mpi_home, 'lib32'))))
+    if not exists:
+      print(
+          'Invalid path to the MPI Toolkit. %s or %s or %s or %s cannot be found'
+          % (os.path.join(mpi_home, 'include'),
+             os.path.exists(os.path.join(mpi_home, 'lib')),
+             os.path.exists(os.path.join(mpi_home, 'lib64')),
+             os.path.exists(os.path.join(mpi_home, 'lib32'))))
+    return exists
+
+  _ = prompt_loop_or_load_from_env(
+      environ_cp,
+      var_name='MPI_HOME',
+      var_default=default_mpi_home,
+      ask_for_var='Please specify the MPI toolkit folder.',
+      check_success=valid_mpi_path,
+      error_msg='',
+      suppress_default_error=True)
+
+
+def set_other_mpi_vars(environ_cp):
+  """Set other MPI related variables."""
+  # Link the MPI header files
+  mpi_home = environ_cp.get('MPI_HOME')
+  symlink_force('%s/include/mpi.h' % mpi_home, 'third_party/mpi/mpi.h')
+
+  # Determine if we use OpenMPI or MVAPICH, these require different header files
+  # to be included here to make bazel dependency checker happy
+  if os.path.exists(os.path.join(mpi_home, 'include/mpi_portable_platform.h')):
+    symlink_force(
+        os.path.join(mpi_home, 'include/mpi_portable_platform.h'),
+        'third_party/mpi/mpi_portable_platform.h')
+    # TODO(gunan): avoid editing files in configure
+    sed_in_place('third_party/mpi/mpi.bzl', 'MPI_LIB_IS_OPENMPI = False',
+                 'MPI_LIB_IS_OPENMPI = True')
+  else:
+    # MVAPICH / MPICH
+    symlink_force(
+        os.path.join(mpi_home, 'include/mpio.h'), 'third_party/mpi/mpio.h')
+    symlink_force(
+        os.path.join(mpi_home, 'include/mpicxx.h'), 'third_party/mpi/mpicxx.h')
+    # TODO(gunan): avoid editing files in configure
+    sed_in_place('third_party/mpi/mpi.bzl', 'MPI_LIB_IS_OPENMPI = True',
+                 'MPI_LIB_IS_OPENMPI = False')
+
+  if os.path.exists(os.path.join(mpi_home, 'lib/libmpi.so')):
+    symlink_force(
+        os.path.join(mpi_home, 'lib/libmpi.so'), 'third_party/mpi/libmpi.so')
+  elif os.path.exists(os.path.join(mpi_home, 'lib64/libmpi.so')):
+    symlink_force(
+        os.path.join(mpi_home, 'lib64/libmpi.so'), 'third_party/mpi/libmpi.so')
+  elif os.path.exists(os.path.join(mpi_home, 'lib32/libmpi.so')):
+    symlink_force(
+        os.path.join(mpi_home, 'lib32/libmpi.so'), 'third_party/mpi/libmpi.so')
+
+  else:
+    raise ValueError(
+        'Cannot find the MPI library file in %s/lib or %s/lib64 or %s/lib32' %
+        (mpi_home, mpi_home, mpi_home))
+
+
 def system_specific_test_config(env):
   """Add default build and test flags required for TF tests to bazelrc."""
   write_to_bazelrc('test --flaky_test_attempts=3')
@@ -1228,7 +1269,6 @@ def config_info_line(name, help_text):
 
 def configure_ios():
   """Configures TensorFlow for iOS builds.
-
   This function will only be executed if `is_macos()` is true.
   """
   if not is_macos():
@@ -1384,7 +1424,7 @@ def main():
                                 environ_cp.get('LD_LIBRARY_PATH'))
 
   if (environ_cp.get('TF_NEED_ROCM') == '1' and environ_cp.get('ROCM_TOOLKIT_PATH')):
-    write_action_env_to_bazelrc('ROCM_TOOLKIT_PATH',environ_cp.get('ROCM_TOOLKIT_PATH'))
+          write_action_env_to_bazelrc('ROCM_TOOLKIT_PATH',environ_cp.get('ROCM_TOOLKIT_PATH'))
 
   environ_cp['TF_NEED_CUDA'] = str(
       int(get_var(environ_cp, 'TF_NEED_CUDA', 'CUDA', False)))
@@ -1480,10 +1520,18 @@ def main():
     raise UserInputError('SYCL / CUDA / ROCm are mututally exclusive. '
                          'At most 1 GPU platform can be configured.')
 
+  set_build_var(environ_cp, 'TF_NEED_MPI', 'MPI', 'with_mpi_support', False)
+  if environ_cp.get('TF_NEED_MPI') == '1':
+    set_mpi_home(environ_cp)
+    set_other_mpi_vars(environ_cp)
+
   set_cc_opt_flags(environ_cp)
   set_system_libs_flag(environ_cp)
   if is_windows():
     set_windows_build_flags(environ_cp)
+
+  # Add a config option to build TensorFlow 2.0 API.
+  write_to_bazelrc('build:v2 --define=tf_api_version=2')
 
   if get_var(environ_cp, 'TF_SET_ANDROID_WORKSPACE', 'android workspace', False,
              ('Would you like to interactively configure ./WORKSPACE for '
@@ -1503,6 +1551,8 @@ def main():
         'details.')
   config_info_line('mkl', 'Build with MKL support.')
   config_info_line('monolithic', 'Config for mostly static monolithic build.')
+  config_info_line('gdr', 'Build with GDR support.')
+  config_info_line('verbs', 'Build with libverbs support.')
   config_info_line('ngraph', 'Build with Intel nGraph support.')
   config_info_line('numa', 'Build with NUMA support.')
   config_info_line(
@@ -1514,6 +1564,8 @@ def main():
   config_info_line('noaws', 'Disable AWS S3 filesystem support.')
   config_info_line('nogcp', 'Disable GCP support.')
   config_info_line('nohdfs', 'Disable HDFS support.')
+  config_info_line('noignite', 'Disable Apache Ignite support.')
+  config_info_line('nokafka', 'Disable Apache Kafka support.')
   config_info_line('nonccl', 'Disable NVIDIA NCCL support.')
 
 
