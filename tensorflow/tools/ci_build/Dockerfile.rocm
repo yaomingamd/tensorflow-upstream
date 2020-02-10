@@ -82,6 +82,7 @@ ENV OPENCL_ROOT=$ROCM_PATH/opencl
 ENV PATH="$HCC_HOME/bin:$HIP_PATH/bin:${PATH}"
 ENV PATH="$ROCM_PATH/bin:${PATH}"
 ENV PATH="$OPENCL_ROOT/bin:${PATH}"
+ENV ROCM_TOOLKIT_PATH=/opt/rocm-3.1.0
 
 # Workaround, explicitly add symbolic link to /opt/rocm
 RUN bash -c 'ln -s ${ROCM_PATH} /opt/rocm'
