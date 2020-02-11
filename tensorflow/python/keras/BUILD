@@ -1734,6 +1734,7 @@ tf_py_test(
 tf_py_test(
     name = "backend_test",
     size = "medium",
+    tags = ["no_rocm"],
     srcs = ["backend_test.py"],
     additional_deps = [
         ":keras",
