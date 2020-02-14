@@ -167,6 +167,12 @@ def _rocm_include_path(repository_ctx, rocm_config):
     inc_dirs.append("/opt/rocm/include/hip/hcc_detail")
     inc_dirs.append("/opt/rocm/hip/include")
 
+    # Add HIP-Clang headers
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/8.0/include")
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/9.0.0/include")
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/10.0.0/include")
+    inc_dirs.append("/opt/rocm/llvm/lib/clang/11.0.0/include")
+
     # Add rocrand and hiprand headers
     inc_dirs.append("/opt/rocm/rocrand/include")
     inc_dirs.append("/opt/rocm/hiprand/include")
@@ -179,6 +185,9 @@ def _rocm_include_path(repository_ctx, rocm_config):
 
     # Add MIOpen headers
     inc_dirs.append("/opt/rocm/miopen/include")
+
+    # Add RCCL headers
+    inc_dirs.append("/opt/rocm/rccl/include")
 
     # Add hcc headers
     inc_dirs.append("/opt/rocm/hcc/include")
@@ -197,12 +206,16 @@ def _rocm_include_path(repository_ctx, rocm_config):
     inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/10.0.0/include/")
     inc_dirs.append("/opt/rocm/hcc/lib/clang/10.0.0/include")
 
+    # Support hcc based off clang 11.0.0, included in ROCm3.1
+    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/11.0.0/include/")
+    inc_dirs.append("/opt/rocm/hcc/lib/clang/11.0.0/include")
+
     inc_entries = []
     for inc_dir in inc_dirs:
         inc_entries.append("  cxx_builtin_include_directory: \"%s\"" % inc_dir)
     return "\n".join(inc_entries)
 
-def _enable_rocm(repository_ctx):
+def enable_rocm(repository_ctx):
     if "TF_NEED_ROCM" in repository_ctx.os.environ:
         enable_rocm = repository_ctx.os.environ["TF_NEED_ROCM"].strip()
         return enable_rocm == "1"
@@ -401,6 +414,12 @@ def _find_libs(repository_ctx, rocm_config):
             cpu_value,
             rocm_config.rocm_toolkit_path + "/miopen",
         ),
+        "rccl": _find_rocm_lib(
+            "rccl",
+            repository_ctx,
+            cpu_value,
+            rocm_config.rocm_toolkit_path + "/rccl",
+        ),
     }
 
 def _get_rocm_config(repository_ctx):
@@ -483,6 +502,7 @@ def _create_dummy_repository(repository_ctx):
             "%{hip_lib}": _lib_name("hip", cpu_value),
             "%{rocblas_lib}": _lib_name("rocblas", cpu_value),
             "%{miopen_lib}": _lib_name("miopen", cpu_value),
+            "%{rccl_lib}": _lib_name("rccl", cpu_value),
             "%{rocfft_lib}": _lib_name("rocfft", cpu_value),
             "%{hiprand_lib}": _lib_name("hiprand", cpu_value),
             "%{rocm_include_genrules}": "",
@@ -670,6 +690,12 @@ def _create_local_rocm_repository(repository_ctx):
         "rocm/include/miopen",
         "miopen-include",
     ))
+    genrules.append(_symlink_genrule_for_dir(
+        repository_ctx,
+        rocm_toolkit_path + "/rccl/include",
+        "rocm/include/rccl",
+        "rccl-include",
+    ))
 
     rocm_libs = _find_libs(repository_ctx, rocm_config)
     rocm_lib_src = []
@@ -712,11 +738,13 @@ def _create_local_rocm_repository(repository_ctx):
             "%{rocfft_lib}": rocm_libs["rocfft"].file_name,
             "%{hiprand_lib}": rocm_libs["hiprand"].file_name,
             "%{miopen_lib}": rocm_libs["miopen"].file_name,
+            "%{rccl_lib}": rocm_libs["rccl"].file_name,
             "%{rocm_include_genrules}": "\n".join(genrules),
             "%{rocm_headers}": ('":rocm-include",\n' +
                                 '":rocfft-include",\n' +
                                 '":rocblas-include",\n' +
-                                '":miopen-include",'),
+                                '":miopen-include",\n' +
+                                '":rccl-include",'),
         },
     )
 
@@ -790,7 +818,7 @@ def _create_remote_rocm_repository(repository_ctx, remote_config_repo):
 
 def _rocm_autoconf_impl(repository_ctx):
     """Implementation of the rocm_autoconf repository rule."""
-    if not _enable_rocm(repository_ctx):
+    if not enable_rocm(repository_ctx):
         _create_dummy_repository(repository_ctx)
     elif _TF_ROCM_CONFIG_REPO in repository_ctx.os.environ:
         _create_remote_rocm_repository(

@@ -60,7 +60,6 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
     git_configure(name = "local_config_git")
     sycl_configure(name = "local_config_sycl")
     syslibs_configure(name = "local_config_syslibs")
-    rocm_configure(name="local_config_rocm")
     python_configure(name = "local_config_python")
     rocm_configure(name = "local_config_rocm")
 
@@ -879,17 +878,6 @@ def tf_workspace(path_prefix = "", tf_repo_name = ""):
         urls = [
             "https://mirror.bazel.build/github.com/NervanaSystems/ngraph-tf/archive/v0.9.0.zip",
             "https://github.com/NervanaSystems/ngraph-tf/archive/v0.9.0.zip",
-        ],
-    )
-
-    tf_http_archive(
-        name = "rccl_archive",
-        build_file = clean_dep("//third_party:rccl.BUILD"),
-        sha256 = "9033b357177f554142a20a8368b77074f312895705ad7f968e122cc69d1b707f",
-        strip_prefix = "rccl-0.7.1",
-        urls = [
-            "https://mirror.bazel.build/github.com/ROCmSoftwarePlatform/rccl/archive/0.7.1.tar.gz",
-            "https://github.com/ROCmSoftwarePlatform/rccl/archive/0.7.1.tar.gz",
         ],
     )
 

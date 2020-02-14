@@ -43,6 +43,8 @@ load(
     "tf_opts_nortti_if_android",
 )
 load("@local_config_sycl//sycl:build_defs.bzl", "if_sycl")
+load("//tensorflow:tensorflow.bzl", "if_nccl")
+load("//tensorflow:tensorflow.bzl", "nccl_config")
 load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_test")
 load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_tests")
 load(
@@ -304,16 +306,16 @@ cc_library(
 
 tf_kernel_library(
     name = "nccl_kernels",
-    srcs = if_cuda([
+    srcs = if_nccl([
         "nccl_ops.cc",
     ]),
-    deps = if_cuda([
-        "@local_config_nccl//:nccl",
+    deps = if_nccl([
         "//tensorflow/core/nccl:nccl_lib",
         "//tensorflow/core:framework",
         "//tensorflow/core:gpu_headers_lib",
         "//tensorflow/core:nccl_ops_op_lib",
-    ]),
+        ] + nccl_config()
+    ),
 )
 
 tf_cuda_library(
