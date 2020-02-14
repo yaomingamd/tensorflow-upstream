@@ -108,6 +108,14 @@ cc_library(
     ],
 )
 
+filegroup(
+    name = "rocprim_headers",
+    srcs = glob([
+        "rocm/include/hipcub/**",
+        "rocm/include/rocprim/**",
+    ]),
+)
+
 cc_library(
     name = "rocprim",
     srcs = [
