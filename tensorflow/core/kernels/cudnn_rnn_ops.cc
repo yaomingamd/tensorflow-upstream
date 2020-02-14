@@ -571,6 +571,11 @@ Status ExtractForwardInput(OpKernelContext* context,
     TF_RETURN_IF_ERROR(context->input("input_c", input_c));
   }
   TF_RETURN_IF_ERROR(context->input("params", params));
+  std::cout << "input shape" << (*input)->shape().DebugString() << std::endl;
+  std::cout << "input_h shape" << (*input_h)->shape().DebugString()
+            << std::endl;
+  std::cout << "input_c shape" << (*input_c)->shape().DebugString()
+            << std::endl;
 
   if ((*input)->dims() != 3) {
     return errors::InvalidArgument("RNN input must be a 3-D vector.");

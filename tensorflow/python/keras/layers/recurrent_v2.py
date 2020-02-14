@@ -33,6 +33,8 @@ from tensorflow.python.keras.layers import recurrent
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gen_cudnn_rnn_ops
+from tensorflow.python.ops import gen_array_ops
+from tensorflow.python.ops import logging_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn
 from tensorflow.python.ops import resource_variable_ops
@@ -1104,17 +1106,24 @@ class LSTM(recurrent.DropoutRNNCellMixin, recurrent.LSTM):
   def call(self, inputs, mask=None, training=None, initial_state=None):
     # The input should be dense, padded with zeros. If a ragged input is fed
     # into the layer, it is padded and the row lengths are used for masking.
-    inputs, row_lengths = K.convert_inputs_if_ragged(inputs)
+    print("call function")
+    inputs_print0 = logging_ops.print_v2(inputs,[inputs])
+    with ops.control_dependencies([inputs_print0]):
+      #inputs, row_lengths = K.convert_inputs_if_ragged(inputs)
+      inputs_unused, row_lengths = K.convert_inputs_if_ragged(inputs)
+      inputs = inputs.to_tensor()
+    #inputs_print = logging_ops.print_v2(inputs,[inputs])
+    #with ops.control_dependencies([inputs_print]):
     is_ragged_input = (row_lengths is not None)
     self._validate_args_if_ragged(is_ragged_input, mask)
 
     # LSTM does not support constants. Ignore it during process.
     inputs, initial_state, _ = self._process_inputs(inputs, initial_state, None)
-    print("call function")
-    print(inputs, initial_state)
-
-    if isinstance(mask, list):
-      mask = mask[0]
+    print(inputs.shape, initial_state[0].shape)
+    initial_state_print = logging_ops.print_v2(initial_state[0],[initial_state[0]])
+    with ops.control_dependencies([initial_state_print]):
+      if isinstance(mask, list):
+        mask = mask[0]
 
     input_shape = K.int_shape(inputs)
     timesteps = input_shape[0] if self.time_major else input_shape[1]
@@ -1365,8 +1374,22 @@ def cudnn_lstm(inputs, init_h, init_c, kernel, recurrent_kernel, bias, mask,
     seq_axis, batch_axis = (0, 1) if time_major else (1, 0)
   # For init_h and init_c, cuDNN expects one more dim of num_layers before or
   # after batch dim for time major or batch major inputs respectively
-  init_h = array_ops.expand_dims(init_h, axis=seq_axis)
+  print("cudnnlstm function")
+  init_h_print = logging_ops.print_v2(init_h,[init_h])
+  #init_h = array_ops.expand_dims(init_h, axis=seq_axis)
+  #with ops.control_dependencies([init_h_print]):
+    #init_h = array_ops.expand_dims(init_h, axis=seq_axis)
+  #init_h_print1 = logging_ops.print_v2(init_h,[init_h])
+  #with ops.control_dependencies([init_h_print1]):
   init_c = array_ops.expand_dims(init_c, axis=seq_axis)
+  print("cudnnlstm function end")
+  print(init_h.shape)
+  target_shape = [array_ops.shape(inputs)[0], array_ops.shape(init_h)[0], array_ops.shape(init_h)[1]]
+  init_h_b = gen_array_ops.broadcast_to(init_h, target_shape) 
+  init_c_b = gen_array_ops.broadcast_to(init_c, [3, 3, 4]) 
+  print(init_h.shape)
+  #init_h_b = init_h
+  #init_c_b = init_c
 
   weights = array_ops.split(kernel, 4, axis=1)
   weights += array_ops.split(recurrent_kernel, 4, axis=1)
@@ -1414,7 +1437,6 @@ def cudnn_lstm(inputs, init_h, init_c, kernel, recurrent_kernel, bias, mask,
     sequence_lengths = calculate_sequence_by_mask(mask, time_major)
 
   if sequence_lengths is not None:
-    print(init_h)
     if go_backwards:
       # Three reversals are required. E.g.,
       # normal input = [1, 2, 3, 0, 0]  # where 0 need to be masked
@@ -1425,8 +1447,8 @@ def cudnn_lstm(inputs, init_h, init_c, kernel, recurrent_kernel, bias, mask,
           inputs, sequence_lengths, seq_axis=seq_axis, batch_axis=batch_axis)
     outputs, h, c, _, _ = gen_cudnn_rnn_ops.cudnn_rnnv3(
         inputs,
-        input_h=init_h,
-        input_c=init_c,
+        input_h=init_h_b,
+        input_c=init_c_b,
         params=params,
         is_training=True,
         rnn_mode='lstm',
@@ -1450,8 +1472,8 @@ def cudnn_lstm(inputs, init_h, init_c, kernel, recurrent_kernel, bias, mask,
   last_output = outputs[-1]
   if not time_major and mask is None:
     outputs = array_ops.transpose(outputs, perm=[1, 0, 2])
-  h = array_ops.squeeze(h, axis=seq_axis)
-  c = array_ops.squeeze(c, axis=seq_axis)
+  #h = array_ops.squeeze(h, axis=seq_axis)
+  #c = array_ops.squeeze(c, axis=seq_axis)
 
   # In the case of variable length input, the cudnn kernel will fill zeros for
   # the output, whereas the default keras behavior is to bring over the previous

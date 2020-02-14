@@ -1588,6 +1588,8 @@ class RNNTest(keras_parameterized.TestCase):
     x_ragged = keras.Input(shape=(None, 5), ragged=True)
     y_ragged = rnn_layer(x_ragged)
     model = keras.models.Model(x_ragged, y_ragged)
+    print(ragged_data)
+    print(ragged_data.to_tensor())
     output_ragged = model.predict(ragged_data, steps=1)
 
     # x_dense = keras.Input(shape=(3, 5))

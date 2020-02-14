@@ -810,6 +810,7 @@ class RNN(Layer):
     # self.input_spec and self.state_spec with complete input shapes.
     if (isinstance(inputs, collections.Sequence)
         and not isinstance(inputs, tuple)):
+      print("is collection")
       # get initial_state from full input spec
       # as they could be copied to multiple GPU.
       if not self._num_constants:
@@ -836,6 +837,7 @@ class RNN(Layer):
       else:
         initial_state = self.states
     elif initial_state is None:
+      print("not stateful")
       initial_state = self.get_initial_state(inputs)
 
     if len(initial_state) != len(self.states):
