@@ -108,4 +108,21 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "rocprim",
+    srcs = [
+        "rocm/include/hipcub/hipcub_version.hpp",
+        "rocm/include/rocprim/rocprim_version.hpp",
+    ],
+    hdrs = [":rocprim_headers"],
+    includes = [
+        ".",
+        "rocm/include/hipcub",
+        "rocm/include/rocprim",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@local_config_rocm//rocm:rocm_headers",
+    ],
+)
 %{rocm_include_genrules}
