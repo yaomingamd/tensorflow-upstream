@@ -3235,9 +3235,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "scan_ops",
     prefix = "scan_ops",
-    deps = MATH_DEPS + if_cuda(["@cub_archive//:cub"]) + if_rocm([
-        "@local_config_rocm//rocm:rocprim",
-    ]),
+    deps = MATH_DEPS + if_cuda(["@cub_archive//:cub"]),
 )
 
 tf_kernel_library(
@@ -3672,8 +3670,6 @@ tf_kernel_library(
     ] + if_cuda([
         "@cub_archive//:cub",
         "@local_config_cuda//cuda:cudnn_header",
-    ]) + if_rocm([
-        "@local_config_rocm//rocm:rocprim",
     ]),
 )
 
