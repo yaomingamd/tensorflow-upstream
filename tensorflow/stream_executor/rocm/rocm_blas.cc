@@ -1988,13 +1988,34 @@ port::Status ROCMBlas::DoBlasGemmBatchedInternal(
     b_raw_ptrs[i]=reinterpret_cast<MAPPED_T *>(b_ptrs_to_wrappers[i]->opaque());
     c_raw_ptrs[i]=reinterpret_cast<MAPPED_T *>(c_ptrs_to_wrappers[i]->opaque());
   }
+  DeviceMemory<MAPPED_T*> pointers;
+  std::unique_ptr<TemporaryDeviceMemory<MAPPED_T*>> temp_memory;
+  if (scratch_allocator != nullptr) {
+    SE_ASSIGN_OR_RETURN(
+        DeviceMemory<uint8> temp,
+        scratch_allocator->AllocateBytes(batch_count*3*sizeof(MAPPED_T*)));
+    pointers = DeviceMemory<MAPPED_T*>(temp);
+  } else {
+    SE_ASSIGN_OR_RETURN(temp_memory, stream->AllocateTemporaryArray<MAPPED_T*>(
+                                          batch_count*3*sizeof(MAPPED_T*)));
+    pointers =
+        DeviceMemory<MAPPED_T*>(*(temp_memory->mutable_device_memory()));
+  }
+  MAPPED_T** p_A = (MAPPED_T**)pointers.opaque();
+  MAPPED_T** p_B = p_A + batch_count;
+  MAPPED_T** p_C = p_A + 2*batch_count;
 
+  hipMemcpyAsync(p_A, &a_raw_ptrs[0], batch_count*sizeof(MAPPED_T*), hipMemcpyHostToDevice, AsGpuStreamValue(stream));
+  hipMemcpyAsync(p_B, &b_raw_ptrs[0], batch_count*sizeof(MAPPED_T*), hipMemcpyHostToDevice, AsGpuStreamValue(stream));
+  hipMemcpyAsync(p_C, &c_raw_ptrs[0], batch_count*sizeof(MAPPED_T*), hipMemcpyHostToDevice, AsGpuStreamValue(stream));
+  printf("p_A %p p_B %p p_C %p batch_count %d\n",
+    p_A, p_B, p_C, batch_count);
   bool ok = DoBlasInternal(rocblas_func, stream, true, 
       ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
       m, n, k,
-      complex_cast(alpha), &a_raw_ptrs[0], lda,
-      &b_raw_ptrs[0], ldb, complex_cast(beta),
-      &c_raw_ptrs[0], ldc, batch_count);
+      complex_cast(alpha), p_A, lda,
+      p_B, ldb, complex_cast(beta),
+      p_C, ldc, batch_count);
   if(!ok)
     return port::Status(port::error::INTERNAL,
                       "failed BLAS call, see log for details");
