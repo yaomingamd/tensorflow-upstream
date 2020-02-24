@@ -202,7 +202,6 @@ tf_xla_py_test(
     tags = [
         "no_pip",
         "no_cuda",
-        "no_rocm",
         "no_windows",
         "nomac",
         "notsan",  # b/74395663
