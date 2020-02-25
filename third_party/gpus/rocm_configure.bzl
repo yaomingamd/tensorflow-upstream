@@ -222,7 +222,7 @@ def _rocm_include_path(repository_ctx, rocm_config):
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/compiler/lib/clang/10.0.0/include/")
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/lib/clang/10.0.0/include")
 
-    # Support hcc based off clang 10.0.0, included in ROCm2.8
+    # Support hcc based off clang 10.0.0, included in ROCm3.1
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/compiler/lib/clang/11.0.0/include/")
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/lib/clang/11.0.0/include")
 
@@ -314,13 +314,14 @@ def _hipcc_is_hipclang(repository_ctx,rocm_config):
         return "True"
     return "False"
 
-def _if_hipcc_is_hipclang(repository_ctx, if_true, if_false = []):
+def _if_hipcc_is_hipclang(repository_ctx, rocm_config, if_true, if_false = []):
     """
     Returns either the if_true or if_false arg based on whether hipcc
     is based on the hip-clang toolchain
 
     Args :
         repository_ctx: The repository context.
+        rocm_config: The path to the hip compiler.
         if_true : value to return if hipcc is hip-clang based
         if_false : value to return if hipcc is not hip-clang based
                    (optional, defaults to empty list)
@@ -328,7 +329,7 @@ def _if_hipcc_is_hipclang(repository_ctx, if_true, if_false = []):
     Returns :
         either the if_true arg or the of_False arg
     """
-    if _hipcc_is_hipclang(repository_ctx) == "True":
+    if _hipcc_is_hipclang(repository_ctx,rocm_config) == "True":
         return if_true
     return if_false
 
@@ -789,7 +790,7 @@ def _create_local_rocm_repository(repository_ctx):
         "-DTENSORFLOW_USE_ROCM=1",
         "-D__HIP_PLATFORM_HCC__",
         "-DEIGEN_USE_HIP",
-    ] + _if_hipcc_is_hipclang(repository_ctx, [
+    ] + _if_hipcc_is_hipclang(repository_ctx, rocm_config, [
         #
         # define "TENSORFLOW_COMPILER_IS_HIP_CLANG" when we are using clang
         # based hipcc to compile/build tensorflow
