@@ -160,47 +160,47 @@ def _rocm_include_path(repository_ctx, rocm_config):
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/include")
 
     # Add HSA headers
-    inc_dirs.append("/opt/rocm/hsa/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hsa/include")
 
     # Add HIP headers
-    inc_dirs.append("/opt/rocm/include/hip")
-    inc_dirs.append("/opt/rocm/include/hip/hcc_detail")
-    inc_dirs.append("/opt/rocm/hip/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/include/hip")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/include/hip/hcc_detail")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hip/include")
 
     # Add rocrand and hiprand headers
-    inc_dirs.append("/opt/rocm/rocrand/include")
-    inc_dirs.append("/opt/rocm/hiprand/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/rocrand/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hiprand/include")
 
     # Add rocfft headers
-    inc_dirs.append("/opt/rocm/rocfft/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/rocfft/include")
 
     # Add rocBLAS headers
-    inc_dirs.append("/opt/rocm/rocblas/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/rocblas/include")
 
     # Add MIOpen headers
-    inc_dirs.append("/opt/rocm/miopen/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/miopen/include")
 
     # Add hcc headers
-    inc_dirs.append("/opt/rocm/hcc/include")
-    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/7.0.0/include/")
-    inc_dirs.append("/opt/rocm/hcc/lib/clang/7.0.0/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/compiler/lib/clang/7.0.0/include/")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/lib/clang/7.0.0/include")
 
     # Newer hcc builds use/are based off of clang 8.0.0.
-    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/8.0.0/include/")
-    inc_dirs.append("/opt/rocm/hcc/lib/clang/8.0.0/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/compiler/lib/clang/8.0.0/include/")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/lib/clang/8.0.0/include")
 
     # Support hcc based off clang 9.0.0.
-    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/9.0.0/include/")
-    inc_dirs.append("/opt/rocm/hcc/lib/clang/9.0.0/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/compiler/lib/clang/9.0.0/include/")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/lib/clang/9.0.0/include")
 
     # Support hcc based off clang 10.0.0.
-    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/10.0.0/include/")
-    inc_dirs.append("/opt/rocm/hcc/lib/clang/10.0.0/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/compiler/lib/clang/10.0.0/include/")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/lib/clang/10.0.0/include")
 
     # Support hipclang/hcc based off clang 11.0.0.
-    inc_dirs.append("/opt/rocm/hcc/compiler/lib/clang/11.0.0/include/")
-    inc_dirs.append("/opt/rocm/hcc/lib/clang/11.0.0/include")
-    inc_dirs.append("/opt/rocm/llvm/lib/clang/11.0.0/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/compiler/lib/clang/11.0.0/include/")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/hcc/lib/clang/11.0.0/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/llvm/lib/clang/11.0.0/include")
 
     inc_entries = []
     for inc_dir in inc_dirs:
@@ -745,7 +745,7 @@ def _create_local_rocm_repository(repository_ctx):
         "crosstool:clang/bin/crosstool_wrapper_driver_rocm",
         {
             "%{cpu_compiler}": str(cc),
-            "%{hipcc_path}": "/opt/rocm/bin/hipcc",
+            "%{hipcc_path}": rocm_config.rocm_toolkit_path + "/bin/hipcc",
             "%{hipcc_env}": _hipcc_env(repository_ctx),
             "%{crosstool_verbose}": _crosstool_verbose(repository_ctx),
             "%{gcc_host_compiler_path}": str(cc),
