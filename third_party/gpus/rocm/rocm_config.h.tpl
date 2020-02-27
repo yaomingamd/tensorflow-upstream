@@ -16,6 +16,6 @@ limitations under the License.
 #ifndef ROCM_ROCM_CONFIG_H_
 #define ROCM_ROCM_CONFIG_H_
 
-#define TF_ROCM_TOOLKIT_PATH "/opt/rocm"
+#define TF_ROCM_TOOLKIT_PATH "%{ROCM_TOOLKIT_PATH}"
 
 #endif  // ROCM_ROCM_CONFIG_H_

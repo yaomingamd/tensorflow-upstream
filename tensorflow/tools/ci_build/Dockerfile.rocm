@@ -4,6 +4,7 @@ FROM ubuntu:xenial
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
 ARG DEB_ROCM_REPO=http://repo.radeon.com/rocm/apt/2.6/
+
 ARG ROCM_PATH=/opt/rocm
 
 ENV DEBIAN_FRONTEND noninteractive
@@ -58,8 +59,7 @@ RUN apt-get update --allow-insecure-repositories && DEBIAN_FRONTEND=noninteracti
 RUN apt-get update --allow-insecure-repositories && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
     rocm-dev rocm-libs hipcub rocm-utils rocm-cmake \
-    rocfft miopen-hip miopengemm rocblas hipblas rocrand rccl \
-    rocm-profiler cxlactivitylogger && \
+    rocfft miopen-hip miopengemm rocblas hipblas rocrand rccl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -74,16 +74,22 @@ RUN apt-get update --allow-insecure-repositories && \
 # RUN cd $HOME && git clone https://github.com/ROCm-Developer-Tools/HIP.git
 # RUN cd $HOME/HIP && mkdir -p build && cd build && cmake .. && make package -j $(nproc) && dpkg -i ./hip*.deb
 
-# Set up paths
-ENV HCC_HOME=$ROCM_PATH/hcc
-ENV HIP_PATH=$ROCM_PATH/hip
-ENV OPENCL_ROOT=$ROCM_PATH/opencl
-ENV PATH="$HCC_HOME/bin:$HIP_PATH/bin:${PATH}"
-ENV PATH="$ROCM_PATH/bin:${PATH}"
-ENV PATH="$OPENCL_ROOT/bin:${PATH}"
+# Adding few ROCM based env variables
+ENV HCC_HOME=${ROCM_PATH}/hcc
+ENV HIP_PATH=${ROCM_PATH}/hip
+ENV PATH=$HCC_HOME/bin:$HIP_PATH/bin:${ROCM_PATH}/opencl/bin:${ROCM_PATH}/bin:$PATH
+ENV HIP_PLATFORM=hcc
+ENV ROCM_TOOLKIT_PATH=${ROCM_PATH}
+ENV TF_CONFIGURE_IOS=0
+ENV TF_NEED_ROCM=1
+
+RUN touch ${ROCM_PATH}/.info/version
+
+# Workaround, explicitly add symbolic link to /opt/rocm
+RUN bash -c 'ln -s ${ROCM_PATH} /opt/rocm'
 
 # Add target file to help determine which device(s) to build for
-RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906" >> /opt/rocm/bin/target.lst'
+RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906" >> ${ROCM_PATH}/bin/target.lst'
 
 # Build rocBLAS from source
 #RUN cd $HOME && git clone -b <> https://github.com/ROCmSoftwarePlatform/rocBLAS.git && cd rocBLAS && ./install.sh -id
