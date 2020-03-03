@@ -1588,9 +1588,9 @@ bool ROCmFusionOpFMA::IsFusionEligible(const Node* node, FusionOpData* d) {
   if(!areAssignedToSameGpu({node,b,c}))
     return false;
 
-  VLOG(kVlogLevel)<<"Trying"<<node->type_string()<<" "<<node->in_edges().size()
-    <<b->type_string()<<" "<<b->in_edges().size()<<" "<<c->type_string()
-    <<" "<<c->in_edges().size();
+  VLOG(kVlogLevel)<<"Trying "<<node->type_string()<<" "<<node->in_edges().size()
+    <<" "<<b->type_string()<<" "<<b->in_edges().size()<<"+"<<b->out_edges().size()<<" "<<c->type_string()
+    <<" "<<c->in_edges().size()<<"+"<<c->out_edges().size();
   bool can_absorb_b = (b->type_string()=="Mul" && b->in_edges().size()==2 
     && b->out_edges().size()==1);
   bool can_absorb_c = (c->type_string()=="Mul" && c->in_edges().size()==2 
