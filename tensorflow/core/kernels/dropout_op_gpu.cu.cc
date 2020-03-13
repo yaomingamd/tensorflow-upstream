@@ -1,4 +1,6 @@
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+//#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+//#if TENSORFLOW_USE_ROCM
+#if TENSORFLOW_USE_ROCM || (GOOGLE_CUDA && (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 530)))
 
 #define EIGEN_USE_GPU
 
@@ -21,6 +23,8 @@
 
 #if TENSORFLOW_USE_ROCM
 #include "rocm/include/hip/hip_fp16.h"
+#else
+#include "third_party/gpus/cuda/include/cuda_fp16.hpp"
 #endif
 
 namespace tensorflow {
