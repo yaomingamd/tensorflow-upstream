@@ -162,7 +162,7 @@ struct Relu<Device, qint8> {
 };
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-#if TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <class T>
 __global__ void GeluKernel(const T* in,
                                  T* out, int32 count) {
@@ -272,18 +272,12 @@ struct GeluGrad<GPUDevice, T> {
   template struct functor::Elu<GPUDevice, T>;           \
   template struct functor::EluGrad<GPUDevice, T>;       \
   template struct functor::Selu<GPUDevice, T>;          \
-  template struct functor::SeluGrad<GPUDevice, T>;      
-#define DEFINE_GELU_GPU_KERNELS(T)                      \
+  template struct functor::SeluGrad<GPUDevice, T>;      \
   template struct functor::Gelu<GPUDevice, T>;          \
   template struct functor::GeluGrad<GPUDevice, T>;
 
 TF_CALL_GPU_NUMBER_TYPES(DEFINE_GPU_KERNELS);
-#if TENSORFLOW_USE_ROCM
-TF_CALL_GPU_NUMBER_TYPES(DEFINE_GELU_GPU_KERNELS);
-#endif
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template struct functor::Relu<GPUDevice, qint8>;
-#endif
 
 }  // end namespace tensorflow
 
