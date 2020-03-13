@@ -13,7 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if TENSORFLOW_USE_ROCM || (GOOGLE_CUDA && (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 530)))
+
+//#if TENSORFLOW_USE_ROCM
 
 #include "tensorflow/core/kernels/cwise_op_fma.h"
 #include "tensorflow/core/kernels/cwise_ops_gpu_common.cu.h"
@@ -21,7 +23,8 @@ limitations under the License.
 
 #if TENSORFLOW_USE_ROCM
 #include "rocm/include/hip/hip_fp16.h"
-typedef __half2 half2;
+#else
+#include "third_party/gpus/cuda/include/cuda_fp16.hpp"
 #endif
 
 namespace tensorflow {
@@ -87,11 +90,11 @@ void LaunchFusedMulAddOp<GPUDevice, T, Type>::execute(const GPUDevice& device,
                                                      uint64 elements) {
   if(std::is_same<T, Eigen::half>::value && !(elements & 1)) {
     auto config = GetGpuLaunchConfig(elements/2, device);
-    TF_CHECK_OK(GpuLaunchKernel(CwiseFusedMulAddKernel<half2, N, Type>,
+    TF_CHECK_OK(GpuLaunchKernel(CwiseFusedMulAddKernel<__half2, N, Type>,
                                 config.block_count, config.thread_per_block, 0,
-                                device.stream(), config, (half2*)out, 
-                                (const half2*)x1, (const half2*)y1, 
-                                (const half2*)x2));
+                                device.stream(), config, (__half2*)out, 
+                                (const __half2*)x1, (const __half2*)y1, 
+                                (const __half2*)x2));
   }
   else {
     auto config = GetGpuLaunchConfig(elements, device);
@@ -259,26 +262,27 @@ __global__ void FallbackLaunchFusedMulAddKernel2D(Fallback_FMA_Arg<T, Type, N> a
 template <typename T, FMAType type, int N>
 void Fallback_FMA_execute(const GPUDevice& device, int64 dims[6], Fallback_FMA_Arg<T, type, N>& arg)
 {
+  const uint64 kThreads = 256;
   if (dims[2] == 1 && dims[3] == 1 && dims[4] == 1 && dims[5] == 1) {
     TF_CHECK_OK(GpuLaunchKernel(FallbackLaunchFusedMulAddKernel2D<T, type, N>,
                                 dim3(dims[1], 1, 1),
                                 dim3(dims[0] > 256 ? 256 : dims[0], 1, 1), 0,
                                 device.stream(), arg));
   } else if (dims[4] == 1 && dims[5] == 1 && dims[0] / 256 > dims[2] * dims[3]) {
-    int block_x = min(256, dims[0]);
-    int block_y = min(256 / block_x, dims[1]);
-    int block_z = min(256 / (block_x * block_y), dims[2]); 
+    int block_x = min(kThreads, dims[0]);
+    int block_y = min(kThreads / block_x, dims[1]);
+    int block_z = min(kThreads / (block_x * block_y), dims[2]);
     int grid_x = (dims[2] + block_z - 1) / block_z;
     int grid_y = dims[3];
-    int grid_z = max(1, dims[0] / 256);
+    int grid_z = max((uint64)1, dims[0] / 256);
     TF_CHECK_OK(GpuLaunchKernel(FallbackLaunchFusedMulAddKernel4D<T, type, N>,
                                 dim3(grid_x, grid_y, grid_z),
                                 dim3(block_x, block_y, block_z), 0,
                                 device.stream(), arg));
   } else {
-    int block_x = min(256, dims[0]);
-    int block_y = min(256 / block_x, dims[1]);
-    int block_z = min(256 / (block_x * block_y), dims[2]);
+    int block_x = min(kThreads, dims[0]);
+    int block_y = min(kThreads / block_x, dims[1]);
+    int block_z = min(kThreads / (block_x * block_y), dims[2]);
     int grid_x = (dims[2] + block_z - 1) / block_z;
     int grid_y = dims[3];
     int grid_z = dims[4];
