@@ -19,8 +19,10 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import math
 import time
 import os
+import sys
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.python.client import session
@@ -36,9 +38,11 @@ from tensorflow.python.ops import gen_math_ops
 from tensorflow.python.ops import gradient_checker
 from tensorflow.python.ops import gradient_checker_v2
 from tensorflow.python.ops import gradients_impl
-from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import init_ops_v2
+from tensorflow.python.ops import logging_ops
+from tensorflow.python.ops import math_ops, map_fn
 from tensorflow.python.ops import nn_grad  # pylint: disable=unused-import
-from tensorflow.python.ops import variables
+from tensorflow.python.ops import variable_scope, variables, control_flow_ops
 from tensorflow.python.platform import tf_logging
 from tensorflow.python.platform import test
 from tensorflow.python.eager import def_function
@@ -908,7 +912,10 @@ class MathOpsOverloadTest(test.TestCase):
     test_count = 0
     for sgn in (-1,0,1):
       for dtype in dtypes:
-        for shape in ((1,), (4,), (5,5), (100,14), (3,3,3,3), (3,3,3,3,3)):
+        for shape in (
+          (1,), (4,), (5,5), (100,14), (3,3,3,3), (3,3,3,3,3),
+            (512,3,3,3), (3,512,3,3), (3,3,512,3), (3,3,3,512),
+            ):
           for bcast in (0,2,4,6,7,8,11,15,15,15):
             with self.session(use_gpu=True):
               print(sgn,  dtype, shape, bcast)
@@ -927,8 +934,6 @@ class MathOpsOverloadTest(test.TestCase):
               iny1 = ops.convert_to_tensor(y1)
               inx2 = ops.convert_to_tensor(x2)
               iny2 = ops.convert_to_tensor(y2)
-              print(inx1,iny1)
-              print(_FMA(inx1,iny1,inx2))
               if sgn>0:
                 self.assertAllClose(x1*y1+x2, _FMA(inx1,iny1,inx2))
                 self.assertAllClose(x1*y1+x2*y2, _FMA2(inx1,iny1,inx2,iny2))
@@ -1398,115 +1403,205 @@ class SingularGradientOpTest(test.TestCase):
           self.assertAllEqual(g_val, np.zeros(len(singularity)))
 
 class FMABenchmark(test.Benchmark): 
-  def _grappler_all_off_config(self):
+  def _grappler_config(self):
     config = config_pb2.ConfigProto()
     off = rewriter_config_pb2.RewriterConfig.OFF
+    on = rewriter_config_pb2.RewriterConfig.ON
     config.graph_options.optimizer_options.opt_level = -1
-    config.graph_options.rewrite_options.disable_model_pruning = 1
+    config.graph_options.rewrite_options.disable_model_pruning = True
     config.graph_options.rewrite_options.constant_folding = off
     config.graph_options.rewrite_options.layout_optimizer = off
     config.graph_options.rewrite_options.arithmetic_optimization = off
-    config.graph_options.rewrite_options.dependency_optimization = off
+    #config.graph_options.rewrite_options.dependency_optimization = on
     return config
   def _run(self, op, feed_dict=None, num_iters=100, name=None, ref=True, **kwargs):
-    config = self._grappler_all_off_config()
+    config = self._grappler_config()
     os.environ['TF_ROCM_FMA_DISABLE']='1' if ref else '0'
     with session.Session(config=config) as sess:
     #with session.Session() as sess:
-    #with self.cached_session() as sess:
       deltas = []
-      # Warm up the session
-      for _ in range(2):
-        sess.run(op, feed_dict=feed_dict)
-      for _ in range(num_iters):
+      for iter in range(num_iters+2):
         start = time.time()
+        if iter==2:
+          print("Starting test...")
+          sys.stdout.flush()
         sess.run(op, feed_dict=feed_dict)
         end = time.time()
-        deltas.append(end - start)
+        if iter>=2:
+          deltas.append(end - start)
+        print(end-start)
+        sys.stdout.flush()
       mean_time = np.median(deltas)
       mean_us = mean_time * 1e6
-      # mean_us = (end - start) * 1e6 / num_iters
       self.report_benchmark(
           name=name,
           wall_time=mean_us,
           extras=kwargs,
       )
-  def _apply_n_times(self, op, n, x1, *args):
-    for _ in range(n):
-      x1=op(x1, *args)
-    return x1
+  @def_function.function
+  def _apply_n_times(self, op, n, _x1, _y1, _x2):
+    # The challenge is to eliminate most "busywork" ops (Recv, Identity, etc.)
+    # while preventing grappler from optimizing away the actual FMAs.
+    # This does the job with appropriate graph options.
+    # tf.while_loop or tf.map_fn prevents FMAs from being optimized away, but
+    # creates a horrific mess of a graph and, at some settings, also prevents
+    # FMAs from being fused in the first place.
+    x1 = array_ops.split(_x1, n)
+    y1 = array_ops.split(_y1, n)
+    x2 = array_ops.split(_x2, n)
+    w=x1[:]
+    nt = max(2, 100//n)
+    print("N is", n, ", nt is", nt)
+    for t in range(nt-1):
+      w = [op(w[(2*k)%n], y1[(3*k)%n], x2[(5*k+(n//2))%n]) for k in range(n)]
+      w = [op(w[(3*k+1)%n], y1[(5*k+1)%n], x2[(2*k+2)%n]) for k in range(n)]
+    for k in range(n):
+      w[0]=op(w[0], y1[k], w[k])
+    for k in range(n):
+      w[0]=op(w[0], y1[k], x2[k])
+    if len(w[0].shape)==3:
+      return w[0][0,0,0]
+    else:
+      return w[0][0,0,0,0]
 
-  #todo: benchmark fallback mode with grids [1000000,4]  and [1000000,4,2] 
+    #with ops.control_dependencies([logging_ops.print_v2(x1[0])]):
+    #  return x1[0]
+    #x1 = array_ops.stack(x1, axis=0)
+    #x2 = array_ops.stack(x2, axis=0)
+    #y1 = array_ops.stack(y1, axis=0)
+    #v=[(x1,y1,x2)]
+    #for t in range(10):
+    #  v.append(map_fn.map_fn(lambda a: (op(a[0],a[1],a[2]), a[1], a[2]), v[-1], back_prop=False, parallel_iterations=1))
+    #return v[-1]
+
+    #x1 = [variables.Variable(shape=sx1, name="x1_"+str(k), initial_value=rng(sx1)) for k in range(n)]
+    #y1 = [variables.Variable(shape=sy1, name="x2_"+str(k), initial_value=rng(sy1)) for k in range(n)]
+    #x2 = [variables.Variable(shape=sx2, name="y1_"+str(k), initial_value=rng(sx2)) for k in range(n)]
+    #counter=constant_op.constant(0)
+    #c = lambda x1, y1, x2, i: i<10
+    #def body(x1, y1, x2, i):
+    #  #for k in range(n):
+    #  #  x1[k]=op(x1[(2*k)%n], y1[(3*k)%n], x2[(5*k+(n//2))%n])
+    #  x3 = [op(x1[(2*k)%n], y1[(3*k)%n], x2[(5*k+(n//2))%n]) for k in range(n)]
+    #  x1 = [op(x1[(3*k+1)%n], y1[(5*k+1)%n], x3[(2*k+2)%n]) for k in range(n)]
+    #  #for k in range(n):
+    #  #  x2[k]=op(x1[(3*k+1)%n], y1[(5*k+1)%n], x2[(2*k+2)%n])
+    #  return x1, y1, x2, i+1
+    #return control_flow_ops.while_loop(c, body, [x1, y1, x2, counter], parallel_iterations=1, back_prop=False)
+
   def benchmarkFmaShortcut(self):
-    os.environ['TF_CPP_MIN_LOG_LEVEL']='2' # to suppress repeat info about detected GPUs
+    os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
     dtypes = [
         #np.float16,
         np.float32,
         #np.float64,
         ]
+    all_shapes=[
+    [512, 4, 4],
+    [4, 512, 4],
+    [4, 4, 512],
+    [512, 512, 4],
+    [512, 4, 512],
+    [4, 512, 512],
+    [512, 512, 512],
 
+    [512, 4, 4, 4],
+    [4, 512, 4, 4],
+    [4, 4, 512, 4],
+    [4, 4, 4, 512],
 
-    size=5000000
-    dims=[4,20,400,8000,160000]
-    def find_shapes(budget, max_len):
-      shapes=[]
-      for y in dims:
-        if y<budget:
-          shapes.append([y,])
-          if max_len>1:
-            ext = find_shapes(budget//y, max_len-1)
-            shapes+=[[y,]+z for z in ext]
-      return shapes
-    all_shapes=find_shapes(size,5)
-    print(len(all_shapes))
+    [512, 512, 4, 4],
+    [512, 4, 512, 4],
+    [512, 4, 4, 512],
+    [4, 512, 512, 4],
+    [4, 512, 4, 512],
+    [4, 4, 512, 512],
 
+    [512, 512, 512, 4],
+    [512, 512, 4, 512],
+    [512, 4, 512, 512],
+    [4, 512, 512, 512],
+    [512, 512, 512, 512],
+    ]
 
+    shapes=[]
+    for order in [14,18,22]:
+      for c1 in [2,3,5,7,13]:
+        for x in range(len(all_shapes)):
+          n1 = len([y for y in all_shapes[x] if y==4 ])
+          n2 = len([y for y in all_shapes[x] if y==512])
+          c2 = int(math.pow(float(2**order)/(c1**n1), 1./n2))
+          sh=[0]*len(all_shapes[x])
+          for y in range(len(all_shapes[x])):
+            sh[y]=(c1 if all_shapes[x][y]==4 else c2)
+          shapes.append(sh)
     roll_count=0
     tests=[]
-    for x in all_shapes:
-      length=1
-      for y in x:
-        length*=y
-      if length<50000:
-        continue
-      for n in range(2**len(x)):
-        s1=x[:]
-        s2=x[:]
-        s3=x[:]
-        for k in range(len(s1)):
-          if (n>>k) & 1:
-            roll = 1 + (roll_count % 6)
-            if (roll & 1):
-              s1[k]=1
-            if (roll & 2):
-              s2[k]=1
-            if (roll & 4):
-              s3[k]=1
-        tests.append((s1,s2,s3))
-      #print(len(tests))
-    n_repeats=500
-    for test_reference in (False,True):
-        #for test_fma2 in (True,False):
-          for dtype in dtypes:
-            for test in tests:
-              with ops.Graph().as_default():
-                with ops.device("/gpu:0"):
-                  #print(test)
-                  strform='('
-                  strform+='_'.join([str(z) for z in test[0]])
-                  strform+=')('
-                  strform+='_'.join([str(z) for z in test[1]])
-                  strform+=')('
-                  strform+='_'.join([str(z) for z in test[2]])
-                  strform+=')'
-                  x1 = np.random.uniform(test[0]).astype(dtype)
-                  y1 = np.random.uniform(test[1]).astype(dtype)
-                  x2 = np.random.uniform(test[2]).astype(dtype)
-                  x1 = ops.convert_to_tensor(x1)
-                  y1 = ops.convert_to_tensor(y1)
-                  x2 = ops.convert_to_tensor(x2)
-                  self._run(self._apply_n_times(_FMA, n_repeats, x1, y1, x2), name="FMA_" + ("ref_" if test_reference else "")+str(dtype)+"_"+strform, ref=test_reference)
+    for x in shapes:
+      s1=x[:]
+      s2=x[:]
+      s3=x[:]
+      for k in range(len(s1)):
+        if (k & 1):
+          s2[k]=1
+      s1=tuple(s1)
+      s2=tuple(s2)
+      s3=tuple(s3)
+      tests.append((s1,s2,s3))
+    num_iters=10
+    os.environ["HIP_TRACE_API"]="14" if num_iters==1 else "0"
+    min_repeats=None
+    min_blocks=None
 
+    @def_function.function
+    def _gen_inputs(test,n_repeats):
+      sx1 = [1]+list(test[0])
+      sy1 = [1]+list(test[1])
+      sx2 = [1]+list(test[2])
+      rng=init_ops_v2.random_uniform_initializer()
+      rng_sx1 = rng(sx1)
+      rng_sy1 = rng(sy1)
+      rng_sx2 = rng(sx2)
+      c1 = constant_op.constant([float(k+0.1)/n_repeats for k in range(n_repeats)])
+      c2 = constant_op.constant([float(k+0.2)/n_repeats for k in range(n_repeats)])
+      c3 = constant_op.constant([float(k+0.3)/n_repeats for k in range(n_repeats)])
+      c1 = array_ops.reshape(c1,[-1]+[1]*len(sx1))
+      c2 = array_ops.reshape(c2,[-1]+[1]*len(sy1))
+      c3 = array_ops.reshape(c3,[-1]+[1]*len(sx2))
+      x1 = rng_sx1 + c1
+      y1 = rng_sy1 + c2
+      x2 = rng_sx2 + c3
+      return x1,y1,x2
+
+    for min_repeats in [4,8,16,32]:
+        if min_repeats!=None:
+          os.environ["TF_FMA_MIN_REPEATS"]=str(min_repeats)
+        if min_blocks!=None:
+          os.environ["TF_FMA_MIN_BLOCKS"]=str(min_blocks)
+        for test_reference in (False,):
+            for dtype in dtypes:
+              for test in tests:
+                sz = np.prod(test[0])
+                # make n large enough that 
+                n_repeats=int(1e7/sz)
+                # pick n that is coprime with 2,3,5 (to ensure all elements are hit)
+                while not ((n_repeats%2) and (n_repeats%3) and (n_repeats%5)):
+                  n_repeats+=1
+                with ops.Graph().as_default():
+                  with ops.device("/gpu:0"):
+                    strform='('
+                    strform+='_'.join([str(z) for z in test[0]])
+                    strform+=')('
+                    strform+='_'.join([str(z) for z in test[1]])
+                    strform+=')('
+                    strform+='_'.join([str(z) for z in test[2]])
+                    strform+=')'
+                    strform+=str(min_repeats)
+                    # generate the inputs once and reuse them for future runs
+                    x1, y1, x2 = _gen_inputs(test,n_repeats)
+                    with session.Session() as sess:
+                      x1, y1, x2 = sess.run((x1,y1,x2))
+                    self._run(self._apply_n_times(_FMA, n_repeats, x1,y1,x2), name="FMA_" + ("ref_" if test_reference else "")+str(dtype)+"_"+strform, ref=test_reference, num_iters=num_iters)
 
 if __name__ == "__main__":
   test.main()

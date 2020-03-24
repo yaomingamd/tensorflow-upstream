@@ -20,6 +20,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/cwise_op_fma.h"
 #include "tensorflow/core/kernels/cwise_ops_gpu_common.cu.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
+#include "tensorflow/core/util/env_var.h"
 
 #if TENSORFLOW_USE_ROCM
 #include "rocm/include/hip/hip_fp16.h"
@@ -175,9 +176,21 @@ template <typename T, FMAType type, int N>
             m2 *= ptrs[3][x & x_mask[3]];
         out[x]=fma_op<type>(m1, m2);
       }
-  }
-};
+    }
 
+  __device__ void x_loop_2(int start, int span) {
+      int x_cnt=0;
+      for (int x = start; x_cnt < span && x<dims[0]; x +=blockDim.x) {
+        T m1 = ptrs[0][x & x_mask[0]] *
+               ptrs[1][x & x_mask[1]];
+        T m2 = ptrs[2][x & x_mask[2]];
+        if(N==5)
+            m2 *= ptrs[3][x & x_mask[3]];
+        out[x]=fma_op<type>(m1, m2);
+        x_cnt++;
+      }
+    }
+};
 
 template <typename T, FMAType type, int N>
 void Fallback_FMA_Arg<T,type,N>::construct(const int64 _dims[6], const uint8 broadcast_masks[6])
@@ -238,18 +251,73 @@ __global__ void FallbackLaunchFusedMulAddKernel6D(Fallback_FMA_Arg<T, Type, N> a
   }
 }
 
-// Optimized version for shapes like [100000, 10, 2], where ..AddKernel2D can't 
-// be used, but ..AddKernel6D underperforms due to poor utilization
-template <typename T, FMAType Type, int N>
-__global__ void FallbackLaunchFusedMulAddKernel4D(Fallback_FMA_Arg<T, Type, N> arg) {
-  arg.shift(3, blockIdx.y);
-  int32 z = threadIdx.z + blockIdx.x * blockDim.z;
-  if (z >= arg.dims[2]) return;
-  arg.shift(2, z);
-  arg.shift(1, threadIdx.y);
-  for (int32 y = threadIdx.y; y < arg.dims[1]; y += blockDim.y) {
-    arg.x_loop(threadIdx.x + blockDim.x * blockIdx.z, blockDim.x*gridDim.z);
-    arg.shift(1, blockDim.y);
+struct FallbackFMAGrid
+{
+  // TODO: enforce repeats_x,y < 65536
+    uint16 tdims[4];
+    uint32 gdims[2];
+};
+
+template <typename T, FMAType Type, int N, int loops>
+__global__ void FallbackLaunchFusedMulAddKernel4D(Fallback_FMA_Arg<T, Type, N> arg,
+  FallbackFMAGrid grid) {
+  int tid0 = threadIdx.x;
+  int tid1 = threadIdx.y;
+  int tid2 = threadIdx.z % grid.tdims[0];
+  int tid3 = threadIdx.z / grid.tdims[0];
+  int gid0 = blockIdx.x;
+  int gid1 = blockIdx.y;
+  int gid2 = blockIdx.z % grid.gdims[0];
+  int gid3 = blockIdx.z / grid.gdims[0];
+ 
+  int32 px = blockDim.x;
+  int32 py = blockDim.y;
+  int32 pz = grid.tdims[0];
+  int32 pt = grid.tdims[1];
+
+  int32 repeats_x = grid.tdims[2];
+  int32 repeats_y = grid.tdims[3];
+  int32 x0 = tid0 + gid0 * px * repeats_x;
+  int32 y0 = tid1 + gid1 * py * repeats_y;
+  int32 z0 = tid2 + gid2 * pz;
+  int32 t0 = tid3 + gid3 * pt;
+  pz *= grid.gdims[0];
+  pt *= grid.gdims[1];
+  if (x0 >= arg.dims[0]) return;
+  if (y0 >= arg.dims[1]) return;
+  if (z0 >= arg.dims[2]) return;
+  if (t0 >= arg.dims[3]) return;
+  arg.shift(3, t0);
+  arg.shift(2, z0);
+  arg.shift(1, y0);
+  if(loops==1) {
+    arg.x_loop_2(x0, repeats_x);
+  }
+  else if(loops==2) {
+    int y_cnt=0;
+    for (int32 y=y0; y < arg.dims[1] && y_cnt < repeats_y; y += py) {
+      arg.x_loop_2(x0, repeats_x);
+      arg.shift(1, py);
+      y_cnt++;
+    }
+  }
+  else {
+    for(int32 t=t0; t < arg.dims[3]; t += pt) {
+      int z_cnt = 0;
+      for (int32 z=z0; z < arg.dims[2]; z += pz) {
+        int y_cnt=0;
+        for (int32 y=y0; y < arg.dims[1] && y_cnt < repeats_y; y += py) {
+          arg.x_loop_2(x0, repeats_x);
+          arg.shift(1, py);
+          y_cnt++;
+        }
+        arg.shift(1, -py*y_cnt);
+        arg.shift(2, pz);
+        z_cnt++;
+      }
+      arg.shift(2, -pz*z_cnt);
+      arg.shift(3, pt);
+    }
   }
 }
 
@@ -268,17 +336,73 @@ void Fallback_FMA_execute(const GPUDevice& device, int64 dims[6], Fallback_FMA_A
                                 dim3(dims[1], 1, 1),
                                 dim3(dims[0] > 256 ? 256 : dims[0], 1, 1), 0,
                                 device.stream(), arg));
-  } else if (dims[4] == 1 && dims[5] == 1 && dims[0] / 256 > dims[2] * dims[3]) {
-    int block_x = min(kThreads, dims[0]);
-    int block_y = min(kThreads / block_x, dims[1]);
-    int block_z = min(kThreads / (block_x * block_y), dims[2]);
-    int grid_x = (dims[2] + block_z - 1) / block_z;
-    int grid_y = dims[3];
-    int grid_z = max((uint64)1, dims[0] / 256);
-    TF_CHECK_OK(GpuLaunchKernel(FallbackLaunchFusedMulAddKernel4D<T, type, N>,
-                                dim3(grid_x, grid_y, grid_z),
-                                dim3(block_x, block_y, block_z), 0,
-                                device.stream(), arg));
+  } else if (dims[4] == 1 && dims[5] == 1) {
+    FallbackFMAGrid grid_conf;
+    dim3 block, grid;
+    int64 min_blocks=0, min_repeats=0;
+
+    (void)ReadInt64FromEnvVar("TF_FMA_MIN_BLOCKS", 0, &min_blocks);
+    (void)ReadInt64FromEnvVar("TF_FMA_MIN_REPEATS", 16, &min_repeats);
+
+    int repeats = 1;
+    uint32 true_grid[2][4];
+    int axis_repeats[4]={1,1,1,1};
+    uint32 threads = 256, blocks=1;
+    bool y_loop=false, z_loop=false, t_loop=false;
+    // We have 4 dimensions to loop over, but only 3 thread dimensions
+    // Therefore, we squeeze dims[2] and dims[3] into threadIdx.z
+    for(int i=0; i<4; i++) {
+      true_grid[0][i] = min(threads, dims[i]);
+      true_grid[1][i] = (dims[i] + true_grid[0][i] - 1) / true_grid[0][i];
+      threads /= true_grid[0][i];
+      blocks *= true_grid[1][i];
+    }
+
+    // It is more efficient for each thread to process >1 location
+    if(min_blocks!=0 || min_repeats!=0) { 
+      for(int i=0; i<4; i++) {
+        int factor = (min_blocks!=0) ? (blocks/min_blocks) : (min_repeats / repeats);
+        if(factor<=1)
+          break;
+        auto& g = true_grid[1][i];
+        uint32 og = g;
+        g = (g+factor-1)/factor;
+        if(g==0)
+          g=1;
+        if(g!=og) {
+          if(i==1)
+            y_loop=true;
+          if(i==2)
+            z_loop=true;
+          if(i==3)
+            t_loop=true;
+        }
+        axis_repeats[i] = (og+g-1)/g;
+        repeats *= axis_repeats[i];
+        blocks /= og;
+        blocks *= g;
+      }
+    }
+
+    block.x = true_grid[0][0];
+    block.y = true_grid[0][1];
+    block.z = true_grid[0][2]*true_grid[0][3];
+    grid.x = true_grid[1][0];
+    grid.y = true_grid[1][1];
+    grid.z = true_grid[1][2]*true_grid[1][3];
+    grid_conf.tdims[0]=true_grid[0][2];
+    grid_conf.tdims[1]=true_grid[0][3];
+    grid_conf.gdims[0]=true_grid[1][2];
+    grid_conf.gdims[1]=true_grid[1][3];
+    grid_conf.tdims[2] = axis_repeats[0];
+    grid_conf.tdims[3] = axis_repeats[1];
+    TF_CHECK_OK(GpuLaunchKernel(
+               (z_loop || t_loop) ? FallbackLaunchFusedMulAddKernel4D<T, type, N, 4> 
+                      :
+                      (y_loop ? FallbackLaunchFusedMulAddKernel4D<T, type, N, 2>
+                        :  FallbackLaunchFusedMulAddKernel4D<T, type, N, 1>),
+                          grid, block, 0,
+                          device.stream(), arg, grid_conf));
   } else {
     int block_x = min(kThreads, dims[0]);
     int block_y = min(kThreads / block_x, dims[1]);
@@ -298,10 +422,6 @@ template <typename T, FMAType Type>
 void FallbackLaunchFusedMulAddOp<GPUDevice, T, Type>::operator()(
     const GPUDevice& device, T* out, const T* x1, const T* y1, const T* x2,
     int64 dims[6], uint8 broadcast_masks[6]) {
-  // printf("FallbackFusedMulAdd %d %d %d\n", broadcast_masks[0],
-  // broadcast_masks[1], broadcast_masks[2]); printf("Dims %ld %ld %ld %ld
-  // %ld\n", dims[0], dims[1], dims[2], dims[3], dims[4]);
-
   Fallback_FMA_Arg<T, Type, 4> arg;
   arg.out = out;
   arg.ptrs[0]=x1;
