@@ -1697,7 +1697,6 @@ class BenchmarkDropout(test_lib.Benchmark):
   def benchmarkDropout(self):
     device = "/gpu:0"
     n = 1000
-    #graph = ops.Graph()
     @def_function.function
     def test_func(x):
       return nn_ops.dropout(x, rate=0.1, seed=0)
@@ -1710,18 +1709,6 @@ class BenchmarkDropout(test_lib.Benchmark):
             with ops.device(device):
               x = array_ops.ones([m,n], dtype=dt)
               self._run(self._apply_n_times(test_func, 100, x), name=name)
-      #with ops.control_dependencies([logging_ops.print_v2(rv)]):
-      #  return rv
-      #with session.Session(graph=graph, gpu=True) as sess:
-      #x = array_ops.ones([m,n], dtype=dtypes.float32)
-      #op = test_func(x)
-      #r = self.run_op_benchmark(sess, op, min_iters=10, name=name)
-      #print(r)
-      #gb_processed_input = m * n / 1.0e9
-      #throughput = gb_processed_input / r["wall_time"]
-      #print("Benchmark: %s \t wall_time: %0.03g s \t "
-      #      "Throughput: %0.03g GB/s" % (name, r["wall_time"], throughput))
-      #sys.stdout.flush()
 
 if __name__ == "__main__":
   test_lib.main()

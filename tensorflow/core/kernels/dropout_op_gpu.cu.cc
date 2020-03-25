@@ -1,7 +1,4 @@
-//#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-//#if TENSORFLOW_USE_ROCM
-#if TENSORFLOW_USE_ROCM || \
-    (GOOGLE_CUDA && (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 530)))
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #define EIGEN_USE_GPU
 
@@ -164,8 +161,6 @@ void ApplyDropoutGrad<GPUDevice, T>::operator()(const GPUDevice& d, T* outgrads,
   float scale = 1. / (1 - rate);
   int64 kThreadInBlock = 1024;
   int64 kMaxBlock = 512;
-  // ReadInt64FromEnvVar("TF_DROP_THREADS", 256, &kThreadInBlock);
-  // ReadInt64FromEnvVar("TF_DROP_BLOCKS", 128, &kMaxBlock);
   TF_CHECK_OK(GpuLaunchKernel(
       ApplyDropoutGradKernel<T>,
       min(kMaxBlock, (num_elements + kThreadInBlock - 1) / kThreadInBlock),

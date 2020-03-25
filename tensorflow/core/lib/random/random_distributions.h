@@ -27,6 +27,10 @@ limitations under the License.
 #include "tensorflow/core/lib/bfloat16/bfloat16.h"
 #include "tensorflow/core/lib/random/philox_random.h"
 
+#if TENSORFLOW_USE_ROCM
+#include "rocm/include/hip/hip_fp16.h"
+#endif
+
 namespace tensorflow {
 namespace random {
 
@@ -90,6 +94,33 @@ class UniformDistribution<Generator, Eigen::half> {
     return result;
   }
 };
+
+#if TENSORFLOW_USE_ROCM
+template <class Generator>
+class UniformDistribution<Generator, half2> {
+ public:
+  // The number of elements that will be returned.
+  static const int kResultElementCount = Generator::kResultElementCount;
+  // Cost of generation of a single element (in cycles).
+  static const int kElementCost = 3;
+  // Indicate that this distribution may take variable number of samples
+  // during the runtime.
+  static const bool kVariableSamplesPerOutput = false;
+  typedef Array<half2, kResultElementCount> ResultType;
+  typedef half2 ResultElementType;
+
+  PHILOX_DEVICE_INLINE
+  ResultType operator()(Generator* gen) {
+    typename Generator::ResultType sample = (*gen)();
+    ResultType result;
+    for (int i = 0; i < kResultElementCount; ++i) {
+      Eigen::half hs[2]{Uint16ToHalf(sample[i]), Uint16ToHalf(sample[i]>>16)};
+      result[i] = *reinterpret_cast<const half2*>(&hs[0]);
+    }
+    return result;
+  }
+};
+#endif
 
 template <class Generator>
 class UniformDistribution<Generator, bfloat16> {

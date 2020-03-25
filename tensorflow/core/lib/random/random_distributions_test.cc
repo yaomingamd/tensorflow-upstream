@@ -29,6 +29,10 @@ limitations under the License.
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/test.h"
 
+#if TENSORFLOW_USE_ROCM
+#include "rocm/include/hip/hip_fp16.h"
+#endif
+
 namespace tensorflow {
 namespace random {
 namespace {
@@ -40,6 +44,8 @@ static constexpr float kZLimit = 6.0;
 // As bfloat16 has much less precision, the largest z-value will should be
 // larger than float32.
 static constexpr float kZLimitBfloat16 = 20.0;
+
+static constexpr float kZLimitFloat16 = 20.0;
 
 // A utility function to fill the given array with samples from the given
 // distribution, using the single adapter of the underlying generator
@@ -74,10 +80,10 @@ void FillRandomsWithSingles(PhiloxRandom gen,
 //       0 means the n-th moment of each sample
 //       any other strides tests for spatial correlation between samples;
 //   z_limit: the maximum z-test we would consider the test to pass;
-template <typename T>
+template <typename T, typename U>
 bool CheckSamplesMoments(const std::vector<T>& samples,
                          const std::function<double(int)>& theoretical_moments,
-                         int max_moments, int stride, T z_limit) {
+                         int max_moments, int stride, flaot z_limit) {
   const T* const samples_data = &samples[0];
   const int samples_size = samples.size();
   std::vector<double> moments(max_moments + 1);
@@ -144,11 +150,28 @@ bool CheckSamplesMoments(const std::vector<T>& samples,
   return status;
 }
 
+
+#if TENSORFLOW_USE_ROCM
+template <>
+bool CheckSamplesMoments(const std::vector<half2>& samples,
+                         const std::function<double(int)>& theoretical_moments,
+                         int max_moments, int stride, float z_limit)
+{
+  std::vector<Eigen::half> unpacked_samples(samples.size()*2);
+  for(int i=0; i<samples.size(); i++) {
+    unpacked_samples[i*2+0] = samples[i].x;
+    unpacked_samples[i*2+1] = samples[i].y;
+  }
+  return CheckSamplesMoments(unpacked_samples, theoretical_moments, max_moments,
+      stride, z_limit);
+}
+#endif
+
 // This tests checks that the generated samples match the theoretical moments
 // of the uniform distribution.
-template <typename T>
+template <typename T, typename U>
 void UniformMomentsTest(int count, int max_moments,
-                        const std::vector<int>& strides, T z_limit) {
+                        const std::vector<int>& strides, U z_limit) {
   auto uniform_moments = [](int n) -> double { return 1. / (n + 1); };
 
   std::vector<T> v1(count);
@@ -227,7 +250,7 @@ class TruncatedNormalMoments {
     return moment_n;
   }
 
- private:
+private:
   const double kV = 2.0;
   // f(v), where f is the p.d.f of the normal distribution and v=2.
   const double kFV = 1.0 / sqrt(2.0 * M_PI) * exp(-kV * kV / 2.0);
@@ -270,6 +293,11 @@ TEST(PhiloxRandomTest, RandomParametersBfloat16MomentsTest) {
   const std::vector<int> strides = {0, 1, 4, 17};
   RandomParametersMomentsTest<bfloat16>(1 << 20, 40, strides,
                                         bfloat16(kZLimitBfloat16));
+}
+
+TEST(PhiloxRandomTest, UniformHalfMomentsTest) {
+  const std::vector<int> strides = {0, 1, 4, 17};
+  UniformMomentsTest<Eigen::half>(1 << 20, 40, strides, kZLimitFloat16);
 }
 
 TEST(PhiloxRandomTest, UniformFloatMomentsTest) {
