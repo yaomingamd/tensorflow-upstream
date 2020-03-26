@@ -13,7 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "dropout_op.h"
+#define EIGEN_USE_THREADS
+
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -24,9 +25,25 @@ limitations under the License.
 #include "tensorflow/core/util/tensor_format.h"
 #include "tensorflow/stream_executor/temporary_device_memory.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#include "dropout_op.h"
 
 namespace tensorflow {
 typedef Eigen::ThreadPoolDevice CPUDevice;
+
+
+template <typename T>
+struct ApplyDropout<CPUDevice, T> {
+  void operator()(const CPUDevice& d, T* out, const T* in,
+                  const float* rng_data, float rate, uint64 num_elements,
+                  random::PhiloxRandom gen);
+};
+
+template <typename T>
+struct ApplyDropoutGrad<CPUDevice, T> {
+  void operator()(const CPUDevice& d, T* outgrads, const T* grads, const T* ins,
+                  const T* outs, float rate, uint64 num_elements);
+};
+
 
 template <typename T>
 void ApplyDropout<CPUDevice, T>::operator()(const CPUDevice& d, T* out,
@@ -65,8 +82,6 @@ class DropoutOp : public OpKernel {
   ~DropoutOp() override {}
 
   void Compute(OpKernelContext* ctx) override {
-    // printf("Dropout %s\n",
-    // std::is_same<Device,CPUDevice>::value?"CPU":"GPU");
     const Tensor& in0 = ctx->input(0);
 
     const Tensor& in1 = ctx->input(1);

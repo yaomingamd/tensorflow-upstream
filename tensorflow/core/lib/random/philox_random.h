@@ -38,6 +38,11 @@ limitations under the License.
 
 #include <math.h>
 
+#if TENSORFLOW_USE_ROCM
+#include "rocm/include/hip/hip_fp16.h"
+#endif
+
+
 namespace tensorflow {
 namespace random {
 
@@ -46,13 +51,19 @@ namespace random {
 // Arguments:
 //   T: the array element type;
 //   ElementCount: the fixed size of the array;
+
+template <class T> PHILOX_DEVICE_INLINE T zero() { return T(0); }
+#if TENSORFLOW_USE_ROCM
+template<> PHILOX_DEVICE_INLINE half2 zero<half2>() { return __float2half2_rn(0.0f); }
+#endif
+
 template <typename T, int ElementCount>
 class Array {
  public:
   static const int kElementCount = ElementCount;
   PHILOX_DEVICE_INLINE Array() {
     for (int i = 0; i < ElementCount; ++i) {
-      data_[i] = T(0);
+      data_[i] = zero<T>();
     }
   }
 

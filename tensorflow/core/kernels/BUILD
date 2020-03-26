@@ -2373,7 +2373,7 @@ cc_library(
     deps = [
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
-    ],
+    ] + if_rocm(["@local_config_rocm//rocm:rocprim"]),
 )
 
 tf_cc_test(

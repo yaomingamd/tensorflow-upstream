@@ -17,7 +17,6 @@ limitations under the License.
 #define TENSORFLOW_CORE_KERNELS_DROPOUT_OP_H_
 
 namespace tensorflow {
-typedef Eigen::ThreadPoolDevice CPUDevice;
 
 template <typename Device, typename T>
 struct ApplyDropout {
@@ -25,23 +24,10 @@ struct ApplyDropout {
                   float rate, uint64 num_elements, random::PhiloxRandom gen) {}
 };
 
-template <typename T>
-struct ApplyDropout<CPUDevice, T> {
-  void operator()(const CPUDevice& d, T* out, const T* in,
-                  const float* rng_data, float rate, uint64 num_elements,
-                  random::PhiloxRandom gen);
-};
-
 template <typename Device, typename T>
 struct ApplyDropoutGrad {
   void operator()(const Device& d, T* outgrads, const T* grads, const T* ins,
                   const T* outs, float rate, uint64 num_elements) {}
-};
-
-template <typename T>
-struct ApplyDropoutGrad<CPUDevice, T> {
-  void operator()(const CPUDevice& d, T* outgrads, const T* grads, const T* ins,
-                  const T* outs, float rate, uint64 num_elements);
 };
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM

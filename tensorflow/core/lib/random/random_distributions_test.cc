@@ -45,7 +45,8 @@ static constexpr float kZLimit = 6.0;
 // larger than float32.
 static constexpr float kZLimitBfloat16 = 20.0;
 
-static constexpr float kZLimitFloat16 = 20.0;
+static constexpr float kZLimitFloat16 = 6.0;
+static constexpr float kZLimitHalf2 = 6.0;
 
 // A utility function to fill the given array with samples from the given
 // distribution, using the single adapter of the underlying generator
@@ -80,10 +81,10 @@ void FillRandomsWithSingles(PhiloxRandom gen,
 //       0 means the n-th moment of each sample
 //       any other strides tests for spatial correlation between samples;
 //   z_limit: the maximum z-test we would consider the test to pass;
-template <typename T, typename U>
+template <typename T>
 bool CheckSamplesMoments(const std::vector<T>& samples,
                          const std::function<double(int)>& theoretical_moments,
-                         int max_moments, int stride, flaot z_limit) {
+                         int max_moments, int stride, float z_limit) {
   const T* const samples_data = &samples[0];
   const int samples_size = samples.size();
   std::vector<double> moments(max_moments + 1);
@@ -134,6 +135,7 @@ bool CheckSamplesMoments(const std::vector<T>& samples,
     // z_test is approximately a unit normal distribution.
     const double z_test =
         fabs((moments[i] - moments_i_mean) / sqrt(total_variance));
+    printf("z_test %f\n", z_test);
 
     if (z_test > static_cast<double>(z_limit)) {
       LOG(ERROR) << "failing z_test:"
@@ -159,11 +161,40 @@ bool CheckSamplesMoments(const std::vector<half2>& samples,
 {
   std::vector<Eigen::half> unpacked_samples(samples.size()*2);
   for(int i=0; i<samples.size(); i++) {
-    unpacked_samples[i*2+0] = samples[i].x;
-    unpacked_samples[i*2+1] = samples[i].y;
+    const Eigen::half* p = reinterpret_cast<const Eigen::half*>(&samples[i]);
+    unpacked_samples[i*2+0] = p[0];
+    unpacked_samples[i*2+1] = p[1];
   }
   return CheckSamplesMoments(unpacked_samples, theoretical_moments, max_moments,
       stride, z_limit);
+}
+#endif
+
+template <typename T>
+void UniformRangeTest(int count, float minval, float maxval) {
+  std::vector<T> v1(count);
+  uint64 seed = GetTestSeed();
+  PhiloxRandom gen(seed);
+  FillRandoms<UniformDistribution<PhiloxRandom, T> >(gen, &v1[0], v1.size());
+  for (auto x: v1) {
+    ASSERT_TRUE(float(x)>=minval && float(x)<=maxval) << " UniformRangeTest failing. seed: " << seed;
+  }
+}
+
+#if TENSORFLOW_USE_ROCM
+template <>
+void UniformRangeTest<half2>(int count, float minval, float maxval) {
+  std::vector<half2> v1(count);
+  uint64 seed = GetTestSeed();
+  PhiloxRandom gen(seed);
+  FillRandoms<UniformDistribution<PhiloxRandom, half2> >(gen, &v1[0], v1.size());
+  for (auto x: v1) {
+    const Eigen::half* p = reinterpret_cast<const Eigen::half*>(&x);
+    ASSERT_TRUE(float(p[0])>=minval && float(p[0])<=maxval) << 
+        " UniformRangeTest failing. seed: " << seed;
+    ASSERT_TRUE(float(p[1])>=minval && float(p[1])<=maxval) << 
+        " UniformRangeTest failing. seed: " << seed;
+  }
 }
 #endif
 
@@ -187,9 +218,9 @@ void UniformMomentsTest(int count, int max_moments,
 
 // This test checks that the generated samples match the theoretical moments
 // of the unit normal distribution.
-template <typename T>
+template <typename T, typename U>
 void NormalMomentsTest(int count, int max_moments,
-                       const std::vector<int>& strides, T z_limit) {
+                       const std::vector<int>& strides, U z_limit) {
   auto normal_moments = [](int n) -> double {
     if (n % 2 == 1) {
       // For an odd order, the moment of a unit normal distribution is zero.
@@ -262,9 +293,9 @@ private:
 
 // This test checks that the generated samples matche the theoretical moments
 // of the truncated normal distribution.
-template <typename T>
+template <typename T, typename U>
 void RandomParametersMomentsTest(int count, int max_moments,
-                                 const std::vector<int>& strides, T z_limit) {
+                                 const std::vector<int>& strides, U z_limit) {
   std::vector<T> v1(count);
   uint64 seed = GetTestSeed();
   PhiloxRandom gen(seed);
@@ -281,28 +312,39 @@ void RandomParametersMomentsTest(int count, int max_moments,
 
 TEST(PhiloxRandomTest, UniformBfloat16MomentsTest) {
   const std::vector<int> strides = {0, 1, 4, 17};
-  UniformMomentsTest<bfloat16>(1 << 20, 40, strides, bfloat16(kZLimitBfloat16));
+  UniformMomentsTest<bfloat16>(1 << 20, 40, strides, kZLimitBfloat16);
 }
 
 TEST(PhiloxRandomTest, NormalBfloat16MomentsTest) {
   const std::vector<int> strides = {0, 1, 4, 17};
-  NormalMomentsTest<bfloat16>(8 << 20, 25, strides, bfloat16(kZLimitBfloat16));
+  NormalMomentsTest<bfloat16>(8 << 20, 25, strides, kZLimitBfloat16);
 }
 
 TEST(PhiloxRandomTest, RandomParametersBfloat16MomentsTest) {
   const std::vector<int> strides = {0, 1, 4, 17};
   RandomParametersMomentsTest<bfloat16>(1 << 20, 40, strides,
-                                        bfloat16(kZLimitBfloat16));
+                                        kZLimitBfloat16);
 }
 
 TEST(PhiloxRandomTest, UniformHalfMomentsTest) {
   const std::vector<int> strides = {0, 1, 4, 17};
   UniformMomentsTest<Eigen::half>(1 << 20, 40, strides, kZLimitFloat16);
+  UniformRangeTest<Eigen::half>(1 << 20, 0.0, 1.0);
 }
+
+#if TENSORFLOW_USE_ROCM
+TEST(PhiloxRandomTest, UniformHalf2MomentsTest) {
+  const std::vector<int> strides = {0, 1, 4, 17};
+ UniformMomentsTest<half2>(1 << 20, 40, strides, kZLimitHalf2);
+ // UniformRangeTest<half2>(1 << 20, 0.0, 1.0);
+}
+#endif
+
 
 TEST(PhiloxRandomTest, UniformFloatMomentsTest) {
   const std::vector<int> strides = {0, 1, 4, 17};
   UniformMomentsTest<float>(1 << 20, 40, strides, kZLimit);
+  UniformRangeTest<float>(1 << 20, 0.0, 1.0);
 }
 
 TEST(PhiloxRandomTest, NormalFloatMomentsTest) {

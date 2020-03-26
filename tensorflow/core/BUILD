@@ -3136,7 +3136,7 @@ tf_cc_test(
         ":test",
         ":test_main",
         "//third_party/eigen3",
-    ],
+    ] + if_rocm(["@local_config_rocm//rocm:rocprim"]),
 )
 
 test_suite(

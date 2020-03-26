@@ -1,8 +1,7 @@
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if TENSORFLOW_USE_ROCM
 
 #define EIGEN_USE_GPU
 
-#include "dropout_op.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -18,6 +17,7 @@
 #include "tensorflow/stream_executor/temporary_device_memory.h"
 #include "third_party/eigen3/Eigen/Core"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#include "dropout_op.h"
 
 #if TENSORFLOW_USE_ROCM
 #include "rocm/include/hip/hip_fp16.h"
@@ -51,28 +51,17 @@ __global__ void RNGAndApplyDropoutKernel(random::PhiloxRandom gen, int64 size,
                                          T* _out, const T* _in, U rate,
                                          U scale) {
   constexpr bool is_half = std::is_same<T, Eigen::half>::value;
-  constexpr bool is_half2 = std::is_same<T, __half2>::value;
-
-  // The RNG only knows how to generate half or float. Ideally we'd want to
-  // implement UniformDistribution for half2 to double the throughput, but
-  // //tensorflow/python:auto_mixed_precision_test expects RNG to match
-  // between float16 and float32 for the same seed, so we're stuck with float
-  typedef float DistGenType;
-  typedef
-      typename std::conditional<is_half2, float2, float>::type DistApplyType;
-
   // Cast inputs from Eigen::half to __half. TODO: is there a better way of
   // doing this?
   typedef typename std::conditional<is_half, half, T>::type TT;
   TT* out = reinterpret_cast<TT*>(_out);
   const TT* in = reinterpret_cast<const TT*>(_in);
-  typedef random::UniformDistribution<random::PhiloxRandom, DistGenType> Dist;
+  typedef random::UniformDistribution<random::PhiloxRandom, half2> Dist;
   Dist dist;
   static_assert(Dist::kVariableSamplesPerOutput == false,
                 "Wrong kVariableSamplesPerOutput");
 
-  // in half2 mode, RNG produces 4 half per call which we convert into 2 half2
-  constexpr int kGroupSize = Dist::kResultElementCount / (is_half2 ? 2 : 1);
+  constexpr int kGroupSize = Dist::kResultElementCount * 2;
   static_assert(Dist::kResultElementCount == 4, "wrong kResultElementCount");
 
   const int32 thread_id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -82,8 +71,8 @@ __global__ void RNGAndApplyDropoutKernel(random::PhiloxRandom gen, int64 size,
 
   while (offset + kGroupSize <= size) {
     const typename Dist::ResultType samples = dist(&gen);
-    const DistApplyType* ps =
-        reinterpret_cast<const DistApplyType*>(&samples[0]);
+    const half* ps =
+        reinterpret_cast<const half*>(&samples[0]);
     for (int i = 0; i < kGroupSize; ++i)
       apply_dropout(out[offset + i], in[offset + i], ps[i], rate, scale);
 
@@ -92,13 +81,51 @@ __global__ void RNGAndApplyDropoutKernel(random::PhiloxRandom gen, int64 size,
   }
 
   typename Dist::ResultType samples = dist(&gen);
-  const DistApplyType* ps = reinterpret_cast<const DistApplyType*>(&samples[0]);
+  const half* ps = reinterpret_cast<const half*>(&samples[0]);
   for (int i = 0; i < kGroupSize; ++i) {
     if (offset >= size) return;
     apply_dropout(out[offset], in[offset], ps[i], rate, scale);
     ++offset;
   }
 }
+
+
+template <>
+__global__ void RNGAndApplyDropoutKernel<half2, half2>(random::PhiloxRandom gen, int64 size,
+                                         half2* out, const half2* in, half2 rate,
+                                         half2 scale) {
+  typedef random::UniformDistribution<random::PhiloxRandom, half2> Dist;
+  Dist dist;
+  static_assert(Dist::kVariableSamplesPerOutput == false,
+                "Wrong kVariableSamplesPerOutput");
+
+  constexpr int kGroupSize = Dist::kResultElementCount;
+  static_assert(Dist::kResultElementCount == 4, "wrong kResultElementCount");
+
+  const int32 thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+  const int32 total_thread_count = gridDim.x * blockDim.x;
+  int32 offset = thread_id * kGroupSize;
+  gen.Skip(thread_id);
+
+  while (offset + kGroupSize <= size) {
+    const typename Dist::ResultType samples = dist(&gen);
+    const half2* ps = &samples[0];
+    for (int i = 0; i < kGroupSize; ++i)
+      apply_dropout(out[offset + i], in[offset + i], ps[i], rate, scale);
+
+    offset += total_thread_count * kGroupSize;
+    gen.Skip(total_thread_count - 1);
+  }
+
+  typename Dist::ResultType samples = dist(&gen);
+  const half2* ps = &samples[0];
+  for (int i = 0; i < kGroupSize; ++i) {
+    if (offset >= size) return;
+    apply_dropout(out[offset], in[offset], ps[i], rate, scale);
+    ++offset;
+  }
+}
+
 
 template <typename T>
 __global__ void ApplyDropoutGradKernel(T* outgrads, const T* grads,

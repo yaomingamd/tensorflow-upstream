@@ -3,6 +3,12 @@ load(
     "cc_library",
 )
 
+load(
+    "@local_config_rocm//rocm:build_defs.bzl",
+    "if_rocm"
+)
+
+
 package(
     default_visibility = [
         # tensorflow/core:lib effectively exposes all targets under tensorflow/core/lib/**
@@ -46,9 +52,10 @@ cc_library(
         "//tensorflow/core/platform:macros",
         "//tensorflow/core/platform:types",
         "//third_party/eigen3",
-    ],
+    ] + if_rocm(["@local_config_rocm//rocm:rocprim"]),
     alwayslink = 1,
 )
+#"//tensorflow/core/platform/default/build_config:rocm",
 
 cc_library(
     name = "philox_random",
@@ -93,6 +100,7 @@ cc_library(
         "//tensorflow/core/platform:logging",
         "//tensorflow/core/platform:macros",
         "//tensorflow/core/platform:types",
+        "//tensorflow/core/platform/default/build_config:rocm",
     ],
     alwayslink = 1,
 )

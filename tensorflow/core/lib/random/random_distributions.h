@@ -114,7 +114,7 @@ class UniformDistribution<Generator, half2> {
     typename Generator::ResultType sample = (*gen)();
     ResultType result;
     for (int i = 0; i < kResultElementCount; ++i) {
-      Eigen::half hs[2]{Uint16ToHalf(sample[i]), Uint16ToHalf(sample[i]>>16)};
+      Eigen::half hs[2]={Uint16ToHalf(sample[i]), Uint16ToHalf(sample[i]>>16)};
       result[i] = *reinterpret_cast<const half2*>(&hs[0]);
     }
     return result;
