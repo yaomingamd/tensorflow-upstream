@@ -4694,6 +4694,9 @@ def sobol_sample(dim, num_results, skip=0, dtype=dtypes.float32, name=None):
   with ops.name_scope(name, "sobol", [dim, num_results, skip]):
     return gen_math_ops.sobol_sample(dim, num_results, skip, dtype=dtype)
 
+@tf_export("math.rsqrt_eps", v1=["math.rsqrt_eps"])
+def rsqrt_eps(x, eps, name=None):
+    return gen_math_ops.rsqrt_eps(x, eps, name)
 
 @tf_export("math.rsqrt", v1=["math.rsqrt", "rsqrt"])
 @deprecation.deprecated_endpoints("rsqrt")

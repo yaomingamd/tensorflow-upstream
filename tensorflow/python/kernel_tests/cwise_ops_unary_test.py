@@ -167,6 +167,12 @@ class UnaryOpTest(test.TestCase):
   def _rsqrt(self, x):
     return self._inv(np.sqrt(x))
 
+  def _rsqrt_eps(self, x):
+    return self._inv(np.sqrt(x)+1e-3)
+
+  def _math_ops_rsqrt_eps(self, x):
+    return math_ops.rsqrt_eps(x, 1e-3)
+
   def _sigmoid(self, x):
     return 1.0 / (1.0 + np.exp(-x))
 
@@ -202,6 +208,7 @@ class UnaryOpTest(test.TestCase):
     self._compareBoth(x, np.square, math_ops.square)
     self._compareBoth(z, np.sqrt, math_ops.sqrt)
     self._compareBoth(z, self._rsqrt, math_ops.rsqrt)
+    self._compareBoth(z, self._rsqrt_eps, self._math_ops_rsqrt_eps)
     self._compareBoth(x, np.exp, math_ops.exp)
     self._compareBoth(x, np.expm1, math_ops.expm1)
     self._compareBoth(z, np.log, math_ops.log)
@@ -259,6 +266,7 @@ class UnaryOpTest(test.TestCase):
     self._compareBoth(x, np.square, math_ops.square)
     self._compareBoth(x, np.sqrt, math_ops.sqrt)
     self._compareBoth(x, self._rsqrt, math_ops.rsqrt)
+    self._compareBoth(x, self._rsqrt_eps, self._math_ops_rsqrt_eps)
     self._compareBoth(x, np.exp, math_ops.exp)
     self._compareBoth(x, np.expm1, math_ops.expm1)
     self._compareBoth(x, np.log, math_ops.log)
@@ -310,6 +318,7 @@ class UnaryOpTest(test.TestCase):
     self._compareBoth(x, np.square, math_ops.square)
     self._compareBoth(z, np.sqrt, math_ops.sqrt)
     self._compareBoth(z, self._rsqrt, math_ops.rsqrt)
+    self._compareBoth(z, self._rsqrt_eps, self._math_ops_rsqrt_eps)
     self._compareBoth(x, np.exp, math_ops.exp)
     self._compareBoth(x, np.expm1, math_ops.expm1)
     self._compareBoth(z, np.log, math_ops.log)
@@ -361,6 +370,7 @@ class UnaryOpTest(test.TestCase):
     self._compareBoth(x, np.square, math_ops.square)
     self._compareBoth(z, np.sqrt, math_ops.sqrt)
     self._compareBoth(z, self._rsqrt, math_ops.rsqrt)
+    self._compareBoth(z, self._rsqrt_eps, self._math_ops_rsqrt_eps)
     self._compareBoth(x, np.exp, math_ops.exp)
     self._compareBoth(x, np.expm1, math_ops.expm1)
     self._compareBoth(z, np.log, math_ops.log)

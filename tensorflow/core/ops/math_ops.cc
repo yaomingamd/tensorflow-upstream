@@ -263,6 +263,25 @@ REGISTER_OP("SqrtGrad").UNARY_GRADIENT_COMPLEX();
 
 REGISTER_OP("Rsqrt").UNARY_COMPLEX();
 
+//REGISTER_OP("RsqrtEps").UNARY_REAL();
+
+//REGISTER_OP("RsqrtEpsGrad").UNARY_REAL();
+
+REGISTER_OP("RsqrtEps")
+    .Input("x: T")
+    .Input("eps: T")
+    .Output("y: T")
+    .Attr("T: {half, float, double}")
+    .SetShapeFn(shape_inference::UnchangedShape);
+
+REGISTER_OP("RsqrtEpsGrad")
+    .Input("x: T")
+    .Input("grad: T")
+    .Input("eps: T")
+    .Output("y: T")
+    .Attr("T: {half, float, double}")
+    .SetShapeFn(shape_inference::UnchangedShape);
+
 REGISTER_OP("Round").UNARY();
 
 REGISTER_OP("RsqrtGrad").UNARY_GRADIENT_COMPLEX();

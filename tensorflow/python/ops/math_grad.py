@@ -611,6 +611,11 @@ def _RsqrtGrad(op, grad):
   y = op.outputs[0]  # y = x^(-1/2)
   return gen_math_ops.rsqrt_grad(y, grad)
 
+@ops.RegisterGradient("RsqrtEps")
+def _RsqrtEpsGrad(op, grad):
+  x = op.inputs[0]
+  eps = op.inputs[1]
+  return [gen_math_ops.rsqrt_eps_grad(x, grad, eps), None]
 
 @ops.RegisterGradient("RsqrtGrad")
 def _RsqrtGradGrad(op, grad):
