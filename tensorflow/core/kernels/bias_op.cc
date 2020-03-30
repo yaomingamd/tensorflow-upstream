@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/kernels/redux_functor.h"
 #include "tensorflow/core/util/tensor_format.h"
+#include "tensorflow/core/util/env_var.h"
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "tensorflow/core/kernels/bias_op_gpu.h"
@@ -559,12 +560,16 @@ class BiasGradOp<GPUDevice, T> : public OpKernel {
     // Autotune two algorithm: customized
     BiasAddGradGPUConfig algo_config;
     if (!AutotuneBiasGrad::GetInstance()->Find(bias_parameters, &algo_config)) {
+      int repeats=5;
       BiasGradGPUProfileResult best_result;
       // Initialize the timer.
       perftools::gputools::Timer timer(stream->parent());
       stream->InitTimer(&timer);
-      stream->ThenStartTimer(&timer);
       ComputeWithCustomKernel(context, output_backprop, batch, width, height,
+                              depth, channel, output);
+      stream->ThenStartTimer(&timer);
+      for(int i=0; i<repeats; i++)
+        ComputeWithCustomKernel(context, output_backprop, batch, width, height,
                               depth, channel, output);
       stream->ThenStopTimer(&timer);
       uint64 elapsed_microseconds = timer.Microseconds();
@@ -576,8 +581,11 @@ class BiasGradOp<GPUDevice, T> : public OpKernel {
       }
 
       // Try reduction and profile.
-      stream->ThenStartTimer(&timer);
       ComputeWithReduceSum(context, output_backprop, batch, width, height,
+                         depth, channel, output);
+      stream->ThenStartTimer(&timer);
+      for(int i=0; i<repeats; i++)
+        ComputeWithReduceSum(context, output_backprop, batch, width, height,
                            depth, channel, output);
       stream->ThenStopTimer(&timer);
 
@@ -588,6 +596,13 @@ class BiasGradOp<GPUDevice, T> : public OpKernel {
         best_result.set_algorithm(BiasAddGradGPUMode::kReduction);
         best_result.set_elapsed_time(elapsed_microseconds);
       }
+
+      int64 kBiasGradMode=0;
+      (void)ReadInt64FromEnvVar("TF_BIAS_GRAD_MODE", 0, &kBiasGradMode);
+      if(kBiasGradMode==1)
+        best_result.set_algorithm(BiasAddGradGPUMode::kNative);
+      else if(kBiasGradMode==2)
+        best_result.set_algorithm(BiasAddGradGPUMode::kReduction);
 
       algo_config.set_mode(best_result.algorithm());
       AutotuneBiasGrad::GetInstance()->Insert(bias_parameters, algo_config);

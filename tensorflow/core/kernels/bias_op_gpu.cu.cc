@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/reduction_ops_common.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 
@@ -122,6 +123,105 @@ __global__ void BiasGradNCHW_Naive(int32 nthreads,
     GpuAtomicAdd(bias_backprop + bias_offset, ldg(output_backprop + index));
   }
 }
+
+#if 1
+
+// A special pathway to use when block size is a multiple of bias_size,
+// in which case, each thread always processes the same bias index,
+// and we can dispense with shared memory. 
+// Seeing 10-20% speedup on MI60 
+template <typename T>
+__global__ void BiasGradNHWC_SharedAtomics_SmallBias(
+    int32 nthreads, const T* __restrict__ output_backprop,
+    T* __restrict__ bias_backprop, int32 bias_size) {
+  typedef typename AccumulatorType<T>::type AccT;
+  AccT acc(0);
+  for (int32 index = blockIdx.x * blockDim.x + threadIdx.x; index < nthreads;
+       index += blockDim.x * gridDim.x) {
+    acc += AccT(ldg(output_backprop + index));
+  }
+
+  GpuAtomicAdd(bias_backprop + (threadIdx.x & (bias_size-1)), T(acc));
+}
+
+// A special pathway to use when bias size is a multiple of block size,
+// in which case, each shared memory location is only accessed by one thread,
+// and we don't need to use atomics to write it.
+// Seeing 10-20% speedup on MI60 
+template <typename T>
+__global__ void BiasGradNHWC_SharedAtomics_LargeBias(
+    int32 nthreads, const T* __restrict__ output_backprop,
+    T* __restrict__ bias_backprop, int32 bias_size) {
+  typedef typename AccumulatorType<T>::type AccT;
+  GPU_DYNAMIC_SHARED_MEM_DECL(8, char, s_buf);
+  AccT* s_data = reinterpret_cast<AccT*>(s_buf);
+  for (int32 index = threadIdx.x; index < bias_size; index += blockDim.x) {
+    s_data[index] = AccT(0);
+  }
+
+  for (int32 index = blockIdx.x * blockDim.x + threadIdx.x; index < nthreads;
+       index += blockDim.x * gridDim.x) {
+    int32 bias_offset = index % bias_size;
+    s_data[bias_offset] += AccT(ldg(output_backprop + index));
+  }
+//  __syncthreads();
+
+  for (int32 index = threadIdx.x; index < bias_size; index += blockDim.x) {
+    GpuAtomicAdd(bias_backprop + index, T(s_data[index]));
+  }
+}
+#else
+
+template <typename T>
+__global__ void BiasGradNHWC_SharedAtomics_LargeBias(
+    int32 nthreads, const T* __restrict__ output_backprop,
+    T* __restrict__ bias_backprop, int32 bias_size) {
+  typedef typename AccumulatorType<T>::type AccT;
+  GPU_DYNAMIC_SHARED_MEM_DECL(8, char, s_buf);
+  AccT* s_data = reinterpret_cast<AccT*>(s_buf);
+  for (int32 index = threadIdx.x; index < bias_size; index += blockDim.x) {
+    s_data[index] = AccT(0);
+  }
+  __syncthreads();
+
+  for (int32 index = blockIdx.x * blockDim.x + threadIdx.x; index < nthreads;
+       index += blockDim.x * gridDim.x) {
+    int32 bias_offset = index % bias_size;
+    GpuAtomicAdd(s_data + bias_offset, AccT(ldg(output_backprop + index)));
+  }
+  __syncthreads();
+
+  for (int32 index = threadIdx.x; index < bias_size; index += blockDim.x) {
+    GpuAtomicAdd(bias_backprop + index, T(s_data[index]));
+  }
+}
+
+
+template <typename T>
+__global__ void BiasGradNHWC_SharedAtomics_SmallBias(
+    int32 nthreads, const T* __restrict__ output_backprop,
+    T* __restrict__ bias_backprop, int32 bias_size) {
+  typedef typename AccumulatorType<T>::type AccT;
+  GPU_DYNAMIC_SHARED_MEM_DECL(8, char, s_buf);
+  AccT* s_data = reinterpret_cast<AccT*>(s_buf);
+  for (int32 index = threadIdx.x; index < bias_size; index += blockDim.x) {
+    s_data[index] = AccT(0);
+  }
+  __syncthreads();
+
+  for (int32 index = blockIdx.x * blockDim.x + threadIdx.x; index < nthreads;
+       index += blockDim.x * gridDim.x) {
+    int32 bias_offset = index % bias_size;
+    GpuAtomicAdd(s_data + bias_offset, AccT(ldg(output_backprop + index)));
+  }
+  __syncthreads();
+
+  for (int32 index = threadIdx.x; index < bias_size; index += blockDim.x) {
+    GpuAtomicAdd(bias_backprop + index, T(s_data[index]));
+  }
+}
+
+#endif
 
 template <typename T>
 __global__ void BiasGradNHWC_SharedAtomics(
@@ -219,8 +319,13 @@ void BiasGradGPU<T>::compute(const GPUDevice& d, const T* output_backprop,
   if (total_count == 0) {
     return;
   }
-  static constexpr int32 kWarpSize = 32;
+  static constexpr int32 kWarpSize = TF_RED_WARPSIZE;
   GpuLaunchConfig config = GetGpuLaunchConfig(total_count, d);
+  // thread_per_block is normally power of 2, but let's confirm that
+  bool is_pow2_blocksize = ((config.thread_per_block & (config.thread_per_block-1))==0);
+
+  int64 kBiasDiv=4;
+  (void)ReadInt64FromEnvVar("TF_BIAS_DIV", 4, &kBiasDiv);
 
   const int max_shared_memory_size = d.sharedMemPerBlock() / 2;
   int32 shared_memory_size = 0;
@@ -230,6 +335,28 @@ void BiasGradGPU<T>::compute(const GPUDevice& d, const T* output_backprop,
   // Check if we have enough shared memory.
   if (shared_memory_size <= max_shared_memory_size) {
     if (data_format == FORMAT_NHWC) {
+
+     if (bias_size<=config.thread_per_block
+        && is_pow2_blocksize
+        && !(config.thread_per_block % bias_size)) {
+          config.block_count = max(1, int(config.block_count/kBiasDiv));
+          TF_CHECK_OK(GpuLaunchKernel(BiasGradNHWC_SharedAtomics_SmallBias<T>,
+                                      config.block_count, config.thread_per_block,
+                                      shared_memory_size, d.stream(), total_count,
+                                      output_backprop, bias_backprop, bias_size));
+        return;
+      }
+
+      if (bias_size>config.thread_per_block 
+        && !(bias_size % config.thread_per_block)
+        && is_pow2_blocksize) {
+        config.block_count = max(1, int(config.block_count/kBiasDiv));
+        TF_CHECK_OK(GpuLaunchKernel(BiasGradNHWC_SharedAtomics_LargeBias<T>,
+                                    config.block_count, config.thread_per_block,
+                                    shared_memory_size, d.stream(), total_count,
+                                    output_backprop, bias_backprop, bias_size));
+        return;
+      }
       TF_CHECK_OK(GpuLaunchKernel(BiasGradNHWC_SharedAtomics<T>,
                                   config.block_count, config.thread_per_block,
                                   shared_memory_size, d.stream(), total_count,
