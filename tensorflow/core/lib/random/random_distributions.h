@@ -36,6 +36,11 @@ namespace random {
 
 // Helper function to convert a 16-bit integer to a half between [0..1).
 PHILOX_DEVICE_INLINE Eigen::half Uint16ToHalf(uint16 x);
+
+#if TENSORFLOW_USE_ROCM
+PHILOX_DEVICE_INLINE half2 Uint32ToHalf2(uint32 x);
+#endif
+
 // Helper function to convert a 16-bit integer to a bfloat16 between [0..1).
 PHILOX_DEVICE_INLINE bfloat16 Uint16ToGfloat16(uint16 x);
 // Helper function to convert a 32-bit integer to a float between [0..1).
@@ -96,6 +101,14 @@ class UniformDistribution<Generator, Eigen::half> {
 };
 
 #if TENSORFLOW_USE_ROCM
+
+inline __host__ half2 operator-(half2 a, half2 b) {
+  const Eigen::half* pa = reinterpret_cast<const Eigen::half*>(&a);
+  const Eigen::half* pb = reinterpret_cast<const Eigen::half*>(&b);
+  Eigen::half c[2]={pa[0]-pb[0],pa[1]-pb[1]};
+  return *reinterpret_cast<const half2*>(c);
+} 
+
 template <class Generator>
 class UniformDistribution<Generator, half2> {
  public:
@@ -114,8 +127,9 @@ class UniformDistribution<Generator, half2> {
     typename Generator::ResultType sample = (*gen)();
     ResultType result;
     for (int i = 0; i < kResultElementCount; ++i) {
-      Eigen::half hs[2]={Uint16ToHalf(sample[i]), Uint16ToHalf(sample[i]>>16)};
-      result[i] = *reinterpret_cast<const half2*>(&hs[0]);
+      //Eigen::half hs[2]={Uint16ToHalf(sample[i]), Uint16ToHalf(sample[i]>>16)};
+      //*reinterpret_cast<const half2*>(&hs[0]);
+      result[i] = Uint32ToHalf2(sample[i]);
     }
     return result;
   }
@@ -794,6 +808,23 @@ PHILOX_DEVICE_INLINE Eigen::half Uint16ToHalf(uint16 x) {
   result.x = val;
   return result - Eigen::half(1.0);
 }
+
+#if TENSORFLOW_USE_ROCM
+PHILOX_DEVICE_INLINE half2 Uint32ToHalf2(uint32 x) {
+  // IEEE754 halfs are formatted as follows (MSB first):
+  //    sign(1) exponent(5) mantissa(10)
+  // Conceptually construct the following:
+  //    sign == 0
+  //    exponent == 15  -- an excess 15 representation of a zero exponent
+  //    mantissa == 10 random bits
+  const uint32 man = x & 0x03ff03ffu;  // 10 bit mantissa
+  const uint32 exp = 0x3c003c00u;
+  const uint32 val = exp | man;
+
+  half2 result = reinterpret_cast<const half2&>(val);
+  return result - half2(1.0f, 1.0f);
+}
+#endif
 
 // Helper function to convert an 16-bit integer to a bfloat16 between [0..1).
 // This can create a uniform distribution of values between [0..1).

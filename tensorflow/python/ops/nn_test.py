@@ -311,13 +311,21 @@ class L2NormalizeTest(test_lib.TestCase):
 
 
 class DropoutTest(test_lib.TestCase):
+
+  def _test_correl(self, signs, stride):
+    signs = signs.flatten()
+    v = signs[stride:] + 2*signs[:-stride]
+    return np.bincount(v, minlength=4)
+
   @test_util.run_deprecated_v1
   def testDropout(self):
-    # Runs dropout with 0-1 tensor 100 times, sum the number of ones and validate
-    # that it is producing approximately the right number of ones over a large
-    # number of samples, based on the keep probability.
+    # Run dropout with 0-1 tensor many times, sum the number of ones and 
+    # validate that it is producing approximately the right number of ones 
+    # over a large number of samples, based on the keep probability.
     for gpu in (True,False):
       for t, x_dim, y_dim in ((np.float16,40,30),(np.float16,41,31), (np.float32,40,30), (np.float64,40,30), (np.float32,1000,1000)):
+      #for t, x_dim, y_dim in ((np.float32,40,30),):
+      #for t, x_dim, y_dim in ((np.float32,40,30), (np.float64,40,30), (np.float32,1000,1000)):
         num_iter = 100 if x_dim*y_dim<100000 else 1
         for keep_prob in [0.1, 0.5, 0.8]:
           print("****",gpu,t,x_dim,y_dim,keep_prob)
@@ -327,11 +335,14 @@ class DropoutTest(test_lib.TestCase):
             dropout = nn_ops.dropout(arr, rate=(1 - keep_prob))
             final_count = 0
             self.assertEqual([x_dim, y_dim], dropout.get_shape())
+            xc={x: np.array([0,0,0,0],dtype=np.int32) for x in [1,2,4]}
             for _ in xrange(0, num_iter):
               value = self.evaluate(dropout)
               final_count += np.count_nonzero(value)
               signs = np.where(value!=0,1,0)
               site_counts+=signs
+              for stride in [1,2,4]:
+                xc[stride]+=self._test_correl(signs,stride)
               # Verifies that there are only two values: 0 and 1/keep_prob.
               sorted_value = np.unique(np.sort(value))
               self.assertEqual(0, sorted_value[0])
@@ -341,14 +352,43 @@ class DropoutTest(test_lib.TestCase):
             # Check that we are in the error range
             expected_count = x_dim * y_dim * keep_prob * num_iter
             rel_error = math.fabs(final_count - expected_count) / expected_count
-            print("rel", rel_error, x_dim*y_dim*num_iter, expected_count, final_count)
             self.assertTrue(rel_error < 0.05)
-            # also confirm that each individual location has the right statistics.
+            # Also confirm that each individual location has the right statistics.
             sigma = math.sqrt(keep_prob * (1-keep_prob) * num_iter)
             for x in site_counts.flatten()[:min(len(site_counts),10000)]:
               if math.fabs(x-num_iter*keep_prob) > 6*sigma:
                 print(x, num_iter*keep_prob, sigma, math.fabs(x-num_iter*keep_prob) / sigma)
               self.assertTrue(math.fabs(x-num_iter*keep_prob) < 6*sigma)
+            # Finally, verify that there are no undue local correlations.
+            p00 = (1-keep_prob)*(1-keep_prob)
+            p01 = (1-keep_prob)*keep_prob
+            p11 = keep_prob*keep_prob
+            # We allow the underlying probability to deviate by up to 1/256
+            # (to permit the RNG to use float16 internally).
+            tol = 0.004
+            p00_tol = tol*2*(1.-keep_prob)
+            p01_tol = tol*math.fabs(1.-2*keep_prob)
+            p11_tol = tol*2*keep_prob
+            for stride in xc:
+              xc1 = xc[stride]
+              elem = np.sum(xc1)
+              xc1 = xc1.astype(float) / elem
+              # with N tests and expected probability p, we expect to see 
+              # Np +/- sqrt(Np(1-p)) occurrences.
+              delta_p00 = xc1[0] - p00
+              delta_p01 = xc1[1] - p01
+              delta_p10 = xc1[2] - p01
+              delta_p11 = xc1[3] - p11
+              space_p00 = 6.*math.sqrt(p00*(1.0-p00)/elem) + p00_tol
+              space_p01 = 6.*math.sqrt(p01*(1.0-p01)/elem) + p01_tol
+              space_p11 = 6.*math.sqrt(p11*(1.0-p11)/elem) + p11_tol
+              #print(delta_p00, space_p00, delta_p01, space_p01, delta_p10, space_p01, delta_p11, space_p11)
+              self.assertTrue(math.fabs(delta_p00)<space_p00)
+              self.assertTrue(math.fabs(delta_p01)<space_p01)
+              self.assertTrue(math.fabs(delta_p10)<space_p01)
+              self.assertTrue(math.fabs(delta_p11)<space_p11)
+
+
 
   def testDropoutGrad(self):
     if not test_lib.is_built_with_rocm():
@@ -1696,19 +1736,22 @@ class BenchmarkDropout(test_lib.Benchmark):
   #@test_util.run_deprecated_v1
   def benchmarkDropout(self):
     device = "/gpu:0"
-    n = 1000
+    n = 1001
     @def_function.function
     def test_func(x):
       return nn_ops.dropout(x, rate=0.1, seed=0)
-    for old in [True,False]:
-      for dt in [dtypes.float16, dtypes.float32]:
-        for m in [1000,4000]:
+    for old in [False]:
+          dt=dtypes.float32
+          m = int(os.environ['DROP_TEST_DIM'])
+          #for dt, m in [(dtypes.float32, 16000), (dtypes.float16, 16000), (dtypes.float16, 16001)]:
+          #for dt, m in [(dtypes.float32, 2000), (dtypes.float16, 2000), (dtypes.float16, 2001)]:
+          #for dt, m in [(dtypes.float16, 16001)]:
           name="BenchmarkDropout"+("FP16" if dt==dtypes.float16 else "FP32")+"_"+str(m)+("_old" if old else "")
           os.environ['TF_ROCM_OLD_DROPOUT']='1' if old else '0'
           with ops.Graph().as_default():
             with ops.device(device):
               x = array_ops.ones([m,n], dtype=dt)
-              self._run(self._apply_n_times(test_func, 100, x), name=name)
+              self._run(self._apply_n_times(test_func, 1600, x), name=name, num_iters=400)
 
 if __name__ == "__main__":
   test_lib.main()
