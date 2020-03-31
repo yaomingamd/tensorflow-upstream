@@ -85,6 +85,7 @@ class OpLevelCostEstimator {
   Costs PredictFusedBatchNorm(const OpContext& op_context) const;
   Costs PredictFusedBatchNormGrad(const OpContext& op_context) const;
   Costs PredictEinsum(const OpContext& op_context) const;
+  Costs PredictAssignVariableOps(const OpContext& op_context) const;
 
   // Generic cost prediction method for fused operations.
   Costs PredictFusedOp(const OpContext& op_context,
@@ -194,17 +195,12 @@ class OpLevelCostEstimator {
   static OpInfo::TensorProperties DescribeTensor(
       DataType type, const std::vector<int64>& dims);
 
-  // This method calculates the execution time depending on whether IO can
-  // overlap with computation. It assumes the memory and the compute times have
-  // already been calculated.
-  void CombineCostsAndUpdateExecutionTime(Costs* costs) const;
-
  protected:
   std::map<string, int> elementwise_ops_;
   typedef std::function<Costs(const OpContext& op_context)> CostImpl;
   std::map<string, CostImpl> device_cost_impl_;
   // If true, assume compute and memory overlap; hence, the op cost is max of
-  // compute_time and memory_time, insteaf of sum of those two.
+  // compute_time and memory_time, instead of sum of those two.
   bool compute_memory_overlap_;
   std::set<string> persistent_ops_;
 

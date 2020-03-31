@@ -127,20 +127,30 @@ class BackpropTest(test.TestCase, parameterized.TestCase):
   @parameterized.named_parameters(
       [('Function', def_function.function),
        ('NoFunction', lambda f: f)])
-  def testIdentityBehaviorConsistent(self, decorator):
+  def testNoOpBehaviorConsistent(self, decorator):
 
     @decorator
     def f(x):
+      # Test all different types of no-ops
       x1 = array_ops.identity(x)
+      x2 = math_ops.add_v2(x, 0)
+      x3 = math_ops.subtract(x, 0)
+      x4 = math_ops.multiply(x, 1)
       with backprop.GradientTape() as t:
         t.watch(x)
         t.watch(x1)
+        t.watch(x2)
+        t.watch(x3)
+        t.watch(x4)
         y1 = x * 2.
         y2 = x1 * 3.
-        loss = y1 + y2
-      return t.gradient(loss, [x, x1])
+        y3 = x2 * 3.
+        y4 = x3 * 3.
+        y5 = x4 * 3.
+        loss = y1 + y2 + y3 + y4 + y5
+      return t.gradient(loss, [x, x1, x2, x3, x4])
 
-    self.assertAllClose([2., 3.], f(constant_op.constant(10.)))
+    self.assertAllClose([2., 3., 3., 3., 3.], f(constant_op.constant(10.)))
 
   def testGradientInsideLoop(self):
     with ops.Graph().as_default():
@@ -1501,6 +1511,27 @@ class BackpropTest(test.TestCase, parameterized.TestCase):
       self.assertEqual((z,), tape.watched_variables())
     tape.gradient(z, z)
     self.assertEqual((z,), tape.watched_variables())
+
+  def testNameScope(self):
+    def fn(x):
+      with ops.name_scope('my_scope'):
+        a = math_ops.cos(x)
+        b = math_ops.cos(x)
+        return math_ops.add(a, b)
+
+    @function.defun
+    def grad_fn(x):
+      return backprop.gradients_function(fn)(x)
+
+    grad_ops = grad_fn.get_concrete_function(
+        constant_op.constant(1.0)).graph.get_operations()
+    num_sin_ops_found = 0
+    for op in grad_ops:
+      if op.type == 'Sin':
+        num_sin_ops_found += 1
+        self.assertIn('gradient_tape/my_scope/', op.name)
+    self.assertEqual(num_sin_ops_found, 2)
+
 
 class JacobianTest(test.TestCase):
 

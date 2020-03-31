@@ -32,6 +32,7 @@ py_test(
         "no_oss_py2",
         "no_oss_py35",
         "no_pip",
+        "no_rocm",
     ],
     deps = [
         "//tensorflow/python:client_testlib",
@@ -437,6 +438,7 @@ tf_py_test(
 tf_proto_library(
     name = "tensor_tracer_proto",
     srcs = ["tensor_tracer.proto"],
+    cc_api_version = 2,
     protodeps = [
         "//tensorflow/core:protos_all",
     ],

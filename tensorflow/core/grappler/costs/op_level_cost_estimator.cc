@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_shape.pb.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/grappler/clusters/utils.h"
+#include "tensorflow/core/grappler/costs/utils.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -92,6 +93,9 @@ constexpr char kVarHandleOp[] = "VarHandleOp";
 constexpr char kVarHandlesOp[] = "_VarHandlesOp";
 constexpr char kReadVariableOp[] = "ReadVariableOp";
 constexpr char kReadVariablesOp[] = "_ReadVariablesOp";
+constexpr char kAssignVariableOp[] = "AssignVariableOp";
+constexpr char kAssignAddVariableOp[] = "AssignAddVariableOp";
+constexpr char kAssignSubVariableOp[] = "AssignSubVariableOp";
 
 static const Costs::Duration kMinComputeTime(1);
 
@@ -129,14 +133,15 @@ bool IsTraining(const OpInfo& op_info) {
   return false;
 }
 
-// TODO(dyoon): support non-4D tensors in the c ost functions of convolution
+// TODO(dyoon): support non-4D tensors in the cost functions of convolution
 // related ops (Conv, Pool, BatchNorm, and their backprops) and the related
 // helper functions.
 std::vector<int64> GetStrides(const OpInfo& op_info) {
   if (op_info.attr().find("strides") != op_info.attr().end()) {
     const auto strides = op_info.attr().at("strides").list().i();
-    CHECK(strides.size() == 4)
+    DCHECK(strides.size() == 4)
         << "Attr strides is not a length-4 vector: " << op_info.DebugString();
+    if (strides.size() != 4) return {1, 1, 1, 1};
     return {strides[0], strides[1], strides[2], strides[3]};
   }
   return {1, 1, 1, 1};
@@ -145,8 +150,9 @@ std::vector<int64> GetStrides(const OpInfo& op_info) {
 std::vector<int64> GetKernelSize(const OpInfo& op_info) {
   if (op_info.attr().find("ksize") != op_info.attr().end()) {
     const auto ksize = op_info.attr().at("ksize").list().i();
-    CHECK(ksize.size() == 4)
+    DCHECK(ksize.size() == 4)
         << "Attr ksize is not a length-4 vector: " << op_info.DebugString();
+    if (ksize.size() != 4) return {1, 1, 1, 1};
     return {ksize[0], ksize[1], ksize[2], ksize[3]};
   }
   // Note that FusedBatchNorm doesn't have ksize attr, but GetKernelSize returns
@@ -374,6 +380,14 @@ OpLevelCostEstimator::OpLevelCostEstimator() {
   device_cost_impl_.emplace(
       kFusedBatchNormGrad,
       wrap(&OpLevelCostEstimator::PredictFusedBatchNormGrad));
+  device_cost_impl_.emplace(
+      kAssignVariableOp, wrap(&OpLevelCostEstimator::PredictAssignVariableOps));
+  device_cost_impl_.emplace(
+      kAssignAddVariableOp,
+      wrap(&OpLevelCostEstimator::PredictAssignVariableOps));
+  device_cost_impl_.emplace(
+      kAssignSubVariableOp,
+      wrap(&OpLevelCostEstimator::PredictAssignVariableOps));
 
   persistent_ops_ = {
       kConst,       kVariable,       kVariableV2,   kAutoReloadVariable,
@@ -434,6 +448,7 @@ OpLevelCostEstimator::OpLevelCostEstimator() {
   elementwise_ops_.emplace("Tan", EIGEN_COST(scalar_tan_op<float>));
   // Binary ops alphabetically sorted
   elementwise_ops_.emplace("Add", EIGEN_COST(scalar_sum_op<float>));
+  elementwise_ops_.emplace("AddV2", EIGEN_COST(scalar_sum_op<float>));
   elementwise_ops_.emplace("ApproximateEqual", 1);
   elementwise_ops_.emplace("BiasAdd", EIGEN_COST(scalar_sum_op<float>));
   elementwise_ops_.emplace("QuantizedBiasAdd",
@@ -659,7 +674,7 @@ Costs OpLevelCostEstimator::PredictOpCountBasedCost(
       Costs::NanoSeconds(intermediate_read_time);
   costs.intermediate_memory_write_time =
       Costs::NanoSeconds(intermediate_write_time);
-  CombineCostsAndUpdateExecutionTime(&costs);
+  CombineCostsAndUpdateExecutionTime(compute_memory_overlap_, &costs);
   return costs;
 }
 
@@ -728,9 +743,12 @@ OpLevelCostEstimator::ConvolutionDimensionsFromInputs(
   // Only check equality when both sizes are known (in other words, when
   // neither is set to a minimum dimension size of 1).
   if (iz != 1 && kz != 1) {
-    CHECK_EQ(iz % kz, 0) << "Input channel " << iz
-                         << " is not a multiple of filter channel " << kz
-                         << ".";
+    DCHECK_EQ(iz % kz, 0) << "Input channel " << iz
+                          << " is not a multiple of filter channel " << kz
+                          << ".";
+    if (iz % kz) {
+      *found_unknown_shapes = true;
+    }
   } else {
     iz = kz = std::max<int64>(iz, kz);
   }
@@ -754,6 +772,11 @@ int64 OpLevelCostEstimator::CountConv2DOperations(
     bool* found_unknown_shapes) {
   DCHECK(op_info.op() == kConv2d || op_info.op() == kDepthwiseConv2dNative)
       << "Invalid Operation: not Conv2D nor DepthwiseConv2dNative";
+
+  if (op_info.inputs_size() < 2) {  // Unexpect inputs.
+    *found_unknown_shapes = true;
+    return 0;
+  }
 
   ConvolutionDimensions conv_dims = ConvolutionDimensionsFromInputs(
       op_info.inputs(0).shape(), op_info.inputs(1).shape(), op_info,
@@ -845,7 +868,7 @@ int64 OpLevelCostEstimator::CountMatMulOperations(const OpInfo& op_info,
     LOG(ERROR) << "Incompatible Matrix dimensions";
     return ops;
   } else {
-    // One of k_dim and k_dim_b might be 1 (mininum dimension size).
+    // One of k_dim and k_dim_b might be 1 (minimum dimension size).
     k_dim = std::max(k_dim, k_dim_b);
   }
 
@@ -1376,7 +1399,9 @@ Costs OpLevelCostEstimator::PredictEinsum(const OpContext& op_context) const {
   // Then, the operation to estimate is BatchMatMul([B,M,K],[B,K,N])
   const auto& op_info = op_context.op_info;
 
-  string equation = op_info.attr().at("equation").s();
+  auto it = op_info.attr().find("equation");
+  if (it == op_info.attr().end()) return Costs::ZeroCosts(/*inaccurate=*/true);
+  const string& equation = it->second.s();
   std::vector<string> equation_split = absl::StrSplit(equation, "->");
 
   if (equation_split.empty()) {
@@ -1715,7 +1740,7 @@ Costs OpLevelCostEstimator::PredictFusedOp(
     fused_cost.intermediate_memory_time += op_cost.intermediate_memory_time;
   }
 
-  CombineCostsAndUpdateExecutionTime(&fused_cost);
+  CombineCostsAndUpdateExecutionTime(compute_memory_overlap_, &fused_cost);
   return fused_cost;
 }
 
@@ -1848,6 +1873,7 @@ Costs OpLevelCostEstimator::PredictMaxPoolGrad(
   // x: op_info.inputs(0)
   // y: op_info.inputs(1)
   // y_grad: op_info.inputs(2)
+  if (op_info.inputs_size() < 3) return Costs::ZeroCosts(/*inaccurate=*/true);
   ConvolutionDimensions dims = OpDimensionsFromInputs(
       op_info.inputs(0).shape(), op_info, &found_unknown_shapes);
 
@@ -1881,6 +1907,28 @@ Costs OpLevelCostEstimator::PredictMaxPoolGrad(
   costs.inaccurate = found_unknown_shapes;
   costs.num_ops_with_unknown_shapes = found_unknown_shapes;
   costs.max_memory = total_output_size;
+  return costs;
+}
+
+/* This predict function handles three types of tensorflow ops
+ * AssignVariableOp/AssignAddVariableOp/AssignSubVariableOp, broadcasting
+ * was not possible for these ops, therefore the input tensor's shapes is
+ * enough to compute the cost */
+Costs OpLevelCostEstimator::PredictAssignVariableOps(
+    const OpContext& op_context) const {
+  bool found_unknown_shapes = false;
+  const auto& op_info = op_context.op_info;
+  /* First input of these ops are reference to the assignee. */
+  if (op_info.inputs_size() != 2) return Costs::ZeroCosts(true);
+  const double total_input_size =
+      CalculateInputSize(op_info, &found_unknown_shapes);
+  const double flops = op_info.op() == kAssignVariableOp
+                           ? 0.0
+                           : CalculateTensorElementCount(op_info.inputs(1),
+                                                         &found_unknown_shapes);
+  Costs costs = PredictOpCountBasedCost(flops, total_input_size, 0, op_info);
+  costs.inaccurate = found_unknown_shapes;
+  costs.num_ops_with_unknown_shapes = found_unknown_shapes;
   return costs;
 }
 
@@ -2049,18 +2097,6 @@ Costs OpLevelCostEstimator::PredictFusedBatchNormGrad(
   costs.num_ops_with_unknown_shapes = found_unknown_shapes;
   costs.max_memory = total_output_size;
   return costs;
-}
-
-void OpLevelCostEstimator::CombineCostsAndUpdateExecutionTime(
-    Costs* costs) const {
-  if (compute_memory_overlap_) {
-    costs->execution_time =
-        std::max(costs->intermediate_memory_time,
-                 std::max(costs->compute_time, costs->memory_time));
-  } else {
-    costs->execution_time = costs->compute_time + costs->memory_time +
-                            costs->intermediate_memory_time;
-  }
 }
 }  // end namespace grappler
 }  // end namespace tensorflow

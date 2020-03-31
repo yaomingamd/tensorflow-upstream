@@ -25,7 +25,7 @@ To run a subset of benchmarks using --benchmarks flag.
 --benchmarks: the list of benchmarks to run. The specified value is interpreted
 as a regular expression and any benchmark whose name contains a partial match
 to the regular expression is executed.
-e.g. --benchmarks=".*matmul*." will run all matmul related benmarks.
+e.g. --benchmarks=".*matmul*." will run all matmul related benchmarks.
 
 """
 from __future__ import absolute_import
@@ -54,6 +54,7 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_spec
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import functional_ops
 from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import gen_math_ops
@@ -65,6 +66,7 @@ from tensorflow.python.training import gradient_descent
 
 CPU = "/device:CPU:0"
 GPU = "/device:GPU:0"
+GLOBAL_TEST_VALUE = None
 
 
 def c_tfe_py_fastpath_execute(a,
@@ -200,9 +202,19 @@ class MicroBenchmarks(test.Benchmark):
 
     self._run(func, 30000)
 
-  def _benchmark_create_constant(self, value, dtype):
-    def func():
+  def _benchmark_create_constant(self, value, dtype, cached=True):
+    global GLOBAL_TEST_VALUE
+    GLOBAL_TEST_VALUE = value
+
+    def cached_func():
       constant_op.constant(value, dtype=dtype)
+
+    def uncached_func():
+      global GLOBAL_TEST_VALUE
+      GLOBAL_TEST_VALUE += 1
+      constant_op.constant(GLOBAL_TEST_VALUE, dtype=dtype)
+
+    func = cached_func if cached else uncached_func
 
     with ops.device("GPU:0" if context.num_gpus() else "CPU:0"):
       for _ in range(1000):
@@ -212,13 +224,22 @@ class MicroBenchmarks(test.Benchmark):
   def benchmark_create_float_constant(self):
     self._benchmark_create_constant(42.0, dtype=None)
 
+  def benchmark_create_float_constant_uncached(self):
+    self._benchmark_create_constant(42.0, dtype=None, cached=False)
+
   def benchmark_create_int32_constant(self):
     if context.num_gpus():
       return  # int32 constants are always allocated on CPU.
 
     self._benchmark_create_constant(42, dtype=dtypes.int32)
 
-  def _benchmark_add_scalars(self, a, b):
+  def benchmark_create_int32_constant_uncached(self):
+    if context.num_gpus():
+      return  # int32 constants are always allocated on CPU.
+
+    self._benchmark_create_constant(42, dtype=dtypes.int32, cached=False)
+
+  def _benchmark_add(self, a, b):
     def func():
       return memoryview(math_ops.add(a, b))
 
@@ -228,10 +249,30 @@ class MicroBenchmarks(test.Benchmark):
       self._run(func, 30000)
 
   def benchmark_add_float_scalars(self):
-    self._benchmark_add_scalars(42.0, 24.0)
+    self._benchmark_add(42.0, 24.0)
 
   def benchmark_add_int32_scalars(self):
-    self._benchmark_add_scalars(42, 24)
+    self._benchmark_add(42, 24)
+
+  def benchmark_add_float_scalar_tensor(self):
+    tensor_a = constant_op.constant(42.0)
+    tensor_b = constant_op.constant(24.0)
+    self._benchmark_add(tensor_a, tensor_b)
+
+  def benchmark_add_int32_scalar_tensor(self):
+    tensor_a = constant_op.constant(42)
+    tensor_b = constant_op.constant(24)
+    self._benchmark_add(tensor_a, tensor_b)
+
+  def benchmark_add_float_dense_tensor(self):
+    tensor_a = constant_op.constant([[42.0, 42.0], [42.0, 42.0]])
+    tensor_b = constant_op.constant([[24.0, 24.0], [24.0, 24.0]])
+    self._benchmark_add(tensor_a, tensor_b)
+
+  def benchmark_add_int32_dense_tensor(self):
+    tensor_a = constant_op.constant([[42, 42], [42, 42]])
+    tensor_b = constant_op.constant([[24, 24], [24, 24]])
+    self._benchmark_add(tensor_a, tensor_b)
 
   def benchmark_create_float_tensor_from_list_CPU(self):
     self._benchmark_create_tensor([[3.0]], dtypes.float32.as_datatype_enum, CPU)
@@ -1325,6 +1366,46 @@ class MicroBenchmarks(test.Benchmark):
 
   def benchmarkFunctionWithFiveHundredResourceInputs(self):
     self._benchmarkFunctionWithResourceInputs(500, 100)
+
+  def _benchmarkResourceReadsInCondInInnerFunc(self, var_count):
+    rvars = []
+    for _ in range(var_count):
+      rvars.append(resource_variable_ops.ResourceVariable(1.0))
+
+    # Note: We want to benchmark the graph building time so we intentionally
+    # add this outer function so that the tf.function gets retraced every time.
+    def benchmark_fn():
+
+      @def_function.function
+      def fn_with_many_reads():
+
+        @def_function.function
+        def fn_with_many_reads_inner():
+
+          def then_branch():
+            return math_ops.add_n(rvars)
+
+          def else_branch():
+            return 0.
+
+          return control_flow_ops.cond(
+              constant_op.constant(True), then_branch, else_branch)
+
+        return fn_with_many_reads_inner()
+
+      return fn_with_many_reads()
+
+    with context.device(CPU):
+      self._run(benchmark_fn, 10)
+
+  def benchmarkTenThousandResourceReadsInCondInInnerFunc(self):
+    self._benchmarkResourceReadsInCondInInnerFunc(10000)
+
+  def benchmarkHundredResourceReadsInCondInInnerFunc(self):
+    self._benchmarkResourceReadsInCondInInnerFunc(100)
+
+  def benchmarkTenResourceReadsInCondInInnerFunc(self):
+    self._benchmarkResourceReadsInCondInInnerFunc(10)
 
 
 if __name__ == "__main__":

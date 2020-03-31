@@ -20,6 +20,7 @@ from __future__ import print_function
 
 import os
 import shutil
+
 from absl.testing import parameterized
 import numpy as np
 
@@ -68,17 +69,6 @@ def _get_multi_io_model():
     dict(testcase_name='built_in_class', value=[metrics.MeanAbsoluteError]),
     dict(testcase_name='custom_fn', value=[_my_mae]),
     dict(testcase_name='custom_class', value=[MyMeanAbsoluteError]),
-    dict(testcase_name='list_of_strings', value=['mae', 'mae']),
-    dict(
-        testcase_name='list_of_built_in_fns', value=[metrics.mae, metrics.mae]),
-    dict(
-        testcase_name='list_of_built_in_classes',
-        value=[metrics.MeanAbsoluteError, metrics.MeanAbsoluteError]),
-    dict(testcase_name='list_of_custom_fns', value=[_my_mae, _my_mae]),
-    dict(
-        testcase_name='list_of_custom_classes',
-        value=[MyMeanAbsoluteError, MyMeanAbsoluteError]),
-    dict(testcase_name='list_of_string_and_list', value=['mae', ['mae']]),
     dict(
         testcase_name='list_of_built_in_fn_and_list',
         value=[metrics.mae, [metrics.mae]]),
@@ -173,7 +163,7 @@ class MetricsSerialization(keras_parameterized.TestCase):
     def get_instance(x):
       if isinstance(x, str):
         return x
-      if issubclass(x, metrics.Metric):
+      if isinstance(x, type) and issubclass(x, metrics.Metric):
         return x()
       return x
 
@@ -191,8 +181,7 @@ class MetricsSerialization(keras_parameterized.TestCase):
           'mae',
           metrics=metric_input,
           weighted_metrics=weighted_metric_input,
-          run_eagerly=testing_utils.should_run_eagerly(),
-          experimental_run_tf_function=testing_utils.should_run_tf_function())
+          run_eagerly=testing_utils.should_run_eagerly())
       history = model.fit([self.x, self.x], [self.y, self.y],
                           batch_size=3,
                           epochs=3,
@@ -219,7 +208,7 @@ class MetricsSerialization(keras_parameterized.TestCase):
     def get_instance(x):
       if isinstance(x, str):
         return x
-      if issubclass(x, metrics.Metric):
+      if isinstance(x, type) and issubclass(x, metrics.Metric):
         return x()
       return x
 
@@ -232,8 +221,7 @@ class MetricsSerialization(keras_parameterized.TestCase):
         'mae',
         metrics=metric_input,
         weighted_metrics=weighted_metric_input,
-        run_eagerly=testing_utils.should_run_eagerly(),
-        experimental_run_tf_function=testing_utils.should_run_tf_function())
+        run_eagerly=testing_utils.should_run_eagerly())
     history = model.fit([self.x, self.x], [self.y, self.y],
                         batch_size=3,
                         epochs=3,

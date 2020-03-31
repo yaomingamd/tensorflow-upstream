@@ -22,6 +22,7 @@ from __future__ import division
 from __future__ import print_function
 
 import json
+
 import numpy as np
 import tensorflow as tf
 
@@ -63,7 +64,7 @@ class DataLoader(object):
     return data, label, length
 
   def pad(self, data, seq_length, dim):
-    """Get neighboor padding."""
+    """Get neighbour padding."""
     noise_level = 20
     padded_data = []
     # Before- Neighbour padding

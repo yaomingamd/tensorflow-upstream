@@ -172,7 +172,7 @@ class BaseDenseAttention(Layer):
       q_mask = mask[0]
       if q_mask is None:
         return None
-      return ops.convert_to_tensor(q_mask)
+      return ops.convert_to_tensor_v2(q_mask)
     return None
 
   def _validate_call_args(self, inputs, mask):
@@ -219,7 +219,7 @@ class Attention(BaseDenseAttention):
   2. Use scores to calculate a distribution with shape
      `[batch_size, Tq, Tv]`: `distribution = tf.nn.softmax(scores)`.
   3. Use `distribution` to create a linear combination of `value` with
-     shape `batch_size, Tq, dim]`:
+     shape `[batch_size, Tq, dim]`:
      `return tf.matmul(distribution, value)`.
 
   Args:
@@ -406,7 +406,7 @@ class AdditiveAttention(BaseDenseAttention):
   # Query embeddings of shape [batch_size, Tq, dimension].
   query_embeddings = token_embedding(query_input)
   # Value embeddings of shape [batch_size, Tv, dimension].
-  value_embeddings = token_embedding(query_input)
+  value_embeddings = token_embedding(value_input)
 
   # CNN layer.
   cnn_layer = tf.keras.layers.Conv1D(

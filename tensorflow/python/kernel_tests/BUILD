@@ -120,7 +120,6 @@ cuda_py_test(
     size = "small",
     srcs = ["list_ops_test.py"],
     grpc_enabled = True,
-    tags = ["no_rocm"],
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
@@ -285,6 +284,7 @@ cuda_py_test(
     name = "ctc_loss_op_test",
     size = "medium",
     srcs = ["ctc_loss_op_test.py"],
+    xla_enable_strict_auto_jit = False,  # b/148153828
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:ctc_ops",
@@ -385,7 +385,6 @@ tf_py_test(
     name = "decode_jpeg_op_test",
     srcs = ["decode_jpeg_op_test.py"],
     data = ["//tensorflow/core:image_testdata"],
-    python_version = "PY2",
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework_for_generated_wrappers",
@@ -437,7 +436,7 @@ tf_py_test(
 
 cuda_py_test(
     name = "determinant_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["determinant_op_test.py"],
     deps = [
         "//tensorflow/python:client_testlib",
@@ -652,6 +651,8 @@ tf_py_test(
         "//tensorflow/python:lookup_ops",
         "//tensorflow/python:sparse_tensor",
         "//tensorflow/python:training",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "//tensorflow/python/data/ops:readers",
     ],
 )
 
@@ -756,8 +757,9 @@ cuda_py_test(
 
 cuda_py_test(
     name = "matrix_triangular_solve_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["matrix_triangular_solve_op_test.py"],
+    shard_count = 3,
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:linalg_ops",
@@ -1214,7 +1216,7 @@ cuda_py_test(
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:function",
         "//tensorflow/python/keras:engine",
-        "//tensorflow/python/keras:layers",
+        "//tensorflow/python/keras/layers",
         "@six_archive//:six",
     ],
 )
@@ -1288,7 +1290,6 @@ cuda_py_test(
     shard_count = 10,
     tags = [
         "no_oss",  # TODO(b/142818120): Re-enable.
-        "no_rocm",
     ],
     deps = [
         "//tensorflow/python:client_testlib",
@@ -1591,7 +1592,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "broadcast_to_ops_test",
-    size = "small",
+    size = "medium",
     srcs = ["broadcast_to_ops_test.py"],
     deps = [
         "//tensorflow/python:array_ops",
@@ -1619,7 +1620,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "batch_matmul_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["batch_matmul_op_test.py"],
     shard_count = 20,
     deps = [
@@ -1676,7 +1677,6 @@ cuda_py_test(
     name = "bias_op_deterministic_test",
     size = "medium",
     srcs = ["bias_op_deterministic_test.py"],
-    xla_enable_strict_auto_jit = False,
     deps = [
         ":bias_op_base",
     ],
@@ -1756,9 +1756,8 @@ cuda_py_test(
 
 cuda_py_test(
     name = "control_flow_ops_py_test",
-    size = "small",
+    size = "medium",
     srcs = ["control_flow_ops_py_test.py"],
-    python_version = "PY2",
     shard_count = 16,
     tags = [
         "notsan",  # TODO(b/132205147): Re-enable this.
@@ -2116,7 +2115,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "lrn_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["lrn_op_test.py"],
     deps = [
         "//tensorflow/python:array_ops",
@@ -2715,11 +2714,10 @@ cuda_py_test(
 
 cuda_py_test(
     name = "tensor_array_ops_test",
-    size = "small",
+    size = "medium",
     srcs = ["tensor_array_ops_test.py"],
     flaky = 1,  # create_local_cluster sometimes times out.
     shard_count = 10,
-    tags = ["no_rocm"],
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
@@ -2826,7 +2824,7 @@ cuda_py_test(
 
 cuda_py_test(
     name = "zero_division_test",
-    size = "small",
+    size = "medium",
     srcs = ["zero_division_test.py"],
     deps = [
         "//tensorflow/python:client_testlib",
@@ -2941,7 +2939,9 @@ cuda_py_test(
 cuda_py_test(
     name = "depthwise_conv_op_test",
     size = "medium",  # http://b/30603882
+    timeout = "long",
     srcs = ["depthwise_conv_op_test.py"],
+    shard_count = 3,
     # TODO(b/118842098): Re-enable this test in Kokoro.
     tags = ["no_oss"],
     deps = [
@@ -3002,6 +3002,7 @@ cuda_py_test(
     size = "medium",
     srcs = ["pooling_ops_test.py"],
     shard_count = 4,
+    xla_enable_strict_auto_jit = False,  # Flaky in XLA b/149568654
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
@@ -3450,9 +3451,6 @@ cuda_py_test(
     size = "medium",
     srcs = ["qr_op_test.py"],
     shard_count = 20,
-    tags = [
-        "no_rocm",  # TODO(rocm): feature not supported on ROCm platform
-    ],
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
@@ -3625,7 +3623,7 @@ tf_py_test(
 
 cuda_py_test(
     name = "bucketize_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["bucketize_op_test.py"],
     deps = [
         "//tensorflow/python:client_testlib",

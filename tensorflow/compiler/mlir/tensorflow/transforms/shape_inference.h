@@ -18,10 +18,10 @@ limitations under the License.
 
 #include <cstdint>
 
-#include "mlir/IR/Function.h"  // TF:local_config_mlir
-#include "mlir/IR/Operation.h"  // TF:local_config_mlir
-#include "mlir/IR/Region.h"  // TF:local_config_mlir
-#include "mlir/Support/LogicalResult.h"  // TF:local_config_mlir
+#include "mlir/IR/Function.h"  // from @llvm-project
+#include "mlir/IR/Operation.h"  // from @llvm-project
+#include "mlir/IR/Region.h"  // from @llvm-project
+#include "mlir/Support/LogicalResult.h"  // from @llvm-project
 
 namespace mlir {
 

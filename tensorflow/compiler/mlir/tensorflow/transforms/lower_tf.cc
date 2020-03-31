@@ -19,12 +19,12 @@ limitations under the License.
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
-#include "mlir/IR/Attributes.h"  // TF:local_config_mlir
-#include "mlir/IR/Diagnostics.h"  // TF:local_config_mlir
-#include "mlir/IR/MLIRContext.h"  // TF:local_config_mlir
-#include "mlir/IR/PatternMatch.h"  // TF:local_config_mlir
-#include "mlir/IR/StandardTypes.h"  // TF:local_config_mlir
-#include "mlir/IR/TypeUtilities.h"  // TF:local_config_mlir
+#include "mlir/IR/Attributes.h"  // from @llvm-project
+#include "mlir/IR/Diagnostics.h"  // from @llvm-project
+#include "mlir/IR/MLIRContext.h"  // from @llvm-project
+#include "mlir/IR/PatternMatch.h"  // from @llvm-project
+#include "mlir/IR/StandardTypes.h"  // from @llvm-project
+#include "mlir/IR/TypeUtilities.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_types.h"
 #include "tensorflow/core/util/tensor_format.h"
@@ -125,22 +125,21 @@ class LowerAddNOp : public OpRewritePattern<TF::AddNOp> {
   explicit LowerAddNOp(MLIRContext *context)
       : OpRewritePattern<TF::AddNOp>(context) {}
 
-  PatternMatchResult matchAndRewrite(TF::AddNOp op,
-                                     PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(TF::AddNOp op,
+                                PatternRewriter &rewriter) const override {
     // TODO(hinsu): Support variant with TensorList type. tf.AddV2 doesn't
     // support variant type so variant types require special handling.
-    if (getElementTypeOrSelf(op.getType()).isa<VariantType>())
-      return matchFailure();
+    if (getElementTypeOrSelf(op.getType()).isa<VariantType>()) return failure();
 
     // TODO(hinsu): Improve parallelism by splitting operands in two halves and
     // accumulating them first.
-    Value *result = *op.inputs().begin();
-    for (Value *operand : llvm::drop_begin(op.inputs(), 1)) {
+    Value result = *op.inputs().begin();
+    for (Value operand : llvm::drop_begin(op.inputs(), 1)) {
       result = rewriter.create<TF::AddV2Op>(op.getLoc(), result, operand);
     }
 
     rewriter.replaceOp(op, result);
-    return matchSuccess();
+    return success();
   }
 };
 
@@ -176,28 +175,28 @@ class LowerDynamicStitchOp : public OpRewritePattern<TF::DynamicStitchOp> {
   explicit LowerDynamicStitchOp(MLIRContext *context)
       : OpRewritePattern<TF::DynamicStitchOp>(context) {}
 
-  PatternMatchResult matchAndRewrite(DynamicStitchOp op,
-                                     PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(DynamicStitchOp op,
+                                PatternRewriter &rewriter) const override {
     // Static output type is used to compute intermediate values. Note that the
     // output type doesn't have to be static but if input types and indices are
     // constant, then the output type can be statically determined.
     RankedTensorType out_ty = op.getType().dyn_cast<RankedTensorType>();
-    if (!out_ty || !out_ty.hasStaticShape()) return matchFailure();
+    if (!out_ty || !out_ty.hasStaticShape()) return failure();
 
     // Extract out all the constant indices' attributes and verify that data
     // types are static.
     SmallVector<DenseIntElementsAttr, 4> indices;
     indices.reserve(op.N());
     for (auto it : llvm::zip(op.indices(), op.data())) {
-      Value *index = std::get<0>(it);
-      Value *data = std::get<1>(it);
+      Value index = std::get<0>(it);
+      Value data = std::get<1>(it);
 
       DenseIntElementsAttr index_attr;
-      if (!matchPattern(index, m_Constant(&index_attr))) return matchFailure();
+      if (!matchPattern(index, m_Constant(&index_attr))) return failure();
       indices.push_back(index_attr);
 
-      RankedTensorType data_ty = data->getType().dyn_cast<RankedTensorType>();
-      if (!data_ty || !data_ty.hasStaticShape()) return matchFailure();
+      RankedTensorType data_ty = data.getType().dyn_cast<RankedTensorType>();
+      if (!data_ty || !data_ty.hasStaticShape()) return failure();
     }
 
     // Compute type of each of the items and shape to use while reshaping inputs
@@ -214,10 +213,10 @@ class LowerDynamicStitchOp : public OpRewritePattern<TF::DynamicStitchOp> {
 
     // Prepare each of the output item by unpacking data and then putting it to
     // the specified index.
-    SmallVector<Value *, 8> values(out_ty.getDimSize(0));
+    SmallVector<Value, 8> values(out_ty.getDimSize(0));
     for (auto it : llvm::zip(indices, op.data())) {
       DenseIntElementsAttr index_attr = std::get<0>(it);
-      Value *data = std::get<1>(it);
+      Value data = std::get<1>(it);
 
       auto reshaped_data =
           rewriter.create<ReshapeOp>(loc, data, packed_shape_val);
@@ -228,14 +227,77 @@ class LowerDynamicStitchOp : public OpRewritePattern<TF::DynamicStitchOp> {
           /*axis=*/APInt(64, 0));
       for (auto index_item : llvm::zip(index_attr, items.getResults())) {
         int64_t output_index = std::get<0>(index_item).getSExtValue();
-        Value *item = std::get<1>(index_item);
+        Value item = std::get<1>(index_item);
         values[output_index] = item;
       }
     }
 
     auto axis = rewriter.create<ConstOp>(loc, rewriter.getI64IntegerAttr(0));
     rewriter.replaceOpWithNewOp<ConcatV2Op>(op, op.getType(), values, axis);
-    return matchSuccess();
+    return success();
+  }
+};
+
+// Lowers InvertPermutation op to TensorScatterUpdate op.
+//
+// Example:
+//
+//   %x = "tf.Const"() {value = dense<[3, 4, 0, 1, 2]> : tensor<5xi32>}
+//   "tf.InvertPermutation"(%x) : (tensor<5xi32>) -> tensor<5xi32>
+//
+// is lowered to
+//
+//   %x = "tf.Const"() {value = dense<[3, 4, 0, 1, 2]> : tensor<5xi32>}
+//   %start = "tf.Const"() {value = dense<0> : tensor<i32>}
+//   %limit = "tf.Const"() {value = dense<5> : tensor<i32>}
+//   %delta = "tf.Const"() {value = dense<1> : tensor<i32>}
+//   %updates = "tf.Range"(%start, %limit, %delta) :
+//     (tensor<i32>, tensor<i32>, tensor<i32>) -> tensor<5xi32>
+//   %perm = "tf.Const"() {value = dense<[1, 0]> : tensor<2xi32>}
+//   %indices = "tf.Transpose"(%x, %perm) : (tensor<5xi32, tensor<2xi32) ->
+//     tensor<5x1xi32>
+//   "tf.TensorScatterUpdate"(%x, %indices, %updates) :
+//     (tensor<5xi32>, tensor<5x1xi32>, tensor<5xi32>) -> tensor<5xi32>
+//
+class LowerInvertPermutationOp
+    : public OpRewritePattern<TF::InvertPermutationOp> {
+ public:
+  explicit LowerInvertPermutationOp(MLIRContext *context)
+      : OpRewritePattern<TF::InvertPermutationOp>(context) {}
+
+  LogicalResult matchAndRewrite(TF::InvertPermutationOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    auto x_type = op.x().getType().cast<TensorType>();
+    Type int_type = x_type.getElementType();  // Could be i32 or i64.
+
+    // x input must have static shape.
+    if (!x_type.hasStaticShape()) {
+      return failure();
+    }
+
+    auto result_type = x_type;
+    auto start =
+        rewriter.create<TF::ConstOp>(loc, GetScalarOfType(int_type, 0));
+    Value limit = rewriter.create<TF::ConstOp>(
+        loc, GetScalarOfType(int_type, x_type.getShape()[0]));
+    auto delta =
+        rewriter.create<TF::ConstOp>(loc, GetScalarOfType(int_type, 1));
+    // Construct a sequence of numbers [0, 1, ... len(x)-1].
+    auto updates =
+        rewriter.create<TF::RangeOp>(loc, result_type, start, limit, delta);
+
+    auto perm_type = RankedTensorType::get({2}, int_type);
+    auto perm = rewriter.create<TF::ConstOp>(
+        loc, DenseElementsAttr::get(perm_type, {1, 0}));
+    auto transposed_x_type =
+        RankedTensorType::get({x_type.getShape()[0], 1}, int_type);
+    auto indices =
+        rewriter.create<TF::TransposeOp>(loc, transposed_x_type, op.x(), perm);
+
+    rewriter.replaceOpWithNewOp<TF::TensorScatterUpdateOp>(
+        op, result_type, op.x(), indices, updates);
+    return success();
   }
 };
 
@@ -254,8 +316,8 @@ class LowerPackOp : public OpRewritePattern<TF::PackOp> {
   explicit LowerPackOp(MLIRContext *context)
       : OpRewritePattern<TF::PackOp>(context) {}
 
-  PatternMatchResult matchAndRewrite(TF::PackOp op,
-                                     PatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(TF::PackOp op,
+                                PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
     auto axis_value = rewriter.create<TF::ConstOp>(
         loc,
@@ -264,13 +326,13 @@ class LowerPackOp : public OpRewritePattern<TF::PackOp> {
     int64_t axis = op.axis().getSExtValue();
 
     Type prev_input_ty, inferred_ty;
-    SmallVector<Value *, 4> expanded_inputs;
+    SmallVector<Value, 4> expanded_inputs;
     expanded_inputs.reserve(op.N());
-    for (Value *input : op.values()) {
+    for (Value input : op.values()) {
       // If input type is different than the previous input type, infer the
       // output type. Otherwise, use the already inferred output type from the
       // previous iteration.
-      Type input_ty = input->getType();
+      Type input_ty = input.getType();
       if (input_ty != prev_input_ty) {
         inferred_ty = InferExpandDimsType(input_ty, axis, &rewriter);
         prev_input_ty = input_ty;
@@ -281,7 +343,7 @@ class LowerPackOp : public OpRewritePattern<TF::PackOp> {
 
     rewriter.replaceOpWithNewOp<TF::ConcatV2Op>(op, op.getType(),
                                                 expanded_inputs, axis_value);
-    return matchSuccess();
+    return success();
   }
 };
 
@@ -289,7 +351,8 @@ class LowerPackOp : public OpRewritePattern<TF::PackOp> {
 
 void PopulateLoweringTFPatterns(MLIRContext *context,
                                 OwningRewritePatternList *patterns) {
-  patterns->insert<LowerAddNOp, LowerDynamicStitchOp, LowerPackOp>(context);
+  patterns->insert<LowerAddNOp, LowerDynamicStitchOp, LowerInvertPermutationOp,
+                   LowerPackOp>(context);
   populateWithGenerated(context, patterns);
 }
 

@@ -146,6 +146,7 @@ enum class OperatorType : uint8 {
   // instead of being given as plain constant arrays. So we need to insert
   // special nodes in the graph to shuffle axes.
   kReorderAxes,
+  kSegmentSum,
   kSelect,
   kSelectV2,
   kSparseToDense,
@@ -489,7 +490,7 @@ struct ConvOperator : Operator {
 //   inputs[4]: optional: merge repeated.
 //
 //  Outputs:
-//    outputs[0]: deocoded.
+//    outputs[0]: decoded.
 //    outputs[1]: log probability.
 //
 // TensorFlow equivalent: CTCBeamSearchDecoder
@@ -1257,7 +1258,7 @@ struct ExpandDimsOperator : Operator {
   ExpandDimsOperator() : Operator(OperatorType::kExpandDims) {}
 };
 
-// Ceates a tensor of shape dims and fills it with the given scalar value.
+// Creates a tensor of shape dims and fills it with the given scalar value.
 // Output type will be the same as the given scalar value.
 //
 // Inputs:
@@ -1839,6 +1840,7 @@ struct ResizeBilinearOperator : Operator {
   ResizeBilinearOperator() : Operator(OperatorType::kResizeBilinear) {}
 
   bool align_corners = false;
+  bool half_pixel_centers = false;
 };
 
 // ResizeNearestNeighborOperator operator. It resizes input images with nearest
@@ -2188,6 +2190,10 @@ struct MatrixSetDiagV2Operator : Operator {
 // skipped. (It has never been, and should never be, exposed in the public API.)
 struct MatrixSetDiagV3Operator : Operator {
   MatrixSetDiagV3Operator() : Operator(OperatorType::kMatrixSetDiagV3) {}
+};
+
+struct SegmentSumOperator : Operator {
+  SegmentSumOperator() : Operator(OperatorType::kSegmentSum) {}
 };
 
 // Alloc's are used for transient arrays only. An Alloc specifies which interval

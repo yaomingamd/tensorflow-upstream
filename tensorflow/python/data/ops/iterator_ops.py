@@ -571,8 +571,8 @@ class OwnedIterator(trackable.Trackable, composite_tensor.CompositeTensor):
         `components` and `element_spec` is provided.
     """
 
-    error_message = "Either `dataset` or both `components` and "
-    "`element_spec` need to be provided."
+    error_message = ("Either `dataset` or both `components` and "
+                     "`element_spec` need to be provided.")
 
     self._device = context.context().device_name
 
@@ -649,12 +649,7 @@ class OwnedIterator(trackable.Trackable, composite_tensor.CompositeTensor):
         # TODO(ashankar): Consider removing this ops.device() contextmanager
         # and instead mimic ops placement in graphs: Operations on resource
         # handles execute on the same device as where the resource is placed.
-        # NOTE(mrry): Here we use the "_sync" variant of `iterator_get_next`
-        # because in eager mode this code will run synchronously on the calling
-        # thread. Therefore we do not need to make a defensive context switch
-        # to a background thread, and can achieve a small constant performance
-        # boost by invoking the iterator synchronously.
-        ret = gen_dataset_ops.iterator_get_next_sync(
+        ret = gen_dataset_ops.iterator_get_next(
             self._iterator_resource,
             output_types=self._flat_output_types,
             output_shapes=self._flat_output_shapes)
@@ -748,7 +743,17 @@ class OwnedIterator(trackable.Trackable, composite_tensor.CompositeTensor):
   def _gather_saveables_for_checkpoint(self):
 
     def _saveable_factory(name):
-      return _IteratorSaveable(self._iterator_resource, name)
+      """Returns a SaveableObject for serialization/deserialization."""
+      policy = None
+      if self._dataset:
+        policy = self._dataset.options().experimental_external_state_policy
+      if policy:
+        return _IteratorSaveable(
+            self._iterator_resource,
+            name,
+            external_state_policy=policy)
+      else:
+        return _IteratorSaveable(self._iterator_resource, name)
 
     return {"ITERATOR": _saveable_factory}
 
@@ -823,7 +828,7 @@ def get_next_as_optional(iterator):
   will have no value.
 
   Args:
-    iterator: A `tf.compat.v1.data.Iterator` object.
+    iterator: An iterator for an instance of `tf.data.Dataset`.
 
   Returns:
     An `Optional` object representing the next value from the iterator (if it

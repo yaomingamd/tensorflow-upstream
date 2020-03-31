@@ -243,16 +243,14 @@ class ShuffleTest(test_base.DatasetTestBase, parameterized.TestCase):
           combinations.combine(tf_api_version=2, mode="eager"),
           combinations.combine(reshuffle=[True, False], seed=[None, 42])))
   def testReshuffleIterationEpochs(self, reshuffle, seed):
+    # TensorFlow unit tests set the global graph seed. We unset it here so that
+    # we can control determinism via the `seed` parameter.
+    random_seed.set_random_seed(None)
     dataset = dataset_ops.Dataset.range(10).shuffle(
         10, seed=seed, reshuffle_each_iteration=reshuffle)
 
-    first_epoch = []
-    for elem in dataset:
-      first_epoch.append(elem.numpy())
-
-    second_epoch = []
-    for elem in dataset:
-      second_epoch.append(elem.numpy())
+    first_epoch = self.getDatasetOutput(dataset)
+    second_epoch = self.getDatasetOutput(dataset)
 
     self.assertEqual(first_epoch == second_epoch, not reshuffle)
 
@@ -331,9 +329,13 @@ class ShuffleTest(test_base.DatasetTestBase, parameterized.TestCase):
     with self.assertRaises(errors.OutOfRangeError):
       self.evaluate(get_next())
 
+  # We skip v2 eager since the v2 eager shuffle dataset is not serializable due
+  # to its use of an external seed generator resource.
   @combinations.generate(
-      combinations.times(test_base.default_test_combinations(),
-                         combinations.combine(reshuffle=[True, False])))
+      combinations.times(
+          test_base.graph_only_combinations() +
+          combinations.combine(mode=["eager"], tf_api_version=1),
+          combinations.combine(reshuffle=[True, False])))
   def testRerandomizeOnReplicate(self, reshuffle):
     random_seed.set_random_seed(None)
     # When no seeds are fixed, each instantiation of the shuffle dataset should
