@@ -22,3 +22,120 @@
      return res;
    }
  };
+--- a/unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h
++++ b/unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h
+@@ -431,7 +431,7 @@
+ template <int NPT, typename S, typename R, typename I_>
+ __global__ void InnerReductionKernel(R, const S, I_, I_, typename S::CoeffReturnType*);
+ 
+-template <int NPT, typename S, typename R, typename I_>
++template <int NPT, typename S, typename R, typename I_, bool, bool>
+ __global__ void OuterReductionKernel(R, const S, I_, I_, typename S::CoeffReturnType*);
+ #endif
+ 
+@@ -869,7 +869,7 @@
+ #endif
+   template <int NPT, typename S, typename R, typename I_> KERNEL_FRIEND void internal::InnerReductionKernel(R, const S, I_, I_, typename S::CoeffReturnType*);
+ 
+-  template <int NPT, typename S, typename R, typename I_> KERNEL_FRIEND void internal::OuterReductionKernel(R, const S, I_, I_, typename S::CoeffReturnType*);
++  template <int NPT, typename S, typename R, typename I_, bool, bool> KERNEL_FRIEND void internal::OuterReductionKernel(R, const S, I_, I_, typename S::CoeffReturnType*);
+ #endif
+ 
+ #if defined(EIGEN_USE_SYCL)
+--- a/unsupported/Eigen/CXX11/src/Tensor/TensorReductionGpu.h
++++ b/unsupported/Eigen/CXX11/src/Tensor/TensorReductionGpu.h
+@@ -720,36 +720,61 @@
+   }
+ };
+ 
++
++#if GOOGLE_CUDA
++__shared__ char outer_reduction_shared_memory[];
++#endif
++
+ template <int NumPerThread, typename Self,
+-          typename Reducer, typename Index>
+-__global__ void OuterReductionKernel(Reducer reducer, const Self input, Index num_coeffs_to_reduce, Index num_preserved_coeffs,
+-                                     typename Self::CoeffReturnType* output) {
+-  const Index num_threads = blockDim.x * gridDim.x;
+-  const Index thread_id = blockIdx.x * blockDim.x + threadIdx.x;
++          typename Reducer, typename Index,
++          bool x64, bool use_shm>
++__global__ void OuterReductionKernel(Reducer reducer, const Self input, Index _num_coeffs_to_reduce, Index _num_preserved_coeffs,
++                                      typename Self::CoeffReturnType* output) {
++#if TENSORFLOW_USE_ROCM
++  HIP_DYNAMIC_SHARED(typename Self::CoeffReturnType, shared_memory);
++#else
++  typename Self::CoeffReturnType* shared_memory = reinterpret_cast<typename Self::CoeffReturnType*>(outer_reduction_shared_memory);
++#endif
++  typedef typename std::conditional<x64, Index, int>::type Ind;
++  Ind num_coeffs_to_reduce = _num_coeffs_to_reduce;
++  Ind num_preserved_coeffs = _num_preserved_coeffs;
++  const Ind num_threads = blockDim.x * gridDim.x;
++  const Ind thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+   // Initialize the output values if they weren't initialized by the ReductionInitKernel
+   if (gridDim.x == 1) {
+-    for (Index i = thread_id; i < num_preserved_coeffs; i += num_threads) {
++    for (Ind i = thread_id; i < num_preserved_coeffs; i += num_threads) {
+       output[i] = reducer.initialize();
+     }
+     __syncthreads();
+   }
++  if(use_shm)
++    for(Ind i = threadIdx.x; i < num_preserved_coeffs; i += blockDim.x)
++     shared_memory[i] = reducer.initialize();
+ 
+   // Do the reduction.
+-  const Index max_iter = num_preserved_coeffs * divup<Index>(num_coeffs_to_reduce, NumPerThread);
+-  for (Index i = thread_id; i < max_iter; i += num_threads) {
+-    const Index input_col = i % num_preserved_coeffs;
+-    const Index input_row = (i / num_preserved_coeffs) * NumPerThread;
++  const Ind max_iter = num_preserved_coeffs * divup<Ind>(num_coeffs_to_reduce, NumPerThread);
++  for (Ind i = thread_id; i < max_iter; i += num_threads) {
++    Ind input_row = i / num_preserved_coeffs;
++    const Ind input_col = i - input_row*num_preserved_coeffs;
++    input_row *= NumPerThread;
+     typename Self::CoeffReturnType reduced_val = reducer.initialize();
+-    const Index max_row = numext::mini(input_row + NumPerThread, num_coeffs_to_reduce);
+-    for (Index j = input_row; j < max_row; j++) {
+-      typename Self::CoeffReturnType val = input.m_impl.coeff(j * num_preserved_coeffs + input_col);
++    const Ind max_row = numext::mini(input_row + NumPerThread, num_coeffs_to_reduce);
++    for (Ind j = input_row; j < max_row; j++) {
++      typename Self::CoeffReturnType val = input.m_impl.coeff(Index(j * num_preserved_coeffs + input_col));
+       reducer.reduce(val, &reduced_val);
+     }
+-    atomicReduce(&(output[input_col]), reduced_val, reducer);
+-  }
++    // when num_preserved_coeffs is small, atomics directly to global memory are extemely inefficient,
++    // especially with ROCm, which has no native global fp32 atomic add.
++    if(use_shm)
++      atomicReduce(&(shared_memory[input_col]), reduced_val, reducer);
++    else
++      atomicReduce(&(output[i]), shared_memory[i], reducer);
++  }
++  if(use_shm)
++    for(Ind i = threadIdx.x; i < num_preserved_coeffs; i += blockDim.x)
++      atomicReduce(&(output[i]), shared_memory[i], reducer);
+ }
+ 
+-
+ template <typename Self, typename Op>
+ struct OuterReducer<Self, Op, GpuDevice> {
+   // Unfortunately nvidia doesn't support well exotic types such as complex,
+@@ -805,8 +979,14 @@
+                          num_preserved_vals, output);
+     }
+ 
+-    LAUNCH_GPU_KERNEL((OuterReductionKernel<num_per_thread, Self, Op, Index>),
+-                       num_blocks, block_size, 0, device, reducer, self, num_coeffs_to_reduce, num_preserved_vals, output);
++    bool need_x64 = (num_coeffs >= (1u<<31));
++    bool use_shm = (num_preserved_vals <= 1024);
++
++    auto kernel = need_x64
++        ? (use_shm ? OuterReductionKernel<num_per_thread, Self, Op, Index, true, true> : OuterReductionKernel<num_per_thread, Self, Op, Index, true, false>)
++        : (use_shm ? OuterReductionKernel<num_per_thread, Self, Op, Index, false, true> : OuterReductionKernel<num_per_thread, Self, Op, Index, false, false>);
++
++    LAUNCH_GPU_KERNEL(kernel, num_blocks, block_size, use_shm ? num_preserved_vals*sizeof(float) : 0, device, reducer, self, num_coeffs_to_reduce, num_preserved_vals, output);
+ 
+     return false;
+   }
