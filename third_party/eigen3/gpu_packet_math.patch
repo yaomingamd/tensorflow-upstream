@@ -49,7 +49,7 @@
  };
  
 +
-+#if GOOGLE_CUDA
++#if defined(EIGEN_CUDACC)
 +__shared__ char outer_reduction_shared_memory[];
 +#endif
 +
@@ -63,7 +63,7 @@
 +          bool x64, bool use_shm>
 +__global__ void OuterReductionKernel(Reducer reducer, const Self input, Index _num_coeffs_to_reduce, Index _num_preserved_coeffs,
 +                                      typename Self::CoeffReturnType* output) {
-+#if TENSORFLOW_USE_ROCM
++#if defined(EIGEN_HIPCC)
 +  HIP_DYNAMIC_SHARED(typename Self::CoeffReturnType, shared_memory);
 +#else
 +  typename Self::CoeffReturnType* shared_memory = reinterpret_cast<typename Self::CoeffReturnType*>(outer_reduction_shared_memory);
