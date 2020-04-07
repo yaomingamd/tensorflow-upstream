@@ -111,7 +111,7 @@
 +    if(use_shm)
 +      atomicReduce(&(shared_memory[input_col]), reduced_val, reducer);
 +    else
-+      atomicReduce(&(output[i]), shared_memory[i], reducer);
++      atomicReduce(&(output[input_col]), reduced_val, reducer);
 +  }
 +  if(use_shm)
 +    for(Ind i = threadIdx.x; i < num_preserved_coeffs; i += blockDim.x)
