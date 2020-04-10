@@ -1233,7 +1233,7 @@ def set_windows_build_flags(environ_cp):
   # Fix winsock2.h conflicts
   write_to_bazelrc(
       'build --copt=-DWIN32_LEAN_AND_MEAN --host_copt=-DWIN32_LEAN_AND_MEAN '
-      '--copt=-DNOGDI --host_copt=-DNOGDI --copt=-D_USE_MATH_DEFINES')
+      '--copt=-DNOGDI --host_copt=-DNOGDI')
   # Output more verbose information when something goes wrong
   write_to_bazelrc('build --verbose_failures')
   # The host and target platforms are the same in Windows build. So we don't
@@ -1413,9 +1413,6 @@ def main():
       environ_cp.get('LD_LIBRARY_PATH') != '1'):
     write_action_env_to_bazelrc('LD_LIBRARY_PATH',
                                 environ_cp.get('LD_LIBRARY_PATH'))
-
-  if (environ_cp.get('TF_NEED_ROCM') == '1' and environ_cp.get('ROCM_TOOLKIT_PATH')):
-    write_action_env_to_bazelrc('ROCM_TOOLKIT_PATH',environ_cp.get('ROCM_TOOLKIT_PATH'))
 
   environ_cp['TF_NEED_CUDA'] = str(
       int(get_var(environ_cp, 'TF_NEED_CUDA', 'CUDA', False)))

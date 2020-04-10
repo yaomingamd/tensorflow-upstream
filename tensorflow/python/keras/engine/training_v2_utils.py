@@ -119,9 +119,7 @@ def _make_on_batch_function(model, mode):
     func = model
 
   if not model.run_eagerly:
-    # Pass `experimental_relax_shapes` to avoid retracing for dynamic batch size,
-    # variable length sequences, etc.
-    func = def_function.function(func, experimental_relax_shapes=True)
+    func = def_function.function(func)
 
   return func
 
