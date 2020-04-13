@@ -721,8 +721,10 @@ Status MarkForCompilationPassImpl::RunEdgeContractionLoop() {
   edges_contracted_ = true;
   // If global JIT is not requested, do not contract edges (to guarantee that
   // only subgraphs explicitly marked for XLA via tf.function are compiled)
-  if(global_jit_level_ == OptimizerOptions::OFF)
-    return Status::OK();
+  MarkForCompilationPassFlags* flags = GetMarkForCompilationPassFlags();
+  bool cpu_global_jit = flags->tf_xla_cpu_global_jit;
+  if((!cpu_global_jit) && global_jit_level_ == OptimizerOptions::OFF)
+      return Status::OK();
   // TODO(hpucha): Handle the case where kXlaClusterAttr is already set (for
   // example, from the Grappler fusion pass).
 

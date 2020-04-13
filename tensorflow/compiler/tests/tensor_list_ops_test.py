@@ -240,6 +240,6 @@ class ListOpsTest(parameterized.TestCase, xla_test.XLATestCase):
       self.assertAllEqual(z, [0.0, 0.0])
 
 if __name__ == "__main__":
-  os.environ["TF_XLA_FLAGS"] = ("--tf_xla_min_cluster_size=2 " +
+  os.environ["TF_XLA_FLAGS"] = ("--tf_xla_min_cluster_size=2 --tf_xla_auto_jit=2 " +
                                 os.environ.get("TF_XLA_FLAGS", ""))
   test.main()
