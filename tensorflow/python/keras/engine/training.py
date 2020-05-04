@@ -360,7 +360,41 @@ class Model(network.Network, version_utils.ModelVersionSelector):
 
   @property
   def metrics(self):
-    """Returns the model's metrics added using `compile`, `add_metric` APIs."""
+    """Returns the model's metrics added using `compile`, `add_metric` APIs.
+
+    Note: `metrics` are available only after a `keras.Model` has been
+    trained/evaluated on actual data.
+
+    Examples:
+
+    >>> inputs = tf.keras.layers.Input(shape=(3,))
+    >>> outputs = tf.keras.layers.Dense(2)(inputs)
+    >>> model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+    >>> model.compile(optimizer="Adam", loss="mse", metrics=["mae"])
+    >>> [m.name for m in model.metrics]
+    []
+
+    >>> x = np.random.random((2, 3))
+    >>> y = np.random.randint(0, 2, (2, 2))
+    >>> _ = model.fit(x, y, verbose=0)
+    >>> [m.name for m in model.metrics]
+    ['loss', 'mae']
+
+    >>> inputs = tf.keras.layers.Input(shape=(3,))
+    >>> d = tf.keras.layers.Dense(2, name='out')
+    >>> output_1 = d(inputs)
+    >>> output_2 = d(inputs)
+    >>> model = tf.keras.models.Model(
+    ...    inputs=inputs, outputs=[output_1, output_2])
+    >>> model.add_metric(
+    ...    tf.reduce_sum(output_2), name='mean', aggregation='mean')
+    >>> model.compile(optimizer="Adam", loss="mse", metrics=["mae", "acc"])
+    >>> _ = model.fit(x, (y, y), verbose=0)
+    >>> [m.name for m in model.metrics]
+    ['loss', 'out_loss', 'out_1_loss', 'out_mae', 'out_acc', 'out_1_mae',
+    'out_1_acc', 'mean']
+
+    """
     metrics = []
     if self._is_compiled:
       # TODO(omalleyt): Track `LossesContainer` and `MetricsContainer` objects
@@ -377,7 +411,39 @@ class Model(network.Network, version_utils.ModelVersionSelector):
 
   @property
   def metrics_names(self):
-    """Returns the model's display labels for all outputs."""
+    """Returns the model's display labels for all outputs.
+
+    Note: `metrics_names` are available only after a `keras.Model` has been
+    trained/evaluated on actual data.
+
+    Examples:
+
+    >>> inputs = tf.keras.layers.Input(shape=(3,))
+    >>> outputs = tf.keras.layers.Dense(2)(inputs)
+    >>> model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
+    >>> model.compile(optimizer="Adam", loss="mse", metrics=["mae"])
+    >>> model.metrics_names
+    []
+
+    >>> x = np.random.random((2, 3))
+    >>> y = np.random.randint(0, 2, (2, 2))
+    >>> _ = model.fit(x, y, verbose=0)
+    >>> model.metrics_names
+    ['loss', 'mae']
+
+    >>> inputs = tf.keras.layers.Input(shape=(3,))
+    >>> d = tf.keras.layers.Dense(2, name='out')
+    >>> output_1 = d(inputs)
+    >>> output_2 = d(inputs)
+    >>> model = tf.keras.models.Model(
+    ...    inputs=inputs, outputs=[output_1, output_2])
+    >>> model.compile(optimizer="Adam", loss="mse", metrics=["mae", "acc"])
+    >>> _ = model.fit(x, (y, y), verbose=0)
+    >>> model.metrics_names
+    ['loss', 'out_loss', 'out_1_loss', 'out_mae', 'out_acc', 'out_1_mae',
+    'out_1_acc']
+
+    """
 
     # This property includes all output names including `loss` and per-output
     # losses for backward compatibility.
@@ -435,7 +501,7 @@ class Model(network.Network, version_utils.ModelVersionSelector):
     """The logic for one training step.
 
     This method can be overridden to support custom training logic.
-    This method is called by `Model._make_train_function`.
+    This method is called by `Model.make_train_function`.
 
     This method should contain the mathemetical logic for one step of training.
     This typically includes the forward pass, loss calculation, backpropagation,
@@ -443,7 +509,7 @@ class Model(network.Network, version_utils.ModelVersionSelector):
 
     Configuration details for *how* this logic is run (e.g. `tf.function` and
     `tf.distribute.Strategy` settings), should be left to
-    `Model._make_train_function`, which can also be overridden.
+    `Model.make_train_function`, which can also be overridden.
 
     Arguments:
       data: A nested structure of `Tensor`s.
@@ -485,7 +551,7 @@ class Model(network.Network, version_utils.ModelVersionSelector):
 
     Typically, this method directly controls `tf.function` and
     `tf.distribute.Strategy` settings, and delegates the actual training
-    logic to `Model._train_step`.
+    logic to `Model.train_step`.
 
     This function is cached the first time `Model.fit` or
     `Model.train_on_batch` is called. The cache is cleared whenever
@@ -535,8 +601,7 @@ class Model(network.Network, version_utils.ModelVersionSelector):
           validation_freq=1,
           max_queue_size=10,
           workers=1,
-          use_multiprocessing=False,
-          **kwargs):
+          use_multiprocessing=False):
     """Trains the model for a fixed number of epochs (iterations on a dataset).
 
     Arguments:
@@ -600,7 +665,6 @@ class Model(network.Network, version_utils.ModelVersionSelector):
               - tuple `(x_val, y_val)` of Numpy arrays or tensors
               - tuple `(x_val, y_val, val_sample_weights)` of Numpy arrays
               - dataset
-
             For the first two cases, `batch_size` must be provided.
             For the last case, `validation_steps` could be provided.
             Note that `validation_data` does not support all the data types that
@@ -682,7 +746,6 @@ class Model(network.Network, version_utils.ModelVersionSelector):
             `False`. Note that because this implementation relies on
             multiprocessing, you should not pass non-picklable arguments to
             the generator as they can't be passed easily to children processes.
-        **kwargs: Used for backwards compatibility.
 
     Unpacking behavior for iterator-like inputs:
         A common pattern is to pass a tf.data.Dataset, generator, or
@@ -821,7 +884,7 @@ class Model(network.Network, version_utils.ModelVersionSelector):
     """The logic for one evaluation step.
 
     This method can be overridden to support custom evaluation logic.
-    This method is called by `Model._make_test_function`.
+    This method is called by `Model.make_test_function`.
 
     This function should contain the mathemetical logic for one step of
     evaluation.
@@ -830,7 +893,7 @@ class Model(network.Network, version_utils.ModelVersionSelector):
 
     Configuration details for *how* this logic is run (e.g. `tf.function` and
     `tf.distribute.Strategy` settings), should be left to
-    `Model._make_test_function`, which can also be overridden.
+    `Model.make_test_function`, which can also be overridden.
 
     Arguments:
       data: A nested structure of `Tensor`s.
@@ -859,7 +922,7 @@ class Model(network.Network, version_utils.ModelVersionSelector):
 
     Typically, this method directly controls `tf.function` and
     `tf.distribute.Strategy` settings, and delegates the actual evaluation
-    logic to `Model._test_step`.
+    logic to `Model.test_step`.
 
     This function is cached the first time `Model.evaluate` or
     `Model.test_on_batch` is called. The cache is cleared whenever
@@ -1038,14 +1101,14 @@ class Model(network.Network, version_utils.ModelVersionSelector):
     """The logic for one inference step.
 
     This method can be overridden to support custom inference logic.
-    This method is called by `Model._make_predict_function`.
+    This method is called by `Model.make_predict_function`.
 
     This method should contain the mathemetical logic for one step of inference.
     This typically includes the forward pass.
 
     Configuration details for *how* this logic is run (e.g. `tf.function` and
     `tf.distribute.Strategy` settings), should be left to
-    `Model._make_predict_function`, which can also be overridden.
+    `Model.make_predict_function`, which can also be overridden.
 
     Arguments:
       data: A nested structure of `Tensor`s.
@@ -1066,7 +1129,7 @@ class Model(network.Network, version_utils.ModelVersionSelector):
 
     Typically, this method directly controls `tf.function` and
     `tf.distribute.Strategy` settings, and delegates the actual evaluation
-    logic to `Model._predict_step`.
+    logic to `Model.predict_step`.
 
     This function is cached the first time `Model.predict` or
     `Model.predict_on_batch` is called. The cache is cleared whenever
