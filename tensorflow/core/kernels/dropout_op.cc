@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/random_op.h"
 #include "tensorflow/core/platform/stream_executor.h"
+#include "tensorflow/core/lib/random/random.h"
 #include "tensorflow/core/util/guarded_philox_random.h"
 #include "tensorflow/core/util/tensor_format.h"
 #include "tensorflow/stream_executor/temporary_device_memory.h"
@@ -111,8 +112,10 @@ class DropoutOp : public OpKernel {
     else
       seed = in3.scalar<int64>()();
     // don't reset the seed for every call unless it is explicitly non-0
-    if (seed != 0) generator_.ResetSeeds(seed, 0);
-
+    if(seed == 0)
+      generator_.ResetSeeds(random::New64(), random::New64());
+    else
+      generator_.ResetSeeds(seed, 0);
     typedef random::UniformDistribution<random::PhiloxRandom, float>
         Distribution;
     Distribution dist;
