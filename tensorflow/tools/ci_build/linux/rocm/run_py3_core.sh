@@ -38,7 +38,7 @@ yes "" | $PYTHON_BIN_PATH configure.py
 bazel test \
       --config=rocm \
       -k \
-      --test_tag_filters=-no_oss,-oss_serial,-no_gpu,-no_rocm,-benchmark-test,-rocm_multi_gpu,-v1only \
+      --test_tag_filters=-no_oss,-oss_serial,-no_gpu,-no_rocm,-no_rocm_v2,-benchmark-test,-rocm_multi_gpu,-v1only \
       --test_lang_filters=py \
       --jobs=${N_JOBS} \
       --local_test_jobs=${TF_GPU_COUNT} \

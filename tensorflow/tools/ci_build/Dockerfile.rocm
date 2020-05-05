@@ -71,7 +71,7 @@ ENV PATH="$ROCM_PATH/bin:${PATH}"
 ENV PATH="$OPENCL_ROOT/bin:${PATH}"
 
 # Add target file to help determine which device(s) to build for
-RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906" >> /opt/rocm/bin/target.lst'
+RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906\ngfx908/" >> /opt/rocm/bin/target.lst'
 
 # Copy and run the install scripts.
 COPY install/*.sh /install/
