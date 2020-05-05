@@ -35,7 +35,7 @@ export TF_GPU_COUNT=${N_GPUS}
 yes "" | $PYTHON_BIN_PATH configure.py
 
 # Run bazel test command. Double test timeouts to avoid flakes.
-bazel test --config=rocm --test_tag_filters=-no_oss,-oss_serial,-no_gpu,-no_rocm,-no_rocm_v2,-benchmark-test -k \
+bazel test --config=rocm --config=v2 --test_env=TF2_BEHAVIOR=1 --test_tag_filters=-no_oss,-oss_serial,-no_gpu,-no_rocm,-no_rocm_v2,-benchmark-test -k \
     --test_lang_filters=py --jobs=${N_JOBS} --test_timeout 600,900,2400,7200 \
     --build_tests_only --test_output=errors --local_test_jobs=${TF_GPU_COUNT} --config=opt \
     --test_sharding_strategy=disabled \
