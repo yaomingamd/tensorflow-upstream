@@ -30,6 +30,7 @@ limitations under the License.
 
 #include "absl/types/optional.h"
 #include "absl/types/span.h"
+#include "tensorflow/core/lib/bfloat16/bfloat16.h"
 #include "tensorflow/stream_executor/device_memory.h"
 #include "tensorflow/stream_executor/dnn.pb.h"
 #include "tensorflow/stream_executor/lib/array_slice.h"
@@ -132,6 +133,10 @@ struct ToDataType<int8> {
 template <>
 struct ToDataType<int32> {
   static constexpr DataType value = DataType::kInt32;
+};
+template <>
+struct ToDataType<tensorflow::bfloat16> {
+  static constexpr DataType value = DataType::kBFloat16;
 };
 
 // Specifies the types of a RNN model.
@@ -640,6 +645,33 @@ class ConvolutionDescriptor {
   // their effect is -- they may be boolean rather than integral.
   // int64 upscale_input_x;
   // int64 upscale_input_y;
+};
+
+class DropoutDescriptor {
+ public:
+  DropoutDescriptor(){};
+
+  DropoutDescriptor& set_seed(unsigned long long value) {
+    seed_ = value;
+    return *this;
+  }
+  DropoutDescriptor& set_rate(float value) {
+    rate_ = value;
+    return *this;
+  }
+  DropoutDescriptor& set_mask(const std::vector<uint8>& mask) {
+    mask_ = mask;
+    return *this;
+  }
+
+  unsigned long long seed() const { return seed_; }
+  float rate() const { return rate_; }
+  std::vector<uint8> mask() const { return mask_; }
+
+ private:
+  unsigned long long seed_;
+  float rate_;
+  std::vector<uint8> mask_;
 };
 
 // A patch of values in the input can be pooled via either a max or an average
@@ -1346,11 +1378,14 @@ class DnnSupport {
       std::vector<AlgorithmDesc>* out_algorithms);
 
   virtual bool GetMIOpenConvolveAlgorithms(
-      dnn::ConvolutionKind kind, Stream* stream, dnn::DataType element_type,
-      const dnn::BatchDescriptor& input_descriptor,
+      dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
+      const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data,
       const dnn::FilterDescriptor& filter_descriptor,
-      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      DeviceMemoryBase filter_data,
       const dnn::BatchDescriptor& output_descriptor,
+      DeviceMemoryBase output_data,
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      ScratchAllocator* scratch_allocator,
       std::vector<ProfileResult>* out_algorithms);
 
   // Returns a list of supported rnn algorithms.
@@ -1634,6 +1669,54 @@ class DnnSupport {
                          const DeviceMemory<float>& biases,
                          const dnn::BatchDescriptor& dimensions,
                          DeviceMemory<float>* output_data) = 0;
+
+  virtual bool DoDropoutForward(
+      Stream* stream, const dnn::DropoutDescriptor& dropout_params,
+      const dnn::BatchDescriptor& noise_dimensions,
+      const dnn::BatchDescriptor& input_dimensions,
+      const DeviceMemory<float>& input_data,
+      const dnn::BatchDescriptor& output_dimensions,
+      DeviceMemory<float>* output_data,
+      ScratchAllocator* workspace_allocator = nullptr) {
+    LOG(FATAL) << "DoDropoutForward not implemented for float.";
+    return false;
+  }
+
+  virtual bool DoDropoutForward(
+      Stream* stream, const dnn::DropoutDescriptor& dropout_params,
+      const dnn::BatchDescriptor& noise_dimensions,
+      const dnn::BatchDescriptor& input_dimensions,
+      const DeviceMemory<Eigen::half>& input_data,
+      const dnn::BatchDescriptor& output_dimensions,
+      DeviceMemory<Eigen::half>* output_data,
+      ScratchAllocator* workspace_allocator = nullptr) {
+    LOG(FATAL) << "DoDropoutForward not implemented for half.";
+    return false;
+  }
+
+  virtual bool DoDropoutBackward(
+      Stream* stream, const dnn::DropoutDescriptor& dropout_params,
+      const dnn::BatchDescriptor& noise_dimensions,
+      const dnn::BatchDescriptor& input_dimensions,
+      const DeviceMemory<float>& input_data,
+      const dnn::BatchDescriptor& output_dimensions,
+      DeviceMemory<float>* output_data,
+      ScratchAllocator* workspace_allocator = nullptr) {
+    LOG(FATAL) << "DoDropoutBackward not implemented for float.";
+    return false;
+  }
+
+  virtual bool DoDropoutBackward(
+      Stream* stream, const dnn::DropoutDescriptor& dropout_params,
+      const dnn::BatchDescriptor& noise_dimensions,
+      const dnn::BatchDescriptor& input_dimensions,
+      const DeviceMemory<Eigen::half>& input_data,
+      const dnn::BatchDescriptor& output_dimensions,
+      DeviceMemory<Eigen::half>* output_data,
+      ScratchAllocator* workspace_allocator = nullptr) {
+    LOG(FATAL) << "DoDropoutBackward not implemented for half.";
+    return false;
+  }
 
   // Performs a forward pooling operation on input_data, writing to
   // output_data. See PoolingDescriptor for how to configure the

@@ -346,6 +346,7 @@ xla_test(
         "conv_depthwise_test.cc",
     ],
     shard_count = 50,
+    tags = ["no_rocm"],
     deps = [
         ":conv_depthwise_common",
         ":test_macros_header",
@@ -1551,6 +1552,9 @@ xla_test(
 xla_test(
     name = "token_hlo_test",
     srcs = ["token_hlo_test.cc"],
+    tags = [
+        "no_rocm",
+    ],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla/service:hlo_verifier",
@@ -2130,7 +2134,7 @@ tf_cc_test(
         "//tensorflow/compiler/xla/service/gpu:gpu_compiler",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/stream_executor",
+        "//tensorflow/core:stream_executor_no_cuda",
         "@com_google_absl//absl/memory",
         "@llvm-project//llvm:core",
     ],

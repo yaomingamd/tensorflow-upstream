@@ -73,6 +73,8 @@ ENV PATH="$OPENCL_ROOT/bin:${PATH}"
 # Add target file to help determine which device(s) to build for
 RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906" >> /opt/rocm/bin/target.lst'
 
+RUN wget https://www.dropbox.com/s/jixaw2y20vhw4uf/MIOpen-HIP-2.2.0.7630-f38e87a-ubuntu-16.04_amd64.deb && dpkg -i MIOpen*.deb && rm MIOpen*.deb
+
 # Copy and run the install scripts.
 COPY install/*.sh /install/
 ARG DEBIAN_FRONTEND=noninteractive
@@ -90,3 +92,7 @@ COPY install/.bazelrc /etc/bazel.bazelrc
 # Configure the build for our ROCm configuration.
 ENV TF_NEED_ROCM 1
 
+# This is a temporary workaround to fix Out-Of-Memory errors we are running into with XLA perf tests
+# By default, HIP runtime "hides" 256MB from the TF Runtime, but with recent changes (update to ROCm2.3, dynamic loading of roc* libs, et al)
+# it seems that we need to up the threshold slightly to 320MB
+ENV HIP_HIDDEN_FREE_MEM=320
