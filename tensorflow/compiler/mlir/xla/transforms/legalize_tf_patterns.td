@@ -52,7 +52,8 @@ def GetHLOAxisFromTFAxisVariadic : NativeCodeCall<
 
 def : Pattern<
     (TF_FusedBatchNormOp:$root $x, $scale, $offset, $mean, $variance, $epsilon,
-                               $data_format, FalseBoolAttr:$is_training),
+                         $exponential_avg_factor, $data_format,
+                         FalseBoolAttr:$is_training),
     [(HLO_BatchNormInferenceOp $x, $scale, $offset, $mean, $variance,
                                $epsilon, (FeatureDimension $data_format, $x)),
      // We already guaranteed that the last four results has no use so it
@@ -273,6 +274,13 @@ def : Pat<(TF_CrossReplicaSumOp $input, (TF_ConstOp $group_assignment)),
             (CastElementsToI64Elements $group_assignment))>;
 
 //===----------------------------------------------------------------------===//
+// All2All op patterns.
+//===----------------------------------------------------------------------===//
+
+def : Pat<(TF_AllToAllOp AnyRankedTensor:$input, (TF_ConstOp $group_assignment), I64Attr:$concat_dimension, $split_dimension, $split_count),
+          (HLO_AllToAllOp $input, $split_dimension, $concat_dimension, $split_count, (CastElementsToI64Elements $group_assignment))>;
+
+//===----------------------------------------------------------------------===//
 // FFT op patterns.
 //===----------------------------------------------------------------------===//
 
@@ -434,7 +442,8 @@ def : Pattern<(TF_MatrixBandPartOp:$op AnyRankedTensor:$input, $num_lower, $num_
 // Nullary op patterns.
 //===----------------------------------------------------------------------===//
 
-def : Pat<(TF_ConstOp:$res ElementsAttr:$value), (HLO_ConstOp $value),
+def : Pat<(TF_ConstOp:$res ElementsAttr:$value),
+          (TensorCastOp (HLO_ConstOp $value)),
           [(HLO_Tensor $res)]>;
 
 //===----------------------------------------------------------------------===//
@@ -479,6 +488,9 @@ def : Pat<(TF_ReluGradOp AnyStaticShapeTensor:$gradients, AnyRankedTensor:$featu
 // Slice op patterns.
 //===----------------------------------------------------------------------===//
 
+def CastToI64AndUnpackTensor: NativeCodeCall<
+  "UnpackTensorAlongZeroDim($0.getLoc(), CastValueToI64($0.getLoc(), $1, &$_builder), &$_builder).output()">;
+
 def CanBeTranslatedToDynamicSlice : Constraint<CPred<
   "CanBeTranslatedToDynamicSlice($0, $1, $2.cast<DenseIntElementsAttr>())">>;
 
@@ -488,7 +500,8 @@ def TFSliceSizes2HLOSliceSizes : NativeCodeCall<
 
 def : Pat<(TF_SliceOp:$op HLO_Tensor:$input, HLO_Tensor:$starting_indices,
            (TF_ConstOp $slice_sizes)),
-          (HLO_DynamicSliceOp $input, (CastValueToI64 $op, $starting_indices),
+          (HLO_DynamicSliceOp $input,
+           (CastToI64AndUnpackTensor $op, $starting_indices),
            (TFSliceSizes2HLOSliceSizes $input, $starting_indices, $slice_sizes)),
           [(CanBeTranslatedToDynamicSlice $input, $starting_indices,
             $slice_sizes)]>;
@@ -506,6 +519,16 @@ foreach callOp = [TF_PartitionedCallOp, TF_StatefulPartitionedCallOp] in {
             (CallOp $f, $args),
           [(ArgTypesMatchCallee $op, $args, $f)]>;
 }
+
+//===----------------------------------------------------------------------===//
+// Reverse op patterns.
+//===----------------------------------------------------------------------===//
+
+// Handles axis conversion for TF reverse.
+def ConvertAxisAttr : NativeCodeCall<"ConvertAxisAttr($0, $1, &$_builder)">;
+
+def : Pat<(TF_ReverseV2Op AnyRankedTensor:$values, (TF_ConstOp $axis)),
+    (HLO_ReverseOp $values, (ConvertAxisAttr $values, $axis))>;
 
 //===----------------------------------------------------------------------===//
 // Ternary op patterns.
@@ -606,3 +629,14 @@ def : Pat<(srcDstOpPair[0]:$old $shape, $seed, $seed2),
             (CastValueToI64 $old, $shape)),
           [(IsShapedTensor $shape)]>;
 }
+
+//===----------------------------------------------------------------------===//
+// Sigmoid grad op.
+//===----------------------------------------------------------------------===//
+def : Pat<(TF_SigmoidGradOp AnyRankedTensor:$l, AnyRankedTensor:$r),
+          (HLO_MulOp
+           (HLO_MulOp $r, $l, (NullDenseIntElementsAttr)),
+           (HLO_SubOp (HLO_ConstOp (ConstantSplat<"1"> $l)), $l,
+            (NullDenseIntElementsAttr)),
+           (NullDenseIntElementsAttr)),
+          [(IEEEFloatTensor $l)]>;
