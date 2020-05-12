@@ -59,11 +59,7 @@ cuda_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",
-<<<<<<< HEAD
-=======
         "no_rocm",
-        "no_windows",
->>>>>>> r2.2-rocm-pre-branching
     ],
     deps = [
         ":profiler_v2",

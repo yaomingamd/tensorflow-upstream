@@ -42,12 +42,8 @@ tf_py_test(
     name = "applications_test",
     size = "medium",
     srcs = ["applications_test.py"],
-<<<<<<< HEAD
     shard_count = 36,
-=======
-    shard_count = 32,
     tags = ["no_rocm"],
->>>>>>> r2.2-rocm-pre-branching
     deps = [
         ":applications",
         "//tensorflow/python:client_testlib",
