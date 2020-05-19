@@ -37,9 +37,9 @@ yes "" | $PYTHON_BIN_PATH configure.py
 
 # Run bazel test command. Double test timeouts to avoid flakes.
 bazel test \
-      --config=rocm \
+      --config=rocm --config=v2 --test_env=TF2_BEHAVIOR=1 \
       -k \
-      --test_tag_filters=gpu,-no_oss,-oss_serial,-no_gpu,-no_rocm,-benchmark-test,-rocm_multi_gpu,-v1only \
+      --test_tag_filters=gpu,-no_gpu,-no_rocm,-no_rocm_v2,-benchmark-test,-no_oss,-oss_serial,-rocm_multi_gpu, \
       --jobs=${N_JOBS} \
       --local_test_jobs=${TF_GPU_COUNT} \
       --test_timeout 600,900,2400,7200 \
@@ -53,7 +53,7 @@ bazel test \
       -//tensorflow/lite/... \
       -//tensorflow/python/compiler/tensorrt/... \
 && bazel test \
-      --config=rocm \
+      --config=rocm --config=v2 --test_env=TF2_BEHAVIOR=1 \
       -k \
       --test_tag_filters=gpu \
       --test_timeout 600,900,2400,7200 \
