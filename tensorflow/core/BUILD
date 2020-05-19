@@ -140,6 +140,10 @@ load(
     "tf_cuda_tests_tags",
 )
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+load(
+    "@local_config_rocm//rocm:build_defs.bzl",
+    "if_rocm"
+)
 load("@local_config_tensorrt//:build_defs.bzl", "if_tensorrt")
 load(
     "//third_party/mkl:build_defs.bzl",
@@ -1097,6 +1101,8 @@ cc_library(
     ]) + if_cuda([
         "//tensorflow/core/grappler/optimizers:gpu_swapping_kernels",
         "//tensorflow/core/grappler/optimizers:gpu_swapping_ops",
+    ]) + if_rocm([
+        "//tensorflow/core/kernels:gpu_fusion_ops",
     ]) + if_nccl([
         "//tensorflow/core/kernels:nccl_kernels",
     ]) + if_tensorrt([
@@ -3717,7 +3723,6 @@ tf_cuda_cc_test(
     size = "small",
     srcs = ["common_runtime/process_function_library_runtime_test.cc"],
     linkstatic = tf_kernel_tests_linkstatic(),
-    tags = ["no_rocm"],
     deps = [
         ":core_cpu",
         ":core_cpu_internal",
