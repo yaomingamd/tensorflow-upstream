@@ -63,15 +63,20 @@ RUN apt-get update --allow-insecure-repositories && \
     rm -rf /var/lib/apt/lists/*
 
 # Set up paths
-ENV HCC_HOME=$ROCM_PATH/hcc
-ENV HIP_PATH=$ROCM_PATH/hip
-ENV OPENCL_ROOT=$ROCM_PATH/opencl
-ENV PATH="$HCC_HOME/bin:$HIP_PATH/bin:${PATH}"
-ENV PATH="$ROCM_PATH/bin:${PATH}"
-ENV PATH="$OPENCL_ROOT/bin:${PATH}"
+ENV HCC_HOME=${ROCM_PATH}/hcc
+ENV HIP_PATH=${ROCM_PATH}/hip
+ENV PATH=$HCC_HOME/bin:$HIP_PATH/bin:${ROCM_PATH}/opencl/bin:${ROCM_PATH}/bin:$PATH
+ENV HIP_PLATFORM=hcc
+ENV ROCM_TOOLKIT_PATH=${ROCM_PATH}
+ENV TF_CONFIGURE_IOS=0
+ENV TF_NEED_ROCM=1
+
+# Workaround, explicitly add symbolic link to /opt/rocm
+RUN touch ${ROCM_PATH}/.info/version
+RUN bash -c 'ln -s ${ROCM_PATH} /opt/rocm'
 
 # Add target file to help determine which device(s) to build for
-RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906\ngfx908/" >> /opt/rocm/bin/target.lst'
+RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906\ngfx908/" >> ${ROCM_PATH}/bin/target.lst'
 
 # Copy and run the install scripts.
 COPY install/*.sh /install/
