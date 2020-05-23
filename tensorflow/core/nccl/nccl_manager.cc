@@ -250,6 +250,7 @@ string NcclManager::GenerateCommunicatorKey() {
 
 Status NcclManager::GetCommunicator(NcclManager::Collective* collective,
                                     NcclManager::Communicator** communicator) {
+<<<<<<< HEAD
   // Sort by device ID to make ordering of participants deterministic.
   std::sort(collective->participants.begin(), collective->participants.end(),
             [](const std::unique_ptr<Participant>& a,
@@ -258,6 +259,16 @@ Status NcclManager::GetCommunicator(NcclManager::Collective* collective,
                 return a->executor < b->executor;
               }
               return a->gpu_device_id < b->gpu_device_id;
+=======
+  // Sort by global rank to make ordering of participants deterministic.
+  std::sort(collective->participants.begin(), collective->participants.end(),
+            [](const std::unique_ptr<Participant>& a,
+               const std::unique_ptr<Participant>& b) {
+              if (a->global_rank == b->global_rank) {
+                return a->executor < b->executor;
+              }
+              return a->global_rank < b->global_rank;
+>>>>>>> upstream/r1.15
             });
 
   mutex_lock l(mu_);

@@ -67,5 +67,9 @@ bazel test \
       -//tensorflow/compiler/... \
       -//tensorflow/contrib/... \
       -//tensorflow/lite/... \
+<<<<<<< HEAD
       -//tensorflow/python/compiler/tensorrt/... \
+=======
+      -//tensorflow/python/compiler/tensorrt/...
+>>>>>>> upstream/r1.15
 
