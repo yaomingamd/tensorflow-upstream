@@ -139,11 +139,11 @@ __device__ T impl_rsqrt(T x) {
 }
 template <>
 __device__ Eigen::half impl_sqrt(Eigen::half x) {
-  return __float2half(sqrt(__half2float(x)));
+  return Eigen::half(sqrt(float(x)));
 }
 template <>
 __device__ Eigen::half impl_rsqrt(Eigen::half x) {
-  return __float2half(rsqrt(__half2float(x)));
+  return Eigen::half(rsqrt(float(x)));;
 }
 
 template <class T>
