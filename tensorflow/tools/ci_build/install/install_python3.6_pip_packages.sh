@@ -47,7 +47,10 @@ cd Python-3.6.1
 
 ./configure
 make altinstall
-ln -s /usr/local/bin/pip3.6 /usr/local/bin/pip3
+
+# /usr/local/bin/pip3 may already exist
+rm /usr/local/bin/pip3 || true
+ln -s /usr/local/bin/pip3.6 /usr/local/bin/pip3 || true
 
 pip3 install --upgrade pip
 

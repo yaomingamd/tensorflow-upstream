@@ -119,8 +119,8 @@ pip2 install keras_applications==1.0.8 --no-deps
 pip3 install keras_applications==1.0.8 --no-deps
 pip2 install keras_preprocessing==1.0.5 --no-deps
 pip3 install keras_preprocessing==1.0.5 --no-deps
-pip2 install --upgrade h5py==2.8.0
-pip3 install --upgrade h5py==2.8.0
+pip2 install --upgrade h5py==2.8.0 --no-deps
+pip3 install --upgrade h5py==2.8.0 --no-deps
 
 # Estimator
 pip2 install tf-estimator-nightly==1.14.0.dev2019061801 --no-deps
