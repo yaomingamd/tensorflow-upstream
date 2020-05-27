@@ -3,9 +3,9 @@
 FROM ubuntu:xenial
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
-ARG DEB_ROCM_REPO=http://repo.radeon.com/rocm/apt/2.6/
+ARG DEB_ROCM_REPO=http://repo.radeon.com/rocm/apt/.apt_3.3/
 
-ARG ROCM_PATH=/opt/rocm
+ARG ROCM_PATH=/opt/rocm-3.3.0
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV TF_NEED_ROCM 1
@@ -89,7 +89,7 @@ RUN touch ${ROCM_PATH}/.info/version
 RUN bash -c 'ln -s ${ROCM_PATH} /opt/rocm'
 
 # Add target file to help determine which device(s) to build for
-RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906" >> ${ROCM_PATH}/bin/target.lst'
+RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906\ngfx908" >> ${ROCM_PATH}/bin/target.lst'
 
 # Build rocBLAS from source
 #RUN cd $HOME && git clone -b <> https://github.com/ROCmSoftwarePlatform/rocBLAS.git && cd rocBLAS && ./install.sh -id
@@ -110,6 +110,10 @@ RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906" >> ${ROCM_PATH}/bin/target.lst'
 #    mkdir -p build && cd build && \
 #    CXX=/opt/rocm/hcc/bin/hcc cmake -DMIOPEN_BACKEND=HIP -DCMAKE_PREFIX_PATH="/opt/rocm/hcc;/opt/rocm/hip" -D#CMAKE_CXX_FLAGS="-isystem /usr/include/x86_64-linux-gnu/" .. -DMIOPEN_MAKE_BOOST_PUBLIC=ON && \
 #    make -j $(nproc) && make package && dpkg -i ./MIOpen*.deb
+
+# Upgrade pip.
+RUN pip2 install --upgrade pip
+RUN pip3 install --upgrade pip
 
 # Copy and run the install scripts.
 COPY install/*.sh /install/
