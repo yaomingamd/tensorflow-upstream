@@ -4200,6 +4200,7 @@ cuda_py_test(
     python_version = "PY3",
     xla_enable_strict_auto_jit = False,
     xla_enabled = True,
+    tags = ["no_rocm"],
     deps = [
         ":client_testlib",
         ":config",
