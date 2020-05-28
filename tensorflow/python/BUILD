@@ -7482,6 +7482,7 @@ cuda_py_test(
     size = "small",
     srcs = ["ops/nn_grad_test.py"],
     python_version = "PY3",
+    tags = ["no_rocm"],
     deps = [
         ":client_testlib",
         ":framework_for_generated_wrappers",
