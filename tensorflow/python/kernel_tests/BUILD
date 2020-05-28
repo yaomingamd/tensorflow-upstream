@@ -1565,6 +1565,7 @@ cuda_py_test(
     srcs = ["array_ops_test.py"],
     shard_count = 10,
     tags = [
+        "no_rocm",
         "noasan",  # times out
         "optonly",  # times out
     ],
