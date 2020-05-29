@@ -77,6 +77,9 @@ RUN bash -c 'ln -s ${ROCM_PATH} /opt/rocm'
 
 # Add target file to help determine which device(s) to build for
 RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906\ngfx908" >> ${ROCM_PATH}/bin/target.lst'
+# Upgrade pip.
+RUN pip2 install --upgrade pip
+RUN pip3 install --upgrade pip
 
 # Copy and run the install scripts.
 COPY install/*.sh /install/
