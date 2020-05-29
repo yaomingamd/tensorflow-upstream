@@ -68,6 +68,7 @@ class AutoMixedPrecisionLists {
           "CudnnRNN", "CudnnRNNBackprop", "CudnnRNNBackpropV2",
           "CudnnRNNBackpropV3", "CudnnRNNV2", "CudnnRNNV3", "GRUBlockCell",
           "GRUBlockCellGrad", "LSTMBlockCell", "LSTMBlockCellGrad",
+          "Dropout", "DropoutGrad",
           // TODO(benbarsdell): Enable these when fast and safe fp16 kernels are
           // available for depthwise convolutions.
           // "DepthwiseConv2dNative",
