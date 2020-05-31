@@ -1025,6 +1025,7 @@ tf_py_test(
         "//tensorflow/python:client_testlib",
     ],
     shard_count = 10,
+    tags = ["no_rocm"],
 )
 
 cuda_py_test(
@@ -1647,6 +1648,7 @@ tf_py_test(
     shard_count = 8,
     tags = [
         "no-internal-py3",
+        "no_rocm",
         "nomac",  # TODO(mihaimaruseac): b/127695564
     ],
 )
