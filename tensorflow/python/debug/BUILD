@@ -734,7 +734,7 @@ cuda_py_test(
     size = "medium",
     srcs = ["lib/check_numerics_callback_test.py"],
     python_version = "PY3",
-    tags = ["no_windows"],
+    tags = ["no_windows", "no_rocm"],
     deps = [
         ":check_numerics_callback",
         "//tensorflow/python:framework_test_lib",
