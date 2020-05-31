@@ -28,12 +28,11 @@ typedef Eigen::GpuDevice GPUDevice;
 namespace functor {
 
 template <typename T>
-__global__ void ApplyAdamKernel(int32 data_dim, T* var, T* m, T* v,
-                                const T* const beta1_power_,
-                                const T* const beta2_power_, const T* const lr_,
-                                const T* const beta1_, const T* const beta2_,
-                                const T* const epsilon_, const T* grad,
-                                bool use_nesterov) {
+__global__ __launch_bounds__(1024) void ApplyAdamKernel(
+    int32 data_dim, T* var, T* m, T* v, const T* const beta1_power_,
+    const T* const beta2_power_, const T* const lr_, const T* const beta1_,
+    const T* const beta2_, const T* const epsilon_, const T* grad,
+    bool use_nesterov) {
   eigen_assert(blockDim.y == 1);
   eigen_assert(blockDim.z == 1);
   eigen_assert(gridDim.y == 1);
@@ -68,7 +67,7 @@ __global__ void ApplyAdamKernel(int32 data_dim, T* var, T* m, T* v,
 }
 
 template <typename T, typename Tindex>
-__global__ void SparseApplyKerasMomentumKernel(
+__global__ __launch_bounds__(1024) void SparseApplyKerasMomentumKernel(
     T* var, T* accum, const T* lr, const T* grad, const Tindex* indices,
     const T* momentum, bool use_nesterov, Tindex param_rows,
     Tindex updates_size, Tindex indices_size) {

@@ -619,7 +619,9 @@ StatusOr<std::vector<uint8>> EmitModuleToHsaco(
   // TODO(whchung@gmail.com): change to tensorflow::ROCmRoot() after
   // ROCm-Device-Libs PR.
   std::string lld_path = tensorflow::io::JoinPath("/opt/rocm", "hcc/bin");
-  auto lld_program = llvm::sys::findProgramByName("ld.lld", {lld_path});
+  std::string lld2_path = tensorflow::io::JoinPath("/opt/rocm", "llvm/bin");
+  auto lld_program =
+      llvm::sys::findProgramByName("ld.lld", {lld_path, lld2_path});
   if (!lld_program) {
     return xla::InternalError("unable to find ld.lld in PATH: %s",
                               lld_program.getError().message());
@@ -683,7 +685,7 @@ std::unique_ptr<llvm::TargetMachine> AMDGPUGetTargetMachine(
     llvm::Triple target_triple, int amdgpu_version,
     const HloModuleConfig& hlo_module_config) {
   return GetTargetMachine(target_triple, absl::StrCat("gfx", amdgpu_version),
-                          hlo_module_config, "-code-object-v3");
+                          hlo_module_config, "+code-object-v3");
 }
 
 void AMDGPUBackendInit(const HloModuleConfig& hlo_module_config) {

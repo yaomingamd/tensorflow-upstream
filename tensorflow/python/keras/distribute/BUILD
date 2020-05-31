@@ -202,6 +202,7 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_windows_gpu",
+        "no_rocm",
         "notsan",
     ],
     deps = [
