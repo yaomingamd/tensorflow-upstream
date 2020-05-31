@@ -350,7 +350,7 @@ function main() {
   elif [[ ${NIGHTLY_BUILD} == "1" && ${GPUDIRECT_BUILD} == "1" ]]; then
     PKG_NAME_FLAG="--project_name tf_nightly_gpudirect"
   elif [[ ${NIGHTLY_BUILD} == "1" && ${ROCM_BUILD} == "1" ]]; then
-    PKG_NAME_FLAG="--project_name tf_nightly_rocm"
+    PKG_NAME_FLAG="--project_name tf_nightly_rocm_enhanced"
   elif [[ ${NIGHTLY_BUILD} == "1" && ${CPU_BUILD} == "1" ]]; then
     PKG_NAME_FLAG="--project_name tf_nightly_cpu"
   elif [[ ${NIGHTLY_BUILD} == "1" ]]; then

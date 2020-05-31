@@ -1064,7 +1064,6 @@ def _L2LossGrad(op, grad):
   """
   return op.inputs[0] * grad
 
-
 @ops.RegisterGradient("TopK")
 @ops.RegisterGradient("TopKV2")
 def _TopKGrad(op, grad, _):

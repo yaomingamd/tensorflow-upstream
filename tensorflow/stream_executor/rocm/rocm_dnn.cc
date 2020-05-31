@@ -19,7 +19,6 @@ limitations under the License.
 #include <memory>
 
 #include "absl/strings/str_cat.h"
-#include "third_party/eigen3/Eigen/Core"
 #include "rocm/include/miopen/miopen.h"
 #include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/util/env_var.h"
@@ -41,6 +40,7 @@ limitations under the License.
 #include "tensorflow/stream_executor/scratch_allocator.h"
 #include "tensorflow/stream_executor/stream.h"
 #include "tensorflow/stream_executor/stream_executor_pimpl.h"
+#include "third_party/eigen3/Eigen/Core"
 
 namespace {
 
@@ -54,14 +54,16 @@ NarrowT CheckedNarrowing(const WideT& wide) {
   return narrow;
 }
 
-const int kImmediateModeVlogLevel = 3;
+const int kConvDebugVlogLevel = 3;
 
 }  // namespace
 
 namespace stream_executor {
 
+using dnn::AlgorithmDesc;
 using dnn::BatchDescriptor;
 using dnn::ConvolutionDescriptor;
+using dnn::DropoutDescriptor;
 using dnn::FilterDescriptor;
 using dnn::NormalizeDescriptor;
 using dnn::PoolingDescriptor;
@@ -94,6 +96,75 @@ string ToString(miopenStatus_t status) {
   }
 }
 
+string ToString(miopenConvFwdAlgorithm_t algorithm) {
+  string s;
+  switch (algorithm) {
+    case miopenConvolutionFwdAlgoGEMM:
+      s = "GEMM";
+      break;
+    case miopenConvolutionFwdAlgoDirect:
+      s = "Direct";
+      break;
+    case miopenConvolutionFwdAlgoFFT:
+      s = "FFT";
+      break;
+    case miopenConvolutionFwdAlgoWinograd:
+      s = "Winograd";
+      break;
+    case miopenConvolutionFwdAlgoImplicitGEMM:
+      s = "Implicit GEMM";
+      break;
+    case miopenConvolutionFwdAlgoStaticCompiledGEMM:
+      s = "Static Compiled GEMM";
+      break;
+  }
+  return s;
+}
+
+string ToString(miopenConvBwdWeightsAlgorithm_t algorithm) {
+  string s;
+  switch (algorithm) {
+    case miopenConvolutionBwdWeightsAlgoGEMM:
+      s = "GEMM";
+      break;
+    case miopenConvolutionBwdWeightsAlgoDirect:
+      s = "Direct";
+      break;
+    case miopenConvolutionBwdWeightsAlgoWinograd:
+      s = "Winograd";
+      break;
+    case miopenConvolutionBwdWeightsAlgoImplicitGEMM:
+      s = "Implicit GEMM";
+      break;
+  }
+  return s;
+}
+
+string ToString(miopenConvBwdDataAlgorithm_t algorithm) {
+  string s;
+  switch (algorithm) {
+    case miopenConvolutionBwdDataAlgoGEMM:
+      s = "GEMM";
+      break;
+    case miopenConvolutionBwdDataAlgoDirect:
+      s = "Direct";
+      break;
+    case miopenConvolutionBwdDataAlgoFFT:
+      s = "FFT";
+      break;
+    case miopenConvolutionBwdDataAlgoWinograd:
+      s = "Winograd";
+      break;
+    case miopenTransposeBwdDataAlgoGEMM:
+      s = "Transpose GEMM";
+      break;
+    case miopenConvolutionBwdDataAlgoImplicitGEMM:
+      s = "Implicit GEMM";
+      break;
+  }
+  return s;
+}
+
 string ToString(miopenConvAlgorithm_t algorithm) {
   string s;
   switch (algorithm) {
@@ -109,9 +180,16 @@ string ToString(miopenConvAlgorithm_t algorithm) {
     case miopenConvolutionAlgoWinograd:
       s = "Winograd";
       break;
+    case miopenConvolutionAlgoImplicitGEMM:
+      s = "Implicit GEMM";
+      break;
+    case miopenConvolutionAlgoStaticCompiledGEMM:
+      s = "Static Compiled GEMM";
+      break;
   }
   return s;
 }
+
 // RAII wrapper for all calls to MIOpen with a MIOpen handle argument.
 //
 // See MIOpenAccess::GetHandle() for details.
@@ -177,114 +255,122 @@ namespace wrap {
 #endif
 
 // clang-format off
-#define MIOPEN_DNN_ROUTINE_EACH(__macro)                             \
-  __macro(miopenBatchNormalizationBackward)                          \
-  __macro(miopenBatchNormalizationForwardInference)                  \
-  __macro(miopenBatchNormalizationForwardTraining)                   \
-  __macro(miopenGetConvolutionForwardOutputDim)                      \
-  __macro(miopenGetConvolutionNdForwardOutputDim)                    \
-  __macro(miopenFindConvolutionForwardAlgorithm)                     \
-  __macro(miopenCreateTensorDescriptor)                              \
-  __macro(miopenDestroyTensorDescriptor)                             \
-  __macro(miopenSet2dPoolingDescriptor)                              \
-  __macro(miopenSetLRNDescriptor)                                    \
-  __macro(miopenLRNGetWorkSpaceSize)                                 \
-  __macro(miopenCreateConvolutionDescriptor)                         \
-  __macro(miopenCreatePoolingDescriptor)                             \
-  __macro(miopenDestroyPoolingDescriptor)                            \
-  __macro(miopenCreateLRNDescriptor)                                 \
-  __macro(miopenDestroyLRNDescriptor)                                \
-  __macro(miopenDestroyConvolutionDescriptor)                        \
-  __macro(miopenCreateWithStream)                                    \
-  __macro(miopenDestroy)                                             \
-  __macro(miopenSetStream)                                           \
-  __macro(miopenSetAllocator)                                        \
-  __macro(miopenActivationForward)                                   \
-  __macro(miopenConvolutionForward)                                  \
-  __macro(miopenConvolutionBackwardBias)                             \
-  __macro(miopenConvolutionForwardGetWorkSpaceSize)                  \
-  __macro(miopenInitConvolutionDescriptor)                           \
-  __macro(miopenInitConvolutionNdDescriptor)                         \
-  __macro(miopenGetConvolutionDescriptor)                            \
-  __macro(miopenGetConvolutionNdDescriptor)                          \
-  __macro(miopenSetConvolutionGroupCount)                            \
-  __macro(miopenSet4dTensorDescriptor)                               \
-  __macro(miopenGetTensorDescriptor)                                 \
-  __macro(miopenSetTensorDescriptor)                                 \
-  __macro(miopenGetTensorDescriptorSize)                             \
-  __macro(miopenPoolingForward)                                      \
-  __macro(miopenPoolingGetWorkSpaceSize)                             \
-  __macro(miopenPoolingBackward)                                     \
-  __macro(miopenLRNForward)                                          \
-  __macro(miopenLRNBackward)                                         \
-  __macro(miopenOpTensor)                                            \
-  __macro(miopenConvolutionBackwardData)                             \
-  __macro(miopenConvolutionBackwardWeights)                          \
-  __macro(miopenConvolutionBackwardWeightsGetWorkSpaceSize)          \
-  __macro(miopenFindConvolutionBackwardDataAlgorithm)                \
-  __macro(miopenFindConvolutionBackwardWeightsAlgorithm)             \
-  __macro(miopenConvolutionBackwardDataGetWorkSpaceSize)             \
-  __macro(miopenCreateRNNDescriptor)                                 \
-  __macro(miopenSetRNNDescriptor)                                    \
-  __macro(miopenDestroyRNNDescriptor)                                \
-  __macro(miopenGetRNNParamsSize)                                    \
-  __macro(miopenGetRNNLayerParam)                                    \
-  __macro(miopenGetRNNLayerBias)                                     \
-  __macro(miopenGetRNNWorkspaceSize)                                 \
-  __macro(miopenGetRNNTrainingReserveSize)                           \
-  __macro(miopenRNNForwardInference)                                 \
-  __macro(miopenRNNForwardTraining)                                  \
-  __macro(miopenRNNBackwardData)                                     \
-  __macro(miopenRNNBackwardWeights)                                  \
-  __macro(miopenGetRNNLayerParamOffset)                              \
-  __macro(miopenGetRNNLayerParamSize)                                \
-  __macro(miopenGetRNNLayerBiasOffset)                               \
-  __macro(miopenGetRNNLayerBiasSize)                                 \
-  __macro(miopenGetRNNParamsDescriptor)                              \
-  __macro(miopenCreateActivationDescriptor)                          \
-  __macro(miopenSetActivationDescriptor)                             \
-  __macro(miopenGetActivationDescriptor)                             \
-  __macro(miopenDestroyActivationDescriptor)                         \
-  __macro(miopenCreateFusionPlan)                                    \
-  __macro(miopenCreateOpConvForward)                                 \
-  __macro(miopenCreateOpBiasForward)                                 \
-  __macro(miopenCreateOpActivationForward)                           \
-  __macro(miopenCreateOpActivationBackward)                          \
-  __macro(miopenCreateOpBatchNormInference)                          \
-  __macro(miopenCreateOpBatchNormForward)                            \
-  __macro(miopenCreateOpBatchNormBackward)                           \
-  __macro(miopenCompileFusionPlan)                                   \
-  __macro(miopenFusionPlanGetOp)                                     \
-  __macro(miopenCreateOperatorArgs)                                  \
-  __macro(miopenSetOpArgsConvForward)                                \
-  __macro(miopenSetOpArgsBiasForward)                                \
-  __macro(miopenSetOpArgsActivForward)                               \
-  __macro(miopenSetOpArgsActivBackward)                              \
-  __macro(miopenSetOpArgsBatchNormInference)                         \
-  __macro(miopenSetOpArgsBatchNormForward)                           \
-  __macro(miopenSetOpArgsBatchNormBackward)                          \
-  __macro(miopenExecuteFusionPlan)                                   \
-  __macro(miopenDestroyOperatorArgs)                                 \
-  __macro(miopenDestroyFusionPlan)                                   \
-  __macro(miopenConvolutionForwardGetSolutionCount)                  \
-  __macro(miopenConvolutionForwardGetSolution)                       \
-  __macro(miopenConvolutionForwardGetSolutionWorkspaceSize)          \
-  __macro(miopenConvolutionForwardCompileSolution)                   \
-  __macro(miopenConvolutionForwardImmediate)                         \
-  __macro(miopenConvolutionBackwardDataGetSolutionCount)             \
-  __macro(miopenConvolutionBackwardDataGetSolution)                  \
-  __macro(miopenConvolutionBackwardDataGetSolutionWorkspaceSize)     \
-  __macro(miopenConvolutionBackwardDataCompileSolution)              \
-  __macro(miopenConvolutionBackwardDataImmediate)                    \
-  __macro(miopenConvolutionBackwardWeightsGetSolutionCount)          \
-  __macro(miopenConvolutionBackwardWeightsGetSolution)               \
-  __macro(miopenConvolutionBackwardWeightsGetSolutionWorkspaceSize)  \
-  __macro(miopenConvolutionBackwardWeightsCompileSolution)           \
-  __macro(miopenConvolutionBackwardWeightsImmediate)		     \
-  __macro(miopenCreateCTCLossDescriptor)			     \
-  __macro(miopenSetCTCLossDescriptor)				     \
-  __macro(miopenGetCTCLossWorkspaceSize)			     \
-  __macro(miopenCTCLoss)					     \
+#define MIOPEN_DNN_ROUTINE_EACH(__macro)                   \
+  __macro(miopenBatchNormalizationBackward)                \
+  __macro(miopenBatchNormalizationForwardInference)        \
+  __macro(miopenBatchNormalizationForwardTraining)         \
+  __macro(miopenGetConvolutionForwardOutputDim)            \
+  __macro(miopenGetConvolutionNdForwardOutputDim)          \
+  __macro(miopenFindConvolutionForwardAlgorithm)           \
+  __macro(miopenCreateTensorDescriptor)                    \
+  __macro(miopenDestroyTensorDescriptor)                   \
+  __macro(miopenSetNdPoolingDescriptor)                    \
+  __macro(miopenSetPoolingIndexType)                       \
+  __macro(miopenSetLRNDescriptor)                          \
+  __macro(miopenLRNGetWorkSpaceSize)                       \
+  __macro(miopenCreateConvolutionDescriptor)               \
+  __macro(miopenCreatePoolingDescriptor)                   \
+  __macro(miopenDestroyPoolingDescriptor)                  \
+  __macro(miopenCreateDropoutDescriptor)                   \
+  __macro(miopenDestroyDropoutDescriptor)                  \
+  __macro(miopenCreateLRNDescriptor)                       \
+  __macro(miopenDestroyLRNDescriptor)                      \
+  __macro(miopenDestroyConvolutionDescriptor)              \
+  __macro(miopenCreateWithStream)                          \
+  __macro(miopenDestroy)                                   \
+  __macro(miopenSetStream)                                 \
+  __macro(miopenSetAllocator)                              \
+  __macro(miopenActivationForward)                         \
+  __macro(miopenConvolutionForward)                        \
+  __macro(miopenConvolutionBackwardBias)                   \
+  __macro(miopenConvolutionForwardGetWorkSpaceSize)        \
+  __macro(miopenInitConvolutionDescriptor)                 \
+  __macro(miopenInitConvolutionNdDescriptor)               \
+  __macro(miopenGetConvolutionDescriptor)                  \
+  __macro(miopenGetConvolutionNdDescriptor)                \
+  __macro(miopenSetConvolutionGroupCount)                  \
+  __macro(miopenSet4dTensorDescriptor)                     \
+  __macro(miopenGetTensorDescriptor)                       \
+  __macro(miopenSetTensorDescriptor)                       \
+  __macro(miopenGetTensorDescriptorSize)                   \
+  __macro(miopenPoolingForward)                            \
+  __macro(miopenPoolingGetWorkSpaceSizeV2)                 \
+  __macro(miopenPoolingBackward)                           \
+  __macro(miopenDropoutForward)                            \
+  __macro(miopenDropoutBackward)                           \
+  __macro(miopenDropoutGetStatesSize)                      \
+  __macro(miopenRestoreDropoutDescriptor)                  \
+  __macro(miopenSetDropoutDescriptor)                      \
+  __macro(miopenLRNForward)                                \
+  __macro(miopenLRNBackward)                               \
+  __macro(miopenOpTensor)                                  \
+  __macro(miopenConvolutionBackwardData)                   \
+  __macro(miopenConvolutionBackwardWeights)                \
+  __macro(miopenConvolutionBackwardWeightsGetWorkSpaceSize)\
+  __macro(miopenFindConvolutionBackwardDataAlgorithm)      \
+  __macro(miopenFindConvolutionBackwardWeightsAlgorithm)   \
+  __macro(miopenConvolutionBackwardDataGetWorkSpaceSize)   \
+  __macro(miopenCreateRNNDescriptor)                       \
+  __macro(miopenSetRNNDescriptor)                          \
+  __macro(miopenDestroyRNNDescriptor)                      \
+  __macro(miopenGetRNNParamsSize)                          \
+  __macro(miopenGetRNNLayerParam)                          \
+  __macro(miopenGetRNNLayerBias)                           \
+  __macro(miopenGetRNNWorkspaceSize)                       \
+  __macro(miopenGetRNNTrainingReserveSize)                 \
+  __macro(miopenRNNForwardInference)                       \
+  __macro(miopenRNNForwardTraining)                        \
+  __macro(miopenRNNBackwardData)                           \
+  __macro(miopenRNNBackwardWeights)                        \
+  __macro(miopenGetRNNLayerParamOffset)                    \
+  __macro(miopenGetRNNLayerParamSize)                      \
+  __macro(miopenGetRNNLayerBiasOffset)                     \
+  __macro(miopenGetRNNLayerBiasSize)                       \
+  __macro(miopenGetRNNParamsDescriptor)                    \
+  __macro(miopenCreateActivationDescriptor)                \
+  __macro(miopenSetActivationDescriptor)                   \
+  __macro(miopenGetActivationDescriptor)                   \
+  __macro(miopenDestroyActivationDescriptor)               \
+  __macro(miopenCreateFusionPlan)                          \
+  __macro(miopenCreateOpConvForward)                       \
+  __macro(miopenCreateOpBiasForward)                       \
+  __macro(miopenCreateOpActivationForward)                 \
+  __macro(miopenCreateOpActivationBackward)                \
+  __macro(miopenCreateOpBatchNormInference)                \
+  __macro(miopenCreateOpBatchNormForward)                  \
+  __macro(miopenCreateOpBatchNormBackward)                 \
+  __macro(miopenCompileFusionPlan)                         \
+  __macro(miopenFusionPlanGetOp)                           \
+  __macro(miopenCreateOperatorArgs)                        \
+  __macro(miopenSetOpArgsConvForward)                      \
+  __macro(miopenSetOpArgsBiasForward)                      \
+  __macro(miopenSetOpArgsActivForward)                     \
+  __macro(miopenSetOpArgsActivBackward)                    \
+  __macro(miopenSetOpArgsBatchNormInference)               \
+  __macro(miopenSetOpArgsBatchNormForward)                 \
+  __macro(miopenSetOpArgsBatchNormBackward)                \
+  __macro(miopenExecuteFusionPlan)                         \
+  __macro(miopenDestroyOperatorArgs)                       \
+  __macro(miopenDestroyFusionPlan)			   \
+  __macro(miopenConvolutionForwardGetSolutionCount)			\
+  __macro(miopenConvolutionForwardGetSolution)				\
+  __macro(miopenConvolutionForwardGetSolutionWorkspaceSize)		\
+  __macro(miopenConvolutionForwardCompileSolution)			\
+  __macro(miopenConvolutionForwardImmediate)				\
+  __macro(miopenConvolutionBackwardDataGetSolutionCount)		\
+  __macro(miopenConvolutionBackwardDataGetSolution)			\
+  __macro(miopenConvolutionBackwardDataGetSolutionWorkspaceSize)	\
+  __macro(miopenConvolutionBackwardDataCompileSolution)			\
+  __macro(miopenConvolutionBackwardDataImmediate)			\
+  __macro(miopenConvolutionBackwardWeightsGetSolutionCount)		\
+  __macro(miopenConvolutionBackwardWeightsGetSolution)			\
+  __macro(miopenConvolutionBackwardWeightsGetSolutionWorkspaceSize)	\
+  __macro(miopenConvolutionBackwardWeightsCompileSolution)		\
+  __macro(miopenConvolutionBackwardWeightsImmediate)			\
+  __macro(miopenCreateCTCLossDescriptor)				\
+  __macro(miopenSetCTCLossDescriptor)					\
+  __macro(miopenGetCTCLossWorkspaceSize)				\
+  __macro(miopenCTCLoss)						\
   __macro(miopenDestroyCTCLossDescriptor)
 
 // clang-format on
@@ -433,66 +519,38 @@ std::set<uint64> CachedFusionPlans::unsupported_plans;
 dnn::ProfileResult GetProfileResultFromConvSolution(
     miopenConvSolution_t solution) {
   dnn::ProfileResult profile_result;
-  profile_result.set_algorithm({solution.solution_id, false});
+  profile_result.set_algorithm(
+      {static_cast<AlgorithmDesc::Index>(solution.solution_id), false});
   profile_result.set_elapsed_time_in_ms(solution.time);
   profile_result.set_scratch_size(solution.workspace_size);
   return profile_result;
 }
 
-}  // namespace
-
-namespace {
-
-miopenHandle_t ToHandle(void* opaque_handle) {
-  return static_cast<miopenHandle_t>(opaque_handle);
-}
-
-miopenConvFwdAlgorithm_t ToConvForwardAlgo(dnn::AlgorithmDesc algorithm) {
-  miopenConvFwdAlgorithm_t algo = miopenConvFwdAlgorithm_t(algorithm.algo_id());
-  switch (algo) {
-    case miopenConvolutionFwdAlgoGEMM:
-    case miopenConvolutionFwdAlgoDirect:
-    case miopenConvolutionFwdAlgoFFT:
-    case miopenConvolutionFwdAlgoWinograd:
-      return algo;
+dnn::ProfileResult GetProfileResultFromConvAlgoPerf(
+    dnn::ConvolutionKind kind, miopenConvAlgoPerf_t algorithm) {
+  dnn::ProfileResult profile_result;
+  switch (kind) {
+    case dnn::ConvolutionKind::FORWARD:
+      profile_result.set_algorithm(
+          {static_cast<AlgorithmDesc::Index>(algorithm.fwd_algo), false});
+      break;
+    case dnn::ConvolutionKind::BACKWARD_DATA:
+      profile_result.set_algorithm(
+          {static_cast<AlgorithmDesc::Index>(algorithm.bwd_data_algo), false});
+      break;
+    case dnn::ConvolutionKind::BACKWARD_FILTER:
+      profile_result.set_algorithm(
+          {static_cast<AlgorithmDesc::Index>(algorithm.bwd_weights_algo),
+           false});
+      break;
     default:
-      LOG(FATAL) << "Unsupported MIOpen convolution forward algorithm: "
-                 << algorithm.algo_id();
+      LOG(FATAL) << "Unexpected convolution kind " << static_cast<int>(kind);
+      break;
   }
+  profile_result.set_elapsed_time_in_ms(algorithm.time);
+  profile_result.set_scratch_size(algorithm.memory);
+  return profile_result;
 }
-
-miopenConvBwdDataAlgorithm_t ToConvBackwardDataAlgo(
-    dnn::AlgorithmDesc algorithm) {
-  miopenConvBwdDataAlgorithm_t algo =
-      miopenConvBwdDataAlgorithm_t(algorithm.algo_id());
-  switch (algo) {
-    case miopenConvolutionBwdDataAlgoGEMM:
-    case miopenConvolutionBwdDataAlgoDirect:
-    case miopenConvolutionBwdDataAlgoFFT:
-    case miopenConvolutionBwdDataAlgoWinograd:
-      return algo;
-    default:
-      LOG(FATAL)
-          << "Unsupported MIOpen convolution backward algorithm for data: "
-          << algorithm.algo_id();
-  }
-}
-
-miopenConvBwdWeightsAlgorithm_t ToConvBackwardFilterAlgo(
-    dnn::AlgorithmDesc algorithm) {
-  miopenConvBwdWeightsAlgorithm_t algo =
-      miopenConvBwdWeightsAlgorithm_t(algorithm.algo_id());
-  switch (algo) {
-    case miopenConvolutionBwdWeightsAlgoGEMM:
-    case miopenConvolutionBwdWeightsAlgoDirect:
-      return algo;
-    default:
-      LOG(FATAL)
-          << "Unsupported MIOpen convolution backward algorithm for filter: "
-          << algorithm.algo_id();
-  }
-}
-
 }  // namespace
 
 // Wraps a MIOpen handle and provides access to it through miopenHandle_t
@@ -542,7 +600,21 @@ class MIOpenAccess {
   miopenHandle_t handle_ TF_GUARDED_BY(mutex_);  // Owned.
 };
 
-MIOpenSupport::MIOpenSupport(GpuExecutor* parent) : parent_(parent) {}
+MIOpenSupport::MIOpenSupport(GpuExecutor* parent) : parent_(parent) {
+  // by default, the Get*Algorithm API will return the list of all applicable
+  // algorithms
+  return_best_algo_only_ = false;
+  // but if the env var TF_ROCM_RETURN_BEST_ALGO_ONLY is set, only the best
+  // (i.e. most efficient) algorithm will be returned
+  tensorflow::ReadBoolFromEnvVar("TF_ROCM_RETURN_BEST_ALGO_ONLY", false,
+                                 &return_best_algo_only_);
+
+  // by default, use Find Mode APIs for convolution
+  use_immediate_mode_ = false;
+  // swich to Find Mode if env var TF_ROCM_USE_IMMEDIATE_MODE is set
+  tensorflow::ReadBoolFromEnvVar("TF_ROCM_USE_IMMEDIATE_MODE", false,
+                                 &use_immediate_mode_);
+}
 
 port::Status MIOpenSupport::Init() {
   ScopedActivateExecutorContext context(parent_);
@@ -754,6 +826,66 @@ class ScopedConvolutionDescriptor {
   SE_DISALLOW_COPY_AND_ASSIGN(ScopedConvolutionDescriptor);
 };
 
+class ScopedDropoutDescriptor {
+ public:
+  ScopedDropoutDescriptor(Stream* stream, miopenHandle_t miopen_handle,
+                          const DropoutDescriptor& dropout_descriptor,
+                          ScratchAllocator* state_allocator)
+      : handle_(nullptr) {
+    auto status = wrap::miopenCreateDropoutDescriptor(&handle_);
+    if (status != miopenStatusSuccess) {
+      LOG(FATAL) << "could not create miopen dropout descriptor: "
+                 << ToString(status);
+    }
+
+    if (state_allocator) {
+      size_t mask_sizes_in_bytes = dropout_descriptor.mask().size();
+      auto allocated = state_allocator->AllocateBytes(mask_sizes_in_bytes);
+      if (!allocated.ok() ||
+          (mask_memory_ = allocated.ValueOrDie()) == nullptr) {
+        LOG(ERROR) << "Failed to allocate dropout mask";
+        return;
+      }
+      stream->ThenMemcpy(&mask_memory_, dropout_descriptor.mask().data(),
+                         dropout_descriptor.mask().size());
+    }
+
+    // Note that we hard code rng_mode now because there is only one node
+    // available, and this option is not part of user API. In the future we may
+    // consider exposing this as a field in DropoutDescriptor
+    //
+    // We use Restore instead of Set DropoutDescriptor because the RNG random
+    // generator is slow. Therefore, we set use_mask to True and use CPU
+    // generated random mask
+    status = wrap::miopenRestoreDropoutDescriptor(
+        handle_, miopen_handle, dropout_descriptor.rate(), nullptr, 0,
+        dropout_descriptor.seed(),
+        /*use_mask=*/true, /*state_evo=*/false,
+        /*rng_mode=*/miopenRNGType_t::MIOPEN_RNG_PSEUDO_XORWOW);
+    if (status != miopenStatusSuccess) {
+      LOG(FATAL) << "could not restore miopen dropout descriptor: "
+                 << ToString(status);
+    }
+  }
+
+  miopenDropoutDescriptor_t handle() const { return handle_; }
+
+  DeviceMemory<uint8> mask() const { return mask_memory_; }
+
+  ~ScopedDropoutDescriptor() {
+    auto status = wrap::miopenDestroyDropoutDescriptor(handle_);
+    if (status != miopenStatusSuccess) {
+      LOG(ERROR) << "could not destroy miopen dropout descriptor: "
+                 << ToString(status);
+    }
+  }
+
+ private:
+  miopenDropoutDescriptor_t handle_;  // Owned.
+  DeviceMemory<uint8> mask_memory_;   // Owned
+  SE_DISALLOW_COPY_AND_ASSIGN(ScopedDropoutDescriptor);
+};
+
 // Turns a PoolingDescriptor structure into a miopen pooling descriptor handle
 // within a scope.
 class ScopedPoolingDescriptor {
@@ -781,17 +913,19 @@ class ScopedPoolingDescriptor {
     std::transform(shape64.cbegin(), shape64.cend(), shape.begin(),
                    &CheckedNarrowing<int64, int>);
 
-    if (nd != 2) {
-      LOG(FATAL) << "miopen requires pooling dimensions be 2"
-                 << ToString(status);
-    }
-
-    status = wrap::miopenSet2dPoolingDescriptor(
+    status = wrap::miopenSetNdPoolingDescriptor(
         handle_,
         (pooling_descriptor.mode() == dnn::PoolingMode::kMaximum
              ? miopenPoolingMax
              : miopenPoolingAverage),
-        shape[0], shape[1], padding[0], padding[1], strides[0], strides[1]);
+        nd, shape.data(), padding.data(), strides.data());
+
+    // Note: The index type has to be uint32 type for now because MIOpen
+    // API assumes all input indexes to be the same type. Since a tensor
+    // descriptor can only use int32 type, the index type here need to be
+    // aligned with the tensor index type of the (input) tensor descritptor
+    status = wrap::miopenSetPoolingIndexType(handle_, miopenIndexUint32);
+
     if (status != miopenStatusSuccess) {
       LOG(FATAL) << "could not set miopen pooling descriptor: "
                  << ToString(status);
@@ -1585,17 +1719,14 @@ miopenDataType_t ToMIOpenDataType(
   switch (data_type) {
     case dnn::DataType::kFloat:
       return miopenFloat;
+    case dnn::DataType::kBFloat16:
+      return miopenBFloat16;
     case dnn::DataType::kHalf:
       return miopenHalf;
     case dnn::DataType::kDouble:
     default:
       LOG(FATAL) << "Invalid DNN data type: " << static_cast<int>(data_type);
   }
-}
-
-miopenDataType_t ToMIOpenDataType(dnn::DataType data_type,
-                                  dnn::FilterLayout filter_layout) {
-  return ToMIOpenDataType(data_type);
 }
 
 miopenRNNInputMode_t ToMIOpenRnnInputMode(dnn::RnnInputMode input_mode) {
@@ -1637,37 +1768,10 @@ miopenRNNMode_t ToMIOpenRnnMode(dnn::RnnMode rnn_mode) {
   }
 }
 
-int MIOpenDataTypeToByteSize(miopenDataType_t data_type) {
-  switch (data_type) {
-    case miopenFloat:
-      return sizeof(float);
-    case miopenHalf:
-      return sizeof(Eigen::half);
-    default:
-      LOG(FATAL) << "Invalid DNN data type: " << static_cast<int>(data_type);
-  }
-}
-
 template <typename Base>
 class MixinBase : public Base {};
 template <>
 class MixinBase<void> {};
-
-dnn::DataType GetConvAccumulatorType(dnn::DataType data_type) {
-  switch (data_type) {
-    case dnn::DataType::kFloat:
-    case dnn::DataType::kDouble:
-      return data_type;
-    case dnn::DataType::kHalf:
-      // FIXME: Check if MIOpen can switch dynamically change accumulator type
-      return dnn::DataType::kFloat;
-    case dnn::DataType::kInt8:
-    case dnn::DataType::kInt32:
-      return dnn::DataType::kInt32;
-    default:
-      LOG(FATAL) << "Invalid DNN data type: " << static_cast<int>(data_type);
-  }
-}
 
 }  // namespace
 
@@ -1733,6 +1837,7 @@ class MIOpenRnnDescriptor : public MIOpenDescriptorCommon<dnn::RnnDescriptor> {
                       miopenRNNDirectionMode_t direction_mode,
                       miopenRNNMode_t rnn_mode, miopenDataType_t data_type,
                       float dropout, uint64 seed,
+                      const dnn::AlgorithmConfig& algorithm_config,
                       ScratchAllocator* state_allocator)
       : rnn_desc_(nullptr),
         num_layers_(num_layers),
@@ -1741,7 +1846,8 @@ class MIOpenRnnDescriptor : public MIOpenDescriptorCommon<dnn::RnnDescriptor> {
         input_mode_(input_mode),
         direction_mode_(direction_mode),
         rnn_mode_(rnn_mode),
-        data_type_(data_type) {
+        data_type_(data_type),
+        algorithm_config_(algorithm_config) {
     // Create the RNN handle
     auto status = wrap::miopenCreateRNNDescriptor(&rnn_desc_);
     RETURN_IF_MIOPEN_ERROR(status, "Unable to create RNN descriptor");
@@ -1777,6 +1883,9 @@ class MIOpenRnnDescriptor : public MIOpenDescriptorCommon<dnn::RnnDescriptor> {
   miopenRNNDirectionMode_t direction_mode() const { return direction_mode_; }
   miopenRNNMode_t rnn_mode() const { return rnn_mode_; }
   miopenDataType_t data_type() const { return data_type_; }
+  const dnn::AlgorithmConfig& algorithm_config() const {
+    return algorithm_config_;
+  }
   int64 ParamsSizeInBytes() const override {
     return miopen_params_desc_->params_size_in_bytes();
   }
@@ -1802,6 +1911,7 @@ class MIOpenRnnDescriptor : public MIOpenDescriptorCommon<dnn::RnnDescriptor> {
   miopenRNNDirectionMode_t direction_mode_;
   miopenRNNMode_t rnn_mode_;
   miopenDataType_t data_type_;
+  dnn::AlgorithmConfig algorithm_config_;
   port::Status status_;
   // no dropout in MIOpen.
   // std::unique_ptr<miopenDropoutDescriptor> miopen_dropout_desc_;
@@ -2062,7 +2172,8 @@ bool MIOpenSupport::DoRnnForwardImpl(
     const MIOpenRnnStateTensorDescriptor& output_c_desc,
     DeviceMemory<T>* output_c_data, bool is_training,
     ScratchAllocator* reserve_space_allocator,
-    ScratchAllocator* workspace_allocator) {
+    ScratchAllocator* workspace_allocator,
+    dnn::ProfileResult* output_profile_result) {
   // extract model parameters
   RnnModelDims model_dims;
   bool res = ExtractAndCheckRnnForward(
@@ -2119,6 +2230,19 @@ bool MIOpenSupport::DoRnnForwardImpl(
     }
   }
 
+  std::unique_ptr<GpuTimer, GpuTimerDeleter> timer;
+  const bool is_profiling = output_profile_result != nullptr;
+  if (is_profiling) {
+    timer.reset(new GpuTimer(parent_));
+    // The start and stop of the timer should be as close to the Cudnn call as
+    // possible. It is still possible for other threads to issue workload on
+    // to this stream. So it could take multiple profiling measurements.
+    if (!timer->Init() || !timer->Start(AsGpuStream(stream))) {
+      LOG(ERROR) << "Failed to start timer";
+      return false;
+    }
+  }
+
   // make the forward call
   if (!is_training) {
     auto status = wrap::miopenRNNForwardInference(
@@ -2158,6 +2282,18 @@ bool MIOpenSupport::DoRnnForwardImpl(
       return false;
     }
   }
+
+  if (is_profiling) {
+    if (!timer->Stop(AsGpuStream(stream))) {
+      LOG(ERROR) << "Failed to stop timer";
+      return false;
+    }
+    auto algo_desc = *rnn_desc.algorithm_config().algorithm();
+    output_profile_result->set_algorithm(algo_desc);
+    output_profile_result->set_elapsed_time_in_ms(
+        timer->GetElapsedMilliseconds());
+  }
+
   return true;
 }
 
@@ -2184,7 +2320,8 @@ bool MIOpenSupport::DoRnnBackwardImpl(
     DeviceMemory<T>* input_c_backprop_data,
     DeviceMemory<T>* params_backprop_data,
     DeviceMemory<uint8>* reserve_space_data,
-    ScratchAllocator* workspace_allocator) {
+    ScratchAllocator* workspace_allocator,
+    dnn::ProfileResult* output_profile_result) {
   // extract model parameters
   RnnModelDims model_dims;
   bool res = ExtractAndCheckRnnForward(
@@ -2231,6 +2368,19 @@ bool MIOpenSupport::DoRnnBackwardImpl(
   if ((size_data > 0) && (input_c_backprop_data->opaque() != nullptr))
     stream->ThenMemZero(input_c_backprop_data, size_data * type_size);
 
+  std::unique_ptr<GpuTimer, GpuTimerDeleter> timer;
+  const bool is_profiling = output_profile_result != nullptr;
+  if (is_profiling) {
+    timer.reset(new GpuTimer(parent_));
+    // The start and stop of the timer should be as close to the Cudnn call as
+    // possible. It is still possible for other threads to issue workload on
+    // to this stream. So it could take multiple profiling measurements.
+    if (!timer->Init() || !timer->Start(AsGpuStream(stream))) {
+      LOG(ERROR) << "Failed to start timer";
+      return false;
+    }
+  }
+
   // make the backward data call
   auto status = wrap::miopenRNNBackwardData(
       miopen.handle() /*handle*/, rnn_desc.handle() /*rnnDesc*/,
@@ -2275,6 +2425,17 @@ bool MIOpenSupport::DoRnnBackwardImpl(
                  << ToString(status);
       return false;
     }
+  }
+
+  if (is_profiling) {
+    if (!timer->Stop(AsGpuStream(stream))) {
+      LOG(ERROR) << "Failed to stop timer";
+      return false;
+    }
+    auto algo_desc = *rnn_desc.algorithm_config().algorithm();
+    output_profile_result->set_algorithm(algo_desc);
+    output_profile_result->set_elapsed_time_in_ms(
+        timer->GetElapsedMilliseconds());
   }
 
   return true;
@@ -2506,7 +2667,8 @@ MIOpenSupport::createRnnDescriptor(
       miopen.handle(), num_layers, hidden_size, input_size,
       ToMIOpenRnnInputMode(input_mode),
       ToMIOpenRnnDirectionMode(direction_mode), ToMIOpenRnnMode(rnn_mode),
-      ToMIOpenDataType(data_type), dropout, seed, state_allocator));
+      ToMIOpenDataType(data_type), dropout, seed, algorithm_config,
+      state_allocator));
   if (!rnn_desc->ok()) {
     return rnn_desc->Status();
   }
@@ -2560,8 +2722,6 @@ bool MIOpenSupport::DoRnnForward(
     ScratchAllocator* reserve_space_allocator,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
-  // ROCM TODO: output_profile_result is ignore for now
-
   const MIOpenRnnDescriptor& miopen_rnn_desc =
       static_cast<const MIOpenRnnDescriptor&>(rnn_desc);
   const MIOpenRnnSequenceTensorDescriptor& miopen_input_desc =
@@ -2582,7 +2742,7 @@ bool MIOpenSupport::DoRnnForward(
       miopen_input_h_desc, input_h_data, miopen_input_c_desc, input_c_data,
       params, miopen_output_desc, output_data, miopen_output_h_desc,
       output_h_data, miopen_output_c_desc, output_c_data, is_training,
-      reserve_space_allocator, workspace_allocator);
+      reserve_space_allocator, workspace_allocator, output_profile_result);
 }
 
 bool MIOpenSupport::DoRnnForward(
@@ -2602,8 +2762,6 @@ bool MIOpenSupport::DoRnnForward(
     ScratchAllocator* reserve_space_allocator,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
-  // ROCM TODO: output_profile_result is ignore for now
-
   const MIOpenRnnDescriptor& miopen_rnn_desc =
       static_cast<const MIOpenRnnDescriptor&>(rnn_desc);
   const MIOpenRnnSequenceTensorDescriptor& miopen_input_desc =
@@ -2624,7 +2782,7 @@ bool MIOpenSupport::DoRnnForward(
       miopen_input_h_desc, input_h_data, miopen_input_c_desc, input_c_data,
       params, miopen_output_desc, output_data, miopen_output_h_desc,
       output_h_data, miopen_output_c_desc, output_c_data, is_training,
-      reserve_space_allocator, workspace_allocator);
+      reserve_space_allocator, workspace_allocator, output_profile_result);
 }
 
 bool MIOpenSupport::DoRnnForward(
@@ -2674,8 +2832,6 @@ bool MIOpenSupport::DoRnnBackward(
     DeviceMemory<uint8>* reserve_space_data,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
-  // ROCM TODO: output_profile_result is ignore for now
-
   const MIOpenRnnDescriptor& miopen_rnn_desc =
       static_cast<const MIOpenRnnDescriptor&>(rnn_desc);
   const MIOpenRnnSequenceTensorDescriptor& miopen_input_desc =
@@ -2698,7 +2854,7 @@ bool MIOpenSupport::DoRnnBackward(
       output_h_data, miopen_output_c_desc, output_c_data, output_backprop_data,
       output_h_backprop_data, output_c_backprop_data, input_backprop_data,
       input_h_backprop_data, input_c_backprop_data, params_backprop_data,
-      reserve_space_data, workspace_allocator);
+      reserve_space_data, workspace_allocator, output_profile_result);
 }
 
 bool MIOpenSupport::DoRnnBackward(
@@ -2725,8 +2881,6 @@ bool MIOpenSupport::DoRnnBackward(
     DeviceMemory<uint8>* reserve_space_data,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
-  // ROCM TODO: output_profile_result is ignore for now
-
   const MIOpenRnnDescriptor& miopen_rnn_desc =
       static_cast<const MIOpenRnnDescriptor&>(rnn_desc);
   const MIOpenRnnSequenceTensorDescriptor& miopen_input_desc =
@@ -2749,7 +2903,7 @@ bool MIOpenSupport::DoRnnBackward(
       output_h_data, miopen_output_c_desc, output_c_data, output_backprop_data,
       output_h_backprop_data, output_c_backprop_data, input_backprop_data,
       input_h_backprop_data, input_c_backprop_data, params_backprop_data,
-      reserve_space_data, workspace_allocator);
+      reserve_space_data, workspace_allocator, output_profile_result);
 }
 
 bool MIOpenSupport::DoRnnBackward(
@@ -2818,21 +2972,6 @@ port::Status MIOpenSupport::DoPrepareForConvolution(
     const dnn::AlgorithmConfig& algorithm_config,
     ScratchAllocator* scratch_allocator, dnn::AlgorithmDesc* algorithm_desc,
     DeviceMemory<uint8>* scratch_memory) {
-  ScopedTensorDescriptor input_nd{
-      input_descriptor,
-      ToMIOpenDataType(element_type, input_descriptor.layout())};
-  ScopedFilterDescriptor filter{
-      filter_descriptor, input_descriptor,
-      ToMIOpenDataType(element_type, filter_descriptor.layout())};
-  ScopedTensorDescriptor output_nd{
-      output_descriptor,
-      ToMIOpenDataType(element_type, output_descriptor.layout())};
-  ScopedConvolutionDescriptor conv{
-      convolution_descriptor,
-      ToMIOpenDataType(GetConvAccumulatorType(element_type))};
-
-  auto miopen = miopen_->GetHandle(parent_, stream);
-
   absl::optional<dnn::AlgorithmDesc> input_algo_desc =
       algorithm_config.algorithm();
 
@@ -2841,64 +2980,9 @@ port::Status MIOpenSupport::DoPrepareForConvolution(
   // An algorithm has been specified.
   *algorithm_desc = *input_algo_desc;
 
-  const uint64_t solution_id = algorithm_desc->algo_id();
+  assert(algorithm_config.scratch_size().has_value());
 
-  size_t scratch_memory_size = 0;
-
-  switch (kind) {
-    case dnn::ConvolutionKind::FORWARD: {
-      auto status = wrap::miopenConvolutionForwardGetSolutionWorkspaceSize(
-          miopen.handle(), filter.handle(), input_nd.handle(), conv.handle(),
-          output_nd.handle(), solution_id, &scratch_memory_size);
-
-      if (status != miopenStatusSuccess) {
-        return port::InternalError(absl::StrCat(
-            "call to miopenConvolutionForwardGetSolutionWorkspaceSize "
-            "failed: ",
-            ToString(status)));
-      }
-      break;
-    }
-
-    case dnn::ConvolutionKind::BACKWARD_DATA: {
-      auto status = wrap::miopenConvolutionBackwardDataGetSolutionWorkspaceSize(
-          miopen.handle(), output_nd.handle(), filter.handle(), conv.handle(),
-          input_nd.handle(), solution_id, &scratch_memory_size);
-
-      if (status != miopenStatusSuccess) {
-        return port::InternalError(absl::StrCat(
-            "call to miopenConvolutionabckwardDataGetSolutionWorkspaceSize "
-            "failed: ",
-            ToString(status)));
-      }
-      break;
-    }
-
-    case dnn::ConvolutionKind::BACKWARD_FILTER: {
-      auto status =
-          wrap::miopenConvolutionBackwardWeightsGetSolutionWorkspaceSize(
-              miopen.handle(), output_nd.handle(), input_nd.handle(),
-              conv.handle(), filter.handle(), solution_id,
-              &scratch_memory_size);
-
-      if (status != miopenStatusSuccess) {
-        return port::InternalError(absl::StrCat(
-            "call to miopenConvolutionabckwardWeightsGetSolutionWorkspaceSize "
-            "failed: ",
-            ToString(status)));
-      }
-      break;
-    }
-
-    default: {
-      return port::InternalError(
-          absl::StrCat("Unexpected convolution kind ", static_cast<int>(kind)));
-      break;
-    }
-  }
-
-  VLOG(2) << "miopen...GetSolutionWorkspaceSize returned "
-          << scratch_memory_size << " for solution_id " << solution_id;
+  size_t scratch_memory_size = *(algorithm_config.scratch_size());
 
   // allocate scratch memory
   if (scratch_memory_size != 0) {
@@ -3015,16 +3099,24 @@ port::Status MIOpenSupport::DoConvolve(
     }
   }
 
-  const uint64_t solution_id = algorithm_desc.algo_id();
-
   miopenStatus_t status = miopenStatusSuccess;
   switch (kind) {
     case dnn::ConvolutionKind::FORWARD: {
-      status = wrap::miopenConvolutionForwardImmediate(
-          miopen.handle(), filter.handle(), filter_data.opaque(),
-          input_nd.handle(), input_data.opaque(), conv.handle(),
-          output_nd.handle(), output_data.opaque(), scratch_memory.opaque(),
-          scratch_memory.size(), solution_id);
+      if (use_immediate_mode_) {
+        status = wrap::miopenConvolutionForwardImmediate(
+            miopen.handle(), filter.handle(), filter_data.opaque(),
+            input_nd.handle(), input_data.opaque(), conv.handle(),
+            output_nd.handle(), output_data.opaque(), scratch_memory.opaque(),
+            scratch_memory.size(),
+            static_cast<uint64_t>(algorithm_desc.algo_id()));
+      } else {
+        status = wrap::miopenConvolutionForward(
+            miopen.handle(), &alpha, input_nd.handle(), input_data.opaque(),
+            filter.handle(), filter_data.opaque(), conv.handle(),
+            static_cast<miopenConvFwdAlgorithm_t>(algorithm_desc.algo_id()),
+            &beta, output_nd.handle(), output_data.opaque(),
+            scratch_memory.opaque(), scratch_memory.size());
+      }
 
       break;
     }
@@ -3037,11 +3129,21 @@ port::Status MIOpenSupport::DoConvolve(
           stream, miopen.handle(), ToMIOpenDataType(element_type),
           &output_back_descriptor, output_data, &transform_scratch);
 
-      status = wrap::miopenConvolutionBackwardDataImmediate(
-          miopen.handle(), output_nd.handle(), output_data.opaque(),
-          filter.handle(), filter_data.opaque(), conv.handle(),
-          input_nd.handle(), input_data.opaque(), scratch_memory.opaque(),
-          scratch_memory.size(), solution_id);
+      if (use_immediate_mode_) {
+        status = wrap::miopenConvolutionBackwardDataImmediate(
+            miopen.handle(), output_nd.handle(), output_data.opaque(),
+            filter.handle(), filter_data.opaque(), conv.handle(),
+            input_nd.handle(), input_data.opaque(), scratch_memory.opaque(),
+            scratch_memory.size(),
+            static_cast<uint64_t>(algorithm_desc.algo_id()));
+      } else {
+        status = wrap::miopenConvolutionBackwardData(
+            miopen.handle(), &alpha, output_nd.handle(), output_data.opaque(),
+            filter.handle(), filter_data.opaque(), conv.handle(),
+            static_cast<miopenConvBwdDataAlgorithm_t>(algorithm_desc.algo_id()),
+            &beta, input_nd.handle(), input_data.opaque(),
+            scratch_memory.opaque(), scratch_memory.size());
+      }
       break;
     }
     case dnn::ConvolutionKind::BACKWARD_FILTER: {
@@ -3053,11 +3155,22 @@ port::Status MIOpenSupport::DoConvolve(
           stream, miopen.handle(), ToMIOpenDataType(element_type),
           &output_back_descriptor, output_data, &transform_scratch);
 
-      status = wrap::miopenConvolutionBackwardWeightsImmediate(
-          miopen.handle(), output_nd.handle(), output_data.opaque(),
-          input_nd.handle(), input_data.opaque(), conv.handle(),
-          filter.handle(), filter_data.opaque(), scratch_memory.opaque(),
-          scratch_memory.size(), solution_id);
+      if (use_immediate_mode_) {
+        status = wrap::miopenConvolutionBackwardWeightsImmediate(
+            miopen.handle(), output_nd.handle(), output_data.opaque(),
+            input_nd.handle(), input_data.opaque(), conv.handle(),
+            filter.handle(), filter_data.opaque(), scratch_memory.opaque(),
+            scratch_memory.size(),
+            static_cast<uint64_t>(algorithm_desc.algo_id()));
+      } else {
+        status = wrap::miopenConvolutionBackwardWeights(
+            miopen.handle(), &alpha, output_nd.handle(), output_data.opaque(),
+            input_nd.handle(), input_data.opaque(), conv.handle(),
+            static_cast<miopenConvBwdWeightsAlgorithm_t>(
+                algorithm_desc.algo_id()),
+            &beta, filter.handle(), filter_data.opaque(),
+            scratch_memory.opaque(), scratch_memory.size());
+      }
       break;
     }
     default:
@@ -3104,11 +3217,35 @@ bool MIOpenSupport::GetConvolveAlgorithms(
 }
 
 bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
-    dnn::ConvolutionKind kind, Stream* stream, dnn::DataType element_type,
-    const dnn::BatchDescriptor& input_descriptor,
+    dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
+    const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data,
     const dnn::FilterDescriptor& filter_descriptor,
+    DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
+    DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
-    const dnn::BatchDescriptor& output_descriptor,
+    ScratchAllocator* scratch_allocator,
+    std::vector<dnn::ProfileResult>* out_algorithms) {
+  return use_immediate_mode_
+             ? GetMIOpenConvolveAlgorithmsImmediateMode(
+                   kind, element_type, stream, input_descriptor, input_data,
+                   filter_descriptor, filter_data, output_descriptor,
+                   output_data, convolution_descriptor, scratch_allocator,
+                   out_algorithms)
+             : GetMIOpenConvolveAlgorithmsFindMode(
+                   kind, element_type, stream, input_descriptor, input_data,
+                   filter_descriptor, filter_data, output_descriptor,
+                   output_data, convolution_descriptor, scratch_allocator,
+                   out_algorithms);
+}
+
+bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
+    dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
+    const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data,
+    const dnn::FilterDescriptor& filter_descriptor,
+    DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
+    DeviceMemoryBase output_data,
+    const dnn::ConvolutionDescriptor& convolution_descriptor,
+    ScratchAllocator* scratch_allocator,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
@@ -3169,18 +3306,14 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
     }
   }
 
-  VLOG(kImmediateModeVlogLevel)
+  VLOG(kConvDebugVlogLevel)
       << "Number of conv solutions max: " << maxSolutionCount;
 
-  // if the env var TF_ROCM_MIMIC_FIND_MODE is set, determine the best solution
-  // as per the "runtime" information for each solution (returned by the prior
-  // call to the *GetSolution api), and then return only the best solution
-  // The idea here is to mimic the old "find" mode, in which we relied upon
-  // the miopen api to determine the best solution, and use that solution
-  // without doing any further measurement in the TF layer
-  bool mimic_find_mode = false;
-  tensorflow::ReadBoolFromEnvVar("TF_ROCM_MIMIC_FIND_MODE", false,
-                                 &mimic_find_mode);
+  if (return_best_algo_only_) {
+    VLOG(kConvDebugVlogLevel) << "TF_ROCM_RETURN_BEST_ALGO_ONLY is set, "
+                              << "setting maxSolutionCount to 1";
+    maxSolutionCount = 1;
+  }
 
   size_t solutionCount = 0;
   std::unique_ptr<miopenConvSolution_t[]> solutions(
@@ -3199,61 +3332,30 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
         return false;
       }
 
-      VLOG(kImmediateModeVlogLevel)
+      VLOG(kConvDebugVlogLevel)
           << "Number of conv solutions actual: " << solutionCount;
 
-      if (mimic_find_mode) {
-        miopenConvSolution_t best_solution = solutions[0];
+      for (size_t i = 0; i < solutionCount; i++) {
+        miopenConvSolution_t solution = solutions[i];
 
-        for (int i = 1; i < solutionCount; i++) {
-          miopenConvSolution_t solution = solutions[i];
-          if (solution.time < best_solution.time) {
-            best_solution = solution;
-          }
-        }
-
-        VLOG(kImmediateModeVlogLevel)
-            << "Best Solution (id, algo) = " << best_solution.solution_id
-            << ", " << ToString(best_solution.algorithm);
+        VLOG(kConvDebugVlogLevel)
+            << "solution " << i << " (time, mem, id, algo) =  " << solution.time
+            << ", " << solution.workspace_size << ", " << solution.solution_id
+            << ", " << ToString(solution.algorithm);
 
         status = wrap::miopenConvolutionForwardCompileSolution(
             miopen.handle(), filter.handle(), input_nd.handle(), conv.handle(),
-            output_nd.handle(), best_solution.solution_id);
+            output_nd.handle(), solution.solution_id);
 
         if (status != miopenStatusSuccess) {
-          LOG(FATAL) << "call to miopenConvolutionForwardCompileSolution "
-                        "failed: "
-                     << ToString(status);
+          LOG(FATAL)
+              << "call to miopenConvolutionForwardCompileSolution failed: "
+              << ToString(status);
           return false;
         }
 
         out_algorithms->emplace_back(
-            GetProfileResultFromConvSolution(best_solution));
-
-      } else {
-        for (int i = 0; i < solutionCount; i++) {
-          miopenConvSolution_t solution = solutions[i];
-
-          VLOG(kImmediateModeVlogLevel)
-              << "solution " << i
-              << " (time, mem, id, algo) =  " << solution.time << ", "
-              << solution.workspace_size << ", " << solution.solution_id << ", "
-              << ToString(solution.algorithm);
-
-          status = wrap::miopenConvolutionForwardCompileSolution(
-              miopen.handle(), filter.handle(), input_nd.handle(),
-              conv.handle(), output_nd.handle(), solution.solution_id);
-
-          if (status != miopenStatusSuccess) {
-            LOG(FATAL)
-                << "call to miopenConvolutionForwardCompileSolution failed: "
-                << ToString(status);
-            return false;
-          }
-
-          out_algorithms->emplace_back(
-              GetProfileResultFromConvSolution(solution));
-        }
+            GetProfileResultFromConvSolution(solution));
       }
       break;
     }
@@ -3269,62 +3371,30 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
         return false;
       }
 
-      VLOG(kImmediateModeVlogLevel)
+      VLOG(kConvDebugVlogLevel)
           << "Number of conv solutions actual: " << solutionCount;
 
-      if (mimic_find_mode) {
-        miopenConvSolution_t best_solution = solutions[0];
+      for (size_t i = 0; i < solutionCount; i++) {
+        miopenConvSolution_t solution = solutions[i];
 
-        for (int i = 1; i < solutionCount; i++) {
-          miopenConvSolution_t solution = solutions[i];
-          if (solution.time < best_solution.time) {
-            best_solution = solution;
-          }
-        }
-
-        VLOG(kImmediateModeVlogLevel)
-            << "Best Solution (id, algo) = " << best_solution.solution_id
-            << ", " << ToString(best_solution.algorithm);
+        VLOG(kConvDebugVlogLevel)
+            << "solution " << i << " (time, mem, id, algo) =  " << solution.time
+            << ", " << solution.workspace_size << ", " << solution.solution_id
+            << ", " << ToString(solution.algorithm);
 
         status = wrap::miopenConvolutionBackwardDataCompileSolution(
             miopen.handle(), output_nd.handle(), filter.handle(), conv.handle(),
-            input_nd.handle(), best_solution.solution_id);
+            input_nd.handle(), solution.solution_id);
 
         if (status != miopenStatusSuccess) {
-          LOG(FATAL) << "call to miopenConvolutionBackwardDataCompileSolution "
+          LOG(FATAL) << " call to miopenConvolutionBackwardDataCompileSolution "
                         "failed: "
                      << ToString(status);
           return false;
         }
 
         out_algorithms->emplace_back(
-            GetProfileResultFromConvSolution(best_solution));
-
-      } else {
-        for (int i = 0; i < solutionCount; i++) {
-          miopenConvSolution_t solution = solutions[i];
-
-          VLOG(kImmediateModeVlogLevel)
-              << "solution " << i
-              << " (time, mem, id, algo) =  " << solution.time << ", "
-              << solution.workspace_size << ", " << solution.solution_id << ", "
-              << ToString(solution.algorithm);
-
-          status = wrap::miopenConvolutionBackwardDataCompileSolution(
-              miopen.handle(), output_nd.handle(), filter.handle(),
-              conv.handle(), input_nd.handle(), solution.solution_id);
-
-          if (status != miopenStatusSuccess) {
-            LOG(FATAL)
-                << " call to miopenConvolutionBackwardDataCompileSolution "
-                   "failed: "
-                << ToString(status);
-            return false;
-          }
-
-          out_algorithms->emplace_back(
-              GetProfileResultFromConvSolution(solution));
-        }
+            GetProfileResultFromConvSolution(solution));
       }
       break;
     }
@@ -3339,26 +3409,20 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
         return false;
       }
 
-      VLOG(kImmediateModeVlogLevel)
+      VLOG(kConvDebugVlogLevel)
           << "Number of conv solutions actual: " << solutionCount;
 
-      if (mimic_find_mode) {
-        miopenConvSolution_t best_solution = solutions[0];
+      for (size_t i = 0; i < solutionCount; i++) {
+        miopenConvSolution_t solution = solutions[i];
 
-        for (int i = 1; i < solutionCount; i++) {
-          miopenConvSolution_t solution = solutions[i];
-          if (solution.time < best_solution.time) {
-            best_solution = solution;
-          }
-        }
-
-        VLOG(kImmediateModeVlogLevel)
-            << "Best Solution (id, algo) = " << best_solution.solution_id
-            << ", " << ToString(best_solution.algorithm);
+        VLOG(kConvDebugVlogLevel)
+            << "solution " << i << " (time, mem, id, algo) =  " << solution.time
+            << ", " << solution.workspace_size << ", " << solution.solution_id
+            << ", " << ToString(solution.algorithm);
 
         status = wrap::miopenConvolutionBackwardWeightsCompileSolution(
             miopen.handle(), output_nd.handle(), input_nd.handle(),
-            conv.handle(), filter.handle(), best_solution.solution_id);
+            conv.handle(), filter.handle(), solution.solution_id);
 
         if (status != miopenStatusSuccess) {
           LOG(FATAL)
@@ -3369,33 +3433,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
         }
 
         out_algorithms->emplace_back(
-            GetProfileResultFromConvSolution(best_solution));
-
-      } else {
-        for (int i = 0; i < solutionCount; i++) {
-          miopenConvSolution_t solution = solutions[i];
-
-          VLOG(kImmediateModeVlogLevel)
-              << "solution " << i
-              << " (time, mem, id, algo) =  " << solution.time << ", "
-              << solution.workspace_size << ", " << solution.solution_id << ", "
-              << ToString(solution.algorithm);
-
-          status = wrap::miopenConvolutionBackwardWeightsCompileSolution(
-              miopen.handle(), output_nd.handle(), input_nd.handle(),
-              conv.handle(), filter.handle(), solution.solution_id);
-
-          if (status != miopenStatusSuccess) {
-            LOG(FATAL)
-                << "call to miopenConvolutionBackwardWeightsCompileSolution "
-                   "failed: "
-                << ToString(status);
-            return false;
-          }
-
-          out_algorithms->emplace_back(
-              GetProfileResultFromConvSolution(solution));
-        }
+            GetProfileResultFromConvSolution(solution));
       }
       break;
     }
@@ -3409,9 +3447,177 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
   return true;
 }
 
+bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
+    dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
+    const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data,
+    const dnn::FilterDescriptor& filter_descriptor,
+    DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
+    DeviceMemoryBase output_data,
+    const dnn::ConvolutionDescriptor& convolution_descriptor,
+    ScratchAllocator* scratch_allocator,
+    std::vector<dnn::ProfileResult>* out_algorithms) {
+  auto miopen = miopen_->GetHandle(parent_, stream);
+
+  ScopedTensorDescriptor input_nd{input_descriptor,
+                                  ToMIOpenDataType(element_type)};
+  ScopedTensorDescriptor output_nd{output_descriptor,
+                                   ToMIOpenDataType(element_type)};
+  ScopedFilterDescriptor filter{filter_descriptor, input_descriptor,
+                                ToMIOpenDataType(element_type)};
+  ScopedConvolutionDescriptor conv{convolution_descriptor,
+                                   ToMIOpenDataType(element_type)};
+
+  // Determine the workspace memory size that will need by the call to Find
+  size_t scratch_memory_size = 0;
+  switch (kind) {
+    case dnn::ConvolutionKind::FORWARD: {
+      auto status = wrap::miopenConvolutionForwardGetWorkSpaceSize(
+          miopen.handle(), filter.handle(), input_nd.handle(), conv.handle(),
+          output_nd.handle(), &scratch_memory_size);
+      if (status != miopenStatusSuccess) {
+        LOG(FATAL)
+            << "call to miopenConvolutionForwardGetWorkspaceSize failed: "
+            << ToString(status);
+        return false;
+      }
+      break;
+    }
+    case dnn::ConvolutionKind::BACKWARD_DATA: {
+      auto status = wrap::miopenConvolutionBackwardDataGetWorkSpaceSize(
+          miopen.handle(), output_nd.handle(), filter.handle(), conv.handle(),
+          input_nd.handle(), &scratch_memory_size);
+      if (status != miopenStatusSuccess) {
+        LOG(FATAL)
+            << "call to miopenConvolutionBackwardDataGetWorkspaceSize failed: "
+            << ToString(status);
+        return false;
+      }
+      break;
+    }
+    case dnn::ConvolutionKind::BACKWARD_FILTER: {
+      auto status = wrap::miopenConvolutionBackwardWeightsGetWorkSpaceSize(
+          miopen.handle(), output_nd.handle(), input_nd.handle(), conv.handle(),
+          filter.handle(), &scratch_memory_size);
+      if (status != miopenStatusSuccess) {
+        LOG(FATAL)
+            << "call to miopenConvolutionBackwardWeightsGetWorkspaceSize "
+               "failed: "
+            << ToString(status);
+        return false;
+      }
+      break;
+    }
+    default: {
+      LOG(FATAL) << "Unexpected convolution kind " << static_cast<int>(kind);
+      return false;
+      break;
+    }
+  }
+
+  // allocate scratch memory
+  DeviceMemory<uint8> scratch_memory;
+  if (scratch_memory_size != 0) {
+    if (scratch_allocator == nullptr) {
+      LOG(FATAL)
+          << "An allocator must be specified when scratch memory is needed";
+      return false;
+    }
+    auto allocated = scratch_allocator->AllocateBytes(scratch_memory_size);
+    if (allocated.ok()) {
+      scratch_memory = allocated.ValueOrDie();
+    } else {
+      LOG(FATAL)
+          << "Failed to allocate scratch memory - "
+          << allocated.status().error_message() << "\n"
+          << "\tYou can set the env var TF_CUDNN_WORKSPACE_LIMIT_IN_MB to a "
+             "larger number (e.g. 8192) to increase the max memory limit.\n"
+          << "\tIncreasing the max memory limit might help resolve this "
+             "error";
+      return false;
+    }
+  }
+
+  // Only get the best algorithm for Find Mode
+  size_t requestedAlgorithmCount = 1;
+
+  VLOG(kConvDebugVlogLevel)
+      << "Number of conv algortihms to request: " << requestedAlgorithmCount;
+
+  miopenConvAlgoPerf_t returnedAlgorithm;
+
+  int returnedAlgorithmCount = 0;
+  bool exhaustiveSearch = false;
+
+  switch (kind) {
+    case dnn::ConvolutionKind::FORWARD: {
+      auto status = wrap::miopenFindConvolutionForwardAlgorithm(
+          miopen.handle(), input_nd.handle(), input_data.opaque(),
+          filter.handle(), filter_data.opaque(), conv.handle(),
+          output_nd.handle(), output_data.opaque(), requestedAlgorithmCount,
+          &returnedAlgorithmCount, &returnedAlgorithm, scratch_memory.opaque(),
+          scratch_memory_size, exhaustiveSearch);
+      if (status != miopenStatusSuccess) {
+        LOG(FATAL) << "call to miopenFindConvolutionForwardAlgorithm failed: "
+                   << ToString(status);
+        return false;
+      }
+      break;
+    }
+    case dnn::ConvolutionKind::BACKWARD_DATA: {
+      auto status = wrap::miopenFindConvolutionBackwardDataAlgorithm(
+          miopen.handle(), output_nd.handle(), output_data.opaque(),
+          filter.handle(), filter_data.opaque(), conv.handle(),
+          input_nd.handle(), input_data.opaque(), requestedAlgorithmCount,
+          &returnedAlgorithmCount, &returnedAlgorithm, scratch_memory.opaque(),
+          scratch_memory_size, exhaustiveSearch);
+      if (status != miopenStatusSuccess) {
+        LOG(FATAL)
+            << "call to miopenFindConvolutionBackwardDataAlgorithm failed: "
+            << ToString(status);
+        return false;
+      }
+      break;
+    }
+    case dnn::ConvolutionKind::BACKWARD_FILTER: {
+      auto status = wrap::miopenFindConvolutionBackwardWeightsAlgorithm(
+          miopen.handle(), output_nd.handle(), output_data.opaque(),
+          input_nd.handle(), input_data.opaque(), conv.handle(),
+          filter.handle(), filter_data.opaque(), requestedAlgorithmCount,
+          &returnedAlgorithmCount, &returnedAlgorithm, scratch_memory.opaque(),
+          scratch_memory_size, exhaustiveSearch);
+      if (status != miopenStatusSuccess) {
+        LOG(FATAL) << "call to miopenConvolutionBackwardWeightsAlgorithm "
+                      "failed: "
+                   << ToString(status);
+        return false;
+      }
+      break;
+    }
+    default: {
+      LOG(FATAL) << "Unexpected convolution kind " << static_cast<int>(kind);
+      return false;
+      break;
+    }
+  }
+
+  out_algorithms->emplace_back(
+      GetProfileResultFromConvAlgoPerf(kind, returnedAlgorithm));
+
+  return true;
+}
+
 bool MIOpenSupport::GetRnnAlgorithms(
     std::vector<dnn::AlgorithmDesc>* out_algorithms) {
-  // ROCM TODO: implement this with proper MIOpen API
+  std::vector<dnn::AlgorithmDesc::Index> algo_types = {
+      // clang-format off
+    miopenRNNdefault,
+      // clang-format on
+  };
+
+  out_algorithms->clear();
+  for (auto i : algo_types) {
+    out_algorithms->push_back({i, /*use_tensor_ops=*/false});
+  }
   return true;
 }
 
@@ -3929,6 +4135,123 @@ bool MIOpenSupport::DoActivate(Stream* stream,
   return false;
 }
 
+bool MIOpenSupport::DoDropoutForward(
+    Stream* stream, const dnn::DropoutDescriptor& dropout_params,
+    const dnn::BatchDescriptor& noise_dimensions,
+    const dnn::BatchDescriptor& input_dimensions,
+    const DeviceMemory<float>& input_data,
+    const dnn::BatchDescriptor& output_dimensions,
+    DeviceMemory<float>* output_data, ScratchAllocator* workspace_allocator) {
+  auto miopen = miopen_->GetHandle(parent_, stream);
+  const ScopedTensorDescriptor src_desc{input_dimensions, miopenFloat};
+  const ScopedTensorDescriptor dest_desc{output_dimensions, miopenFloat};
+  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenFloat};
+  const ScopedDropoutDescriptor dropout_desc{
+      stream, miopen.handle(), dropout_params, workspace_allocator};
+
+  auto status = wrap::miopenDropoutForward(
+      miopen.handle(), dropout_desc.handle(), noise_desc.handle(),
+      src_desc.handle(), input_data.opaque(), dest_desc.handle(),
+      output_data->opaque(), dropout_desc.mask().opaque(),
+      dropout_desc.mask().size());
+  if (status != miopenStatusSuccess) {
+    LOG(ERROR) << "failed to enqueue forward dropout on stream: "
+               << ToString(status);
+    return false;
+  }
+  return true;
+}
+
+bool MIOpenSupport::DoDropoutForward(
+    Stream* stream, const dnn::DropoutDescriptor& dropout_params,
+    const dnn::BatchDescriptor& noise_dimensions,
+    const dnn::BatchDescriptor& input_dimensions,
+    const DeviceMemory<Eigen::half>& input_data,
+    const dnn::BatchDescriptor& output_dimensions,
+    DeviceMemory<Eigen::half>* output_data,
+    ScratchAllocator* workspace_allocator) {
+  auto miopen = miopen_->GetHandle(parent_, stream);
+  const ScopedTensorDescriptor src_desc{input_dimensions, miopenHalf};
+  const ScopedTensorDescriptor dest_desc{output_dimensions, miopenHalf};
+  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenFloat};
+  const ScopedDropoutDescriptor dropout_desc{
+      stream, miopen.handle(), dropout_params, workspace_allocator};
+  auto status = wrap::miopenDropoutForward(
+      miopen.handle(), dropout_desc.handle(), noise_desc.handle(),
+      src_desc.handle(), input_data.opaque(), dest_desc.handle(),
+      output_data->opaque(), dropout_desc.mask().opaque(),
+      dropout_desc.mask().size());
+
+  if (status != miopenStatusSuccess) {
+    LOG(ERROR) << "failed to enqueue forward dropout on stream: "
+               << ToString(status);
+    return false;
+  }
+  return true;
+}
+
+bool MIOpenSupport::DoDropoutBackward(
+    Stream* stream, const dnn::DropoutDescriptor& dropout_params,
+    const dnn::BatchDescriptor& noise_dimensions,
+    const dnn::BatchDescriptor& input_diff_dimensions,
+    const DeviceMemory<float>& input_diff_data,
+    const dnn::BatchDescriptor& output_diff_dimensions,
+    DeviceMemory<float>* output_diff_data,
+    ScratchAllocator* workspace_allocator) {
+  auto miopen = miopen_->GetHandle(parent_, stream);
+  const ScopedTensorDescriptor input_diff_desc{input_diff_dimensions,
+                                               miopenFloat};
+  const ScopedTensorDescriptor output_diff_desc{output_diff_dimensions,
+                                                miopenFloat};
+  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenFloat};
+  const ScopedDropoutDescriptor dropout_desc{
+      stream, miopen.handle(), dropout_params, workspace_allocator};
+
+  auto status = wrap::miopenDropoutBackward(
+      miopen.handle(), dropout_desc.handle(), noise_desc.handle(),
+      /*dyDesc*/ input_diff_desc.handle(), /*dy*/ input_diff_data.opaque(),
+      /*dxDesc*/ output_diff_desc.handle(), /*dx*/ output_diff_data->opaque(),
+      dropout_desc.mask().opaque(), dropout_desc.mask().size());
+
+  if (status != miopenStatusSuccess) {
+    LOG(ERROR) << "failed to enqueue backward dropout on stream: "
+               << ToString(status);
+    return false;
+  }
+  return true;
+}
+
+bool MIOpenSupport::DoDropoutBackward(
+    Stream* stream, const dnn::DropoutDescriptor& dropout_params,
+    const dnn::BatchDescriptor& noise_dimensions,
+    const dnn::BatchDescriptor& input_diff_dimensions,
+    const DeviceMemory<Eigen::half>& input_diff_data,
+    const dnn::BatchDescriptor& output_diff_dimensions,
+    DeviceMemory<Eigen::half>* output_diff_data,
+    ScratchAllocator* workspace_allocator) {
+  auto miopen = miopen_->GetHandle(parent_, stream);
+  const ScopedTensorDescriptor input_diff_desc{input_diff_dimensions,
+                                               miopenHalf};
+  const ScopedTensorDescriptor output_diff_desc{output_diff_dimensions,
+                                                miopenHalf};
+  const ScopedTensorDescriptor noise_desc{noise_dimensions, miopenFloat};
+  const ScopedDropoutDescriptor dropout_desc{
+      stream, miopen.handle(), dropout_params, workspace_allocator};
+
+  auto status = wrap::miopenDropoutBackward(
+      miopen.handle(), dropout_desc.handle(), noise_desc.handle(),
+      /*dyDesc*/ input_diff_desc.handle(), /*dy*/ input_diff_data.opaque(),
+      /*dxDesc*/ output_diff_desc.handle(), /*dx*/ output_diff_data->opaque(),
+      dropout_desc.mask().opaque(), dropout_desc.mask().size());
+
+  if (status != miopenStatusSuccess) {
+    LOG(ERROR) << "failed to enqueue backward dropout on stream: "
+               << ToString(status);
+    return false;
+  }
+  return true;
+}
+
 bool MIOpenSupport::DoPoolForward(
     Stream* stream, const dnn::PoolingDescriptor& pooling_dimensions,
     const dnn::BatchDescriptor& input_dimensions,
@@ -4033,8 +4356,8 @@ bool MIOpenSupport::DoPoolBackward(
 
   DeviceMemory<uint8> workspace;
   size_t workspace_size_in_bytes = 0;
-  auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
-                                                    &workspace_size_in_bytes);
+  auto status = wrap::miopenPoolingGetWorkSpaceSizeV2(
+      pooling_desc.handle(), dest_desc.handle(), &workspace_size_in_bytes);
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR)
@@ -4129,8 +4452,8 @@ bool MIOpenSupport::DoPoolBackward(
 
   DeviceMemory<uint8> workspace;
   size_t workspace_size_in_bytes = 0;
-  auto status = wrap::miopenPoolingGetWorkSpaceSize(dest_desc.handle(),
-                                                    &workspace_size_in_bytes);
+  auto status = wrap::miopenPoolingGetWorkSpaceSizeV2(
+      pooling_desc.handle(), dest_desc.handle(), &workspace_size_in_bytes);
 
   if (status != miopenStatusSuccess) {
     LOG(ERROR)

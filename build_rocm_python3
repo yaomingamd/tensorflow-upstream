@@ -24,5 +24,4 @@ ROCM_PATH=/opt/rocm/
 yes "" | TF_NEED_ROCM=1 ROCM_TOOLKIT_PATH=${ROCM_PATH} PYTHON_BIN_PATH=/usr/bin/python3 ./configure
 pip3 uninstall -y tensorflow || true
 bazel build -s --config=opt --config=rocm --action_env=HIP_PLATFORM=hcc //tensorflow/tools/pip_package:build_pip_package --verbose_failures &&
-bazel-bin/tensorflow/tools/pip_package/build_pip_package $TF_PKG_LOC &&
-pip3 install $TF_PKG_LOC/tensorflow*.whl
+pip3 install --upgrade $TF_PKG_LOC/tensorflow*.whl

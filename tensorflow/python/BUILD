@@ -2237,6 +2237,7 @@ tf_py_test(
     srcs = ["framework/importer_test.py"],
     main = "framework/importer_test.py",
     python_version = "PY3",
+    tags = ["no_rocm"],
     deps = [
         ":array_ops",
         ":client_testlib",
@@ -5021,6 +5022,7 @@ cuda_py_test(
     srcs = ["ops/nn_fused_batchnorm_test.py"],
     python_version = "PY3",
     shard_count = 24,
+    tags = ["no_rocm"],
     deps = [
         ":array_ops",
         ":client_testlib",
@@ -6423,6 +6425,7 @@ tf_py_test(
     size = "small",
     srcs = ["framework/convert_to_constants_test.py"],
     python_version = "PY3",
+    tags = ["no_rocm"], # flaky on CI nodes
     deps = [
         "client_testlib",
         "framework_test_lib",
@@ -7707,6 +7710,7 @@ tf_py_test(
     tags = [
         "grappler",
         "no_pip",  # graph_placer is not available in pip.
+        "no_rocm",
     ],
     deps = [
         ":client_testlib",
@@ -7912,10 +7916,7 @@ cuda_py_test(
         "grappler/auto_mixed_precision_test.py",
     ],
     python_version = "PY3",
-    tags = [
-        "grappler",
-        "no_rocm",
-    ],
+    tags = ["grappler"],
     # This test analyzes the graph, but XLA changes the names of nodes.
     xla_enable_strict_auto_jit = False,
     deps = [
