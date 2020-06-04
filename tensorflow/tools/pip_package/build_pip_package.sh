@@ -265,7 +265,7 @@ function usage() {
   echo "    --cpu                 build tensorflow_cpu"
   echo "    --gpu                 build tensorflow_gpu"
   echo "    --gpudirect           build tensorflow_gpudirect"
-  echo "    --rocm                build tensorflow_rocm"
+  echo "    --rocm                build tensorflow_rocm_enhanced"
   echo "    --nightly_flag        build tensorflow nightly"
   echo ""
   exit 1
