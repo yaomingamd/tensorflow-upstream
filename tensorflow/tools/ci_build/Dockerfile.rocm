@@ -71,6 +71,10 @@ ENV ROCM_TOOLKIT_PATH=${ROCM_PATH}
 ENV TF_CONFIGURE_IOS=0
 ENV TF_NEED_ROCM=1
 
+# Workaround, downgrade the THUNK version to rocm3.3 for CI
+RUN wget https://www.dropbox.com/s/6kbhm2l1yf589j4/rocm3.3-thunk.sh
+RUN bash rocm3.3-thunk.sh
+
 # Workaround, explicitly add symbolic link to /opt/rocm
 RUN touch ${ROCM_PATH}/.info/version
 
