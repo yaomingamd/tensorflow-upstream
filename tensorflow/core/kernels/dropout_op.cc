@@ -62,7 +62,8 @@ void ApplyDropoutGrad<CPUDevice, T>::operator()(const CPUDevice& d, T* outgrads,
                                                 uint64 num_elements) {
   T scale = T(1. / (1 - rate));
   for (uint64 i = 0; i < num_elements; i++) {
-    outgrads[i] = (outs[i] == T(0)) ? T(0) : grads[i] * scale;
+    bool drop = (ins[i] != T(0)) && (outs[i] == T(0));
+    outgrads[i] = drop ? T(0) : grads[i] * scale;
   }
 };
 

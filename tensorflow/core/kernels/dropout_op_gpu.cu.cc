@@ -137,8 +137,11 @@ __global__ void ApplyDropoutGradKernel(T* outgrads, const T* grads,
                                        const T* ins, const T* outs, float rate,
                                        float scale, uint64 num_elements) {
   for (uint64 i = threadIdx.x + blockIdx.x * blockDim.x; i < num_elements;
-       i += blockDim.x * gridDim.x)
-    outgrads[i] = grads[i] * T((outs[i] == T(0)) ? 0.0f : scale);
+       i += blockDim.x * gridDim.x) {
+    //bool drop = (ins[i] != T(0)) && (outs[i] == T(0));
+    bool drop = (outs[i]==T(0));
+    outgrads[i] = grads[i] * T(drop ? 0.0f : scale);
+  }
 }
 
 template <>
@@ -149,11 +152,13 @@ __global__ void ApplyDropoutGradKernel(Eigen::half* _outgrads,
                                        float scale, uint64 num_elements) {
   __half* outgrads = reinterpret_cast<__half*>(_outgrads);
   const __half* grads = reinterpret_cast<const __half*>(_grads);
+  const __half* ins = reinterpret_cast<const __half*>(_ins);
   const __half* outs = reinterpret_cast<const __half*>(_outs);
   for (uint64 i = threadIdx.x + blockIdx.x * blockDim.x; i < num_elements;
-       i += blockDim.x * gridDim.x)
-    outgrads[i] = __float2half(
-        (outs[i] == __half(0.0f)) ? 0.0f : __half2float(grads[i]) * scale);
+       i += blockDim.x * gridDim.x) {
+    bool drop = (ins[i] != __half(0.0f)) && (outs[i] == __half(0.0f));
+        outgrads[i] = __float2half(drop ? 0.0f : __half2float(grads[i]) * scale);
+  }
 }
 
 template <typename T>
