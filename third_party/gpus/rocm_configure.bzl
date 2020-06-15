@@ -783,6 +783,7 @@ def _create_local_rocm_repository(repository_ctx):
         "-DTENSORFLOW_USE_ROCM=1",
         "-D__HIP_PLATFORM_HCC__",
         "-DEIGEN_USE_HIP",
+	"-DTF_LITE_DISABLE_X86_NEON",
     ] + _if_hipcc_is_hipclang(repository_ctx, rocm_config, [
         #
         # define "TENSORFLOW_COMPILER_IS_HIP_CLANG" when we are using clang
