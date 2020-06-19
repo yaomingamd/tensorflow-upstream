@@ -523,11 +523,11 @@ def set_cc_opt_flags(environ_cp):
   """
   if is_ppc64le():
     # gcc on ppc64le does not support -march, use mcpu instead
-    default_cc_opt_flags = '-mcpu=native'
+    default_cc_opt_flags = '-mcpu=haswell'
   elif is_windows():
     default_cc_opt_flags = '/arch:AVX'
   else:
-    default_cc_opt_flags = '-march=native -Wno-sign-compare'
+    default_cc_opt_flags = '-march=haswell -Wno-sign-compare'
   question = ('Please specify optimization flags to use during compilation when'
               ' bazel option "--config=opt" is specified [Default is %s]: '
              ) % default_cc_opt_flags
@@ -537,7 +537,7 @@ def set_cc_opt_flags(environ_cp):
     write_to_bazelrc('build:opt --copt=%s' % opt)
   # It should be safe on the same build host.
   if not is_ppc64le() and not is_windows():
-    write_to_bazelrc('build:opt --host_copt=-march=native')
+    write_to_bazelrc('build:opt --host_copt=-march=haswell')
   write_to_bazelrc('build:opt --define with_default_optimizations=true')
 
 
