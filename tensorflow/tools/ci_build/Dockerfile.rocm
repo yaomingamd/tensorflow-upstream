@@ -3,7 +3,7 @@
 FROM ubuntu:xenial
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
-ARG DEB_ROCM_REPO=http://repo.radeon.com/rocm/apt/3.6/
+ARG DEB_ROCM_REPO=http://repo.radeon.com/rocm/apt/.apt_3.6/
 ARG ROCM_PATH=/opt/rocm-3.6.0
 
 ENV DEBIAN_FRONTEND noninteractive
@@ -13,7 +13,7 @@ RUN apt update && apt install -y wget software-properties-common
 
 # Add rocm repository
 RUN apt-get clean all
-RUN wget -qO - $DEB_ROCM_REPO/rocm.gpg.key | apt-key add -
+RUN wget -qO - http://repo.radeon.com/rocm/apt/debian/rocm.gpg.key | apt-key add -
 RUN sh -c  "echo deb [arch=amd64] $DEB_ROCM_REPO xenial main > /etc/apt/sources.list.d/rocm.list"
 
 # Install misc pkgs
