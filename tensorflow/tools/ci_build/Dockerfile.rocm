@@ -13,7 +13,8 @@ RUN apt update && apt install -y wget software-properties-common
 
 # Add rocm repository
 RUN apt-get clean all
-RUN wget -qO - $DEB_ROCM_REPO/rocm.gpg.key | apt-key add -
+RUN wget -qO - http://repo.radeon.com/rocm/apt/debian/rocm.gpg.key | apt-key add -
+
 RUN sh -c  "echo deb [arch=amd64] $DEB_ROCM_REPO xenial main > /etc/apt/sources.list.d/rocm.list"
 
 # Install misc pkgs
