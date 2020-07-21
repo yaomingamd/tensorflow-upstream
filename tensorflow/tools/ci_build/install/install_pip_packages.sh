@@ -16,10 +16,6 @@
 
 set -e
 
-# Get the latest version of pip so it recognize manylinux2010
-easy_install3 -U pip
-easy_install -U pip
-
 # Install pip packages from whl files to avoid the time-consuming process of
 # building from source.
 
@@ -124,9 +120,9 @@ pip2 install keras_applications==1.0.8 --no-deps
 pip3 install keras_applications==1.0.8 --no-deps
 pip2 install keras_preprocessing==1.1.0 --no-deps
 pip3 install keras_preprocessing==1.1.0 --no-deps
-pip2 install --upgrade h5py==2.8.0
-pip3 install --upgrade h5py==2.8.0
 
+pip2 install --upgrade h5py==2.8.0 --no-deps
+pip3 install --upgrade h5py==2.8.0 --no-deps
 # Estimator
 pip2 install tf-estimator-nightly==2.1.0.dev2020012309 --no-deps
 pip3 install tf-estimator-nightly==2.1.0.dev2020012309 --no-deps

@@ -3,8 +3,8 @@
 FROM ubuntu:xenial
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
-ARG DEB_ROCM_REPO=http://repo.radeon.com/rocm/apt/2.8.0/
-ARG ROCM_PATH=/opt/rocm
+ARG DEB_ROCM_REPO=http://repo.radeon.com/rocm/apt/3.6/
+ARG ROCM_PATH=/opt/rocm-3.6.0
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV TF_NEED_ROCM 1
@@ -13,7 +13,7 @@ RUN apt update && apt install -y wget software-properties-common
 
 # Add rocm repository
 RUN apt-get clean all
-RUN wget -qO - $DEB_ROCM_REPO/rocm.gpg.key | apt-key add -
+RUN wget -qO - http://repo.radeon.com/rocm/apt/debian/rocm.gpg.key | apt-key add -
 RUN sh -c  "echo deb [arch=amd64] $DEB_ROCM_REPO xenial main > /etc/apt/sources.list.d/rocm.list"
 
 # Install misc pkgs
@@ -76,7 +76,10 @@ RUN touch ${ROCM_PATH}/.info/version
 RUN bash -c 'ln -s ${ROCM_PATH} /opt/rocm'
 
 # Add target file to help determine which device(s) to build for
-RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906" >> ${ROCM_PATH}/bin/target.lst'
+RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906\ngfx908" >> ${ROCM_PATH}/bin/target.lst'
+# Upgrade pip.
+RUN pip2 install --upgrade pip
+RUN pip3 install --upgrade pip
 
 # Copy and run the install scripts.
 COPY install/*.sh /install/
