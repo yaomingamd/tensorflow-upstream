@@ -19,7 +19,6 @@
 # changes made in the current build are not working!
 TF_PKG_LOC=/tmp/tensorflow_pkg
 rm -f $TF_PKG_LOC/tensorflow*.whl
-<<<<<<< HEAD
 export ROCM_TOOLKIT_PATH=/opt/rocm-3.6.0
 
 yes "" | TF_NEED_ROCM=1 ROCM_PATH=$ROCM_TOOLKIT_PATH PYTHON_BIN_PATH=/usr/bin/python3 ./configure
@@ -27,10 +26,3 @@ pip3 uninstall -y tensorflow || true
 bazel build --config=opt --config=rocm //tensorflow/tools/pip_package:build_pip_package --verbose_failures &&
 bazel-bin/tensorflow/tools/pip_package/build_pip_package $TF_PKG_LOC &&
 pip3 install $TF_PKG_LOC/tensorflow*.whl
-=======
-
-yes "" | ROCM_PATH=/opt/rocm-3.5.0 TF_NEED_ROCM=1 PYTHON_BIN_PATH=/usr/bin/python3 ./configure
-bazel build --config=opt --config=rocm //tensorflow/tools/pip_package:build_pip_package --verbose_failures &&
-bazel-bin/tensorflow/tools/pip_package/build_pip_package $TF_PKG_LOC &&
-pip3 install --upgrade $TF_PKG_LOC/tensorflow*.whl
->>>>>>> origin/r2.3-rocm-pre-branch

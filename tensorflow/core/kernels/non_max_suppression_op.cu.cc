@@ -28,15 +28,11 @@ limitations under the License.
 #include "tensorflow/core/util/gpu_launch_config.h"
 #include "tensorflow/stream_executor/stream_executor.h"
 
-<<<<<<< HEAD
-struct __align__(16) Box {
-=======
 struct 
 #if GOOGLE_CUDA
 __align__(16) 
 #endif
 Box {
->>>>>>> origin/r2.3-rocm-pre-branch
   float x1, y1, x2, y2;
 };
 
