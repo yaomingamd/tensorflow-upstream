@@ -46,6 +46,8 @@ from tensorflow.python.ops import variables as variables_lib
 from tensorflow.python.ops.gen_nn_ops import *
 # pylint: enable=wildcard-import
 from tensorflow.python.platform import device_context
+from tensorflow.python.platform import build_info
+from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util import deprecation
 from tensorflow.python.util import dispatch
 from tensorflow.python.util.compat import collections_abc
@@ -3456,6 +3458,22 @@ def relu6(features, name=None):
     features = ops.convert_to_tensor(features, name="features")
     return gen_nn_ops.relu6(features, name=name)
 
+@tf_export("nn.gelu",v1=["nn.gelu"])
+def gelu(features, name=None):
+  """Gaussian Error Linear Unit.
+ 
+  This is a smoother version of the RELU.
+  Original paper: https://arxiv.org/abs/1606.08415
+  Args:
+    features: float Tensor to perform activation.
+    name: A name for the operation (optional).
+        
+  Returns:
+    `features` with the GELU activation applied.
+  """
+  with ops.name_scope(name, "gelu", [features]) as name:
+    features = ops.convert_to_tensor(features, name="features")
+    return gen_nn_ops.gelu(features, name=name)
 
 @tf_export("nn.leaky_relu")
 @dispatch.add_dispatch_support
@@ -5046,8 +5064,21 @@ def dropout_v2(x, rate, noise_shape=None, seed=None, name=None):
         rate = gen_math_ops.cast(rate, x_dtype, name="rate")
       one_tensor = constant_op.constant(1, dtype=x_dtype)
       ret = gen_math_ops.real_div(x, gen_math_ops.sub(one_tensor, rate))
-
+    null_noise_shape = (noise_shape==None)
     noise_shape = _get_noise_shape(x, noise_shape)
+
+    # Should there be ROCm support, use it. Otherwise fallback to generic
+    # implementation
+    def_dropout = os.environ.get("TF_ROCM_OLD_DROPOUT")
+    if build_info.build_info['is_rocm_build'] and \
+       (x.dtype == dtypes.float64 or x.dtype == dtypes.float32 \
+        or x.dtype == dtypes.float16) and def_dropout!="1" \
+        and null_noise_shape:
+      if seed is None:
+        seed = 0
+      out, _ = gen_nn_ops.dropout(x,rate,noise_shape=noise_shape,seed=seed)
+      return out
+
     # Sample a uniform distribution on [0.0, 1.0) and select values larger
     # than rate.
     #

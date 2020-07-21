@@ -705,7 +705,6 @@ tf_py_test(
     python_version = "PY3",
     shard_count = 4,
     tags = [
-        "no_rocm",
         "notsan",  # http://b/62136390
     ],
     deps = [
@@ -724,7 +723,6 @@ tf_py_test(
     python_version = "PY3",
     shard_count = 4,
     tags = [
-        "no_rocm",
         "noasan",  # times out b/63678675
         "notsan",  # http://b/62189182
     ],

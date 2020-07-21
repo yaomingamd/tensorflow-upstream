@@ -108,7 +108,6 @@ py_library(
 cuda_py_test(
     name = "control_flow_ops_test",
     srcs = ["control_flow_ops_test.py"],
-    tags = ["no_rocm"],
     deps = [
         ":control_flow_ops",
         ":test_util",
@@ -166,7 +165,10 @@ cuda_py_test(
     name = "math_test",
     srcs = ["math_test.py"],
     shard_count = 5,
-    tags = ["optonly"],  # Too slow in non-opt mode
+    tags = [
+        "no_rocm",  # FAILS on ROCm 3.5
+        "optonly",  # Too slow in non-opt mode
+    ],
     deps = [
         ":control_flow_ops",
         ":test_util",

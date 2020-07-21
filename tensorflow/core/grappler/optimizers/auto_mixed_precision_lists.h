@@ -120,6 +120,8 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "CudnnRNNV2",
         "CudnnRNNV3",
         "Einsum",
+        "Dropout",
+        "DropoutGrad",
         "GRUBlockCell",
         "GRUBlockCellGrad",
         "LSTMBlockCell",
@@ -131,8 +133,12 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         // "DepthwiseConv2dNativeBackpropInput",
         "MatMul",
     };
+#if TENSORFLOW_USE_ROCM
+    if (true) {
+#else
     if (cuda_version_ >= 9010) {
       // Fp16 BatchMatMul is slow before CUDA 9.1.
+#endif
       list.insert("BatchMatMul");
       list.insert("BatchMatMulV2");
     }
@@ -144,6 +150,9 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
       list.insert("Conv3DBackpropInput");
       list.insert("Conv3DBackpropInputV2");
     }
+#if TENSORFLOW_USE_ROCM
+      list.insert("_ROCmFusedConvolutionBiasActivation");
+#endif
     UpdateList("WHITELIST", &list);
     return list;
   }
@@ -198,6 +207,19 @@ class AutoMixedPrecisionListsCuda : public AutoMixedPrecisionLists {
         "Tanh",
         "TanhGrad",
     };
+#if TENSORFLOW_USE_ROCM
+      list.insert("_FusedMulAdd");
+      list.insert("_FusedMulAdd2");
+      list.insert("_FusedMulSub");
+      list.insert("_FusedMulSub2");
+      list.insert("_FusedMulSubRev");
+      list.insert("_ROCmFusedAddRelu");
+      list.insert("_ROCmFusedAddNReluGrad");
+      list.insert("_ROCmFusedBatchNormActivationForward");
+      list.insert("_ROCmFusedBatchNormActivationInference");
+      list.insert("_ROCmFusedBatchNormActivationBackward");
+      list.insert("_ROCmFusedConvolutionBiasBatchNormActivation");
+#endif
     UpdateList("GRAYLIST", &list);
     return list;
   }

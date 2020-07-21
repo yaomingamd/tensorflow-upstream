@@ -45,7 +45,7 @@ limitations under the License.
 namespace tensorflow {
 namespace profiler {
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 extern std::unique_ptr<ProfilerInterface> CreateGpuTracer(
     const ProfileOptions& options);
 std::unique_ptr<ProfilerInterface> CreateGpuTracer() {
@@ -61,6 +61,19 @@ namespace {
 
 std::unique_ptr<Session> CreateSession() {
   SessionOptions options;
+
+  // Disable common runtime constant folding.
+  options.config.mutable_graph_options()
+      ->mutable_optimizer_options()
+      ->set_opt_level(OptimizerOptions::L0);
+
+  // Disable Grappler optimizations for tests.
+  tensorflow::RewriterConfig* cfg =
+      options.config.mutable_graph_options()->mutable_rewrite_options();
+  cfg->set_constant_folding(tensorflow::RewriterConfig::OFF);
+  cfg->set_layout_optimizer(tensorflow::RewriterConfig::OFF);
+  cfg->set_remapping(tensorflow::RewriterConfig::OFF);
+
   (*options.config.mutable_device_count())["CPU"] = 1;
   (*options.config.mutable_device_count())["GPU"] = 1;
   options.config.set_allow_soft_placement(true);
@@ -261,8 +274,13 @@ TEST_F(DeviceTracerTest, TraceToXSpace) {
   XSpace space;
   TF_ASSERT_OK(tracer->CollectData(&space));
   // At least one gpu plane and one host plane for launching events.
+#if GOOGLE_CUDA
   const XPlane* host_plane = FindPlaneWithName(space, kCuptiDriverApiPlaneName);
   ASSERT_NE(host_plane, nullptr);
+#elif TENSORFLOW_USE_ROCM
+  const XPlane* host_plane = FindPlaneWithName(space, kRocmTracerPlaneName);
+  ASSERT_NE(host_plane, nullptr);
+#endif
 
   const XPlane* device_plane =
       FindPlaneWithName(space, strings::StrCat(kGpuPlanePrefix, 0));
@@ -272,12 +290,14 @@ TEST_F(DeviceTracerTest, TraceToXSpace) {
   EXPECT_EQ(device_plane->event_metadata_size(), 4);
   // Check if device capacity is serialized.
   XPlaneVisitor plane = CreateTfXPlaneVisitor(device_plane);
+#if GOOGLE_CUDA
   EXPECT_TRUE(plane.GetStat(kDevCapClockRateKHz).has_value());
   EXPECT_TRUE(plane.GetStat(kDevCapCoreCount).has_value());
   EXPECT_TRUE(plane.GetStat(kDevCapMemoryBandwidth).has_value());
   EXPECT_TRUE(plane.GetStat(kDevCapMemorySize).has_value());
   EXPECT_TRUE(plane.GetStat(kDevCapComputeCapMajor).has_value());
   EXPECT_TRUE(plane.GetStat(kDevCapComputeCapMinor).has_value());
+#endif
 
   // Check if the device events timestamps are set.
   int total_events = 0;

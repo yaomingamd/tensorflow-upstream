@@ -621,7 +621,6 @@ xla_test(
     name = "conditional_test",
     srcs = ["conditional_test.cc"],
     shard_count = 2,
-    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:xla_data_proto_cc",
@@ -660,7 +659,6 @@ xla_test(
     name = "scalar_computations_test",
     srcs = ["scalar_computations_test.cc"],
     shard_count = 32,
-    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:literal",
@@ -794,6 +792,7 @@ xla_test(
     srcs = ["exhaustive_unary_test_f32_or_smaller.cc"],
     real_hardware_only = True,  # Very slow on the interpreter.
     shard_count = 48,
+    size = "large",
     tags = [
         "optonly",
         # This is a big test that we skip for capacity reasons in OSS testing.
@@ -815,6 +814,7 @@ xla_test(
         "cpu",
     ],
     shard_count = 48,
+    size = "large",
     tags = [
         "optonly",
         # This is a big test that we skip for capacity reasons in OSS testing.
@@ -838,6 +838,7 @@ xla_test(
         "cpu",
     ],
     shard_count = 48,
+    size = "large",
     tags = [
         "optonly",
         # This is a big test that we skip for capacity reasons in OSS testing.
@@ -859,6 +860,7 @@ xla_test(
         "cpu",
     ],
     shard_count = 48,
+    size = "large",
     tags = [
         "optonly",
         # This is a big test that we skip for capacity reasons in OSS testing.
@@ -878,6 +880,7 @@ xla_test(
         "cpu",
     ],
     shard_count = 48,
+    size = "large",
     tags = [
         "optonly",
         # This is a big test that we skip for capacity reasons in OSS testing.
@@ -918,7 +921,6 @@ xla_test(
     srcs = ["dot_operation_test.cc"],
     shard_count = 20,
     tags = [
-        "no_rocm",
         "optonly",
     ],
     deps = [
@@ -952,7 +954,6 @@ xla_test(
     backends = ["gpu"],
     shard_count = 20,
     tags = [
-        "no_rocm",
         "optonly",
         # TODO(b/151340488): Timed out on 2020-03-12.
         "nozapfhahn",
@@ -1019,7 +1020,6 @@ xla_test(
     },
     shard_count = 20,
     tags = [
-        "no_rocm",
         "optonly",
     ],
     deps = [
@@ -1433,7 +1433,6 @@ xla_test(
     srcs = ["reduce_test.cc"],
     shard_count = 31,
     tags = [
-        "no_rocm",
         "optonly",
     ],
     deps = [
@@ -1513,7 +1512,6 @@ xla_test(
     timeout = "long",
     srcs = ["select_and_scatter_test.cc"],
     tags = [
-        "no_rocm",
         "nozapfhahn",
         "optonly",
     ],
@@ -2154,7 +2152,7 @@ tf_cc_test(
         "//tensorflow/compiler/xla/service/gpu:gpu_compiler",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/stream_executor",
+        "//tensorflow/core:stream_executor_no_cuda",
         "@com_google_absl//absl/memory",
         "@llvm-project//llvm:Core",
     ],
@@ -2527,7 +2525,7 @@ xla_test(
     tags = [
         # Disabled in OSS until nvidia publicly releases a fixed ptxas.
         "no_oss",
-    ],
+    ] + tf_cuda_tests_tags(),
     deps = [
         ":hlo_test_base",
         ":test_macros_header",

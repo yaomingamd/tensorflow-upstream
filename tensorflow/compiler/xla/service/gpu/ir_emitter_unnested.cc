@@ -124,23 +124,7 @@ void UpdateLaunchDimensions(const LaunchDimensions& launch_dims, Thunk* thunk,
   KernelThunk* kernel_thunk = static_cast<KernelThunk*>(thunk);
   kernel_thunk->SetLaunchDimensions(launch_dims);
 
-  // Add __launch_bounds__ to metadata. This limits registers per thread to
-  // avoid out-of-resources launching errors.
-  llvm::NamedMDNode* nvvm_annotations_node =
-      llvm_module->getOrInsertNamedMetadata("nvvm.annotations");
-  llvm::Function* ir_kernel =
-      llvm_module->getFunction(kernel_thunk->kernel_name().c_str());
-  llvm::LLVMContext& llvm_context = llvm_module->getContext();
-  llvm::ConstantInt* threads_per_block_ir_value = llvm::ConstantInt::get(
-      llvm::IntegerType::get(llvm_context, /*NumBits=*/32),
-      launch_dims.threads_per_block());
-  // Our launch bounds are exact, so we can specify them as reqntidx rather than
-  // maxntidx.
-  nvvm_annotations_node->addOperand(llvm::MDNode::get(
-      llvm_context,
-      {llvm::ConstantAsMetadata::get(ir_kernel),
-       llvm::MDString::get(llvm_context, "reqntidx"),
-       llvm::ConstantAsMetadata::get(threads_per_block_ir_value)}));
+  // XXX FIXME add proper AMDGPU function attributes or metadata
 }
 
 }  // namespace
@@ -1223,8 +1207,10 @@ Status IrEmitterUnnested::EmitScatter(
     llvm::Value* output_address =
         GetIrArray(*output_hlo, *output_hlo)
             .EmitArrayElementAddress(input_window_index, &b_);
-    llvm::Value* input_address = Alloca(llvm_ir::PrimitiveTypeToIrType(
-        updates->shape().element_type(), module_));
+    llvm::Value* input_address = llvm_ir::EmitAllocaAtFunctionEntry(
+        llvm_ir::PrimitiveTypeToIrType(updates->shape().element_type(),
+                                       module_),
+        "input_address", &b_);
     TF_ASSIGN_OR_RETURN(llvm::Value* const input_ir_value, updates_gen(index));
     Store(input_ir_value, input_address);
 
@@ -1559,6 +1545,17 @@ Status IrEmitterUnnested::HandleAfterAll(HloInstruction* after_all) {
   return Status::OK();
 }
 
+struct HloPtrAndShapeComparator {
+  bool operator()(
+      const std::pair<const HloInstruction*, ShapeIndex>& lhs,
+      const std::pair<const HloInstruction*, ShapeIndex>& rhs) const {
+    if (lhs.first != rhs.first)
+      return HloPtrComparator()(lhs.first, rhs.first);
+    else
+      return lhs.second < rhs.second;
+  }
+};
+
 // Figures out how to access the buffers for all subshapes of hlo's operands and
 // for hlo itself (i.e. all the buffers produced by HLO).
 //
@@ -1576,11 +1573,13 @@ Status IrEmitterUnnested::HandleAfterAll(HloInstruction* after_all) {
 // This function conservatively assumes that we'll touch all sub-buffers of
 // every operand and of the output.
 static std::map<std::pair<const HloInstruction*, ShapeIndex>,
-                std::pair<BufferAllocation::Slice, ShapeIndex>>
+                std::pair<BufferAllocation::Slice, ShapeIndex>,
+                HloPtrAndShapeComparator>
 GetHloBufferSlices(const HloInstruction* hlo,
                    const BufferAssignment& buffer_assn) {
   std::map<std::pair<const HloInstruction*, ShapeIndex>,
-           std::pair<BufferAllocation::Slice, ShapeIndex>>
+           std::pair<BufferAllocation::Slice, ShapeIndex>,
+           HloPtrAndShapeComparator>
       slices;
 
   // Tries to find a slice plus an array of indices i1, ..., iN such that the
@@ -1678,9 +1677,7 @@ std::unique_ptr<KernelThunk> IrEmitterUnnested::BuildKernelThunk(
   const BufferAssignment& buffer_assn =
       ir_emitter_context_->buffer_assignment();
 
-  std::map<std::pair<const HloInstruction*, ShapeIndex>,
-           std::pair<BufferAllocation::Slice, ShapeIndex>>
-      hlo_slices = GetHloBufferSlices(inst, buffer_assn);
+  auto hlo_slices = GetHloBufferSlices(inst, buffer_assn);
 
   // Figure out which buffer allocations need to be passed as arguments to our
   // kernel.  This is simply all of the allocations referenced in hlo_slices,
@@ -2410,15 +2407,18 @@ void IrEmitterUnnested::EmitPrologueForReduction(
     llvm::Type* element_type =
         llvm_ir::PrimitiveTypeToIrType(reduce_inst->shape().element_type(),
                                        ir_emitter_context_->llvm_module());
-    llvm::AllocaInst* reduction_input_address = Alloca(element_type);
+    llvm::AllocaInst* reduction_input_address =
+        llvm_ir::EmitAllocaAtFunctionEntry(element_type,
+                                           "reduction_input_address", &b_);
     reduction_input_addresses->push_back(reduction_input_address);
 
     int num_partial_results = reduction_info->GetNumPartialResults();
     AddressVector* partial_result_addresses =
         reduction_info->GetMutablePartialResultAddresses();
     llvm::AllocaInst* partial_result_address =
-        Alloca(element_type, /*ArraySize=*/b_.getInt32(num_partial_results),
-               "partial_reduction_result." + llvm::Twine(i));
+        llvm_ir::EmitAllocaAtFunctionEntryWithCount(
+            element_type, /*ArraySize=*/b_.getInt32(num_partial_results),
+            ("partial_reduction_result." + llvm::Twine(i)).str(), &b_);
     partial_result_addresses->push_back(partial_result_address);
 
     // Initialize the partial result with the initial value of the reduction.
@@ -2492,8 +2492,8 @@ void IrEmitterUnnested::EmitFullWarpShuffleDownLoopForReduce(
     llvm::Value* partial_result_address) {
   for (int distance = 16; distance >= 1; distance /= 2) {
     int bit_width = llvm_ir::GetSizeInBits(element_type);
-    llvm::Value* result_from_other_lane =
-        Alloca(element_type, nullptr, "result_from_other_lane");
+    llvm::Value* result_from_other_lane = llvm_ir::EmitAllocaAtFunctionEntry(
+        element_type, "result_from_other_lane", &b_);
     // Bitcast cannot be applied to aggregate types (even packed ones), so
     // we bitcast addresses of load/store to intN* of the same bit-width.
     llvm::Type* shuffled_value_type =

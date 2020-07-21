@@ -26,10 +26,8 @@ import pipes
 
 # Template values set by rocm_configure.bzl.
 CPU_COMPILER = ('%{cpu_compiler}')
-GCC_HOST_COMPILER_PATH = ('%{gcc_host_compiler_path}')
 
 HIPCC_PATH = '%{hipcc_path}'
-PREFIX_DIR = os.path.dirname(GCC_HOST_COMPILER_PATH)
 HIPCC_ENV = '%{hipcc_env}'
 HIPCC_IS_HIPCLANG = '%{hipcc_is_hipclang}'=="True"
 HIP_RUNTIME_PATH = '%{hip_runtime_path}'
@@ -205,27 +203,36 @@ def InvokeHipcc(argv, log=False):
   hipccopts += std_options
   hipccopts += m_options
 
+  dash_x_hip = ""
+  if HIPCC_IS_HIPCLANG:
+    # When the underlying hip compiler is hipclang, all sources files are
+    # treated as C++ source fiels by default. (previous default was that
+    # hipclang would treat all source files as HIP files)
+    # So now when using hipclang, hipcc needs to be passed the "-x hip" option
+    # when compiling HIP source files
+    #
+    # Since this path (i.e. the InvokeHipcc) function is only invoked for HIP
+    # source files, we can pass the "-x hip" option unconditionally
+    dash_x_hip += ' -x hip '
+
   if depfiles:
     # Generate the dependency file
     depfile = depfiles[0]
     cmd = (HIPCC_PATH + ' ' + hipccopts +
            host_compiler_options +
-           ' ' + GCC_HOST_COMPILER_PATH +
-           ' -I .' + includes + ' ' + srcs + ' -M -o ' + depfile)
+           ' -I .' + includes + ' ' + dash_x_hip + srcs + ' -M -o ' + depfile)
+    cmd = HIPCC_ENV.replace(';', ' ') + ' ' + cmd
     if log: Log(cmd)
+    if VERBOSE: print(cmd)
     exit_status = os.system(cmd)
     if exit_status != 0:
       return exit_status
 
   cmd = (HIPCC_PATH + ' ' + hipccopts +
          host_compiler_options + ' -fPIC' +
-         ' ' + GCC_HOST_COMPILER_PATH +
-         ' -I .' + opt + includes + ' -c ' + srcs + out)
+         ' -I .' + opt + includes + ' -c ' + dash_x_hip + srcs + out)
 
-  # TODO(zhengxq): for some reason, 'gcc' needs this help to find 'as'.
-  # Need to investigate and fix.
-  cmd = 'PATH=' + PREFIX_DIR + ':$PATH '\
-        + HIPCC_ENV.replace(';', ' ') + ' '\
+  cmd = HIPCC_ENV.replace(';', ' ') + ' '\
         + cmd
   if log: Log(cmd)
   if VERBOSE: print(cmd)

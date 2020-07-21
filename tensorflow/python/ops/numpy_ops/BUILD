@@ -87,6 +87,9 @@ cuda_py_test(
 cuda_py_test(
     name = "np_random_test",
     srcs = ["np_random_test.py"],
+    tags = [
+        "no_rocm", # regression starting 200622 sync
+    ],
     deps = [
         ":numpy",
         "//tensorflow/python:platform",
