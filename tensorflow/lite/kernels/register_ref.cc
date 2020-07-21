@@ -14,6 +14,10 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/lite/kernels/register_ref.h"
+
+#include "tensorflow/lite/c/common.h"
+#include "tensorflow/lite/mutable_op_resolver.h"
+#include "tensorflow/lite/schema/schema_generated.h"
 #include "tensorflow/lite/util.h"
 
 namespace tflite {
@@ -135,6 +139,7 @@ TfLiteRegistration* Register_DEPTH_TO_SPACE_REF();
 TfLiteRegistration* Register_SELECT_V2();
 TfLiteRegistration* Register_SEGMENT_SUM();
 TfLiteRegistration* Register_BATCH_MATMUL_REF();
+TfLiteRegistration* Register_BROADCAST_TO();
 
 namespace {
 
@@ -203,6 +208,7 @@ BuiltinRefOpResolver::BuiltinRefOpResolver() {
              Register_SPACE_TO_BATCH_ND_REF());
   AddBuiltin(BuiltinOperator_BATCH_TO_SPACE_ND,
              Register_BATCH_TO_SPACE_ND_REF());
+  AddBuiltin(BuiltinOperator_BROADCAST_TO, Register_BROADCAST_TO());
   AddBuiltin(BuiltinOperator_MUL, Register_MUL_REF());
   AddBuiltin(BuiltinOperator_L2_NORMALIZATION, Register_L2NORM_REF());
   AddBuiltin(BuiltinOperator_LOCAL_RESPONSE_NORMALIZATION,

@@ -1413,10 +1413,10 @@ Status FindKernelDef(
       device_type, node_name, has_experimental_debug_info,
       experimental_debug_info, node_op, node_attrs, &reg, &was_attr_mismatch));
   if (reg == nullptr) {
-    std::string device_str = DeviceTypeString(device_type);
+    const std::string device_str = DeviceTypeString(device_type);
     Status s = errors::NotFound(
-        "No registered '", node_op, "' OpKernel for ",
-        DeviceTypeString(device_type), " devices compatible with node ",
+        "No registered '", node_op, "' OpKernel for ", device_str,
+        " devices compatible with node ",
         FormatNodeDefForError(node_name, has_experimental_debug_info,
                               experimental_debug_info));
     if (was_attr_mismatch) {
@@ -1497,6 +1497,13 @@ Status SupportedDeviceTypesForNode(
         }
       }
     }
+
+    // If we were unable to find any valid devices let's validate if the node is
+    // even valid.
+    if (prioritized_device_types->empty()) {
+      TF_RETURN_IF_ERROR(ValidateNodeDef(def, op_reg_data->op_def));
+    }
+
     std::sort(prioritized_device_types->begin(),
               prioritized_device_types->end(),
               [](const std::pair<DeviceType, int32>& a,

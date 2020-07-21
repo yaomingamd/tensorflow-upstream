@@ -38,7 +38,7 @@ using tensorflow::string;
 void TFE_OpReset(TFE_Op* op_to_reset, const char* op_or_function_name,
                  const char* raw_device_name, TF_Status* status) {
   if (op_to_reset) {
-    tensorflow::AbstractOperationInterface* op =
+    tensorflow::ImmediateExecutionOperation* op =
         tensorflow::unwrap(op_to_reset);
     op->Clear();
     status->status = op->Reset(op_or_function_name, raw_device_name);
@@ -58,6 +58,12 @@ void TFE_ContextDisableGraphCollection(TFE_Context* ctx) {
   tensorflow::EagerContext* context =
       tensorflow::ContextFromInterface(tensorflow::unwrap(ctx));
   context->SetShouldStoreGraphs(false);
+}
+
+uint64_t TFE_GetContextId(TFE_Context* ctx) {
+  tensorflow::EagerContext* context =
+      tensorflow::ContextFromInterface(tensorflow::unwrap(ctx));
+  return context->GetContextId();
 }
 
 void TFE_MonitoringCounterCellIncrementBy(TFE_MonitoringCounterCell* cell,
@@ -656,4 +662,18 @@ TFE_TensorHandle* TFE_CreatePackedTensorHandle(TFE_Context* ctx,
   status->status = tensorflow::TensorHandle::CreatePackedHandle(
       std::move(tensor_handles), context, &handle);
   return tensorflow::wrap(handle);
+}
+
+void TFE_ContextSetSoftDevicePlacement(TFE_Context* ctx, unsigned char enable,
+                                       TF_Status* status) {
+  tensorflow::EagerContext* context =
+      tensorflow::ContextFromInterface(tensorflow::unwrap(ctx));
+  context->SetAllowSoftPlacement(enable);
+}
+
+void TFE_ContextSetLogDevicePlacement(TFE_Context* ctx, unsigned char enable,
+                                      TF_Status* status) {
+  tensorflow::EagerContext* context =
+      tensorflow::ContextFromInterface(tensorflow::unwrap(ctx));
+  context->SetLogDevicePlacement(enable);
 }

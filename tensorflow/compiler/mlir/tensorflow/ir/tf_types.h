@@ -90,8 +90,7 @@ class TensorFlowType : public Type {
 
 // Returns true if the specified type is a valid TensorFlow element type.
 static inline bool IsValidTFElementType(Type type) {
-  return type.isa<ComplexType>() || type.isa<FloatType>() ||
-         type.isa<IntegerType>() || type.isa<TensorFlowType>();
+  return type.isa<ComplexType, FloatType, IntegerType, TensorFlowType>();
 }
 
 // Returns true if this is a valid TensorFlow tensor type.
@@ -110,9 +109,10 @@ namespace detail {
 //   - `static unsigned getTypeKind()` that returns the (fixed) kind of the
 //     type.
 template <typename Derived>
-class TensorFlowTypeImpl : public Type::TypeBase<Derived, TensorFlowType> {
+class TensorFlowTypeImpl
+    : public Type::TypeBase<Derived, TensorFlowType, TypeStorage> {
  public:
-  using Base = typename Type::TypeBase<Derived, TensorFlowType>;
+  using Base = typename Type::TypeBase<Derived, TensorFlowType, TypeStorage>;
   using TFBase = TensorFlowTypeImpl<Derived>;
   using Base::Base;
 
@@ -312,6 +312,22 @@ bool BroadcastCompatible(ArrayRef<Type> lhs, ArrayRef<Type> rhs);
 // Provide option to ignore ref types on 'lhs'.
 bool HasCompatibleElementTypes(Type lhs, Type rhs,
                                bool may_ignore_ref_type_lhs = false);
+
+// Returns true if all TensorFlow types can be cast to one
+// another. In other words, a single run-time value is legal for both the types.
+// For example, tensor<*xf32>, tensor<?xf32> and tensor<3xf32> are cast
+// compatible.
+bool AreCastCompatible(ArrayRef<Type> types);
+
+// If the given tensor has elements of type with subtypes, then returns a new
+// type after dropping subtypes info. Otherwise, returns the original type as
+// is.
+ShapedType DropTypeSubTypes(ShapedType ty);
+
+// If the given tensor has elements of type ref, then returns a new type
+// of the shape, but corresponding non-ref type as element type. Otherwise,
+// returns the original type as is.
+ShapedType DropRefType(ShapedType ty);
 
 }  // end namespace TF
 }  // end namespace mlir

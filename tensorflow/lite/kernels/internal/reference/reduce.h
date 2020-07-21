@@ -18,6 +18,8 @@ limitations under the License.
 #include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tensorflow/lite/kernels/internal/common.h"
 #include "tensorflow/lite/kernels/internal/cppmath.h"
+#include "tensorflow/lite/kernels/internal/max.h"
+#include "tensorflow/lite/kernels/internal/min.h"
 #include "tensorflow/lite/kernels/internal/quantization_util.h"
 #include "tensorflow/lite/kernels/internal/types.h"
 
@@ -319,9 +321,12 @@ inline bool QuantizedMeanOrSum(const T* input_data, int32 input_zero_point,
                                const int num_axis_dimensions, bool keep_dims,
                                int* temp_index, int* resolved_axis, U* temp_sum,
                                bool compute_sum) {
-  const bool uint8_case = std::is_same<T, int8_t>::value;
+  const bool uint8_case = std::is_same<T, uint8_t>::value;
+  const bool int16_case = std::is_same<T, int16_t>::value;
   if (uint8_case) {
     ruy::profiler::ScopeLabel label(compute_sum ? "Sum/Uint8" : "Mean/Uint8");
+  } else if (int16_case) {
+    ruy::profiler::ScopeLabel label(compute_sum ? "Sum/Int16" : "Mean/Int16");
   } else {
     ruy::profiler::ScopeLabel label(compute_sum ? "Sum/Int8" : "Mean/Int8");
   }
@@ -381,11 +386,11 @@ inline bool QuantizedMeanOrSum(const T* input_data, int32 input_zero_point,
       for (size_t idx = 0; idx < num_outputs; ++idx) {
         float float_mean = static_cast<float>(temp_sum[idx]) /
                            static_cast<float>(num_elements_in_axis);
-        float result =
-            std::min(TfLiteRound(float_mean * scale + bias) + output_zero_point,
-                     static_cast<float>(std::numeric_limits<T>::max()));
-        result =
-            std::max(result, static_cast<float>(std::numeric_limits<T>::min()));
+        float result = TfLiteMin(
+            TfLiteRound(float_mean * scale + bias) + output_zero_point,
+            static_cast<float>(std::numeric_limits<T>::max()));
+        result = TfLiteMax(result,
+                           static_cast<float>(std::numeric_limits<T>::min()));
         output_data[idx] = static_cast<T>(result);
       }
     }

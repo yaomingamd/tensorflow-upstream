@@ -192,7 +192,11 @@ TfLiteStatus EvalQuantizedInt8(TfLiteContext* context, TfLiteNode* node,
                                const OpData& data, const TfLiteTensor* input,
                                const TfLiteTensor* filter,
                                const TfLiteTensor* bias, TfLiteTensor* output) {
-  // TODO(b/154032858): Investigate removing extra copies.
+  // TODO(b/154032858): Investigate removing extra copies, and also passing by
+  // value. TODO(b/155656675): Consider passing OpData by value once it is also
+  // passed to the FullyConnected function. Until it is copied to a local
+  // op_param variable, we do not get any latency improvements from passing by
+  // value.
   FullyConnectedParams op_params;
   op_params.input_offset = -input->params.zero_point;
   op_params.weights_offset = -filter->params.zero_point;
@@ -225,17 +229,15 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
 }  // namespace fully_connected
 
-TfLiteRegistration* Register_FULLY_CONNECTED() {
-  static TfLiteRegistration r = {/*init=*/fully_connected::Init,
-                                 /*free=*/nullptr,
-                                 /*prepare=*/fully_connected::Prepare,
-                                 /*invoke=*/fully_connected::Eval,
-                                 /*profiling_string=*/nullptr,
-                                 /*builtin_code=*/0,
-                                 /*custom_name=*/nullptr,
-                                 /*version=*/0};
-
-  return &r;
+TfLiteRegistration Register_FULLY_CONNECTED() {
+  return {/*init=*/fully_connected::Init,
+          /*free=*/nullptr,
+          /*prepare=*/fully_connected::Prepare,
+          /*invoke=*/fully_connected::Eval,
+          /*profiling_string=*/nullptr,
+          /*builtin_code=*/0,
+          /*custom_name=*/nullptr,
+          /*version=*/0};
 }
 
 }  // namespace micro

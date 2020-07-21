@@ -84,6 +84,8 @@ struct CollImplDetails {
       dependencies;           // collective instances on which this node depends
   string communication_hint;  // user-supplied hint for implementation choice,
                               // e.g. ring or nccl
+  float timeout_seconds;      // If non zero, set a completion timeout for the
+                              // collective op to detect staleness.
 };
 
 // Data common to all members of a collective instance.
@@ -397,7 +399,8 @@ class CollectiveImplementationInterface {
   // Called from CollectiveExecutor right before calling Run().  The
   // CollectiveContext passed in must outlive the CollectiveImplementation
   // object.
-  virtual Status InitializeCollectiveContext(CollectiveContext* col_ctx) = 0;
+  virtual Status InitializeCollectiveContext(
+      std::shared_ptr<CollectiveContext> col_ctx) = 0;
 
   // Performs collective implementation specific group initialization.  The
   // intention is to do group-specific initialization of runtime details for the

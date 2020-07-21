@@ -81,9 +81,14 @@ class HloModuleConfig {
     return entry_computation_layout_.has_value();
   }
 
-  // Sets the entry computation layout for this config. If the entry computation
-  // layout already exists, it is silently replaced.
+  // Sets the entry_computation_layout's parameter and result shapes for this
+  // config, according to the given program shape. The parameters and result
+  // are set to default layout.
   void SetDefaultComputationLayout(const ProgramShape& program_shape);
+
+  // Same as above but if the given program contains layout for parameters or
+  // result, the entry_computation_layout's layout is updated accordingly.
+  void SetComputationLayoutIfExists(const ProgramShape& program_shape);
 
   // Returns a constant reference to the layout of the entry computation.
   // Assumes the layout was set.
@@ -183,6 +188,14 @@ class HloModuleConfig {
     alias_passthrough_params_ = alias_passthrough_params;
   }
 
+  bool content_aware_computation_sorting() const {
+    return content_aware_computation_sorting_;
+  }
+  void set_content_aware_computation_sorting(
+      bool content_aware_computation_sorting) {
+    content_aware_computation_sorting_ = content_aware_computation_sorting;
+  }
+
   FusionConfigCollection fusion_config_collection() const {
     return fusion_config_collection_;
   }
@@ -203,6 +216,14 @@ class HloModuleConfig {
   }
 
   std::vector<std::vector<int64>>* mutable_dot_config() { return &dot_config_; }
+
+  const std::vector<std::vector<std::vector<int64>>>& layout_config() const {
+    return layout_config_;
+  }
+
+  std::vector<std::vector<std::vector<int64>>>* mutable_layout_config() {
+    return &layout_config_;
+  }
 
  private:
   // If you add new members, be sure to update compilation_cache_key.
@@ -238,8 +259,13 @@ class HloModuleConfig {
 
   bool alias_passthrough_params_ = false;
 
+  bool content_aware_computation_sorting_ = false;
+
   FusionConfigCollection fusion_config_collection_ =
       FusionConfigCollection::kOff;
+
+  // TODO(b/155665133): Consolidate fusion, dot, and layout config into a proto
+  // similar to backend config.
 
   // Custom fusion configuration, where fusion_config_[c][v] control if node v
   // in computation c must be fused to all its consumers (true) or not (false).
@@ -249,6 +275,10 @@ class HloModuleConfig {
   // how to convert dot operation v (sorted topologically and by computation) to
   // convolution.
   std::vector<std::vector<int64>> dot_config_;
+
+  // Layout configuration, where layout_config_[v][i] controls the layout
+  // decision i of operation v.
+  std::vector<std::vector<std::vector<int64>>> layout_config_;
 };
 
 }  // namespace xla

@@ -42,11 +42,13 @@ load(
     "mkl_deps",
 )
 
+default_package_visibility = [
+    "//tensorflow:internal",
+    "//tensorflow_models:__subpackages__",
+]
+
 package(
-    default_visibility = [
-        "//tensorflow:internal",
-        "//tensorflow_models:__subpackages__",
-    ],
+    default_visibility = default_package_visibility,
     licenses = ["notice"],  # Apache 2.0
 )
 
@@ -56,6 +58,7 @@ tf_cuda_library(
         "composite_device.h",
         "device.h",
         "device_factory.h",
+        "device_mgr.h",
         "function.h",
         "function_optimization_registry.h",
         "gradients.h",
@@ -582,8 +585,9 @@ cc_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/profiler/lib:annotated_traceme",
+        "//tensorflow/core/profiler/lib:connected_traceme",
         "//tensorflow/core/profiler/lib:scoped_annotation",
-        "//tensorflow/core/profiler/lib:traceme",
+        "//tensorflow/core/profiler/lib:traceme_encode",
         "@com_google_absl//absl/memory",
     ],
     alwayslink = 1,
@@ -756,6 +760,10 @@ cc_library(
         "shape_refiner.h",
     ],
     copts = tf_copts(),
+    visibility = default_package_visibility + [
+        "//platforms/performance/autograppler:__subpackages__",
+        "//platforms/performance/tf_sim:__subpackages__",
+    ],
     deps = [
         ":device",
         ":device_factory",
@@ -958,6 +966,10 @@ cc_library(
     srcs = ["lower_functional_ops.cc"],
     hdrs = ["lower_functional_ops.h"],
     copts = tf_copts(),
+    visibility = default_package_visibility + [
+        "//platforms/performance/autograppler:__subpackages__",
+        "//platforms/performance/tf_sim:__subpackages__",
+    ],
     deps = [
         ":function_utils",
         ":inline_function_utils",
@@ -1361,6 +1373,7 @@ cc_library(
     hdrs = ["replicate_per_replica_nodes.h"],
     copts = tf_copts(),
     deps = [
+        "//tensorflow/core:framework",
         "//tensorflow/core:graph",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
@@ -1695,9 +1708,10 @@ tf_cuda_library(
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/debug:debug_graph_utils",
         "//tensorflow/core/kernels:function_ops",
+        "//tensorflow/core/profiler/lib:connected_traceme",
         "//tensorflow/core/profiler/lib:profiler_backends",
         "//tensorflow/core/profiler/lib:profiler_session",
-        "//tensorflow/core/profiler/lib:traceme",
+        "//tensorflow/core/profiler/lib:traceme_encode",
         "@com_google_absl//absl/container:flat_hash_set",
     ],
     alwayslink = 1,
@@ -2295,7 +2309,7 @@ tf_cc_test(
         "//tensorflow/cc:cc_ops",
         "//tensorflow/cc:scope",
         "//tensorflow/core/kernels:cwise_op",
-    ] + if_mkl([":mkl_array_ops_op_lib"]),
+    ] + if_mkl(["//tensorflow/core:mkl_array_ops_op_lib"]),
 )
 
 tf_cc_test(

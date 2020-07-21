@@ -24,8 +24,10 @@ from tensorflow.core.framework import tensor_pb2
 from tensorflow.core.framework import tensor_shape_pb2
 from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
+from tensorflow.python.types import core
 from tensorflow.python.types import internal
 from tensorflow.python.util import compat
 from tensorflow.python.util import nest
@@ -524,7 +526,7 @@ def make_tensor_proto(values, dtype=None, shape=None, verify_shape=False,
     if nparray.size * nparray.itemsize >= (1 << 31):
       raise ValueError(
           "Cannot create a tensor proto whose content is larger than 2GB.")
-    tensor_proto.tensor_content = nparray.tostring()
+    tensor_proto.tensor_content = nparray.tobytes()
     return tensor_proto
 
   # If we were not given values as a numpy array, compute the proto_values
@@ -825,7 +827,12 @@ def constant_value(tensor, partial=False):  # pylint: disable=invalid-name
     TypeError: if tensor is not an ops.Tensor.
   """
   if isinstance(tensor, ops.EagerTensor):
-    return tensor.numpy()
+    try:
+      return tensor.numpy()
+    except errors_impl.UnimplementedError:
+      # Some EagerTensors may not implement .numpy/resolve, e.g. parallel
+      # tensors with multiple components on different devices.
+      return None
   if not is_tensor(tensor):
     return tensor
   if not isinstance(tensor, ops.Tensor):
@@ -1009,7 +1016,7 @@ def is_tensor(x):  # pylint: disable=invalid-name
     `True` if `x` is a tensor or "tensor-like", `False` if not.
   """
   return (isinstance(x, internal.NativeObject) or
-          ops.is_dense_tensor_like(x) or
+          isinstance(x, core.Tensor) or
           getattr(x, "is_tensor_like", False))
 
 

@@ -486,8 +486,8 @@ def skip_if_error(test_obj, error_type, messages=None):
   try:
     yield
   except error_type as e:
-    if not messages or any([message in str(e) for message in messages]):
-      test_obj.skipTest("Skipping error: {}".format(str(e)))
+    if not messages or any(message in str(e) for message in messages):
+      test_obj.skipTest("Skipping error: {}: {}".format(type(e), str(e)))
     else:
       raise
 
@@ -736,7 +736,7 @@ def assert_no_new_tensors(f):
         return isinstance(obj,
                           (ops.Tensor, variables.Variable,
                            tensor_shape.Dimension, tensor_shape.TensorShape))
-      except ReferenceError:
+      except (ReferenceError, AttributeError):
         # If the object no longer exists, we don't care about it.
         return False
 
@@ -773,34 +773,34 @@ def assert_no_new_tensors(f):
 
 def _find_reference_cycle(objects, idx):
 
-  def get_ignore_reason(obj, blacklist):
+  def get_ignore_reason(obj, denylist):
     """Tests whether an object should be omitted from the dependency graph."""
-    if len(blacklist) > 100:
+    if len(denylist) > 100:
       return "<depth limit>"
     if tf_inspect.isframe(obj):
       if "test_util.py" in tf_inspect.getframeinfo(obj)[0]:
         return "<test code>"
-    for b in blacklist:
+    for b in denylist:
       if b is obj:
         return "<test code>"
-    if obj is blacklist:
+    if obj is denylist:
       return "<test code>"
     return None
 
   # Note: this function is meant to help with diagnostics. Its output is purely
   # a human-readable representation, so you may freely modify it to suit your
   # needs.
-  def describe(obj, blacklist, leaves_only=False):
+  def describe(obj, denylist, leaves_only=False):
     """Returns a custom human-readable summary of obj.
 
     Args:
       obj: the value to describe.
-      blacklist: same as blacklist in get_ignore_reason.
+      denylist: same as denylist in get_ignore_reason.
       leaves_only: boolean flag used when calling describe recursively. Useful
         for summarizing collections.
     """
-    if get_ignore_reason(obj, blacklist):
-      return "{}{}".format(get_ignore_reason(obj, blacklist), type(obj))
+    if get_ignore_reason(obj, denylist):
+      return "{}{}".format(get_ignore_reason(obj, denylist), type(obj))
     if tf_inspect.isframe(obj):
       return "frame: {}".format(tf_inspect.getframeinfo(obj))
     elif tf_inspect.ismodule(obj):
@@ -810,10 +810,10 @@ def _find_reference_cycle(objects, idx):
         return "{}, {}".format(type(obj), id(obj))
       elif isinstance(obj, list):
         return "list({}): {}".format(
-            id(obj), [describe(e, blacklist, leaves_only=True) for e in obj])
+            id(obj), [describe(e, denylist, leaves_only=True) for e in obj])
       elif isinstance(obj, tuple):
         return "tuple({}): {}".format(
-            id(obj), [describe(e, blacklist, leaves_only=True) for e in obj])
+            id(obj), [describe(e, denylist, leaves_only=True) for e in obj])
       elif isinstance(obj, dict):
         return "dict({}): {} keys".format(id(obj), len(obj.keys()))
       elif tf_inspect.isfunction(obj):
@@ -822,7 +822,7 @@ def _find_reference_cycle(objects, idx):
       else:
         return "{}, {}".format(type(obj), id(obj))
 
-  def build_ref_graph(obj, graph, reprs, blacklist):
+  def build_ref_graph(obj, graph, reprs, denylist):
     """Builds a reference graph as <referrer> -> <list of referents>.
 
     Args:
@@ -832,21 +832,21 @@ def _find_reference_cycle(objects, idx):
         references, the graph holds object IDs rather than actual objects.
       reprs: Auxiliary structure that maps object IDs to their human-readable
         description.
-      blacklist: List of objects to ignore.
+      denylist: List of objects to ignore.
     """
     referrers = gc.get_referrers(obj)
-    blacklist = blacklist + (referrers,)
+    denylist = denylist + (referrers,)
 
     obj_id = id(obj)
     for r in referrers:
-      if get_ignore_reason(r, blacklist) is None:
+      if get_ignore_reason(r, denylist) is None:
         r_id = id(r)
         if r_id not in graph:
           graph[r_id] = []
         if obj_id not in graph[r_id]:
           graph[r_id].append(obj_id)
-          build_ref_graph(r, graph, reprs, blacklist)
-          reprs[r_id] = describe(r, blacklist)
+          build_ref_graph(r, graph, reprs, denylist)
+          reprs[r_id] = describe(r, denylist)
 
   def find_cycle(el, graph, reprs, path):
     """Finds and prints a single cycle in the dependency graph."""
@@ -1933,6 +1933,9 @@ class TensorFlowTestCase(googletest.TestCase):
       # disable it here.
       pywrap_tf_session.TF_SetXlaConstantFoldingDisabled(True)
 
+    if is_mlir_bridge_enabled():
+      context.context().enable_mlir_bridge = True
+
     self._threads = []
     self._tempdir = None
     self._cached_session = None
@@ -2128,7 +2131,9 @@ class TensorFlowTestCase(googletest.TestCase):
               values=tensor.values.numpy(),
               indices=tensor.indices.numpy(),
               dense_shape=tensor.dense_shape.numpy())
-        return tensor.numpy()
+        # Convert tensors and composite tensors to numpy arrays.
+        return nest.map_structure(lambda t: t.numpy(), tensor,
+                                  expand_composites=True)
       except AttributeError as e:
         six.raise_from(ValueError("Unsupported type %s." % type(tensor)), e)
 
@@ -2686,7 +2691,7 @@ class TensorFlowTestCase(googletest.TestCase):
     if (b.ndim <= 3 or b.size < 500):
       self.assertEqual(
           a.shape, b.shape, "Shape mismatch: expected %s, got %s."
-          " Contents: %s. \n%s." % (a.shape, b.shape, b, msg))
+          " Contents: %r. \n%s." % (a.shape, b.shape, b, msg))
     else:
       self.assertEqual(
           a.shape, b.shape, "Shape mismatch: expected %s, got %s."
@@ -2709,10 +2714,28 @@ class TensorFlowTestCase(googletest.TestCase):
       else:
         # np.where is broken for scalars
         x, y = a, b
-      msgs.append("not equal lhs = {}".format(x))
-      msgs.append("not equal rhs = {}".format(y))
-      # With Python 3, we need to make sure the dtype matches between a and b.
-      b = b.astype(a.dtype)
+      msgs.append("not equal lhs = %r" % x)
+      msgs.append("not equal rhs = %r" % y)
+
+      # Handle mixed string types as a result of PY2to3 migration. That is, the
+      # mixing between bytes (b-prefix strings, PY2 default) and unicodes
+      # (u-prefix strings, PY3 default).
+      if six.PY3:
+        if (a.dtype.kind != b.dtype.kind and
+            {a.dtype.kind, b.dtype.kind}.issubset({"U", "S", "O"})):
+          a_list = []
+          b_list = []
+          # OK to flatten `a` and `b` because they are guaranteed to have the
+          # same shape.
+          for out_list, flat_arr in [(a_list, a.flat), (b_list, b.flat)]:
+            for item in flat_arr:
+              if isinstance(item, str):
+                out_list.append(item.encode("utf-8"))
+              else:
+                out_list.append(item)
+          a = np.array(a_list)
+          b = np.array(b_list)
+
       np.testing.assert_array_equal(a, b, err_msg="\n".join(msgs))
 
   @py_func_if_in_function

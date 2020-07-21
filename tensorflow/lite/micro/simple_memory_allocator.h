@@ -16,10 +16,11 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_MICRO_SIMPLE_MEMORY_ALLOCATOR_H_
 #define TENSORFLOW_LITE_MICRO_SIMPLE_MEMORY_ALLOCATOR_H_
 
+#include <cstddef>
 #include <cstdint>
 
-#include "tensorflow/lite/c/common.h"
 #include "tensorflow/lite/core/api/error_reporter.h"
+#include "tensorflow/lite/micro/compatibility.h"
 
 namespace tflite {
 
@@ -28,46 +29,65 @@ namespace tflite {
 // This makes it pretty wasteful, so we should use a more intelligent method.
 class SimpleMemoryAllocator {
  public:
+  // TODO(b/157615197): Cleanup constructors/destructor and use factory
+  // functions.
   SimpleMemoryAllocator(ErrorReporter* error_reporter, uint8_t* buffer_head,
-                        uint8_t* buffer_tail)
-      : error_reporter_(error_reporter),
-        buffer_head_(buffer_head),
-        buffer_tail_(buffer_tail),
-        head_(buffer_head),
-        tail_(buffer_tail) {}
+                        uint8_t* buffer_tail);
   SimpleMemoryAllocator(ErrorReporter* error_reporter, uint8_t* buffer,
-                        size_t buffer_size)
-      : SimpleMemoryAllocator(error_reporter, buffer, buffer + buffer_size) {}
+                        size_t buffer_size);
+  virtual ~SimpleMemoryAllocator();
+
+  // Creates a new SimpleMemoryAllocator from a given buffer head and size.
+  static SimpleMemoryAllocator* Create(ErrorReporter* error_reporter,
+                                       uint8_t* buffer_head,
+                                       size_t buffer_size);
 
   // Allocates memory starting at the head of the arena (lowest address and
-  // moving upwards).
-  uint8_t* AllocateFromHead(size_t size, size_t alignment);
+  // moving upwards). Calls to this method will also invalidate all temporary
+  // allocation values. This call will fail if a chain allocation calls through
+  // AllocateTemp() have not been cleaned up with a call to
+  // ResetTempAllocations().
+  virtual uint8_t* AllocateFromHead(size_t size, size_t alignment);
+
   // Allocates memory starting at the tail of the arena (highest address and
   // moving downwards).
-  uint8_t* AllocateFromTail(size_t size, size_t alignment);
+  virtual uint8_t* AllocateFromTail(size_t size, size_t alignment);
 
-  uint8_t* GetHead() const { return head_; }
-  uint8_t* GetTail() const { return tail_; }
-  size_t GetAvailableMemory() const { return tail_ - head_; }
-  size_t GetUsedBytes() const { return GetBufferSize() - GetAvailableMemory(); }
+  // Allocates a temporary buffer from the head of the arena (lowest address and
+  // moving upwards) but does not update the actual head allocation size or
+  // position. The returned buffer is guaranteed until either
+  // ResetTempAllocations() is called or another call to AllocateFromHead().
+  // Repeat calls to this function will create a chain of temp allocations. All
+  // calls to AllocateTemp() must end with a call to ResetTempAllocations(). If
+  // AllocateFromHead() is called before a call to ResetTempAllocations(), it
+  // will fail with an error message.
+  virtual uint8_t* AllocateTemp(size_t size, size_t alignment);
 
-  size_t GetHeadUsedBytes() const { return head_ - buffer_head_; }
-  size_t GetTailUsedBytes() const { return buffer_tail_ - tail_; }
+  // Resets a chain of temporary allocations back to the current head of the
+  // arena (lowest address).
+  virtual void ResetTempAllocations();
+
+  uint8_t* GetHead() const;
+  uint8_t* GetTail() const;
+
+  size_t GetHeadUsedBytes() const;
+  size_t GetTailUsedBytes() const;
+
+  size_t GetAvailableMemory() const;
+  size_t GetUsedBytes() const;
 
  private:
-  size_t GetBufferSize() const { return buffer_tail_ - buffer_head_; }
+  size_t GetBufferSize() const;
 
   ErrorReporter* error_reporter_;
   uint8_t* buffer_head_;
   uint8_t* buffer_tail_;
   uint8_t* head_;
   uint8_t* tail_;
-};
+  uint8_t* temp_;
 
-// Allocate a SimpleMemoryAllocator from the buffer and then return the pointer
-// to this allocator.
-SimpleMemoryAllocator* CreateInPlaceSimpleMemoryAllocator(
-    ErrorReporter* error_reporter, uint8_t* buffer, size_t buffer_size);
+  TF_LITE_REMOVE_VIRTUAL_DELETE
+};
 
 }  // namespace tflite
 

@@ -25,8 +25,12 @@ import tempfile
 import numpy as np
 
 from tensorflow.python.framework import test_util
+from tensorflow.python.keras import keras_parameterized
+from tensorflow.python.keras import layers
+from tensorflow.python.keras.engine import sequential
 from tensorflow.python.keras.preprocessing import image as preprocessing_image
 from tensorflow.python.platform import test
+from tensorflow.python.data import Dataset
 
 try:
   import PIL  # pylint:disable=g-import-not-at-top
@@ -52,7 +56,7 @@ def _generate_test_images():
   return [rgb_images, gray_images]
 
 
-class TestImage(test.TestCase):
+class TestImage(keras_parameterized.TestCase):
 
   @test_util.run_v2_only
   def test_smart_resize(self):
@@ -66,6 +70,19 @@ class TestImage(test.TestCase):
     self.assertListEqual(list(output.shape), [100, 50, 3])
     output = preprocessing_image.smart_resize(test_input, size=(5, 15))
     self.assertListEqual(list(output.shape), [5, 15, 3])
+
+  @test_util.run_v2_only
+  def test_smart_resize_tf_dataset(self):
+    test_input_np = np.random.random((2, 20, 40, 3))
+    test_ds = Dataset.from_tensor_slices(test_input_np)
+
+    resize = lambda img: preprocessing_image.smart_resize(img, size=size)
+
+    for size in [(50, 50), (10, 10), (100, 50), (5, 15)]:
+      test_ds = test_ds.map(resize)
+      for sample in test_ds.as_numpy_iterator():
+        self.assertIsInstance(sample, np.ndarray)
+        self.assertListEqual(list(sample.shape), [size[0], size[1], 3])
 
   def test_smart_resize_errors(self):
     with self.assertRaisesRegex(ValueError, 'a tuple of 2 integers'):
@@ -143,8 +160,7 @@ class TestImage(test.TestCase):
       generator = preprocessing_image.ImageDataGenerator(
           data_format='unknown')
 
-    generator = preprocessing_image.ImageDataGenerator(
-        zoom_range=(2, 2))
+    generator = preprocessing_image.ImageDataGenerator(zoom_range=(2., 2.))
 
   def test_image_data_generator_fit(self):
     generator = preprocessing_image.ImageDataGenerator(
@@ -319,14 +335,21 @@ class TestImage(test.TestCase):
     self.assertEqual(
         len(set(train_iterator.filenames) & set(filenames)), num_training)
 
+    model = sequential.Sequential([layers.Flatten(), layers.Dense(2)])
+    model.compile(optimizer='sgd', loss='mse')
+    model.fit(train_iterator, epochs=1)
+
     shutil.rmtree(tmp_folder)
 
+  @keras_parameterized.run_all_keras_modes
   def test_directory_iterator_with_validation_split_25_percent(self):
     self.directory_iterator_with_validation_split_test_helper(0.25)
 
+  @keras_parameterized.run_all_keras_modes
   def test_directory_iterator_with_validation_split_40_percent(self):
     self.directory_iterator_with_validation_split_test_helper(0.40)
 
+  @keras_parameterized.run_all_keras_modes
   def test_directory_iterator_with_validation_split_50_percent(self):
     self.directory_iterator_with_validation_split_test_helper(0.50)
 

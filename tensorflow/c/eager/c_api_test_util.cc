@@ -18,7 +18,9 @@ limitations under the License.
 #include "tensorflow/c/eager/c_api.h"
 #include "tensorflow/c/eager/c_api_experimental.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/core/platform/strcat.h"
 #include "tensorflow/core/platform/test.h"
+#include "tensorflow/core/protobuf/cluster.pb.h"
 
 using tensorflow::string;
 
@@ -78,6 +80,20 @@ TFE_TensorHandle* TestMatrixTensorHandle(TFE_Context* ctx) {
   TF_Status* status = TF_NewStatus();
   TF_Tensor* t = TFE_AllocateHostTensor(ctx, TF_FLOAT, &dims[0],
                                         sizeof(dims) / sizeof(int64_t), status);
+  memcpy(TF_TensorData(t), &data[0], TF_TensorByteSize(t));
+  TFE_TensorHandle* th = TFE_NewTensorHandleFromTensor(ctx, t, status);
+  CHECK_EQ(TF_OK, TF_GetCode(status)) << TF_Message(status);
+  TF_DeleteTensor(t);
+  TF_DeleteStatus(status);
+  return th;
+}
+
+TFE_TensorHandle* TestMatrixTensorHandleWithInput(TFE_Context* ctx,
+                                                  float data[], int64_t dims[],
+                                                  int num_dims) {
+  TF_Status* status = TF_NewStatus();
+  TF_Tensor* t =
+      TFE_AllocateHostTensor(ctx, TF_FLOAT, &dims[0], num_dims, status);
   memcpy(TF_TensorData(t), &data[0], TF_TensorByteSize(t));
   TFE_TensorHandle* th = TFE_NewTensorHandleFromTensor(ctx, t, status);
   CHECK_EQ(TF_OK, TF_GetCode(status)) << TF_Message(status);
@@ -150,6 +166,7 @@ TFE_TensorHandle* TestVariable(TFE_Context* ctx, float value,
   TFE_TensorHandle* var_handle = nullptr;
   int num_retvals = 1;
   TFE_Execute(op, &var_handle, &num_retvals, status);
+  if (TF_GetCode(status) != TF_OK) return nullptr;
   TFE_DeleteOp(op);
   if (TF_GetCode(status) != TF_OK) return nullptr;
   CHECK_EQ(1, num_retvals);
@@ -294,4 +311,24 @@ bool GetDeviceName(TFE_Context* ctx, string* device_name,
   }
   TF_DeleteDeviceList(devices);
   return false;
+}
+
+tensorflow::ServerDef GetServerDef(const string& job_name, int num_tasks) {
+  tensorflow::ServerDef server_def;
+  server_def.set_protocol("grpc");
+  server_def.set_job_name(job_name);
+  server_def.set_task_index(0);
+  tensorflow::ClusterDef* cluster_def = server_def.mutable_cluster();
+  tensorflow::JobDef* job_def = cluster_def->add_job();
+  job_def->set_name(job_name);
+  for (int i = 0; i < num_tasks; i++) {
+    int port = tensorflow::testing::PickUnusedPortOrDie();
+    job_def->mutable_tasks()->insert(
+        {i, tensorflow::strings::StrCat("localhost:", port)});
+  }
+  return server_def;
+}
+
+tensorflow::ServerDef GetServerDef(int num_tasks) {
+  return GetServerDef("localhost", num_tasks);
 }

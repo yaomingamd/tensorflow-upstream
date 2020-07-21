@@ -362,7 +362,11 @@ cc_test(
 cc_library(
     name = "cppmath",
     srcs = [],
-    hdrs = ["cppmath.h"],
+    hdrs = [
+        "cppmath.h",
+        "max.h",
+        "min.h",
+    ],
     build_for_embedded = True,
     copts = tflite_copts(),
 )
@@ -437,6 +441,7 @@ cc_library(
         "reference/arg_min_max.h",
         "reference/batch_matmul.h",
         "reference/binary_function.h",
+        "reference/broadcast_to.h",
         "reference/ceil.h",
         "reference/comparisons.h",
         "reference/concatenation.h",
@@ -447,6 +452,7 @@ cc_library(
         "reference/dequantize.h",
         "reference/floor.h",
         "reference/fully_connected.h",
+        "reference/hard_swish.h",
         "reference/integer_ops/add.h",
         "reference/integer_ops/conv.h",
         "reference/integer_ops/depthwise_conv.h",
@@ -481,6 +487,7 @@ cc_library(
         "reference/strided_slice.h",
         "reference/sub.h",
         "reference/svdf.h",
+        "reference/tanh.h",
     ],
     build_for_embedded = True,
     copts = tflite_copts(),
@@ -500,6 +507,7 @@ cc_library(
         ":common",
         ":compatibility",
         ":cppmath",
+        ":portable_tensor_utils",
         ":quantization_util",
         ":strided_slice_logic",
         ":tensor",
@@ -532,6 +540,7 @@ cc_library(
         "reference/dequantize.h",
         "reference/floor.h",
         "reference/fully_connected.h",
+        "reference/hard_swish.h",
         "reference/l2normalization.h",
         "reference/legacy_reference_ops.h",
         "reference/logistic.h",
@@ -551,6 +560,7 @@ cc_library(
         "reference/softmax.h",
         "reference/strided_slice.h",
         "reference/sub.h",
+        "reference/tanh.h",
     ],
     copts = tflite_copts(),
     deps = [
@@ -629,7 +639,6 @@ cc_library(
         ":cppmath",
         "//tensorflow/lite:minimal_logging",
         "//tensorflow/lite/c:common",
-        "//tensorflow/lite/kernels:cpu_backend_context",
         "@gemmlowp",
     ],
 )
@@ -654,7 +663,6 @@ cc_library(
         "//tensorflow/lite/kernels:cpu_backend_context",
         "//tensorflow/lite/kernels:cpu_backend_gemm",
         "@ruy//ruy",
-        "@ruy//ruy:detect_arm",
     ],
 )
 
@@ -675,7 +683,9 @@ cc_library(
         ":portable_tensor_utils",
         "//tensorflow/lite/c:common",
         "//tensorflow/lite/kernels:cpu_backend_context",
+        "//tensorflow/lite/kernels:cpu_backend_gemm",
         "//tensorflow/lite/kernels:op_macros",
+        "@ruy//ruy/profiler:instrumentation",
     ],
 )
 
@@ -786,7 +796,6 @@ cc_library(
     deps = [
         ":cpu_check",
         "//tensorflow/lite/c:common",
-        "//tensorflow/lite/kernels:cpu_backend_context",
         "//third_party/eigen3",
     ],
 )
@@ -820,6 +829,7 @@ cc_test(
         ":quantization_util",
         ":tensor_utils",
         "//tensorflow/lite/c:common",
+        "//tensorflow/lite/kernels:cpu_backend_context",
         "//tensorflow/lite/kernels:test_util",
         "@com_google_googletest//:gtest_main",
     ],
@@ -1039,6 +1049,7 @@ cc_test(
 
 cc_library(
     name = "cpu_check",
+    srcs = ["optimized/cpu_check.cc"],
     hdrs = [
         "optimized/cpu_check.h",
         "optimized/neon_check.h",
@@ -1058,9 +1069,6 @@ cc_library(
         ":windows": tflite_deps_intel,
         "//conditions:default": [],
     },
-    deps = [
-        "@ruy//ruy:detect_arm",  # safe to use regardless of arch.
-    ],
 )
 
 cc_test(

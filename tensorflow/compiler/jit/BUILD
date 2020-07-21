@@ -251,7 +251,7 @@ cc_library(
     visibility = [":friends"],
     deps = select({
         "//tensorflow:android": [
-            "//tensorflow/core:android_tensorflow_lib",
+            "//tensorflow/core:portable_tensorflow_lib",
         ],
         "//conditions:default": [
             "//tensorflow/core:graph",
@@ -505,6 +505,7 @@ cc_library(
     name = "shape_inference",
     srcs = ["shape_inference.cc"],
     hdrs = ["shape_inference.h"],
+    visibility = [":friends"],
     deps = [
         ":shape_inference_helpers",
         "//tensorflow/compiler/xla:statusor",
@@ -647,11 +648,11 @@ cc_library(
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:framework",
-        "//tensorflow/core:framework_bounds_check",
         "//tensorflow/core:graph",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core/framework:bounds_check",
         "//tensorflow/stream_executor/lib",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base",
@@ -676,11 +677,11 @@ cc_library(
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
-        "//tensorflow/core:framework_bounds_check",
         "//tensorflow/core:framework_internal",
         "//tensorflow/core:graph",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core/framework:bounds_check",
         "//tensorflow/stream_executor/lib",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",

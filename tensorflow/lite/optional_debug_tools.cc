@@ -57,6 +57,8 @@ const char* TensorTypeName(TfLiteType type) {
       return "kTfLiteInt16";
     case kTfLiteComplex64:
       return "kTfLiteComplex64";
+    case kTfLiteComplex128:
+      return "kTfLiteComplex128";
     case kTfLiteFloat16:
       return "kTfLiteFloat16";
     case kTfLiteFloat64:
@@ -77,6 +79,8 @@ const char* AllocTypeName(TfLiteAllocationType type) {
       return "kTfLiteArenaRw";
     case kTfLiteArenaRwPersistent:
       return "kTfLiteArenaRwPersistent";
+    case kTfLitePersistentRo:
+      return "kTfLitePersistentRo";
   }
   return "(invalid)";
 }

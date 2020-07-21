@@ -24,10 +24,10 @@ from tensorflow.python.eager import context
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.engine import base_layer_utils
 from tensorflow.python.keras.utils import tf_utils
+from tensorflow.python.keras.utils.generic_utils import LazyLoader
 from tensorflow.python.training.tracking import layer_utils as trackable_layer_utils
 from tensorflow.python.util import tf_decorator
 from tensorflow.python.util import tf_inspect
-from tensorflow.python.util.lazy_loader import LazyLoader
 
 
 # pylint:disable=g-inconsistent-quotes
@@ -79,7 +79,7 @@ def use_wrapped_call(layer, call_fn, default_training_value=None,
     # child layers. This causes `.losses` to only return eager losses.
     # pylint: disable=protected-access
     if context.executing_eagerly():
-      for i in layer._gather_unique_layers():
+      for i in layer._flatten_layers():
         if i is not layer:
           i._eager_losses = [base_layer_utils.REVIVED_LOSS_PLACEHOLDER]
     # pylint: enable=protected-access
