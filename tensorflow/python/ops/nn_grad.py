@@ -465,6 +465,10 @@ def _EluGrad(op, grad):
 def _SeluGrad(op, grad):
   return gen_nn_ops.selu_grad(grad, op.outputs[0])
 
+@ops.RegisterGradient("Gelu")
+def _GeluGrad(op, grad):
+  return gen_nn_ops.gelu_grad(grad, op.inputs[0])
+
 
 @ops.RegisterGradient("Softplus")
 def _SoftplusGrad(op, grad):
@@ -1063,6 +1067,19 @@ def _L2LossGrad(op, grad):
     The gradient, which is (x * grad).
   """
   return op.inputs[0] * grad
+
+def ConditionalRegister(dec, condition):
+  def decorator(func):
+    if condition:
+      return dec(func)
+    else:
+      return func
+  return decorator
+
+@ops.RegisterGradient("Dropout")
+def _DropoutGrad(op, grad, _):
+  dx = gen_nn_ops.dropout_grad(grad, op.inputs[1], op.outputs[1])
+  return [dx, None, None, None]
 
 @ops.RegisterGradient("TopK")
 @ops.RegisterGradient("TopKV2")
