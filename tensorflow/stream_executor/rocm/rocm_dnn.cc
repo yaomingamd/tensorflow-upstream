@@ -109,6 +109,9 @@ string ToString(miopenConvAlgorithm_t algorithm) {
     case miopenConvolutionAlgoWinograd:
       s = "Winograd";
       break;
+    case miopenConvolutionAlgoImplicitGEMM:
+      s = "Implicit GEMM";
+      break;
   }
   return s;
 }

@@ -19,7 +19,7 @@
 # changes made in the current build are not working!
 TF_PKG_LOC=/tmp/tensorflow_pkg
 rm -f $TF_PKG_LOC/tensorflow*.whl
-ROCM_PATH=/opt/rocm/
+export ROCM_PATH=/opt/rocm-3.7.0
 
 yes "" | TF_NEED_ROCM=1 ROCM_TOOLKIT_PATH=${ROCM_PATH} PYTHON_BIN_PATH=/usr/bin/python3 ./configure
 pip3 uninstall -y tensorflow || true
