@@ -440,6 +440,38 @@ def _find_libs(repository_ctx, rocm_config, bash_bin):
     Returns:
       Map of library names to structs of filename and path
     """
+    return {
+        "hip": _find_rocm_lib(
+            "amdhip64",
+            repository_ctx,
+            rocm_config.rocm_toolkit_path,
+        ),
+        "rocblas": _find_rocm_lib(
+            "rocblas",
+            repository_ctx,
+            rocm_config.rocm_toolkit_path + "/rocblas",
+        ),
+        "rocfft": _find_rocm_lib(
+            "rocfft",
+            repository_ctx,
+            rocm_config.rocm_toolkit_path + "/rocfft",
+        ),
+        "hiprand": _find_rocm_lib(
+            "hiprand",
+            repository_ctx,
+            rocm_config.rocm_toolkit_path + "/hiprand",
+        ),
+        "miopen": _find_rocm_lib(
+            "MIOpen",
+            repository_ctx,
+            rocm_config.rocm_toolkit_path + "/miopen",
+        ),
+        "rccl": _find_rocm_lib(
+            "rccl",
+            repository_ctx,
+            rocm_config.rocm_toolkit_path + "/rccl",
+        ),
+    }
 
     libs_paths = [
         (name, _rocm_lib_paths(repository_ctx, name, path))
@@ -767,9 +799,7 @@ def _create_local_rocm_repository(repository_ctx):
             "%{rocr_runtime_path}": rocm_config.rocm_toolkit_path + "/lib",
             "%{rocr_runtime_library}": "hsa-runtime64",
             "%{hip_runtime_path}": rocm_config.rocm_toolkit_path + "/hip/lib",
-            "%{hip_runtime_library}": "hip_hcc",
-            "%{hcc_runtime_path}": rocm_config.rocm_toolkit_path + "/hcc/lib",
-            "%{hcc_runtime_library}": "mcwamp",
+            "%{hip_runtime_library}": "amdhip64",
             "%{crosstool_verbose}": _crosstool_verbose(repository_ctx),
             "%{gcc_host_compiler_path}": str(cc),
             "%{rocm_amdgpu_targets}": ",".join(
