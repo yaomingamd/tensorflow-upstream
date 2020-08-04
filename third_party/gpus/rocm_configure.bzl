@@ -440,43 +440,11 @@ def _find_libs(repository_ctx, rocm_config, bash_bin):
     Returns:
       Map of library names to structs of filename and path
     """
-    return {
-        "hip": _find_rocm_lib(
-            "amdhip64",
-            repository_ctx,
-            rocm_config.rocm_toolkit_path,
-        ),
-        "rocblas": _find_rocm_lib(
-            "rocblas",
-            repository_ctx,
-            rocm_config.rocm_toolkit_path + "/rocblas",
-        ),
-        "rocfft": _find_rocm_lib(
-            "rocfft",
-            repository_ctx,
-            rocm_config.rocm_toolkit_path + "/rocfft",
-        ),
-        "hiprand": _find_rocm_lib(
-            "hiprand",
-            repository_ctx,
-            rocm_config.rocm_toolkit_path + "/hiprand",
-        ),
-        "miopen": _find_rocm_lib(
-            "MIOpen",
-            repository_ctx,
-            rocm_config.rocm_toolkit_path + "/miopen",
-        ),
-        "rccl": _find_rocm_lib(
-            "rccl",
-            repository_ctx,
-            rocm_config.rocm_toolkit_path + "/rccl",
-        ),
-    }
 
     libs_paths = [
         (name, _rocm_lib_paths(repository_ctx, name, path))
         for name, path in [
-            ("hip_hcc", rocm_config.rocm_toolkit_path),
+            ("amdhip64", rocm_config.rocm_toolkit_path),
             ("rocblas", rocm_config.rocm_toolkit_path + "/rocblas"),
             ("rocfft", rocm_config.rocm_toolkit_path + "/rocfft"),
             ("hiprand", rocm_config.rocm_toolkit_path + "/hiprand"),
@@ -713,7 +681,7 @@ def _create_local_rocm_repository(repository_ctx):
         "rocm/BUILD",
         tpl_paths["rocm:BUILD"],
         {
-            "%{hip_lib}": rocm_libs["hip_hcc"].file_name,
+            "%{amdhip64}": rocm_libs["amdhip64"].file_name,
             "%{rocblas_lib}": rocm_libs["rocblas"].file_name,
             "%{rocfft_lib}": rocm_libs["rocfft"].file_name,
             "%{hiprand_lib}": rocm_libs["hiprand"].file_name,
