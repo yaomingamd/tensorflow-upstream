@@ -8,104 +8,96 @@ This instruction provides a starting point for TensorFlow ROCm port (mostly via 
 ## Install ROCm
 
 ```
-export ROCM_PATH=/opt/rocm
-export DEBIAN_FRONTEND noninteractive
-sudo apt update && sudo apt install -y wget software-properties-common 
-```
+# ROCm repo location
+# FIXME: update repo location
+#export RPM_ROCM_REPO=http://repo.radeon.com/rocm/yum/3.7
+export RPM_ROCM_REPO=http://compute-artifactory.amd.com/artifactory/rocm-osdb-centos-8.1/compute-rocm-dkms-no-npi-hipclang-3333
 
-Add the ROCm repository:  
-```
-wget -qO - http://repo.radeon.com/rocm/apt/debian/rocm.gpg.key | sudo apt-key add -
-sudo sh -c 'echo deb [arch=amd64] http://repo.radeon.com/rocm/apt/debian/ xenial main > /etc/apt/sources.list.d/rocm.list'
-```
-Tensorflow CSB nigtly build requires ROCm2.8, use the follwoing ROCm repository instead:
-```
-wget -qO - http://repo.radeon.com/rocm/apt/debian/rocm.gpg.key | sudo apt-key add -
-sudo sh -c 'echo deb [arch=amd64] http://repo.radeon.com/rocm/apt/2.8.0/ xenial main > /etc/apt/sources.list.d/rocm.list'
-```
+# Enable extra repositories
+yum --enablerepo=extras install -y epel-release
 
-Install misc pkgs:
-```
-sudo apt-get update && sudo apt-get install -y \
-  build-essential \
-  clang \
-  clang-format \
-  clang-tidy \
-  cmake \
-  cmake-qt-gui \
-  ssh \
-  curl \
-  apt-utils \
-  pkg-config \
-  g++-multilib \
-  git \
-  libunwind-dev \
-  libfftw3-dev \
-  libelf-dev \
-  libncurses5-dev \
-  libpthread-stubs0-dev \
-  vim \
-  gfortran \
-  libboost-program-options-dev \
-  libssl-dev \
-  libboost-dev \
-  libboost-system-dev \
-  libboost-filesystem-dev \
-  rpm \
-  wget && \
-  sudo apt-get clean && \
-  sudo rm -rf /var/lib/apt/lists/*
-```
+# Install required base build and packaging commands for ROCm
+yum -y install \
+    bc \
+    cmake \
+    cmake3 \
+    dkms \
+    dpkg \
+    elfutils-libelf-devel \
+    expect \
+    file \
+    gettext \
+    gcc-c++ \
+    git \
+    libgcc \
+    ncurses \
+    ncurses-base \
+    ncurses-libs \
+    numactl-devel \
+    numactl-libs \
+    libssh \
+    libunwind-devel \
+    libunwind \
+    llvm \
+    llvm-libs \
+    make \
+    openssl \
+    openssl-libs \
+    openssh \
+    openssh-clients \
+    pciutils \
+    pciutils-devel \
+    pciutils-libs \
+    python36 \
+    python36-devel \
+    pkgconfig \
+    qemu-kvm \
+    rpm \
+    rpm-build \
+    subversion \
+    wget
 
-Install ROCm pkgs:
-```
-sudo apt-get update && \
-    sudo apt-get install -y --allow-unauthenticated \
-    rocm-dkms rocm-dev rocm-libs hipcub rccl \
-    rocm-device-libs \
-    hsa-ext-rocr-dev hsakmt-roct-dev hsa-rocr-dev \
-    rocm-opencl rocm-opencl-dev \
-    rocm-utils \
-    miopen-hip miopengemm
-```
+# Add the ROCm package repo location
+echo -e "[ROCm]\nname=ROCm\nbaseurl=$RPM_ROCM_REPO\nenabled=1\ngpgcheck=0" >> /etc/yum.repos.d/rocm.repo
 
-Add username to 'video' group and reboot:  
-```
-sudo adduser $LOGNAME video
-sudo reboot
-```
+# Install the ROCm rpms
+sudo yum clean all
+sudo yum install -y rocm-dev
+sudo yum install -y miopen-hip miopengemm rocblas rocrand rocfft hipblas rocprim hipcub rccl
 
-## Install required python packages
+# Ensure the ROCm target list is set up
+bash -c 'echo -e "gfx803\ngfx900\ngfx906\ngfx908" >> $ROCM_PATH/bin/target.lst'
 
-On Python 2-based systems:
-```
-sudo apt-get update && sudo apt-get install -y \
-    python-numpy \
-    python-dev \
-    python-wheel \
-    python-mock \
-    python-future \
-    python-pip \
-    python-yaml \
-    python-setuptools && \
-    sudo apt-get clean && \
-    sudo rm -rf /var/lib/apt/lists/*
-```
+# Install Python & dependencies
+pip3.6 install --user \
+    cget \
+    pyyaml \
+                pip \
+    setuptools==39.1.0 \
+                virtualenv \
+                absl-py \
+                six==1.10.0 \
+                protobuf==3.6.1 \
+                numpy==1.18.2 \
+                scipy==1.4.1 \
+                scikit-learn==0.19.1 \
+                pandas==0.19.2 \
+                gnureadline \
+                bz2file \
+                wheel==0.29.0 \
+                portpicker \
+                werkzeug \
+                grpcio \
+                astor \
+                gast \
+                termcolor \
+                h5py==2.8.0 \
+                keras_preprocessing==1.0.5
 
-On Python 3-based systems:
-```
-sudo apt-get update && sudo apt-get install -y \
-    python3-numpy \
-    python3-dev \
-    python3-wheel \
-    python3-mock \
-    python3-future \
-    python3-pip \
-    python3-yaml \
-    python3-setuptools && \
-    sudo apt-get clean && \
-    sudo rm -rf /var/lib/apt/lists/*
-```
+# Install ROCm manylinux2010 WHL 
+wget <location of WHL file>
+pip3.6 ./tensorflow*linux_x86_64.whl
+
 ## Install Tensorflow Community Supported Builds 
 
 Link to the upstream Tensorflow CSB doc:
