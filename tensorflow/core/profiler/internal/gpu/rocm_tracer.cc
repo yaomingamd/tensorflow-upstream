@@ -430,11 +430,16 @@ class RocmApiCallbackImpl {
             data->args.hipHccModuleLaunchKernel.blockDimY;
         event.kernel_info.block_z =
             data->args.hipHccModuleLaunchKernel.blockDimZ;
-        event.kernel_info.grid_x = data->args.hipHccModuleLaunchKernel.gridDimX;
-        event.kernel_info.grid_y = data->args.hipHccModuleLaunchKernel.gridDimY;
-        event.kernel_info.grid_z = data->args.hipHccModuleLaunchKernel.gridDimZ;
-        event.kernel_info.dynamic_shared_memory_usage =
-            data->args.hipHccModuleLaunchKernel.sharedMemBytes;
+
+        event.kernel_info.grid_x =
+            data->args.hipHccModuleLaunchKernel.globalWorkSizeX /
+            event.kernel_info.block_x;
+        event.kernel_info.grid_y =
+            data->args.hipHccModuleLaunchKernel.globalWorkSizeY /
+            event.kernel_info.block_y;
+        event.kernel_info.grid_z =
+            data->args.hipHccModuleLaunchKernel.globalWorkSizeZ /
+            event.kernel_info.block_z;
 #else
         event.kernel_info.dynamic_shared_memory_usage =
             data->args.hipHccModuleLaunchKernel.sharedMemBytes;
