@@ -755,7 +755,7 @@ def _create_local_rocm_repository(repository_ctx):
         repository_ctx,
         "rocm:BUILD",
         {
-            "%{hip_lib}": rocm_libs["amdhip64"].file_name,
+            "%{hip_lib}": rocm_libs["hip"].file_name,
             "%{rocblas_lib}": rocm_libs["rocblas"].file_name,
             "%{rocfft_lib}": rocm_libs["rocfft"].file_name,
             "%{hiprand_lib}": rocm_libs["hiprand"].file_name,
