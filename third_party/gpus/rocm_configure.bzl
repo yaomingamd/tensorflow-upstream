@@ -380,7 +380,6 @@ def _find_libs(repository_ctx, rocm_config, bash_bin):
     Returns:
       Map of library names to structs of filename and path
     """
-
     libs_paths = [
         (name, _rocm_lib_paths(repository_ctx, name, path))
         for name, path in [

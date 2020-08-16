@@ -49,7 +49,7 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.3.0-rc0'
+_VERSION = '2.3.0'
 
 REQUIRED_PACKAGES = [
     'absl-py >= 0.7.0',
@@ -63,8 +63,8 @@ REQUIRED_PACKAGES = [
     'numpy >= 1.16.0, < 1.19.0',
     'opt_einsum >= 2.3.2',
     'protobuf >= 3.9.2',
-    'tensorboard >= 2.2.0, < 2.3.0',
-    'tf-estimator-nightly >= 2.3.0.dev2020062301, < 2.3.0.dev2020062302',
+    'tensorboard >= 2.3.0, < 3',
+    'tensorflow_estimator >= 2.3.0, < 2.4.0',
     'termcolor >= 1.1.0',
     'wrapt >= 1.11.1',
     'wheel >= 0.26',
