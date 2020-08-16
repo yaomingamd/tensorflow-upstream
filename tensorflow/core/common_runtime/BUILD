@@ -1015,6 +1015,21 @@ cc_library(
     ],
 )
 
+tf_cuda_library(
+    name = "gpu_fusion_pass",
+    srcs = ["gpu_fusion_pass.cc"],
+    hdrs = ["gpu_fusion_pass.h"],
+    copts = tf_copts(),
+    deps = [
+        ":function",
+        ":optimization_registry",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:graph",
+        "//tensorflow/core:lib",
+    ],
+)
+
 cc_library(
     name = "mkl_cpu_allocator",
     srcs = ["mkl_cpu_allocator.cc"],
@@ -1554,6 +1569,7 @@ tf_cuda_library(
         ":device_set",
         ":entry",
         ":function",
+        ":gpu_fusion_pass",
         ":graph_def_builder_util",
         ":graph_view",
         ":hierarchical_tree_broadcaster",
@@ -2071,7 +2087,6 @@ tf_cuda_cc_test(
     size = "small",
     srcs = ["process_function_library_runtime_test.cc"],
     linkstatic = tf_kernel_tests_linkstatic(),
-    tags = ["no_rocm"],
     deps = [
         ":core_cpu",
         ":core_cpu_internal",

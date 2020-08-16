@@ -40,6 +40,7 @@ limitations under the License.
 #include "tensorflow/core/lib/gtl/map_util.h"
 #include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/core/platform/random.h"
 #include "tensorflow/core/profiler/lib/scoped_annotation.h"
 #include "tensorflow/core/profiler/lib/traceme.h"
 #include "tensorflow/stream_executor/platform.h"
@@ -69,6 +70,15 @@ GpuExecutable::GpuExecutable(
       thunk_schedule_(std::move(thunk_schedule)),
       assignment_(std::move(assignment)) {
   CHECK(has_module() && assignment_);
+#if TENSORFLOW_USE_ROCM
+  // ROCm uses hsaco hashes to distinguish between modules.
+  // Bad things happen if multiple modules with identical code are loaded.
+  binary_.resize(binary_.size() + 16);
+  *(uint64_t*)(&binary_[binary_.size() - 16]) = tensorflow::EnvTime::NowNanos();
+  *(uint64_t*)(&binary_[binary_.size() - 8]) = tensorflow::random::New64();
+  // workaround for a bug in ROCm 3.3 hipModuleLoadData
+  binary_.reserve(binary_.size() + 256);
+#endif
   GpuDebugInfoManager::Get()->RegisterModule(module().name(), shared_module(),
                                              assignment_);
   ComputeThunkAnnotations();
@@ -216,11 +226,22 @@ Status GpuExecutable::ExecuteThunks(
   }
 
   main_stream->ThenWaitFor(&sub_streams);
+
+  std::mutex mx;
+  std::condition_variable cond;
+  bool callback_queued = false;
+
   if (!deferred_host_callbacks.empty()) {
-    auto fn = [deferred_host_callbacks{std::move(deferred_host_callbacks)}]() {
+    callback_queued = true;
+    auto fn = [deferred_host_callbacks{std::move(deferred_host_callbacks)}, &mx, &cond, &callback_queued]() {
       for (auto& callback : deferred_host_callbacks) {
         callback();
       }
+      {
+        std::lock_guard<std::mutex> lk(mx);
+        callback_queued=false;
+      }
+      cond.notify_all();
     };
     if (run_options->run_options().then_execute_function()) {
       (*run_options->run_options().then_execute_function())(main_stream,
@@ -236,6 +257,8 @@ Status GpuExecutable::ExecuteThunks(
   if (do_profile || block_host_until_done) {
     Status block_status = main_stream->BlockHostUntilDone();
     if (!block_status.ok()) {
+      // something went wrong; can't guarantee that callbacks will complete,
+      // so we're not waiting on them
       return InternalError(
           "Failed to complete all kernels launched on stream %p: %s",
           main_stream, block_status.error_message());
@@ -260,7 +283,10 @@ Status GpuExecutable::ExecuteThunks(
               *module().entry_computation()));
     }
   }
-
+  // we need to wait for callbacks explicitly because of a known bug in ROCm
+  // (due to be fixed in 3.4)
+  std::unique_lock<std::mutex> lk(mx);
+  cond.wait(lk, [&callback_queued]{return !callback_queued;});
   return Status::OK();
 }
 

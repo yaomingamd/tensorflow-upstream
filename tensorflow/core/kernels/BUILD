@@ -3124,7 +3124,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "generate_box_proposals_op",
     gpu_srcs = ["generate_box_proposals_op.cu.cc"],
-    deps = [":gpu_prim_hdrs"] + if_cuda([
+    deps = [":gpu_prim_hdrs"] + if_cuda_or_rocm([
         ":non_max_suppression_op_gpu",
     ]),
 )
@@ -4003,6 +4003,7 @@ cc_library(
         ":aggregate_ops",
         ":argmax_op",
         ":batch_matmul_op",
+        ":batch_gemm_op",
         ":betainc_op",
         ":bincount_op",
         ":bucketize_op",
@@ -4114,6 +4115,14 @@ tf_mkl_kernel_library(
         "mkl_matmul_ops_common.h",
     ],
     deps = MATH_DEPS + mkl_deps(),
+)
+
+tf_kernel_library(
+    name = "batch_gemm_op",
+    prefix = "batch_gemm_op",
+    deps = MATH_DEPS + [
+        ":batch_matmul_op"
+    ],
 )
 
 tf_kernel_library(
@@ -4704,6 +4713,7 @@ tf_kernel_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core/util/proto:proto_utils",
+        "//tensorflow/core/profiler/lib:scoped_annotation",
         "//tensorflow/stream_executor/gpu:gpu_asm_opts",
     ] + select({
         ":xsmm_convolutions": [
@@ -4713,6 +4723,7 @@ tf_kernel_library(
     }) + if_cuda([
         "//tensorflow/core/platform/default/build_config:cublas_plugin",
         "//tensorflow/core/platform/default/build_config:cudnn_plugin",
+    ]) + if_cuda_or_rocm([
         "//tensorflow/stream_executor:tf_allocator_adapter",
         "//tensorflow/stream_executor:stream_executor_headers",
         "//tensorflow/core:stream_executor",
@@ -4797,6 +4808,7 @@ cc_library(
         ":depthwise_conv_grad_op",
         ":depthwise_conv_op",
         ":dilation_ops",
+        ":dropout_op",
         ":fused_batch_norm_op",
         ":in_topk_op",
         ":l2loss_op",
@@ -4857,6 +4869,15 @@ tf_kernel_library(
     ]) + if_rocm([
         "@local_config_rocm//rocm:rocprim",
     ]),
+)
+
+tf_kernel_library(
+    name = "dropout_op",
+    prefix = "dropout_op",
+    deps = NN_DEPS + [
+        ":conv_ops",
+        ":random_op",
+    ],
 )
 
 tf_kernel_library(
@@ -6804,6 +6825,7 @@ filegroup(
         "cwise_op_floor.cc",
         "cwise_op_floor_div.cc",
         "cwise_op_floor_mod.cc",
+        "cwise_op_fma.cc",
         "cwise_op_greater.cc",
         "cwise_op_greater_equal.cc",
         "cwise_op_imag.cc",
@@ -8621,6 +8643,26 @@ tf_kernel_library(
     deps = [
         "//tensorflow/core:framework",
         "@icu//:common",
+    ],
+)
+
+tf_kernel_library(
+    name = "gpu_fusion_ops",
+    prefix = "gpu_fusion_ops",
+    deps = [
+        ":bounds_check",
+        ":conv_2d",
+        ":conv_ops_gpu_hdrs",
+        ":image_resizer_state",
+        ":fill_functor",
+        ":ops_util",
+        ":gpu_util_hdrs",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core:nn_ops_op_lib",
+        "//third_party/eigen3",
     ],
 )
 

@@ -49,6 +49,13 @@ using TypesF16F32 = ::testing::Types<float>;
 using TypesF16F32F64 = ::testing::Types<float>;
 using TypesF16F32F64CF64 = ::testing::Types<float>;
 #elif !defined(XLA_BACKEND_DOES_NOT_SUPPORT_FLOAT16) && \
+    !defined(XLA_BACKEND_DOES_NOT_SUPPORT_FLOAT64) && \
+    defined(XLA_BACKEND_DOES_NOT_SUPPORT_COMPLEX)
+using TypesF16F32 = ::testing::Types<Eigen::half, float>;
+using TypesF16F32F64 = ::testing::Types<Eigen::half, float, double>;
+using TypesF16F32F64CF64 =
+    ::testing::Types<Eigen::half, float, double>;
+#elif !defined(XLA_BACKEND_DOES_NOT_SUPPORT_FLOAT16) && \
     !defined(XLA_BACKEND_DOES_NOT_SUPPORT_FLOAT64)
 using TypesF16F32 = ::testing::Types<Eigen::half, float>;
 using TypesF16F32F64 = ::testing::Types<Eigen::half, float, double>;
@@ -300,7 +307,7 @@ template <>
 void ParametricDotTest::ComputeAndCompareR2WithError<Eigen::half>(
     XlaBuilder* builder, const Array2D<Eigen::half>& expected,
     absl::Span<GlobalData* const> arguments) {
-  ErrorSpec error_spec(0.3, 5e-3);
+  ErrorSpec error_spec(0.3, 7e-3);
   ComputeAndCompareR2(builder, expected, arguments, error_spec);
 }
 

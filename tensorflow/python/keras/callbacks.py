@@ -1010,11 +1010,12 @@ class ProgbarLogger(Callback):
       logs.pop('batch', None)
       add_seen = num_steps * batch_size
       self.seen += add_seen
-
     if self.verbose == 1:
       # Only block async when verbose = 1.
       logs = tf_utils.to_numpy_or_python_type(logs)
-      self.progbar.update(self.seen, list(logs.items()), finalize=False)
+      items=list(logs.items())
+      items.sort()
+      self.progbar.update(self.seen, items, finalize=False)
 
   def _finalize_progbar(self, logs):
     logs = logs or {}
@@ -1023,7 +1024,9 @@ class ProgbarLogger(Callback):
       self.target = self.seen
       self.progbar.target = self.seen
     logs = tf_utils.to_numpy_or_python_type(logs)
-    self.progbar.update(self.seen, list(logs.items()), finalize=True)
+    items=list(logs.items())
+    items.sort()
+    self.progbar.update(self.seen, items, finalize=True)
 
 
 @keras_export('keras.callbacks.History')

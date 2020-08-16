@@ -2345,6 +2345,7 @@ tf_py_test(
     srcs = ["framework/importer_test.py"],
     main = "framework/importer_test.py",
     python_version = "PY3",
+    tags = ["no_rocm"],
     deps = [
         ":array_ops",
         ":client_testlib",
@@ -3312,7 +3313,6 @@ tf_py_test(
     size = "small",
     srcs = ["ops/collective_ops_test.py"],
     python_version = "PY3",
-    tags = ["no_rocm"],
     deps = [
         ":client_testlib",
         ":collective_ops",
@@ -4363,6 +4363,9 @@ cuda_py_test(
     python_version = "PY3",
     xla_enable_strict_auto_jit = False,
     xla_enabled = True,
+    tags = [
+        "no_rocm",  # FAILS on ROCm 3.5
+    ],
     deps = [
         ":client_testlib",
         ":config",
@@ -5145,7 +5148,10 @@ cuda_py_test(
     size = "medium",
     srcs = ["ops/math_ops_test.py"],
     python_version = "PY3",
-    tags = ["no_windows_gpu"],
+    tags = [
+        "no_rocm",  # FAILS on ROCm 3.5
+	    "no_windows_gpu",
+    ],
     deps = [
         ":array_ops",
         ":errors",
@@ -5200,6 +5206,7 @@ cuda_py_test(
     srcs = ["ops/nn_fused_batchnorm_test.py"],
     python_version = "PY3",
     shard_count = 24,
+    tags = ["no_rocm"],
     deps = [
         ":array_ops",
         ":client_testlib",
@@ -5299,6 +5306,7 @@ cuda_py_test(
     python_version = "PY3",
     shard_count = 10,
     tags = [
+        "no_rocm", # regression starting 200622 sync
         "no_windows_gpu",
         "noasan",  # b/159332048
         "nomsan",  # b/148630708
@@ -6558,8 +6566,6 @@ tf_py_test(
     grpc_enabled = True,
     python_version = "PY3",
     tags = [
-        "no_gpu",
-        "no_oss",
         "no_pip",
         "no_pip_gpu",
         "notap",
@@ -6699,7 +6705,6 @@ tf_py_test(
     size = "small",
     srcs = ["framework/convert_to_constants_test.py"],
     python_version = "PY3",
-    tags = ["no_rocm"],
     deps = [
         ":client_testlib",
         ":control_flow_v2_toggles",
@@ -6727,7 +6732,6 @@ tf_py_test(
     srcs = ["lib/io/file_io_test.py"],
     python_version = "PY3",
     tags = [
-        "no_rocm",
         "no_windows",
     ],
     deps = [

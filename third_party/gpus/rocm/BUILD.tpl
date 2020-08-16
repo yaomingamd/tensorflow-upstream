@@ -21,6 +21,7 @@ cc_library(
         ".",
         "rocm/include",
         "rocm/include/rocrand",
+        "rocm/include/roctracer",
     ],
     visibility = ["//visibility:public"],
 )
@@ -141,6 +142,13 @@ cc_import(
     name = "hipsparse",
     hdrs = glob(["rocm/include/hipsparse/**",]),
     shared_library = "rocm/lib/%{hipsparse_lib}",
+    visibility = ["//visibility:public"],
+)
+
+cc_import(
+    name = "roctracer",
+    hdrs = glob(["rocm/include/roctracer/**",]),
+    shared_library = "rocm/lib/%{roctracer_lib}",
     visibility = ["//visibility:public"],
 )
 

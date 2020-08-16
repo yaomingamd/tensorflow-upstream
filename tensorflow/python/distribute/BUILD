@@ -189,7 +189,6 @@ py_test(
     srcs = ["distribute_lib_test.py"],
     python_version = "PY3",
     srcs_version = "PY2AND3",
-    tags = ["no_rocm"],
     deps = [
         ":combinations",
         ":distribute_lib",
@@ -1136,7 +1135,7 @@ distribute_py_test(
     shard_count = 5,
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",
+        "no_rocm", # times out on CI
     ],
     tpu_tags = [
         "no_oss",  # b/150954621 Target too big to run serially reliably.
@@ -1599,14 +1598,13 @@ py_library(
 
 distribute_py_test(
     name = "saved_model_save_load_test",
-    size = "medium",
+    size = "large",
     srcs = ["saved_model_save_load_test.py"],
     full_precision = True,
     main = "saved_model_save_load_test.py",
     shard_count = 7,
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",
     ],
     deps = [
         ":saved_model_test_base",
@@ -1616,7 +1614,7 @@ distribute_py_test(
 
 distribute_py_test(
     name = "keras_save_load_test",
-    size = "medium",
+    size = "large",
     srcs = ["keras_save_load_test.py"],
     full_precision = True,
     main = "keras_save_load_test.py",
@@ -1632,14 +1630,13 @@ distribute_py_test(
 
 distribute_py_test(
     name = "saved_model_mixed_api_test",
-    size = "medium",
+    size = "large",
     srcs = ["saved_model_mixed_api_test.py"],
     full_precision = True,
     main = "saved_model_mixed_api_test.py",
     shard_count = 7,
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",
     ],
     deps = [
         ":combinations",

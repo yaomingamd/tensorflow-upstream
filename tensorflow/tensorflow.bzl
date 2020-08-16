@@ -88,6 +88,9 @@ def if_nvcc(a):
 def if_cuda_is_configured_compat(x):
     return if_cuda_is_configured(x)
 
+def if_rocm_is_configured_compat(x):
+    return if_rocm_is_configured(x)
+
 def if_xla_available(if_true, if_false = []):
     return select({
         clean_dep("//tensorflow:with_xla_support"): if_true,
@@ -325,6 +328,7 @@ def tf_copts(
         if_nvcc(["-DTENSORFLOW_USE_NVCC=1"]) +
         if_xla_available(["-DTENSORFLOW_USE_XLA=1"]) +
         if_tensorrt(["-DGOOGLE_TENSORRT=1"]) +
+        if_rocm(["-DTENSORFLOW_USE_ROCM=1"]) +
         if_mkl(["-DINTEL_MKL=1", "-DEIGEN_USE_VML"]) +
         if_mkl_open_source_only(["-DINTEL_MKL_DNN_ONLY"]) +
         if_mkl_v1_open_source_only(["-DENABLE_MKLDNN_V1", "-DENABLE_INTEL_MKL_BFLOAT16"]) +
@@ -1398,11 +1402,11 @@ def _cuda_copts(opts = []):
 def tf_gpu_kernel_library(
         srcs,
         copts = [],
-        cuda_copts = [],
+        gpu_copts = [],
         deps = [],
         hdrs = [],
         **kwargs):
-    copts = copts + tf_copts() + _cuda_copts(opts = cuda_copts) + rocm_copts(opts = cuda_copts)
+    copts = copts + tf_copts() + _cuda_copts(opts = gpu_copts) + rocm_copts(opts = gpu_copts)
     kwargs["features"] = kwargs.get("features", []) + ["-use_header_modules"]
 
     cuda_library(
@@ -1413,6 +1417,7 @@ def tf_gpu_kernel_library(
             clean_dep("//tensorflow/stream_executor/cuda:cudart_stub"),
             clean_dep("//tensorflow/core:gpu_lib"),
         ]) + if_rocm_is_configured([
+            clean_dep("//tensorflow/core:rocm"),
             clean_dep("//tensorflow/core:gpu_lib"),
         ]),
         alwayslink = 1,
@@ -1453,6 +1458,7 @@ def tf_gpu_library(deps = None, cuda_deps = None, copts = tf_copts(), **kwargs):
             clean_dep("//tensorflow/stream_executor/cuda:cudart_stub"),
             "@local_config_cuda//cuda:cuda_headers",
         ]) + if_rocm_is_configured(cuda_deps + [
+            clean_dep("//tensorflow/core:rocm"),
             "@local_config_rocm//rocm:rocm_headers",
         ]),
         copts = (copts + if_cuda(["-DGOOGLE_CUDA=1"]) + if_rocm(["-DTENSORFLOW_USE_ROCM=1"]) + if_xla_available(["-DTENSORFLOW_USE_XLA=1"]) + if_mkl(["-DINTEL_MKL=1"]) + if_mkl_open_source_only(["-DINTEL_MKL_DNN_ONLY"]) + if_enable_mkl(["-DENABLE_MKL"]) + if_tensorrt(["-DGOOGLE_TENSORRT=1"])),
