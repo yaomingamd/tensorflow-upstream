@@ -154,14 +154,13 @@ tf_cuda_library(
     deps = [
         "//tensorflow/core:lib",
         "//tensorflow/core/profiler/internal:annotation_stack",
+        "//tensorflow/stream_executor/rocm:roctracer_wrapper",
         "@com_google_absl//absl/container:fixed_array",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/container:node_hash_set",
         "@com_google_absl//absl/types:optional",
-    ] + if_rocm_is_configured_compat([
-        "@local_config_rocm//rocm:roctracer",
-    ]),
+    ],
 )
 
 tf_cuda_library(
