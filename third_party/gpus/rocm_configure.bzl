@@ -195,6 +195,7 @@ def _rocm_include_path(repository_ctx, rocm_confiagi, bash_bin):
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/9.0.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/10.0.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/11.0.0/include")
+    inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/12.0.0/include")
 
     return inc_dirs
 
@@ -379,11 +380,10 @@ def _find_libs(repository_ctx, rocm_config, bash_bin):
     Returns:
       Map of library names to structs of filename and path
     """
-
     libs_paths = [
         (name, _rocm_lib_paths(repository_ctx, name, path))
         for name, path in [
-            ("hip_hcc", rocm_config.rocm_toolkit_path),
+            ("amdhip64", rocm_config.rocm_toolkit_path),
             ("rocblas", rocm_config.rocm_toolkit_path + "/rocblas"),
             ("rocfft", rocm_config.rocm_toolkit_path + "/rocfft"),
             ("hiprand", rocm_config.rocm_toolkit_path + "/hiprand"),
@@ -623,7 +623,7 @@ def _create_local_rocm_repository(repository_ctx):
         "rocm/BUILD",
         tpl_paths["rocm:BUILD"],
         {
-            "%{hip_lib}": rocm_libs["hip_hcc"].file_name,
+            "%{hip_lib}": rocm_libs["amdhip64"].file_name,
             "%{rocblas_lib}": rocm_libs["rocblas"].file_name,
             "%{rocfft_lib}": rocm_libs["rocfft"].file_name,
             "%{hiprand_lib}": rocm_libs["hiprand"].file_name,
@@ -711,9 +711,7 @@ def _create_local_rocm_repository(repository_ctx):
             "%{rocr_runtime_path}": rocm_config.rocm_toolkit_path + "/lib",
             "%{rocr_runtime_library}": "hsa-runtime64",
             "%{hip_runtime_path}": rocm_config.rocm_toolkit_path + "/hip/lib",
-            "%{hip_runtime_library}": "hip_hcc",
-            "%{hcc_runtime_path}": rocm_config.rocm_toolkit_path + "/hcc/lib",
-            "%{hcc_runtime_library}": "mcwamp",
+            "%{hip_runtime_library}": "amdhip64",
             "%{crosstool_verbose}": _crosstool_verbose(repository_ctx),
             "%{gcc_host_compiler_path}": str(cc),
             "%{rocm_amdgpu_targets}": ",".join(
