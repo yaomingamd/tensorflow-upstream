@@ -314,6 +314,11 @@ cc_library(
 cc_library(
         name = "rocm_helpers",
         srcs = ["rocm_helpers.cu.cc"],
+        hdrs = ["number.hpp",
+            "integral_constant.hpp",
+            "amd_xdlops.hpp",
+            "float_type.hpp"
+        ],
         deps = 
         ["@local_config_rocm//rocm:rocm_headers",
         ],

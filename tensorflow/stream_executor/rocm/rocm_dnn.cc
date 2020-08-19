@@ -42,6 +42,72 @@ limitations under the License.
 #include "tensorflow/stream_executor/stream.h"
 #include "tensorflow/stream_executor/stream_executor_pimpl.h"
 
+//#include <hip/hip_fp16.h>
+
+extern void doConvolveManual(const __half* input1, const __half* input2, __half* output,
+  int wi, int hi, int c, int n, int k);
+void doConvolveManual_fw7x7x2(const __half* data, const __half* filter, __half* output, hipStream_t stream);
+//#if !defined(__GNUC__)
+
+float __internal_half2float(__half fx) //unsigned short x)
+{
+  unsigned short x = *(unsigned short*)&fx;
+    unsigned int sign = ((x >> 15) & 1);
+    unsigned int exponent = ((x >> 10) & 0x1f);
+    unsigned int mantissa = ((x & 0x3ff) << 13);
+
+    if (exponent == 0x1fU) { /* NaN or Inf */
+        mantissa = (mantissa ? (sign = 0, 0x7fffffU) : 0);
+        exponent = 0xffU;
+    } else if (!exponent) { /* Denorm or Zero */
+        if (mantissa) {
+            unsigned int msb;
+            exponent = 0x71U;
+            do {
+                msb = (mantissa & 0x400000U);
+                mantissa <<= 1; /* normalize */
+                --exponent;
+            } while (!msb);
+            mantissa &= 0x7fffffU; /* 1.mantissa is implicit */
+        }
+    } else {
+        exponent += 0x70U;
+    }
+    unsigned int u = ((sign << 31) | (exponent << 23) | mantissa);
+    float f;
+    memcpy(&f, &u, sizeof(u));
+
+    return f;
+}
+
+
+
+extern "C" float calc_max_abs_diff(const __half* p1, const __half* p2, int n) {
+  float x=0;
+  int first_mismatch=-1;
+  int n_mismatch=0;
+  for(int i=0; i<n; i++) {
+   float delta = (float)fabs(__internal_half2float(p1[i])-__internal_half2float(p2[i]));
+   if(delta>0.01 && first_mismatch<0) {
+     printf("First mismatch %d %f %f\n", i, __internal_half2float(p1[i]), __internal_half2float(p2[i]));
+     first_mismatch=i;
+   }
+   if(delta>0.01)
+    n_mismatch++;
+    x=std::max(x, delta);
+  }
+  printf("%d / %d mismatch\n", n_mismatch, n);
+  return x;
+}
+
+extern "C" float calc_max_abs(const __half* p1, int n) {
+  float x=0;
+  for(int i=0; i<n; i++)
+    x=std::max(x, (float)fabs(__internal_half2float(p1[i])));
+  return x;
+}
+
+//#endif
 namespace {
 
 // Converts (via narrowing) a type T value to a type U, and checks that the
@@ -3008,6 +3074,38 @@ port::Status MIOpenSupport::DoPrepareForConvolution(
   return port::Status::OK();
 }
 
+
+float manual_half2float(__half fx)
+{
+  unsigned short x = *(unsigned short*)&fx;
+    unsigned int sign = ((x >> 15) & 1);
+    unsigned int exponent = ((x >> 10) & 0x1f);
+    unsigned int mantissa = ((x & 0x3ff) << 13);
+
+    if (exponent == 0x1fU) { /* NaN or Inf */
+        mantissa = (mantissa ? (sign = 0, 0x7fffffU) : 0);
+        exponent = 0xffU;
+    } else if (!exponent) { /* Denorm or Zero */
+        if (mantissa) {
+            unsigned int msb;
+            exponent = 0x71U;
+            do {
+                msb = (mantissa & 0x400000U);
+                mantissa <<= 1; /* normalize */
+                --exponent;
+            } while (!msb);
+            mantissa &= 0x7fffffU; /* 1.mantissa is implicit */
+        }
+    } else {
+        exponent += 0x70U;
+    }
+    unsigned int u = ((sign << 31) | (exponent << 23) | mantissa);
+    float f;
+    memcpy(&f, &u, sizeof(u));
+
+    return f;
+}
+
 // NOTE(keveman): Temporary data layout transformation until MIOpen supports
 // kBatchYXDepth for backward pass. This function allocates temporary memory,
 // lays out the source data into the temporary but in the kBatchDepthXY
@@ -3100,6 +3198,35 @@ port::Status MIOpenSupport::DoConvolve(
   miopenStatus_t status = miopenStatusSuccess;
   switch (kind) {
     case dnn::ConvolutionKind::FORWARD: {
+
+      __half* temp = 0;
+      bool verify = false;
+      //tensorflow::ReadBoolFromEnvVar("MFMA_VERIFY", false, &verify);
+      int wi=230, hi=230, n=256, c=3, x=7, y=7, k=64, u=2, v=2;
+      int wo = (wi-x+1)/u, ho=(hi-y+1)/v;
+
+      int nd=2;
+      std::vector<int> stride(nd);
+      std::vector<int> pad(nd);
+      std::vector<int> dilation(nd);
+      int dimsA[4]={0,0,0,0};
+      int stridesA[4]={0,0,0,0};
+      miopenConvolutionMode_t c_mode;
+      miopenDataType_t t;
+       wrap::miopenGetConvolutionNdDescriptor(
+           conv.handle(), nd, &nd, pad.data(), stride.data(), dilation.data(), &c_mode);
+           wrap::miopenGetTensorDescriptor(input_nd.handle(),
+           &t, dimsA, stridesA);
+
+      bool manual;
+      tensorflow::ReadBoolFromEnvVar("MFMA_CONVOLVE", false, &manual);
+
+        //    printf("%d %d %d %d\n", dimsA[0], dimsA[1], dimsA[2], dimsA[3]);
+      if(dimsA[2]==230 && dimsA[3]==230 && manual && !verify) {
+          doConvolveManual_fw7x7x2((const __half*)input_data.opaque(), (const __half*)filter_data.opaque(), (__half*)output_data.opaque(), (hipStream_t)AsGpuStream(stream));
+          break;
+      }
+
       if (use_immediate_mode_) {
         status = wrap::miopenConvolutionForwardImmediate(
             miopen.handle(), filter.handle(), filter_data.opaque(),
@@ -3115,7 +3242,29 @@ port::Status MIOpenSupport::DoConvolve(
             &beta, output_nd.handle(), output_data.opaque(),
             scratch_memory.opaque(), scratch_memory.size());
       }
-
+#if 0
+      if(dimsA[2]==230 && dimsA[3]==230 && verify)
+      {
+      //     printf("%d %d %d %d\n", dimsA[0], dimsA[1], dimsA[2], dimsA[3]);
+           int out=wo*ho*k*n;
+           hipMalloc(&temp, out*2);
+           doConvolveManual((const __half*)input_data.opaque(), (const __half*)filter_data.opaque(), temp);
+           hipDeviceSynchronize();
+           std::vector<__half> checks[2];
+           checks[0].resize(out);
+           checks[1].resize(out);
+           hipMemcpy(&checks[0][0], output_data.opaque(), out*2, hipMemcpyDeviceToHost);
+           hipMemcpy(&checks[1][0], temp, out*2, hipMemcpyDeviceToHost);
+            printf("%f %f\n", checks[0][0], checks[1][0]);
+            float maxError=calc_max_abs_diff(&checks[0][0], &checks[1][0], out), ampl=calc_max_abs(&checks[0][0], out);
+      //     for(int i=0; i<out; i++) {
+      //       ampl=max(ampl, fabs(float(checks[0][i])));
+      //       maxError=max(maxError, float(checks[0][i])-float (checks[1][i]));
+      //     }
+           printf("%f / %f\n", maxError, ampl);
+           hipFree(temp);
+       }
+#endif
       break;
     }
     case dnn::ConvolutionKind::BACKWARD_DATA: {
@@ -3146,6 +3295,69 @@ port::Status MIOpenSupport::DoConvolve(
     }
     case dnn::ConvolutionKind::BACKWARD_FILTER: {
       // TBD: remove once MIOpen supports kBatchYXDepth for backward pass.
+     int x=1, y=1;
+     /*
+      int wi=14, hi=14, c=256, n=256; // data is 256 batch of 256x14x14
+       int x=1, y=1, k=1024;
+      int wo = wi, ho = hi;
+     */
+         __half* temp = 0;
+         int out=0;
+     
+      int nd=2;
+      std::vector<int> stride(nd);
+      std::vector<int> pad(nd);
+      std::vector<int> dilation(nd);
+      int dimsA[4]={0,0,0,0};
+      int stridesA[4]={0,0,0,0};
+      int dimsF[4]={0,0,0,0};
+      int stridesF[4]={0,0,0,0};
+      int dimsO[4]={0,0,0,0};
+      int stridesO[4]={0,0,0,0};
+      miopenConvolutionMode_t c_mode;
+      miopenDataType_t t;
+      wrap::miopenGetConvolutionNdDescriptor(
+      conv.handle(), nd, &nd, pad.data(), stride.data(), dilation.data(), &c_mode);
+      wrap::miopenGetTensorDescriptor(output_nd.handle(), &t, dimsO, stridesO);
+      wrap::miopenGetTensorDescriptor(input_nd.handle(), &t, dimsA, stridesA);
+      wrap::miopenGetTensorDescriptor(filter.handle(), &t, dimsF, stridesF);
+
+      string str;
+      tensorflow::ReadStringFromEnvVar("MFMA_CFG", "256x14x14x1024", &str);
+      bool verify;
+      tensorflow::ReadBoolFromEnvVar("MFMA_VERIFY", false, &verify);
+      int tgt_c, tgt_k, tgt_wi, tgt_hi;
+      sscanf(str.c_str(), "%dx%dx%dx%d", &tgt_c, &tgt_k, &tgt_wi, &tgt_hi);
+
+      int wi=dimsO[2], hi=dimsO[3], c=dimsF[0], k=dimsF[1], n=dimsO[0];
+      if(dimsF[2]==1 && dimsF[3]==1 && dilation[dilation.size()-2]==1 && dilation[dilation.size()-1]==1
+          && dimsO[2]==dimsA[2] && dimsO[3]==dimsA[3]
+        && !(k & 15) && !(c & 15) && !((wi*hi)&3)
+        && c==tgt_c && wi==tgt_wi && hi==tgt_hi && k==tgt_k)
+      {
+        if(!verify)
+        {
+           doConvolveManual((const __half*)output_data.opaque(), (const __half*)input_data.opaque(), 
+              (__half*)filter_data.opaque(), wi, hi, c, n, k);
+           hipDeviceSynchronize();
+           break;
+        }
+        else
+        {
+            out=k*c;
+            printf("Input(dy) %d %d %d %d  %d %d %d %d  ",
+              dimsO[0],dimsO[1],dimsO[2],dimsO[3],
+              stridesO[0],stridesO[1],stridesO[2],stridesO[3]);
+            printf("Input(x) %d %d %d %d  Filter (dw) %d %d %d %d  %d %d %d %d ", dimsA[0], dimsA[1], dimsA[2], dimsA[3], dimsF[0], dimsF[1], dimsF[2], dimsF[3],
+              stridesF[0], stridesF[1], stridesF[2], stridesF[3]);
+            dilation.resize(4);
+            printf("Dilation %d %d %d %d\n", dilation[0], dilation[1], dilation[2], dilation[3]);
+            hipMalloc(&temp, out*2);
+            hipDeviceSynchronize();
+             doConvolveManual((const __half*)output_data.opaque(), (const __half*)input_data.opaque(), temp, wi, hi, c, n, k);
+            hipDeviceSynchronize();
+        }
+      }
       BatchDescriptor output_back_descriptor;
       output_back_descriptor.CloneFrom(output_descriptor);
       std::unique_ptr<TemporaryDeviceMemory<uint8>> transform_scratch;
@@ -3169,7 +3381,43 @@ port::Status MIOpenSupport::DoConvolve(
             &beta, filter.handle(), filter_data.opaque(),
             scratch_memory.opaque(), scratch_memory.size());
       }
+
+  //    printf("%d %d %d %d\n", dimsA[0], dimsA[1], dimsA[2], dimsA[3]);
+#if 1
+    if(out>0) 
+    {
+      int wi=dimsO[2], hi=dimsO[3], c=dimsF[0], k=dimsF[1], n=dimsO[0];
+     std::vector<__half> checks[2];
+     checks[0].resize(out);
+     checks[1].resize(out);
+     hipMemcpy(&checks[0][0], filter_data.opaque(), out*2, hipMemcpyDeviceToHost);
+     hipMemcpy(&checks[1][0], temp, out*2, hipMemcpyDeviceToHost);
+
+     for(int i=0; i<5; i++)
+       printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
+     for(int i=64; i<64+5; i++)
+        printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
+     for(int i=128; i<128+5; i++)
+        printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
+     for(int i=256; i<256+5; i++)
+        printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
+      //printf("#1 %f %f\n", manual_half2float(checks[0][1]), manual_half2float(checks[1][1]));
+      //printf("#256 %f %f\n", manual_half2float(checks[0][256]), manual_half2float(checks[1][256]));
+      //printf("#1024 %f %f\n", manual_half2float(checks[0][1024]), manual_half2float(checks[1][1024]));
+      printf("#-1 %f %f\n", manual_half2float(checks[0][k*c-1]), manual_half2float(checks[1][k*c-1]));
+
+     float maxError=calc_max_abs_diff(&checks[0][0], &checks[1][0], out), ampl=calc_max_abs(&checks[0][0], out);
+//     for(int i=0; i<out; i++) {
+//     ampl=max(ampl, fabs(float(checks[0][i])));
+//     maxError=max(maxError, float(checks[0][i])-float (checks[1][i]));
+//    }
+     printf("%f / %f\n", maxError, ampl);
+     hipFree(temp);
+  }
+#endif
+
       break;
+
     }
     default:
       return port::InternalError(
