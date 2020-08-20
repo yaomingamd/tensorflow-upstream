@@ -189,6 +189,8 @@ def _rocm_include_path(repository_ctx, rocm_config, bash_bin):
 
     # Add HIP-Clang headers (realpath relative to compiler binary)
     rocm_toolkit_path = realpath(repository_ctx, rocm_config.rocm_toolkit_path, bash_bin)
+    inc_dirs.append(rocm_toolkit_path + "/hsa/include")
+    inc_dirs.append(rocm_toolkit_path + "/hip/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/8.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/9.0.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/10.0.0/include")
