@@ -1,4 +1,4 @@
-# Tensorflow ROCm port: Basic installation
+# Tensorflow ROCm port: Basic installation on CentOS
 
 ## Intro
 
