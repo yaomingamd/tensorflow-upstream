@@ -2,8 +2,9 @@
 
 ## Intro
 
-This instruction provides a starting point for TensorFlow ROCm port on CentOS.
-*Note*: it is recommended to start with a clean CentOS 8.2 system
+These instructions provide a starting point for using the TensorFlow ROCm port on CentOS.
+
+*Note*: it is recommended to start with a clean CentOS 7.8 system
 
 ## Install ROCm
 
@@ -67,7 +68,7 @@ echo -e "[ROCm]\nname=ROCm\nbaseurl=$RPM_ROCM_REPO\nenabled=1\ngpgcheck=0" >> /e
 # Install the ROCm rpms
 sudo yum clean all
 sudo yum install -y rocm-dev
-sudo yum install -y miopen-hip miopengemm rocblas rocrand rocfft hipblas rocprim hipcub rccl
+sudo yum install -y hipblas hipcub hipsparse miopen-hip miopengemm rccl rocblas rocfft rocprim rocrand
 ```
 
 Ensure the ROCm target list is set up
@@ -110,5 +111,12 @@ pip3.6 install --user \
 ```
 # Install ROCm manylinux WHL 
 wget <location of WHL file>
-pip3.6 ./tensorflow*linux_x86_64.whl
+pip3.6 install --user ./tensorflow*linux_x86_64.whl
+```
+
+## Quick sanity test
+
+```
+cd ~ && git clone -b cnn_tf_v1.15_compatible https://github.com/tensorflow/benchmarks.git
+python3.6 ~/benchmarks/scripts/tf_cnn_benchmarks/tf_cnn_benchmarks.py --model=resnet50
 ```
