@@ -45,8 +45,9 @@ limitations under the License.
 //#include <hip/hip_fp16.h>
 
 extern void doConvolveManual(const __half* input1, const __half* input2, __half* output,
-  int wi, int hi, int c, int n, int k);
-void doConvolveManual_fw7x7x2(const __half* data, const __half* filter, __half* output, hipStream_t stream);
+  int wi, int hi, int c, int n, int k, hipStream_t stream,
+  void* scratch, int scratch_size);
+void doConvolveManual_fw7x7x2(const __half* data, const __half* filter, __half* output, int n, hipStream_t stream);
 //#if !defined(__GNUC__)
 
 float __internal_half2float(__half fx) //unsigned short x)
@@ -87,16 +88,19 @@ extern "C" float calc_max_abs_diff(const __half* p1, const __half* p2, int n) {
   int first_mismatch=-1;
   int n_mismatch=0;
   for(int i=0; i<n; i++) {
-   float delta = (float)fabs(__internal_half2float(p1[i])-__internal_half2float(p2[i]));
-   if(delta>0.01 && first_mismatch<0) {
-     printf("First mismatch %d %f %f\n", i, __internal_half2float(p1[i]), __internal_half2float(p2[i]));
-     first_mismatch=i;
+    float v1 = __internal_half2float(p1[i]);
+    float v2 = __internal_half2float(p2[i]);
+    float delta = fabs(v1-v2);
+    if(delta>0.01 && delta>0.003*fabs(v1)) {
+       if(first_mismatch<0) {
+      printf("First mismatch %d %f %f\n", i, v1, v2);
+      first_mismatch=i;
+      }
+      n_mismatch++;
    }
-   if(delta>0.01)
-    n_mismatch++;
     x=std::max(x, delta);
   }
-  printf("%d / %d mismatch\n", n_mismatch, n);
+  printf("%d / %d mismatch (%.2f%%)\n", n_mismatch, n, float(n_mismatch)*100./n);
   return x;
 }
 
@@ -3200,7 +3204,7 @@ port::Status MIOpenSupport::DoConvolve(
     case dnn::ConvolutionKind::FORWARD: {
 
       __half* temp = 0;
-      bool verify = false;
+      //bool verify = false;
       //tensorflow::ReadBoolFromEnvVar("MFMA_VERIFY", false, &verify);
       int wi=230, hi=230, n=256, c=3, x=7, y=7, k=64, u=2, v=2;
       int wo = (wi-x+1)/u, ho=(hi-y+1)/v;
@@ -3211,19 +3215,35 @@ port::Status MIOpenSupport::DoConvolve(
       std::vector<int> dilation(nd);
       int dimsA[4]={0,0,0,0};
       int stridesA[4]={0,0,0,0};
+      int dimsF[4]={0,0,0,0};
+      int stridesF[4]={0,0,0,0};
       miopenConvolutionMode_t c_mode;
       miopenDataType_t t;
        wrap::miopenGetConvolutionNdDescriptor(
            conv.handle(), nd, &nd, pad.data(), stride.data(), dilation.data(), &c_mode);
            wrap::miopenGetTensorDescriptor(input_nd.handle(),
            &t, dimsA, stridesA);
+      wrap::miopenGetTensorDescriptor(filter.handle(), &t, dimsF, stridesF);
 
       bool manual;
       tensorflow::ReadBoolFromEnvVar("MFMA_CONVOLVE", false, &manual);
-
-        //    printf("%d %d %d %d\n", dimsA[0], dimsA[1], dimsA[2], dimsA[3]);
-      if(dimsA[2]==230 && dimsA[3]==230 && manual && !verify) {
-          doConvolveManual_fw7x7x2((const __half*)input_data.opaque(), (const __half*)filter_data.opaque(), (__half*)output_data.opaque(), (hipStream_t)AsGpuStream(stream));
+      bool verify=false;
+      if(manual && dimsA[2]==230 && dimsA[3]==230
+        && dimsF[0]==64 && dimsF[1]==3 && dimsF[2]==7 && dimsF[3]==7
+        && dilation[0]==1 && dilation[1]==1
+        && !verify) {
+          static int call_count=0;
+          //if(call_count==0)
+          //  printf("%d %d %d\n", dilation.size(), dilation[0], dilation[1]);
+           // printf("%d %d %d %d  %d %d %d %d\n",
+           //   dimsF[0],dimsF[1],dimsF[2],dimsF[3],
+           //     stridesF[0],stridesF[1],stridesF[2],stridesF[3]);
+          call_count++;
+          doConvolveManual_fw7x7x2((const __half*)input_data.opaque(),
+            (const __half*)filter_data.opaque(), 
+            (__half*)output_data.opaque(), n, 
+            //(hipStream_t)0);
+            (hipStream_t)AsGpuStreamValue(stream));
           break;
       }
 
@@ -3248,7 +3268,7 @@ port::Status MIOpenSupport::DoConvolve(
       //     printf("%d %d %d %d\n", dimsA[0], dimsA[1], dimsA[2], dimsA[3]);
            int out=wo*ho*k*n;
            hipMalloc(&temp, out*2);
-           doConvolveManual((const __half*)input_data.opaque(), (const __half*)filter_data.opaque(), temp);
+           doConvolveManual_fw7x7x2((const __half*)input_data.opaque(), (const __half*)filter_data.opaque(), temp, n, (hipStream_t)0);
            hipDeviceSynchronize();
            std::vector<__half> checks[2];
            checks[0].resize(out);
@@ -3322,24 +3342,35 @@ port::Status MIOpenSupport::DoConvolve(
       wrap::miopenGetTensorDescriptor(input_nd.handle(), &t, dimsA, stridesA);
       wrap::miopenGetTensorDescriptor(filter.handle(), &t, dimsF, stridesF);
 
-      string str;
-      tensorflow::ReadStringFromEnvVar("MFMA_CFG", "256x14x14x1024", &str);
-      bool verify;
+      bool manual;
+      tensorflow::ReadBoolFromEnvVar("MFMA_CONVOLVE", false, &manual);
+     
+      //string str;
+      //tensorflow::ReadStringFromEnvVar("MFMA_CFG", "256x14x14x1024", &str);
+      bool verify=false;
       tensorflow::ReadBoolFromEnvVar("MFMA_VERIFY", false, &verify);
-      int tgt_c, tgt_k, tgt_wi, tgt_hi;
-      sscanf(str.c_str(), "%dx%dx%dx%d", &tgt_c, &tgt_k, &tgt_wi, &tgt_hi);
-
+      //int tgt_c, tgt_k, tgt_wi, tgt_hi;
+      //sscanf(str.c_str(), "%dx%dx%dx%d", &tgt_c, &tgt_k, &tgt_wi, &tgt_hi);
+      static int hit_calls=0;
       int wi=dimsO[2], hi=dimsO[3], c=dimsF[0], k=dimsF[1], n=dimsO[0];
-      if(dimsF[2]==1 && dimsF[3]==1 && dilation[dilation.size()-2]==1 && dilation[dilation.size()-1]==1
+      if(manual && dimsF[2]==1 && dimsF[3]==1 && dilation[dilation.size()-2]==1 && dilation[dilation.size()-1]==1
           && dimsO[2]==dimsA[2] && dimsO[3]==dimsA[3]
-        && !(k & 15) && !(c & 15) && !((wi*hi)&3)
-        && c==tgt_c && wi==tgt_wi && hi==tgt_hi && k==tgt_k)
+          && ((c==64 && k==64 && wi*hi==56*56)
+             || (c==256 && k==64 && wi*hi==56*56) 
+             || (c==64 && k==256 && wi*hi==56*56)
+             || (c==2048 && k==512 && wi*hi==7*7)
+             || (c==512 && k==2048 && wi*hi==7*7)
+             ))
       {
+        //if(hit_calls>2 && !verify)
         if(!verify)
         {
            doConvolveManual((const __half*)output_data.opaque(), (const __half*)input_data.opaque(), 
-              (__half*)filter_data.opaque(), wi, hi, c, n, k);
-           hipDeviceSynchronize();
+              (__half*)filter_data.opaque(), wi, hi, c, n, k,
+              (hipStream_t)AsGpuStreamValue(stream),
+              scratch_memory.opaque(), scratch_memory.size());
+           //hipDeviceSynchronize();
+           hit_calls++;
            break;
         }
         else
@@ -3354,9 +3385,12 @@ port::Status MIOpenSupport::DoConvolve(
             printf("Dilation %d %d %d %d\n", dilation[0], dilation[1], dilation[2], dilation[3]);
             hipMalloc(&temp, out*2);
             hipDeviceSynchronize();
-             doConvolveManual((const __half*)output_data.opaque(), (const __half*)input_data.opaque(), temp, wi, hi, c, n, k);
+            doConvolveManual((const __half*)output_data.opaque(), (const __half*)input_data.opaque(), temp, wi, hi, c, n, k, 
+              (hipStream_t) AsGpuStreamValue(stream),
+              scratch_memory.opaque(), scratch_memory.size());
             hipDeviceSynchronize();
         }
+        hit_calls++;
       }
       BatchDescriptor output_back_descriptor;
       output_back_descriptor.CloneFrom(output_descriptor);
