@@ -43,6 +43,7 @@ apt-get install -y --no-install-recommends \
     autoconf \
     automake \
     build-essential \
+    clang-format-6.0 \
     curl \
     ffmpeg \
     git \
