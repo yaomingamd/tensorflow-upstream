@@ -47,8 +47,10 @@ cd Python-3.6.1
 
 ./configure
 make altinstall
-rm -rf /usr/local/bin/pip3
-ln -s /usr/local/bin/pip3.6 /usr/local/bin/pip3
+
+# /usr/local/bin/pip3 may already exist
+rm /usr/local/bin/pip3 || true
+ln -s /usr/local/bin/pip3.6 /usr/local/bin/pip3 || true
 
 pip3 install --upgrade pip
 
@@ -62,7 +64,7 @@ set -e
 
 # Install six.
 pip3 install --upgrade absl-py
-pip3 install --upgrade six==1.10.0
+pip3 install six==1.12.0
 
 # Install protobuf.
 pip3 install --upgrade protobuf==3.6.1
@@ -100,7 +102,7 @@ pip3 install grpcio
 
 # Eager-to-graph execution needs astor, gast and termcolor:
 pip3 install --upgrade astor
-pip3 install --upgrade gast
+pip3 install --upgrade gast==0.2.2
 pip3 install --upgrade termcolor
 
 pip3 install --upgrade h5py==2.8.0

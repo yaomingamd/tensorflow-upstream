@@ -48,6 +48,9 @@ namespace gpu {
 
 PLUGIN_REGISTRY_DEFINE_PLUGIN_ID(kRocBlasPlugin);
 
+extern void broadcast_fp32(void* stream, float* dst, int dst_stride,
+                           int batches, float* src, int size);
+
 namespace wrap {
 
 #ifdef PLATFORM_GOOGLE
@@ -1813,6 +1816,92 @@ bool ROCMBlas::DoBlasGemmWithAlgorithm(
   return false;
 }
 
+// This copies from source memory: raw_ptrs[i] to target memory:
+// device_memory_ptr at the interval of matrix_byte_size, or vice versa. 
+// The below algorithm tries to minimize the number of memcpy by consolidating neighboring
+// memcpy into a single request
+template <typename MAPPED_T>
+port::Status ReorganizeMemory(Stream* stream,
+      DeviceMemory<MAPPED_T> *device_memory,
+        const std::vector<MAPPED_T*>  &raw_ptrs,
+    int batch_count, uint64_t batch_stride,
+    bool gather)
+{
+  assert(batch_count > 0);
+  char *device_memory_ptr = static_cast<char *>(device_memory->opaque());
+  char* src_ptr = reinterpret_cast<char*>(raw_ptrs[0]);
+  char* dst_ptr = device_memory_ptr;
+  size_t matrix_byte_size = batch_stride * sizeof(MAPPED_T);  
+  uint64_t cur_stride_size = matrix_byte_size;
+
+  struct memory_copy_op {
+    char* src_ptr;
+    char* dst_ptr;
+    uint64_t size;
+  };
+  std::vector<memory_copy_op> write_ops;
+
+  for (int i = 1; i < batch_count; ++i) {
+    if (reinterpret_cast<char*>(raw_ptrs[i]) == src_ptr + cur_stride_size) {
+      cur_stride_size += matrix_byte_size;
+    } else {
+      write_ops.push_back(memory_copy_op{src_ptr, dst_ptr, cur_stride_size});
+      src_ptr = reinterpret_cast<char*>(raw_ptrs[i]);
+      dst_ptr = device_memory_ptr + i * matrix_byte_size;
+      cur_stride_size = matrix_byte_size;
+    }
+  }
+  write_ops.push_back(memory_copy_op{src_ptr, dst_ptr, cur_stride_size});
+
+  bool misaligned = (write_ops[0].size & 3)
+    || (reinterpret_cast<uint64_t>(write_ops[0].dst_ptr) & 3)
+    || (reinterpret_cast<uint64_t>(write_ops[0].src_ptr) & 3)
+    || (write_ops.size()>1 
+      && (reinterpret_cast<uint64_t>(write_ops[1].dst_ptr) & 3))
+    ;
+
+  // if the requested operation is reducible to a broadcast (copying the same
+  // buffer multiple times to N uniformly distributed destinations), it's often
+  // more efficient to launch a single broadcast kernel than to launch N
+  // hipMemcpy's.
+  // On tested hardware, broadcast with N>1 is always faster than memcpy (since
+  // it needs fewer global loads), but the gains are highest with lots (>10) of
+  // small copies (<1MB each).
+  if ((write_ops.size() > 1) && !misaligned) {
+    bool is_broadcast = true;
+    int stride = write_ops[1].dst_ptr - write_ops[0].dst_ptr;
+    for (int i = 1; i < write_ops.size(); i++) {
+      if (write_ops[i].src_ptr != write_ops[0].src_ptr ||
+          write_ops[i].size != write_ops[0].size ||
+          write_ops[i].dst_ptr - write_ops[i - 1].dst_ptr != stride ||
+          write_ops[i].size < stride
+          ) {
+        is_broadcast = false;
+        break;
+      }
+    }
+    if (is_broadcast && !(stride & 3)) {
+      broadcast_fp32(AsGpuStreamValue(stream),
+                     reinterpret_cast<float*>(write_ops[0].dst_ptr),
+                     stride >> 2, write_ops.size(),
+                     reinterpret_cast<float*>(write_ops[0].src_ptr),
+                     write_ops[0].size >> 2);
+      return port::Status::OK();
+    }
+  }
+  for (auto& x : write_ops) {
+    DeviceMemoryBase src_mem = DeviceMemoryBase(x.src_ptr, x.size);
+    DeviceMemoryBase target_mem = DeviceMemoryBase(x.dst_ptr, x.size);
+    bool a_status = stream->ThenMemcpy(&target_mem, src_mem, x.size).ok();
+    if (!a_status) {
+      return port::Status(
+          port::error::INTERNAL,
+          "failed to copy device memory in ROCMBlas::DoBlasGemmBatched");
+    }
+  }
+  return port::Status::OK();
+}
+
 template <typename T>
 port::Status ROCMBlas::AllocateStridedBuffer(
     const std::vector<typename RocBlasTypeConversionHelper<T>::mapped_type *>
@@ -1858,20 +1947,41 @@ port::Status ROCMBlas::AllocateStridedBuffer(
     *device_memory =
         DeviceMemory<MAPPED_T>(*(*temp_memory)->mutable_device_memory());
   }
+  assert(batch_count > 0);
+  char* device_memory_ptr = static_cast<char*>(device_memory->opaque());
+  char* src_ptr = reinterpret_cast<char*>(raw_ptrs[0]);
+  char* dst_ptr = device_memory_ptr;
+  uint64_t cur_stride_size = matrix_byte_size;
 
-  for (int i = 0; i < batch_count; ++i) {
-    char *device_memory_ptr = static_cast<char *>(device_memory->opaque());
-    DeviceMemoryBase src_mem = DeviceMemoryBase(raw_ptrs[i], matrix_byte_size);
-    DeviceMemoryBase target_mem = DeviceMemoryBase(
-        device_memory_ptr + i * matrix_byte_size, matrix_byte_size);
-    bool a_status =
-        stream->ThenMemcpy(&target_mem, src_mem, matrix_byte_size).ok();
-    if (!a_status) {
-      return port::Status(
-          port::error::INTERNAL,
-          "failed to copy device memory in ROCMBlas::DoBlasGemmBatched");
+  for (int i = 1; i < batch_count; ++i) {
+    if(reinterpret_cast<char *>(raw_ptrs[i]) == src_ptr+cur_stride_size)
+    {
+      cur_stride_size += matrix_byte_size;    
+    }
+    else
+    {
+      DeviceMemoryBase src_mem = DeviceMemoryBase(src_ptr, cur_stride_size);
+      DeviceMemoryBase target_mem = DeviceMemoryBase(dst_ptr, cur_stride_size);
+      bool a_status =
+          stream->ThenMemcpy(&target_mem, src_mem, cur_stride_size).ok();
+      if (!a_status) {
+        return port::Status(
+            port::error::INTERNAL,
+            "failed to copy device memory in ROCMBlas::DoBlasGemmBatched");
+      }
+      src_ptr = reinterpret_cast<char *>(raw_ptrs[i]);
+      dst_ptr = device_memory_ptr + i * matrix_byte_size;
+      cur_stride_size = matrix_byte_size;
     }
   }
+  DeviceMemoryBase src_mem = DeviceMemoryBase(src_ptr, cur_stride_size);
+  DeviceMemoryBase target_mem = DeviceMemoryBase(dst_ptr, cur_stride_size);
+  bool a_status =
+      stream->ThenMemcpy(&target_mem, src_mem, cur_stride_size).ok();
+  if (!a_status)
+    return port::Status(
+        port::error::INTERNAL,
+        "failed to copy device memory in ROCMBlas::DoBlasGemmBatched");
   return port::Status::OK();
 }
 

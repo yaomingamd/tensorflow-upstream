@@ -65,6 +65,7 @@ limitations under the License.
 
 namespace xla {
 namespace gpu {
+
 namespace {
 
 // Inline threshold value to use in LLVM AMDGPU backend.
@@ -126,25 +127,28 @@ void InitializePasses(llvm::PassRegistry* pass_registry) {
   llvm::initializeCodeGenPreparePass(*pass_registry);
 }
 
-// Returns the TargetMachine, given a triple.
+// returns the targetmachine, given a triple.
 std::unique_ptr<llvm::TargetMachine> GetTargetMachine(
     llvm::Triple triple, absl::string_view cpu_name,
     const HloModuleConfig& hlo_module_config, absl::string_view feature_str) {
   std::string error;
   const llvm::Target* target = TargetRegistry::lookupTarget("", triple, error);
   if (target == nullptr) {
-    LOG(FATAL) << "Unable to find Target for triple '" << triple.str() << "'"
+    LOG(FATAL) << "unable to find target for triple '" << triple.str() << "'"
                << " -- " << error;
     return nullptr;
   }
 
   TargetOptions target_options = InitTargetOptionsFromCodeGenFlags();
 
-  // Set the verbose assembly options.
+  // enable fma synthesis.
+  target_options.AllowFPOpFusion = FPOpFusion::Fast;
+
+  // set the verbose assembly options.
   target_options.MCOptions.AsmVerbose = false;
 
-  // The selection of codegen optimization level is copied from function
-  // GetCodeGenOptLevel in //third_party/llvm/llvm/tools/opt/opt.cpp.
+  // the selection of codegen optimization level is copied from function
+  // getcodegenoptlevel in //external/llvm/tools/opt/opt.cpp.
   CodeGenOpt::Level codegen_opt_level;
   switch (hlo_module_config.debug_options().xla_backend_optimization_level()) {
     case 1:
@@ -326,12 +330,13 @@ Status NVPTXTargetModuleLinker(llvm::Module* module, GpuVersion gpu_version,
   TF_RETURN_IF_ERROR(LinkLibdeviceIfNecessary(module, *compute_capability,
                                               device_bitcode_dir_path));
 
-  // Set the flush-denormals-to-zero flag on the module so the NVVM reflect pass
-  // can access it.
+  // Set the flush-denormals-to-zero flag on the module so the NVVM reflect
+  // pass can access it.
   module->addModuleFlag(llvm::Module::Override, "nvvm-reflect-ftz",
                         hlo_module_config.debug_options().xla_gpu_ftz());
 
-  // If ftz is enabled, set it as an attribute on every function in the module.
+  // If ftz is enabled, set it as an attribute on every function in the
+  // module.
   if (hlo_module_config.debug_options().xla_gpu_ftz()) {
     for (llvm::Function& fn : *module) {
       fn.addFnAttr("nvptx-f32ftz", "true");
@@ -545,7 +550,7 @@ static std::vector<string> GetROCDLPaths(int amdgpu_version,
       {"hc.amdgcn.bc", "opencl.amdgcn.bc", "ocml.amdgcn.bc", "ockl.amdgcn.bc",
        "oclc_finite_only_off.amdgcn.bc", "oclc_daz_opt_off.amdgcn.bc",
        "oclc_correctly_rounded_sqrt_on.amdgcn.bc",
-       "oclc_unsafe_math_off.amdgcn.bc"});
+       "oclc_unsafe_math_off.amdgcn.bc", "oclc_wavefrontsize64_on.amdgcn.bc"});
 
   // Construct full path to ROCDL bitcode libraries.
   std::vector<string> result;

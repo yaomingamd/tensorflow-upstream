@@ -14,12 +14,12 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/compiler/xla/service/gpu/amdgpu_compiler.h"
-
 #include "tensorflow/compiler/xla/service/algebraic_simplifier.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_conv_padding_legalization.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_conv_rewriter.h"
-// TODO(whchung@gmail.com): Add gpu_conv_algorithm_picker after its PR merged.
+#include "tensorflow/compiler/xla/service/gpu/gpu_conv_algorithm_picker.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_layout_assignment.h"
+#include "tensorflow/compiler/xla/service/gpu/gemm_rewriter.h"
 #include "tensorflow/compiler/xla/service/gpu/llvm_gpu_backend/gpu_backend_lib.h"
 #include "tensorflow/compiler/xla/service/gpu/target_constants.h"
 #include "tensorflow/compiler/xla/service/hlo_constant_folding.h"
@@ -97,8 +97,10 @@ Status AMDGPUCompiler::OptimizeHloPostLayoutAssignment(
   options.set_is_layout_sensitive(true);
   pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
 
-  // TODO(whchung@gmail.com): Add gpu_conv_algorithm_picker after its PR merged.
+  // Rewrite GEMMs into custom calls.
+  pipeline.AddPass<GemmRewriter>();
 
+  pipeline.AddPass<GpuConvAlgorithmPicker>(stream_exec, device_allocator);
   // Clean up new_tuple described above.
   pipeline.AddPass<TupleSimplifier>();
 

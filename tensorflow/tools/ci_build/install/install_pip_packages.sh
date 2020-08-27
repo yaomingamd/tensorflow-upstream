@@ -16,10 +16,6 @@
 
 set -e
 
-# Get the latest version of pip so it recognize manylinux2010
-#easy_install3 -U pip
-#easy_install -U pip
-
 # Install pip packages from whl files to avoid the time-consuming process of
 # building from source.
 
@@ -113,8 +109,8 @@ pip3 install grpcio
 # Eager-to-graph execution needs astor, gast and termcolor:
 pip2 install --upgrade astor
 pip3 install --upgrade astor
-pip2 install --upgrade gast
-pip3 install --upgrade gast
+pip2 install --upgrade gast==0.2.2
+pip3 install --upgrade gast==0.2.2
 pip2 install --upgrade termcolor
 pip3 install --upgrade termcolor
 
