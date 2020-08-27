@@ -177,7 +177,7 @@ def InvokeHipcc(argv, log=False):
   # Also we need to retain warning about uninitialised shared variable as
   # warning only, even when -Werror option is specified.
   if HIPCC_IS_HIPCLANG:
-    hipccopts += ' --include=hip/hip_runtime.h '
+    hipccopts += ' --include=hip/hip_runtime.h -Wno-error=cuda-shared-init '
   hipccopts += ' ' + hipcc_compiler_options
   # Use -fno-gpu-rdc by default for early GPU kernel finalization
   # This flag would trigger GPU kernels be generated at compile time, instead

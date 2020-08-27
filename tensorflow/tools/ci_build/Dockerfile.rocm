@@ -16,6 +16,7 @@ RUN apt-get clean all
 RUN wget -qO - http://repo.radeon.com/rocm/apt/debian/rocm.gpg.key | apt-key add -
 RUN sh -c  "echo deb [arch=amd64] $DEB_ROCM_REPO xenial main > /etc/apt/sources.list.d/rocm.list"
 
+
 # Install misc pkgs
 RUN apt-get update --allow-insecure-repositories && DEBIAN_FRONTEND=noninteractive apt-get install -y \
   build-essential \
@@ -57,23 +58,12 @@ RUN apt-get update --allow-insecure-repositories && DEBIAN_FRONTEND=noninteracti
 # Install rocm pkgs
 RUN apt-get update --allow-insecure-repositories && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
-    rocm-dev rocm-libs hipcub rocm-utils rocm-cmake \
+    rocm-dev rocm-libs rocm-utils rocm-cmake \
     rocfft miopen-hip miopengemm rocblas hipblas rocrand rccl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Build HCC from source, cleanup the default HCC to avoid issue
-#RUN rm -rf /opt/rocm/hcc-1.0 && rm -rf /opt/rocm/lib/*.bc
-#RUN cd $HOME && git clone --recursive -b <> https://github.com/RadeonOpenCompute/hcc.git
-#RUN cd $HOME && mkdir -p build.hcc && cd build.hcc && cmake -DCMAKE_BUILD_TYPE=Release ../hcc
-#RUN cd $HOME/build.hcc && make -j $(nproc) && make package && dpkg -i hcc*.deb
-#RUN ln -s /opt/rocm/hcc-1.0 /opt/rocm/hcc
-
-# Build HIP from source
-# RUN cd $HOME && git clone https://github.com/ROCm-Developer-Tools/HIP.git
-# RUN cd $HOME/HIP && mkdir -p build && cd build && cmake .. && make package -j $(nproc) && dpkg -i ./hip*.deb
-
-# Adding few ROCM based env variables
+# Set up paths
 ENV HCC_HOME=${ROCM_PATH}/hcc
 ENV HIP_PATH=${ROCM_PATH}/hip
 ENV PATH=$HCC_HOME/bin:$HIP_PATH/bin:${ROCM_PATH}/opencl/bin:${ROCM_PATH}/bin:$PATH
@@ -82,9 +72,8 @@ ENV ROCM_TOOLKIT_PATH=${ROCM_PATH}
 ENV TF_CONFIGURE_IOS=0
 ENV TF_NEED_ROCM=1
 
-RUN touch ${ROCM_PATH}/.info/version
-
 # Workaround, explicitly add symbolic link to /opt/rocm
+RUN touch ${ROCM_PATH}/.info/version
 RUN bash -c 'ln -s ${ROCM_PATH} /opt/rocm'
 
 # Add target file to help determine which device(s) to build for
