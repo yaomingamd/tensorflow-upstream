@@ -3355,8 +3355,9 @@ port::Status MIOpenSupport::DoConvolve(
       int wi=dimsO[2], hi=dimsO[3], c=dimsF[0], k=dimsF[1], n=dimsO[0];
       if(manual && dimsF[2]==1 && dimsF[3]==1 && dilation[dilation.size()-2]==1 && dilation[dilation.size()-1]==1
           && dimsO[2]==dimsA[2] && dimsO[3]==dimsA[3]
-          && ((c==64 && k==64 && wi*hi==56*56)
-             || (c==256 && k==64 && wi*hi==56*56) 
+            && (
+            // (c==64 && k==64 && wi*hi==56*56)
+              (c==256 && k==64 && wi*hi==56*56) 
              || (c==64 && k==256 && wi*hi==56*56)
              || (c==2048 && k==512 && wi*hi==7*7)
              || (c==512 && k==2048 && wi*hi==7*7)
