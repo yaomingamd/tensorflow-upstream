@@ -14,6 +14,7 @@ typedef float float32_t __attribute__((ext_vector_type(32)));
 typedef _Float16 half_t;
 typedef _Float16 half2_t __attribute__((ext_vector_type(2)));
 typedef _Float16 half4_t __attribute__((ext_vector_type(4)));
+typedef _Float16 half6_t __attribute__((ext_vector_type(6)));
 typedef _Float16 half8_t __attribute__((ext_vector_type(8)));
 
 // bfloat16

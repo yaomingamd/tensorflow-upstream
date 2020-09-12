@@ -10,6 +10,7 @@ typedef int index_t;
 
 using ck::half2_t;
 using ck::half4_t;
+using ck::half6_t;
 using ck::float4_t;
 using ck::float16_t;
 
@@ -656,6 +657,309 @@ label2:
   }
 }
 
+
+
+__device__ half2_t int_as_half2(int x) { return *(half2_t*)&x; }
+__device__ int half2_as_int(half2_t x) { return *(int*)&x; }
+
+__device__
+inline
+void atomicAdd2(__half* address, half2_t val)
+{
+    unsigned int* uaddr{reinterpret_cast<unsigned int*>(address)};
+    unsigned int r{__atomic_load_n(uaddr, __ATOMIC_RELAXED)};
+
+    unsigned int old;
+    do {
+        old = __atomic_load_n(uaddr, __ATOMIC_RELAXED);
+    
+        if (r != old) { r = old; continue; }
+        half2_t hr = int_as_half2(r);
+        r = atomicCAS(uaddr, r, half2_as_int(half2_t{val[0]+hr[0],val[1]+hr[1]}));
+
+        if (r == old) break;
+    } while (true);
+}
+
+
+__device__ void generate_perm6(int perm2idx, int& pos0, int& pos1, int& pos2, int& pos3, int& pos4, int& pos5) {
+      pos5 = perm2idx / 120;
+      perm2idx %= 120;
+      pos4 = (perm2idx / 24) + (((perm2idx / 24)>=pos5) ? 1 : 0);
+      int mask = (1<<pos5) | (1<<pos4);
+      perm2idx %= 24;
+      pos3 = (perm2idx / 6);
+//      pos3 += (pos3>=pos5) ? 1 : 0;
+//      pos3 += (pos3>=pos4) ? 1 : 0;
+      if(mask & (1<<pos3))
+        pos3++;
+      if(mask & (1<<pos3))
+        pos3++;
+      mask |= 1<<pos3;
+      perm2idx %= 6;
+      pos2 = (perm2idx / 2);
+      if(mask & (1<<pos2))
+        pos2++;
+      if(mask & (1<<pos2))
+        pos2++;
+      if(mask & (1<<pos2))
+        pos2++;
+      mask |= 1<<pos2;
+      pos1 = perm2idx % 2;
+      if(mask & (1<<pos1))
+        pos1++;
+      if(mask & (1<<pos1))
+        pos1++;
+      if(mask & (1<<pos1))
+        pos1++;
+      if(mask & (1<<pos1))
+        pos1++;
+      mask |= 1<<pos1;
+      pos0 = 1+2+3+4+5-(pos1+pos2+pos3+pos4+pos5);
+}
+
+template <int logGC, int logGK, int logC, int logW, int Mode>
+class lds_buffer_vert
+{
+  int x0, y0, y2, y4, y5, s0;
+public:
+  const int log_read_repeats = 1; 
+  const int W = 1<<logW;
+  __device__ lds_buffer_vert() {
+    x0 = 0;
+    y0 = logW;
+    y2 = logW+2;
+    y4 = logW+4;
+    y5 = logW+5;
+    s0 = logW+5+logC;
+  }
+  __device__ void coords(
+    int y, 
+    int& index_x, int& index_y, bool& active)
+  {
+    int idx = (threadIdx.x & 63) 
+      | ((threadIdx.y & 3)<<6)
+      | ((threadIdx.z & 3)<<8)
+      | (y<<10); 
+    index_x = threadIdx.x & 15; //idx & (W-1);
+    index_y = (idx >> logW) & ((1<<(logC+5))-1);
+    int selector = idx >> (logW+logC+5);
+    active = (selector==0 && index_x*4 + index_y*64 < 49*(1<<(5+logC)));
+  }
+};
+
+template <int logGridC, int logGridK>
+__launch_bounds__(1024) __global__ void convolve_bwdw_1x1x1x7x7_xdlops(uint64_t n_, uint64_t k_, uint64_t c_, uint64_t a_, const __half* p1_, const __half* p2_, __half* out)
+{
+  const int logC=2, logK=2;
+  const int logGC=2, logGK=2;
+  int n=n_, k=k_, c=c_, a=a_;
+  const int logW = 2;
+  const int logBC = 3;
+  const int W=1<<logW;
+  const int mW = (1<<logC)-1;
+
+  half4_t* __restrict__ reg_a_cache;
+  half4_t* __restrict__ reg_b_cache;
+
+  int offset=0;
+
+  const int MODE1=719;
+  const int MODE2=719;
+ 
+  int b = blockIdx.x & ((1<<logBC)-1);
+  int by = (blockIdx.x >> logBC) & ((1<<(logGridC-logC-5))-1);
+  int bz = blockIdx.x >> (logBC+logGridC-logC-5);
+  int nc = by<<(logC+5), j=bz<<(logK+5);
+
+  const int y_repeats = (1<<(logC-logGC));
+  const int z_repeats = (1<<(logK-logGK));
+
+  float4_t acc[4*y_repeats*z_repeats];
+  for(int y=0; y<4*y_repeats*z_repeats; y++) {
+      acc[y][0]=0;
+      acc[y][1]=0;
+      acc[y][2]=0;
+      acc[y][3]=0;
+  }
+
+  p1_ +=  a*b*c + a*nc;
+  p2_ +=  a*b*k + a*j;
+
+  __shared__ half4_t reg_cache[W*128*((1<<logC)+(1<<logK))];
+  reg_a_cache = reg_cache;
+  reg_b_cache = reg_a_cache+W*128*(1<<logC);
+
+  lds_buffer_vert<2, 2, 2, logW+2, MODE1> abuf;
+  lds_buffer_vert<2, 2, 2, logW+2, MODE2> bbuf;
+
+  half4_t temp_a[2][1<<abuf.log_read_repeats], temp_b[2][1<<bbuf.log_read_repeats];
+  for(int y=0; y<(1<<abuf.log_read_repeats); y++) {
+      int index_x, index_y; 
+      bool active;
+      abuf.coords(y, index_x, index_y, active);
+      if(active) {
+        temp_a[0][y] = *(half4_t*)(p1_ + index_x*4 + index_y*64);
+        reg_a_cache[index_x + index_y*16] = temp_a[0][y];
+      }
+  }
+  for(int z=0; z<(1<<bbuf.log_read_repeats); z++) {
+      int index_x, index_y;
+      bool active;
+      bbuf.coords(z, index_x, index_y, active);
+      if(active) {
+        temp_b[0][z] = *(half4_t*)(p2_ + index_x*4 + index_y*64);
+        reg_b_cache[index_x + index_y*16] = temp_b[0][z];
+      }
+  }
+  
+  uint64_t mask3 = (((threadIdx.x>>4)&3)!=0) ? 0 : 0xffff;
+
+  for(int b_idx=0; b_idx<256; b_idx += 8)
+  {
+    const __half* p1 = p1_;
+    const __half* p2 = p2_;
+
+    __syncthreads();
+    half6_t v_reg_a[2][W][y_repeats], v_reg_b[2][W][z_repeats];
+    for(int y=0; y<y_repeats; y++) 
+      for(int t=0; t<W; t++) {
+        const __half* preg = (const __half*) reg_a_cache;
+        int index_x = ((threadIdx.x>>4)&3) + 4*t;
+        int index_y = (threadIdx.x&15)*2 + (threadIdx.y+(y<<logGC))*32;
+        preg += (4*index_x + 49*index_y);
+        ((float*)(&v_reg_a[0][t][y]))[0] = *(float*)preg;
+        ((float*)(&v_reg_a[0][t][y]))[1] = *(float*)(preg+2);
+        ((float*)(&v_reg_a[1][t][y]))[0] = *(float*)(preg+48);
+        ((float*)(&v_reg_a[1][t][y]))[1] = *(float*)(preg+48+2);
+        ((float*)(&v_reg_a[1][t][y]))[2] = *(float*)(preg+48+4);
+      }
+    for(int z=0; z<z_repeats; z++) 
+      for(int t=0; t<W; t++) {
+        const __half* preg = (const __half*) reg_b_cache;
+        int index_x = ((threadIdx.x>>4)&3) + 4*t;
+        int index_y = (threadIdx.x&15)*2 + (threadIdx.z+(z<<logGC))*32;
+        preg += (4*index_x + 49*index_y);
+        ((float*)(&v_reg_b[0][t][z]))[0] = *(float*)preg;
+        ((float*)(&v_reg_b[0][t][z]))[1] = *(float*)(preg+2);
+        ((float*)(&v_reg_b[1][t][z]))[0] = *(float*)(preg+48);
+        ((float*)(&v_reg_b[1][t][z]))[1] = *(float*)(preg+48+2);
+        ((float*)(&v_reg_b[1][t][z]))[2] = *(float*)(preg+48+4);
+      }
+
+    if(b_idx != 256-8) 
+    {
+      for(int y=0; y<(1<<abuf.log_read_repeats); y++) {
+          int index_x, index_y; 
+          bool active;
+          abuf.coords(y, index_x, index_y, active);
+          if(active) {
+            temp_a[0][y] = *(half4_t*)(p1_ + (1<<logBC)*a*c + index_x*4 + index_y*64);
+          }
+      }
+      for(int z=0; z<(1<<bbuf.log_read_repeats); z++) {
+          int index_x, index_y;
+          bool active;
+          bbuf.coords(z, index_x, index_y, active);
+          if(active) {
+            temp_b[0][z] = *(half4_t*)(p2_ + (1<<logBC)*a*k + index_x*4 + index_y*64);
+          }
+      }
+    }
+
+    for(int z=0; z<z_repeats; z++) 
+      for(int y=0; y<y_repeats; y++) 
+        for(int t=0; t<4; t++) 
+        {
+          uint64_t* p = (uint64_t*) &v_reg_a[1][t][y];
+          uint16_t* q = (uint16_t*)(p+1);
+          p[0] = (p[0]>>16) | (uint64_t(q[0])<<48);
+          p = (uint64_t*) &v_reg_b[1][t][z];
+          q = (uint16_t*)(p+1);
+          p[0] = (p[0]>>16) | (uint64_t(q[0])<<48);
+
+          if(t==3) {
+            for(int y=0; y<y_repeats; y++) {
+              *(uint64_t*)&v_reg_a[0][3][y] &= mask3;
+               *(uint64_t*)&v_reg_a[1][3][y] &= mask3;
+            }
+            for(int z=0; z<z_repeats; z++) {
+              *(uint64_t*)&v_reg_b[0][3][z] &= mask3;
+              *(uint64_t*)&v_reg_b[1][3][z] &= mask3;
+            }
+          }
+
+          half4_t& reg_a=*(half4_t*)&v_reg_a[0][t][y];
+          half4_t& reg_a1=*(half4_t*)&v_reg_a[1][t][y];
+          half4_t& reg_b=*(half4_t*)&v_reg_b[0][t][z];
+          half4_t& reg_b1=*(half4_t*)&v_reg_b[1][t][z];
+
+          acc[4*z*y_repeats+4*y+0] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b, reg_a,   acc[4*z*y_repeats+4*y+0], 0, 0, 0);
+          acc[4*z*y_repeats+4*y+1] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b1, reg_a,  acc[4*z*y_repeats+4*y+1], 0, 0, 0);
+          acc[4*z*y_repeats+4*y+2] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b, reg_a1,  acc[4*z*y_repeats+4*y+2], 0, 0, 0);
+          acc[4*z*y_repeats+4*y+3] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b1, reg_a1, acc[4*z*y_repeats+4*y+3], 0, 0, 0);
+        }
+    if(b_idx!=256-8) 
+    {
+      __syncthreads();
+      for(int y=0; y<(1<<abuf.log_read_repeats); y++) {
+          int index_x, index_y; 
+          bool active;
+          abuf.coords(y, index_x, index_y, active);
+        if(active)
+          reg_a_cache[index_x+index_y*16] = temp_a[0][y];
+      }
+      for(int z=0; z<(1<<bbuf.log_read_repeats); z++) {
+          int index_x, index_y;
+          bool active;
+          bbuf.coords(z, index_x, index_y, active);
+       if(active)
+          reg_b_cache[index_x+index_y*16] = temp_b[0][z];
+      }
+    }
+    p1_ += a*c*(1<<logBC);
+    p2_ += a*k*(1<<logBC);
+    b += 1<<logBC;
+  }
+
+  __half* hout = (__half*) out;
+  for(int z=0; z<z_repeats; z++) {
+    for(int y=0; y<y_repeats; y++) {
+        float4_t& reg_c00 = acc[4*z*y_repeats+4*y+0];
+        float4_t& reg_c01 = acc[4*z*y_repeats+4*y+1];
+        float4_t& reg_c10 = acc[4*z*y_repeats+4*y+2];
+        float4_t& reg_c11 = acc[4*z*y_repeats+4*y+3];
+       
+        transpose4(reinterpret_cast<float*>(&reg_c00));
+        transpose4(reinterpret_cast<float*>(&reg_c01));
+        transpose4(reinterpret_cast<float*>(&reg_c10));
+        transpose4(reinterpret_cast<float*>(&reg_c11));
+
+        // correct output order is 
+        // row 0: t0.reg00[0] t0.reg01[0] t1.reg00[0] t1.reg01[0] t2.reg00[0] t2.reg01[0] t3.reg00[0] t3.reg01[0] t16.reg00[0] t16.reg01[0] t17.reg00[0] ...
+        // row 1: t0.reg10[0] t0.reg11[0] t1.reg10[0] t1.reg11[0] t2.reg10[0] ....
+        // row 2: t0.reg00[1] ...
+        //. ...
+        // row 8: t4.reg00[0] ...
+
+        // if output is float, it's optimal to write to consecutive locations from consecutive threads: 
+        //   out[0] <- block 0 thread 0
+        //   out[1] <- block 0 thread 1
+        //  etc.
+        //   so we have to do an additional permute or suffer substantial performance penalty.
+        // 
+        // Fortunately, we can use atomicAdd(half2) instead.
+        int out_nc = nc + (threadIdx.y+(y<<logGC))*32 + (threadIdx.x & 12)*2;
+        int out_j =  j + (threadIdx.z+(z<<logGK))*32 + ((threadIdx.x >> 4)&3)*8 + (threadIdx.x & 3)*2;
+        for(int x=0; x<4; x++)
+          atomicAdd2(hout+out_nc*k+out_j+2*x*k, half2_t{__half(reg_c00[x]),__half(reg_c01[x])});
+        for(int x=0; x<4; x++)
+          atomicAdd2(hout+out_nc*k+out_j+2*x*k+k, half2_t{__half(reg_c10[x]),__half(reg_c11[x])});
+    }
+  }
+}
+
+
 __global__ void convolve_bwdw_1x1x1(int n, int k, int c, int a, const __half* p1, const __half* p2, float* out)
 {
   int b = blockIdx.x;
@@ -718,7 +1022,7 @@ void doConvolveManual(const __half* input1, const __half* input2, __half* output
 
   bool allocated = false;
   float* temp;
-  if(scratch==0 || scratch_size<c*k*4) {
+  if((a!=7*7) && (scratch==0 || scratch_size<c*k*4)) {
     hipMalloc(&temp, c*k*sizeof(float));
     allocated = true;
   }
@@ -731,37 +1035,36 @@ void doConvolveManual(const __half* input1, const __half* input2, __half* output
       scratch_size, c*k*4,
       allocated ? "" : "NOT");
   }
-  hipMemset(temp, 0, c*k*4);
+  if(a!=7*7)
+    hipMemset(temp, 0, c*k*4);
   auto cf = convolve_bwdw_1x1x1_xdlops_2<true, 1, 1, 1, 1, 1, 1, 1>;
   dim3 grid, block;
-  if(a==7*7 && c==512 && k==2048) {
-    const int Mode1=717, Mode2=543;
-    const bool fractional = (a&3);
-    const int blocks_a = 8;
 
+  if(a==7*7 && ((c==512 && k==2048) || (c==2048 && k==512))) {
+    auto cf = (c==512) ? convolve_bwdw_1x1x1x7x7_xdlops<9,11> : convolve_bwdw_1x1x1x7x7_xdlops<11,9>;
+    const int blocks_a = 8;
     const int log_zone_y = 2;
     const int log_zone_z = 2;
     const int log_blocks_y = 2;
+    const int log_blocks_z = 2;
+    grid = dim3(blocks_a * ( c/(32<<log_zone_y)) * (k/(32<<log_zone_z)), 1, 1);
+    block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
+    hipMemsetAsync(output, 0, c*k*2, stream);
+    hipLaunchKernelGGL(cf, grid, block, 0, stream,
+        n, k, c, a, input1, input2, output);
+    call_count++;
+    return;
+  } else if(a==56*56 && c==64 && k==64) {
+    const int Mode1=670, Mode2=455;
+    const bool fractional = (a&3);
+    const int blocks_a = 256;
+    const int log_zone_y = 1;
+    const int log_zone_z = 1;
+    const int log_blocks_y = 1;
     const int log_blocks_z = 1;
     const int log_W = 1;
 
-    cf = convolve_bwdw_1x1x1_xdlops_2<true, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
-
-    grid = dim3(blocks_a, c/(32<<log_zone_y), k/(32<<log_zone_z));
-    block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
-  }
-  else if(a==7*7 && c==2048 && k==512) {
-    const int Mode1=447, Mode2=668;
-    const bool fractional = (a&3);
-    const int blocks_a = 8;
-
-    const int log_zone_y = 2;
-    const int log_zone_z = 2;
-    const int log_blocks_y = 1;
-    const int log_blocks_z = 2;
-    const int log_W = 1;
-
-    cf = convolve_bwdw_1x1x1_xdlops_2<true, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
+    cf = convolve_bwdw_1x1x1_xdlops_2<false, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
 
     grid = dim3(blocks_a, c/(32<<log_zone_y), k/(32<<log_zone_z));
     block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
@@ -775,7 +1078,7 @@ void doConvolveManual(const __half* input1, const __half* input2, __half* output
     const int log_blocks_z = 1;
     const int log_W = 2;
 
-    cf = convolve_bwdw_1x1x1_xdlops_2<true, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
+    cf = convolve_bwdw_1x1x1_xdlops_2<false, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
 
     grid = dim3(blocks_a, c/(32<<log_zone_y), k/(32<<log_zone_z));
     block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
@@ -789,11 +1092,55 @@ void doConvolveManual(const __half* input1, const __half* input2, __half* output
     const int log_blocks_z = 3;
     const int log_W = 2;
 
-    cf = convolve_bwdw_1x1x1_xdlops_2<true, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
+    cf = convolve_bwdw_1x1x1_xdlops_2<false, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
 
     grid = dim3(blocks_a, c/(32<<log_zone_y), k/(32<<log_zone_z));
     block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
-    //256,3,1,3,1,2 [430,344]
+  } else if(a==14*14 && c==256 && k==1024) {
+    //[3,2,2,2,1] [561,49] 618k
+    const int Mode1=561, Mode2=49;
+    const bool fractional = (a&3);
+    const int blocks_a = 8;
+    const int log_zone_y = 3;
+    const int log_zone_z = 2;
+    const int log_blocks_y = 2;
+    const int log_blocks_z = 2;
+    const int log_W = 1;
+
+    cf = convolve_bwdw_1x1x1_xdlops_2<false, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
+
+    grid = dim3(blocks_a, c/(32<<log_zone_y), k/(32<<log_zone_z));
+    block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
+  } else if(a==14*14 && c==1024 && k==256) {
+    //  [[2,3,1,3,1],[561,567] 615k
+    const int Mode1=561, Mode2=567;
+    const bool fractional = (a&3);
+    const int blocks_a = 8;
+    const int log_zone_y = 2;
+    const int log_zone_z = 3;
+    const int log_blocks_y = 1;
+    const int log_blocks_z = 3;
+    const int log_W = 1;
+
+    cf = convolve_bwdw_1x1x1_xdlops_2<false, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
+
+    grid = dim3(blocks_a, c/(32<<log_zone_y), k/(32<<log_zone_z));
+    block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
+  } else if(a==28*28 && c==128 && k==512) {
+    //  [[2,3,1,3,1],[561,567] 615k
+    const int Mode1=717, Mode2=543;
+    const bool fractional = (a&3);
+    const int blocks_a = 32;
+    const int log_zone_y = 2;
+    const int log_zone_z = 2;
+    const int log_blocks_y = 2;
+    const int log_blocks_z = 1;
+    const int log_W = 1;
+
+    cf = convolve_bwdw_1x1x1_xdlops_2<false, log_zone_y, log_zone_z, log_blocks_y, log_blocks_z, log_W, Mode1, Mode2>;
+
+    grid = dim3(blocks_a, c/(32<<log_zone_y), k/(32<<log_zone_z));
+    block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
   }
   else {
     printf("ERROR: unsupported scenario %d %d %d\n", a, c, k);

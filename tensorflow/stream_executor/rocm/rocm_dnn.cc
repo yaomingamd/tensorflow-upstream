@@ -3356,11 +3356,13 @@ port::Status MIOpenSupport::DoConvolve(
       if(manual && dimsF[2]==1 && dimsF[3]==1 && dilation[dilation.size()-2]==1 && dilation[dilation.size()-1]==1
           && dimsO[2]==dimsA[2] && dimsO[3]==dimsA[3]
             && (
-            // (c==64 && k==64 && wi*hi==56*56)
-              (c==256 && k==64 && wi*hi==56*56) 
+              (c==64 && k==64 && wi*hi==56*56)
+             || (c==256 && k==64 && wi*hi==56*56) 
              || (c==64 && k==256 && wi*hi==56*56)
              || (c==2048 && k==512 && wi*hi==7*7)
              || (c==512 && k==2048 && wi*hi==7*7)
+             || (c==1024 && k==256 && wi*hi==14*14)
+             || (c==256 && k==1024 && wi*hi==14*14)
              ))
       {
         //if(hit_calls>2 && !verify)
@@ -3377,6 +3379,7 @@ port::Status MIOpenSupport::DoConvolve(
         else
         {
             out=k*c;
+            /*
             printf("Input(dy) %d %d %d %d  %d %d %d %d  ",
               dimsO[0],dimsO[1],dimsO[2],dimsO[3],
               stridesO[0],stridesO[1],stridesO[2],stridesO[3]);
@@ -3384,6 +3387,7 @@ port::Status MIOpenSupport::DoConvolve(
               stridesF[0], stridesF[1], stridesF[2], stridesF[3]);
             dilation.resize(4);
             printf("Dilation %d %d %d %d\n", dilation[0], dilation[1], dilation[2], dilation[3]);
+            */
             hipMalloc(&temp, out*2);
             hipDeviceSynchronize();
             doConvolveManual((const __half*)output_data.opaque(), (const __half*)input_data.opaque(), temp, wi, hi, c, n, k, 
@@ -3427,26 +3431,26 @@ port::Status MIOpenSupport::DoConvolve(
      checks[1].resize(out);
      hipMemcpy(&checks[0][0], filter_data.opaque(), out*2, hipMemcpyDeviceToHost);
      hipMemcpy(&checks[1][0], temp, out*2, hipMemcpyDeviceToHost);
-
-     for(int i=0; i<5; i++)
-       printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
-     for(int i=64; i<64+5; i++)
-        printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
-     for(int i=128; i<128+5; i++)
-        printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
-     for(int i=256; i<256+5; i++)
-        printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
-      //printf("#1 %f %f\n", manual_half2float(checks[0][1]), manual_half2float(checks[1][1]));
-      //printf("#256 %f %f\n", manual_half2float(checks[0][256]), manual_half2float(checks[1][256]));
-      //printf("#1024 %f %f\n", manual_half2float(checks[0][1024]), manual_half2float(checks[1][1024]));
-      printf("#-1 %f %f\n", manual_half2float(checks[0][k*c-1]), manual_half2float(checks[1][k*c-1]));
-
      float maxError=calc_max_abs_diff(&checks[0][0], &checks[1][0], out), ampl=calc_max_abs(&checks[0][0], out);
 //     for(int i=0; i<out; i++) {
 //     ampl=max(ampl, fabs(float(checks[0][i])));
 //     maxError=max(maxError, float(checks[0][i])-float (checks[1][i]));
 //    }
      printf("%f / %f\n", maxError, ampl);
+     if(maxError/ampl > 1e-3) {
+       for(int i=0; i<5; i++)
+         printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
+       for(int i=64; i<64+5; i++)
+          printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
+       for(int i=128; i<128+5; i++)
+          printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
+       for(int i=256; i<256+5; i++)
+          printf("#%d %f %f\n", i, manual_half2float(checks[0][i]), manual_half2float(checks[1][i]));
+        //printf("#1 %f %f\n", manual_half2float(checks[0][1]), manual_half2float(checks[1][1]));
+        //printf("#256 %f %f\n", manual_half2float(checks[0][256]), manual_half2float(checks[1][256]));
+        //printf("#1024 %f %f\n", manual_half2float(checks[0][1024]), manual_half2float(checks[1][1024]));
+        printf("#-1 %f %f\n", manual_half2float(checks[0][k*c-1]), manual_half2float(checks[1][k*c-1]));
+    }
      hipFree(temp);
   }
 #endif
