@@ -21,6 +21,12 @@ TF_PKG_LOC=/tmp/tensorflow_pkg
 rm -f $TF_PKG_LOC/tensorflow*.whl
 export ROCM_TOOLKIT_PATH=/opt/rocm-3.7.0
 
+# First positional argument (if any) specifies the ROCM_INSTALL_DIR
+ROCM_INSTALL_DIR=/opt/rocm-3.7.0
+if [[ -n $1 ]]; then
+    ROCM_INSTALL_DIR=$1
+fi
+export ROCM_TOOLKIT_PATH=$ROCM_INSTALL_DIR
 
 yes "" | TF_NEED_ROCM=1 ROCM_TOOLKIT_PATH=${ROCM_PATH} PYTHON_BIN_PATH=/usr/bin/python3 PYTHON_BIN_PATH=/usr/bin/python3 ./configure
 pip3 uninstall -y tensorflow || true
