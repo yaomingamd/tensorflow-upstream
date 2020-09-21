@@ -210,7 +210,8 @@ inline bool isOpBatchNormGrad(const Node* n) {
 inline bool isOpAdd(const Node* n) { return (n->type_string() == "Add"); }
 
 inline bool isOpAddX(const Node* n) {
-  return (n->type_string() == "Add") || (n->type_string() == "AddV2");
+  return (n->type_string() == "Add") || (n->type_string() == "AddV2") ||
+         (n->type_string() == "AddN");
 }
 
 // is this node an instance of the "AddN" op?
@@ -1458,8 +1459,7 @@ bool ROCmFusionOpAddRelu::IsFusionEligible(const Node* relu, FusionOpData* d) {
 
     TF_CHECK_OK(relu->input_node(0, &add));
 
-    if (isOpAdd(add)) {  // preceded by a "Add" op
-
+    if ((add->in_edges().size() == 2) && isOpAddX(add)) {  // preceded by a "Add" op
       d->op_type = "_ROCmFusedAddRelu";
       d->op_name = strings::StrCat(add->name(), relu->name());
       d->fusion_type = "Add+Relu";
