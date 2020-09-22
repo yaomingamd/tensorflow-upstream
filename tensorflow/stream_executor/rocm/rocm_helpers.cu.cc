@@ -662,121 +662,116 @@ label2:
 __device__ half2_t int_as_half2(int x) { return *(half2_t*)&x; }
 __device__ int half2_as_int(half2_t x) { return *(int*)&x; }
 
-__device__
-inline
-void atomicAdd2(__half* address, half2_t val)
+typedef int int32x4_t __attribute__((ext_vector_type(4)));
+
+template <typename T>
+union BufferAddressConfig
 {
-    unsigned int* uaddr{reinterpret_cast<unsigned int*>(address)};
-    unsigned int r{__atomic_load_n(uaddr, __ATOMIC_RELAXED)};
-
-    unsigned int old;
-    do {
-        old = __atomic_load_n(uaddr, __ATOMIC_RELAXED);
-    
-        if (r != old) { r = old; continue; }
-        half2_t hr = int_as_half2(r);
-        r = atomicCAS(uaddr, r, half2_as_int(half2_t{val[0]+hr[0],val[1]+hr[1]}));
-
-        if (r == old) break;
-    } while (true);
-}
-
-
-__device__ void generate_perm6(int perm2idx, int& pos0, int& pos1, int& pos2, int& pos3, int& pos4, int& pos5) {
-      pos5 = perm2idx / 120;
-      perm2idx %= 120;
-      pos4 = (perm2idx / 24) + (((perm2idx / 24)>=pos5) ? 1 : 0);
-      int mask = (1<<pos5) | (1<<pos4);
-      perm2idx %= 24;
-      pos3 = (perm2idx / 6);
-//      pos3 += (pos3>=pos5) ? 1 : 0;
-//      pos3 += (pos3>=pos4) ? 1 : 0;
-      if(mask & (1<<pos3))
-        pos3++;
-      if(mask & (1<<pos3))
-        pos3++;
-      mask |= 1<<pos3;
-      perm2idx %= 6;
-      pos2 = (perm2idx / 2);
-      if(mask & (1<<pos2))
-        pos2++;
-      if(mask & (1<<pos2))
-        pos2++;
-      if(mask & (1<<pos2))
-        pos2++;
-      mask |= 1<<pos2;
-      pos1 = perm2idx % 2;
-      if(mask & (1<<pos1))
-        pos1++;
-      if(mask & (1<<pos1))
-        pos1++;
-      if(mask & (1<<pos1))
-        pos1++;
-      if(mask & (1<<pos1))
-        pos1++;
-      mask |= 1<<pos1;
-      pos0 = 1+2+3+4+5-(pos1+pos2+pos3+pos4+pos5);
-}
-
-template <int logGC, int logGK, int logC, int logW, int Mode>
-class lds_buffer_vert
-{
-  int x0, y0, y2, y4, y5, s0;
-public:
-  const int log_read_repeats = 1; 
-  const int W = 1<<logW;
-  __device__ lds_buffer_vert() {
-    x0 = 0;
-    y0 = logW;
-    y2 = logW+2;
-    y4 = logW+4;
-    y5 = logW+5;
-    s0 = logW+5+logC;
-  }
-  __device__ void coords(
-    int y, 
-    int& index_x, int& index_y, bool& active)
-  {
-    int idx = (threadIdx.x & 63) 
-      | ((threadIdx.y & 3)<<6)
-      | ((threadIdx.z & 3)<<8)
-      | (y<<10); 
-    index_x = threadIdx.x & 15; //idx & (W-1);
-    index_y = (idx >> logW) & ((1<<(logC+5))-1);
-    int selector = idx >> (logW+logC+5);
-    active = (selector==0 && index_x*4 + index_y*64 < 49*(1<<(5+logC)));
-  }
+    int32x4_t data;
+    T* address[2];
+    int32_t range[4];
 };
 
-template <int logGridC, int logGridK>
-__launch_bounds__(1024) __global__ void convolve_bwdw_1x1x1x7x7_xdlops(uint64_t n_, uint64_t k_, uint64_t c_, uint64_t a_, const __half* p1_, const __half* p2_, __half* out)
+
+__device__ void
+__llvm_amdgcn_buffer_atomic_add_f32(float vdata,
+                                    int32x4_t rsrc,
+                                    index_t vindex,
+                                    index_t offset,
+                                    bool slc) __asm("llvm.amdgcn.buffer.atomic.fadd.f32");
+
+__device__ void
+__llvm_amdgcn_buffer_atomic_add_f16x2(half2_t vdata,
+                                    int32x4_t rsrc,
+                                    index_t vindex,
+                                    index_t offset,
+                                    bool slc) __asm("llvm.amdgcn.buffer.atomic.fadd.v2f16");
+
+__device__ void amd_buffer_atomic_add(float* p_dst_block,
+                                                index_t offset,
+                                                const float src)
 {
-  const int logC=2, logK=2;
-  const int logGC=2, logGK=2;
-  int n=n_, k=k_, c=c_, a=a_;
-  const int logW = 2;
-  const int logBC = 3;
+    BufferAddressConfig<float> dst_block_config;
+
+    // fill in byte 0 - 1
+    dst_block_config.address[0] = p_dst_block;
+    // fill in byte 2
+    dst_block_config.range[2] = -1;
+    // fill in byte 3
+    dst_block_config.range[3] = 0x00027000;
+
+    __llvm_amdgcn_buffer_atomic_add_f32(
+        src, dst_block_config.data, 0, offset * sizeof(float), false);
+}
+
+
+
+__device__
+inline
+void atomicAdd2(__half* address, int offset, half2_t val)
+{
+    BufferAddressConfig<__half> dst_block_config;
+
+    // fill in byte 0 - 1
+    dst_block_config.address[0] = address;
+    // fill in byte 2
+    dst_block_config.range[2] = -1;
+    // fill in byte 3
+    dst_block_config.range[3] = 0x00027000;
+
+    __llvm_amdgcn_buffer_atomic_add_f16x2(
+        val, dst_block_config.data, 0, offset*sizeof(__half), false);
+}
+
+
+__device__ void load_half4(__half* dst, const __half* src, bool qword_align, int offset) {
+  if(qword_align)
+    *(half4_t*)dst = *(const half4_t*)(src+offset);
+  else {
+    *(float*)dst = *(const float*)(src+offset);
+    *(float*)(dst+2) = *(const float*)(src+(offset+2));
+  }
+}
+
+__device__ void load_half6(__half* dst, const __half* src, int offset) 
+{
+    *(float*)dst = *(const float*)(src+offset);
+    *(float*)(dst+2) = *(const float*)(src+(offset+2));
+    *(float*)(dst+4) = *(const float*)(src+(offset+4));
+}
+
+__device__ void shift_half6(half6_t& reg)
+{
+  uint64_t* p;
+  uint16_t* q;
+  p = (uint64_t*) &reg;
+  q = (uint16_t*)(p+1);
+  p[0] = (p[0]>>16) | (uint64_t(q[0])<<48);
+}
+
+template <bool half_output, int a, int logGridC, int logGridK, int logBC>
+_launch_bounds__(1024) __global__ void low_a_kernel(uint64_t n_, uint64_t k_, uint64_t c_, uint64_t a_, const __half* p1_, const __half* p2_, float* out)
+{
+  int n=n_, k=k_, c=c_;
+  const int logC=2, logK=2, logGC=2, logGK=2;
+
+  const int logW = (a<=16) ? 0 : ((a<=32) ? 1 : (a<=64 ? 2 : 3));
+ 
   const int W=1<<logW;
-  const int mW = (1<<logC)-1;
+  const int Weff = (a+15)>>4;
 
   half4_t* __restrict__ reg_a_cache;
   half4_t* __restrict__ reg_b_cache;
 
   int offset=0;
 
-  const int MODE1=719;
-  const int MODE2=719;
- 
   int b = blockIdx.x & ((1<<logBC)-1);
   int by = (blockIdx.x >> logBC) & ((1<<(logGridC-logC-5))-1);
   int bz = blockIdx.x >> (logBC+logGridC-logC-5);
   int nc = by<<(logC+5), j=bz<<(logK+5);
 
-  const int y_repeats = (1<<(logC-logGC));
-  const int z_repeats = (1<<(logK-logGK));
-
-  float4_t acc[4*y_repeats*z_repeats];
-  for(int y=0; y<4*y_repeats*z_repeats; y++) {
+  float4_t acc[4];
+  for(int y=0; y<4; y++) {
       acc[y][0]=0;
       acc[y][1]=0;
       acc[y][2]=0;
@@ -786,179 +781,240 @@ __launch_bounds__(1024) __global__ void convolve_bwdw_1x1x1x7x7_xdlops(uint64_t 
   p1_ +=  a*b*c + a*nc;
   p2_ +=  a*b*k + a*j;
 
-  __shared__ half4_t reg_cache[W*128*((1<<logC)+(1<<logK))];
+  const bool global_read_first = true;
+  const bool aligned_mode = true;
+  const int as = aligned_mode 
+      ? (((a+3)&~3) + (((a+3)&4) ? 0 : 4))
+      : a;
+
+  constexpr int local_stride = as;
+  __shared__ half4_t reg_cache[local_stride*8*((1<<logC)+(1<<logK))];
   reg_a_cache = reg_cache;
-  reg_b_cache = reg_a_cache+W*128*(1<<logC);
+  reg_b_cache = reg_a_cache+local_stride*8*(1<<logC);
 
-  lds_buffer_vert<2, 2, 2, logW+2, MODE1> abuf;
-  lds_buffer_vert<2, 2, 2, logW+2, MODE2> bbuf;
+  const int log_read_repeats = logW-1>=0 ? logW-1 : 0;
 
-  half4_t temp_a[2][1<<abuf.log_read_repeats], temp_b[2][1<<bbuf.log_read_repeats];
-  for(int y=0; y<(1<<abuf.log_read_repeats); y++) {
-      int index_x, index_y; 
-      bool active;
-      abuf.coords(y, index_x, index_y, active);
-      if(active) {
-        temp_a[0][y] = *(half4_t*)(p1_ + index_x*4 + index_y*64);
-        reg_a_cache[index_x + index_y*16] = temp_a[0][y];
-      }
-  }
-  for(int z=0; z<(1<<bbuf.log_read_repeats); z++) {
-      int index_x, index_y;
-      bool active;
-      bbuf.coords(z, index_x, index_y, active);
-      if(active) {
-        temp_b[0][z] = *(half4_t*)(p2_ + index_x*4 + index_y*64);
-        reg_b_cache[index_x + index_y*16] = temp_b[0][z];
-      }
+  const bool f4x4mode = ((a<=8) || (a>=17 && a<=24) || (a>=33 && a<=39) || (a>=49 && a<=56)) || (a>=65 && a<=72);
+  int v_index[1<<log_read_repeats];
+  int v_index2[1<<log_read_repeats];
+  bool v_active[1<<log_read_repeats];
+
+  for(unsigned int y=0; y<(1<<log_read_repeats); y++) {
+    unsigned int i = (threadIdx.x & 63) | ((threadIdx.y&3)<<6) | ((threadIdx.z&3)<<8);
+    i = (i & 127) | (y << 7) | ((i & ~127)<<8);
+    unsigned int index_x = i & ((1<<(logW+2))-1);
+    unsigned int index_y = i >> (logW+2);
+
+    if(!aligned_mode) {
+      v_index[y] = index_x*4 + index_y*W*16;
+      v_index2[y] = index_x*4 + index_y*W*16;
+      v_active[y] = (v_index[y] < (a<<(5+logC)));
+    }
+    else {
+      v_index[y] = index_x*4 + index_y*a;
+      v_index2[y] = index_x*4 + index_y*as;
+      v_active[y] = (index_x*4<a);
+    }
   }
   
-  uint64_t mask3 = (((threadIdx.x>>4)&3)!=0) ? 0 : 0xffff;
+  p1_ += v_index[0];
+  p2_ += v_index[0];
+  for(int y=1; y<(1<<log_read_repeats); y++) 
+    v_index[y]-=v_index[0];
+  v_index[0]=0;
 
-  for(int b_idx=0; b_idx<256; b_idx += 8)
+  __half* __restrict__ lds_store_a = ((__half*)reg_a_cache + v_index2[0]);
+  __half* __restrict__ lds_store_b = ((__half*)reg_b_cache + v_index2[0]);
+  for(int y=1; y<(1<<log_read_repeats); y++) 
+    v_index2[y]-=v_index2[0];
+  v_index2[0]=0;
+
+  half4_t temp_a[1<<log_read_repeats], temp_b[1<<log_read_repeats];
+  for(int y=0; y<(1<<log_read_repeats); y++) {
+      if(v_active[y]) {
+        *(half4_t*)(lds_store_a+v_index2[y]) = *(half4_t*)(p1_ + v_index[y]);
+        *(half4_t*)(lds_store_b+v_index2[y]) = *(half4_t*)(p2_ + v_index[y]);
+      }
+  }
+
+  uint64_t mask3=-1;
+  uint64_t mask3b=-1;
+
+  if(f4x4mode && (a & 3)) {
+    if(((threadIdx.x>>2)&3)*4>=(a&15))
+      mask3b = 0;
+    else if(((threadIdx.x>>2)&3)*4+4<=(a&15))
+      mask3b = (uint64_t)-1;
+    else 
+      mask3b = ((uint64_t)-1) >> 16*(4-(a&3));
+  }  
+
+  if(a & 3) {
+    if(((threadIdx.x>>4)&3)*4>=(a&15))
+      mask3 = 0;
+    else if(((threadIdx.x>>4)&3)*4+4<=(a&15))
+      mask3 = (uint64_t)-1;
+    else
+      mask3 = ((uint64_t)-1) >> 16*(4-(a&3));
+ }
+  else if(a & 12) {
+    mask3 = ( ((threadIdx.x>>4)&3)*4>=(a&15)) ? 0 : (uint64_t)-1;
+  }
+
+  const __half* preg_a = (const __half*)reg_a_cache + (4*((threadIdx.x>>4)&3) + as*((threadIdx.x&15)*2 + threadIdx.y*32));
+  const __half* preg_b = (const __half*)reg_b_cache + (4*((threadIdx.x>>4)&3) + as*((threadIdx.x&15)*2 + threadIdx.z*32));
+
+  const __half* preg_b4x4 = (const __half*)reg_b_cache + ((threadIdx.x&4) + as*((threadIdx.x&3)*2 + (threadIdx.x>>4)*8 + threadIdx.z*32));
+
+  p1_ += a*c*(1<<logBC);
+  p2_ += a*k*(1<<logBC);
+
+#pragma unroll
+  for(int b_idx=0; b_idx<256; b_idx += (1<<logBC))
   {
-    const __half* p1 = p1_;
-    const __half* p2 = p2_;
-
     __syncthreads();
-    half6_t v_reg_a[2][W][y_repeats], v_reg_b[2][W][z_repeats];
-    for(int y=0; y<y_repeats; y++) 
-      for(int t=0; t<W; t++) {
-        const __half* preg = (const __half*) reg_a_cache;
-        int index_x = ((threadIdx.x>>4)&3) + 4*t;
-        int index_y = (threadIdx.x&15)*2 + (threadIdx.y+(y<<logGC))*32;
-        preg += (4*index_x + 49*index_y);
-        ((float*)(&v_reg_a[0][t][y]))[0] = *(float*)preg;
-        ((float*)(&v_reg_a[0][t][y]))[1] = *(float*)(preg+2);
-        ((float*)(&v_reg_a[1][t][y]))[0] = *(float*)(preg+48);
-        ((float*)(&v_reg_a[1][t][y]))[1] = *(float*)(preg+48+2);
-        ((float*)(&v_reg_a[1][t][y]))[2] = *(float*)(preg+48+4);
-      }
-    for(int z=0; z<z_repeats; z++) 
-      for(int t=0; t<W; t++) {
-        const __half* preg = (const __half*) reg_b_cache;
-        int index_x = ((threadIdx.x>>4)&3) + 4*t;
-        int index_y = (threadIdx.x&15)*2 + (threadIdx.z+(z<<logGC))*32;
-        preg += (4*index_x + 49*index_y);
-        ((float*)(&v_reg_b[0][t][z]))[0] = *(float*)preg;
-        ((float*)(&v_reg_b[0][t][z]))[1] = *(float*)(preg+2);
-        ((float*)(&v_reg_b[1][t][z]))[0] = *(float*)(preg+48);
-        ((float*)(&v_reg_b[1][t][z]))[1] = *(float*)(preg+48+2);
-        ((float*)(&v_reg_b[1][t][z]))[2] = *(float*)(preg+48+4);
-      }
+    half6_t v_reg_a[2][W], v_reg_b[2][W];
 
-    if(b_idx != 256-8) 
-    {
-      for(int y=0; y<(1<<abuf.log_read_repeats); y++) {
-          int index_x, index_y; 
-          bool active;
-          abuf.coords(y, index_x, index_y, active);
-          if(active) {
-            temp_a[0][y] = *(half4_t*)(p1_ + (1<<logBC)*a*c + index_x*4 + index_y*64);
-          }
-      }
-      for(int z=0; z<(1<<bbuf.log_read_repeats); z++) {
-          int index_x, index_y;
-          bool active;
-          bbuf.coords(z, index_x, index_y, active);
-          if(active) {
-            temp_b[0][z] = *(half4_t*)(p2_ + (1<<logBC)*a*k + index_x*4 + index_y*64);
-          }
+    if(global_read_first) {
+      if(b_idx != 256-(1<<logBC)) 
+      {
+        for(int y=0; y<(1<<log_read_repeats); y++) {
+          if(v_active[y]) {
+              temp_a[y] = *(half4_t*)(p1_ + v_index[y]);
+              temp_b[y] = *(half4_t*)(p2_ + v_index[y]);
+            }
+        }
       }
     }
 
-    for(int z=0; z<z_repeats; z++) 
-      for(int y=0; y<y_repeats; y++) 
-        for(int t=0; t<4; t++) 
+#pragma unroll
+      for(int t=0; t<Weff; t++) {
         {
-          uint64_t* p = (uint64_t*) &v_reg_a[1][t][y];
-          uint16_t* q = (uint16_t*)(p+1);
-          p[0] = (p[0]>>16) | (uint64_t(q[0])<<48);
-          p = (uint64_t*) &v_reg_b[1][t][z];
-          q = (uint16_t*)(p+1);
-          p[0] = (p[0]>>16) | (uint64_t(q[0])<<48);
-
-          if(t==3) {
-            for(int y=0; y<y_repeats; y++) {
-              *(uint64_t*)&v_reg_a[0][3][y] &= mask3;
-               *(uint64_t*)&v_reg_a[1][3][y] &= mask3;
-            }
-            for(int z=0; z<z_repeats; z++) {
-              *(uint64_t*)&v_reg_b[0][3][z] &= mask3;
-              *(uint64_t*)&v_reg_b[1][3][z] &= mask3;
-            }
-          }
-
-          half4_t& reg_a=*(half4_t*)&v_reg_a[0][t][y];
-          half4_t& reg_a1=*(half4_t*)&v_reg_a[1][t][y];
-          half4_t& reg_b=*(half4_t*)&v_reg_b[0][t][z];
-          half4_t& reg_b1=*(half4_t*)&v_reg_b[1][t][z];
-
-          acc[4*z*y_repeats+4*y+0] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b, reg_a,   acc[4*z*y_repeats+4*y+0], 0, 0, 0);
-          acc[4*z*y_repeats+4*y+1] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b1, reg_a,  acc[4*z*y_repeats+4*y+1], 0, 0, 0);
-          acc[4*z*y_repeats+4*y+2] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b, reg_a1,  acc[4*z*y_repeats+4*y+2], 0, 0, 0);
-          acc[4*z*y_repeats+4*y+3] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b1, reg_a1, acc[4*z*y_repeats+4*y+3], 0, 0, 0);
+          const __half* preg = (const __half*) preg_a;
+          preg += 16*t;
+          load_half4((__half*)&v_reg_a[0][t], preg, !(as&1), 0);
+          if(as & 1)
+            load_half6((__half*)&v_reg_a[1][t], preg, as-1);
+          else
+            load_half4((__half*)&v_reg_a[1][t], preg, !(as&2), as);
         }
-    if(b_idx!=256-8) 
+        {
+          const __half* preg = ((f4x4mode && t==Weff-1) ? preg_b4x4 : preg_b);
+          preg += 16*t;
+          load_half4((__half*)&v_reg_b[0][t], preg, !(as&1), 0);
+          if(as & 1)
+            load_half6((__half*)&v_reg_b[1][t], preg, as-1);
+          else 
+            load_half4((__half*)&v_reg_b[1][t], preg, !(as&2), as); 
+        }
+      }
+
+    if(!global_read_first) {
+      if(b_idx != 256-(1<<logBC)) 
+      {
+        for(int y=0; y<(1<<log_read_repeats); y++) {
+          if(v_active[y]) {
+              temp_a[y] = *(half4_t*)(p1_ + v_index[y]);
+              temp_b[y] = *(half4_t*)(p2_ + v_index[y]);
+            }
+        }
+      }
+    }
+
+
+#pragma unroll
+    for(int t=0; t<Weff; t++) {
+      if(as & 1) { 
+        shift_half6(v_reg_a[1][t]);
+        shift_half6(v_reg_b[1][t]);
+      }
+      if(t==Weff-1) {
+        *(uint64_t*)&v_reg_a[0][t] &= mask3;
+        *(uint64_t*)&v_reg_a[1][t] &= mask3;
+        if(!f4x4mode) {
+          *(uint64_t*)&v_reg_b[0][t] &= mask3;
+          *(uint64_t*)&v_reg_b[1][t] &= mask3;
+        }
+        else {
+          *(uint64_t*)&v_reg_b[0][t] &= mask3b;
+          *(uint64_t*)&v_reg_b[1][t] &= mask3b;
+        }
+      }
+
+      half4_t reg_a =*(half4_t*)&v_reg_a[0][t];
+      half4_t reg_a1=*(half4_t*)&v_reg_a[1][t];
+      half4_t reg_b =*(half4_t*)&v_reg_b[0][t];
+      half4_t reg_b1=*(half4_t*)&v_reg_b[1][t];
+      if(t<Weff-1 || !f4x4mode) {
+        acc[0] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b, reg_a,   acc[0], 0, 0, 0);
+        acc[1] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b1, reg_a,  acc[1], 0, 0, 0);
+        acc[2] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b, reg_a1,  acc[2], 0, 0, 0);
+        acc[3] = __builtin_amdgcn_mfma_f32_16x16x16f16(reg_b1, reg_a1, acc[3], 0, 0, 0);
+      }
+      else {
+        acc[0] = __builtin_amdgcn_mfma_f32_4x4x4f16(reg_b, reg_a,   acc[0], 2, 0, 4);
+        acc[1] = __builtin_amdgcn_mfma_f32_4x4x4f16(reg_b1, reg_a,  acc[1], 2, 0, 4);
+        acc[2] = __builtin_amdgcn_mfma_f32_4x4x4f16(reg_b, reg_a1,  acc[2], 2, 0, 4);
+        acc[3] = __builtin_amdgcn_mfma_f32_4x4x4f16(reg_b1, reg_a1, acc[3], 2, 0, 4);
+
+        if((a&15)>4) {
+          acc[0] = __builtin_amdgcn_mfma_f32_4x4x4f16(reg_b, reg_a,   acc[0], 2, 1, 5);
+          acc[1] = __builtin_amdgcn_mfma_f32_4x4x4f16(reg_b1, reg_a,  acc[1], 2, 1, 5);
+          acc[2] = __builtin_amdgcn_mfma_f32_4x4x4f16(reg_b, reg_a1,  acc[2], 2, 1, 5);
+          acc[3] = __builtin_amdgcn_mfma_f32_4x4x4f16(reg_b1, reg_a1, acc[3], 2, 1, 5);
+        }
+      }
+    }
+
+    //if(b_idx != 256-(1<<logBC))  
     {
       __syncthreads();
-      for(int y=0; y<(1<<abuf.log_read_repeats); y++) {
-          int index_x, index_y; 
-          bool active;
-          abuf.coords(y, index_x, index_y, active);
-        if(active)
-          reg_a_cache[index_x+index_y*16] = temp_a[0][y];
-      }
-      for(int z=0; z<(1<<bbuf.log_read_repeats); z++) {
-          int index_x, index_y;
-          bool active;
-          bbuf.coords(z, index_x, index_y, active);
-       if(active)
-          reg_b_cache[index_x+index_y*16] = temp_b[0][z];
+      for(int y=0; y<(1<<log_read_repeats); y++) 
+      {
+        if(v_active[y]) {
+          *(half4_t*)(lds_store_a+v_index2[y]) = temp_a[y];
+          *(half4_t*)(lds_store_b+v_index2[y]) = temp_b[y];
+        }
       }
     }
+
     p1_ += a*c*(1<<logBC);
     p2_ += a*k*(1<<logBC);
     b += 1<<logBC;
   }
 
-  __half* hout = (__half*) out;
-  for(int z=0; z<z_repeats; z++) {
-    for(int y=0; y<y_repeats; y++) {
-        float4_t& reg_c00 = acc[4*z*y_repeats+4*y+0];
-        float4_t& reg_c01 = acc[4*z*y_repeats+4*y+1];
-        float4_t& reg_c10 = acc[4*z*y_repeats+4*y+2];
-        float4_t& reg_c11 = acc[4*z*y_repeats+4*y+3];
-       
-        transpose4(reinterpret_cast<float*>(&reg_c00));
-        transpose4(reinterpret_cast<float*>(&reg_c01));
-        transpose4(reinterpret_cast<float*>(&reg_c10));
-        transpose4(reinterpret_cast<float*>(&reg_c11));
+  float4_t& reg_c00 = acc[0];
+  float4_t& reg_c01 = acc[1];
+  float4_t& reg_c10 = acc[2];
+  float4_t& reg_c11 = acc[3];
 
-        // correct output order is 
-        // row 0: t0.reg00[0] t0.reg01[0] t1.reg00[0] t1.reg01[0] t2.reg00[0] t2.reg01[0] t3.reg00[0] t3.reg01[0] t16.reg00[0] t16.reg01[0] t17.reg00[0] ...
-        // row 1: t0.reg10[0] t0.reg11[0] t1.reg10[0] t1.reg11[0] t2.reg10[0] ....
-        // row 2: t0.reg00[1] ...
-        //. ...
-        // row 8: t4.reg00[0] ...
+  transpose4(reinterpret_cast<float*>(&reg_c00));
+  transpose4(reinterpret_cast<float*>(&reg_c01));
+  transpose4(reinterpret_cast<float*>(&reg_c10));
+  transpose4(reinterpret_cast<float*>(&reg_c11));
 
-        // if output is float, it's optimal to write to consecutive locations from consecutive threads: 
-        //   out[0] <- block 0 thread 0
-        //   out[1] <- block 0 thread 1
-        //  etc.
-        //   so we have to do an additional permute or suffer substantial performance penalty.
-        // 
-        // Fortunately, we can use atomicAdd(half2) instead.
-        int out_nc = nc + (threadIdx.y+(y<<logGC))*32 + (threadIdx.x & 12)*2;
-        int out_j =  j + (threadIdx.z+(z<<logGK))*32 + ((threadIdx.x >> 4)&3)*8 + (threadIdx.x & 3)*2;
-        for(int x=0; x<4; x++)
-          atomicAdd2(hout+out_nc*k+out_j+2*x*k, half2_t{__half(reg_c00[x]),__half(reg_c01[x])});
-        for(int x=0; x<4; x++)
-          atomicAdd2(hout+out_nc*k+out_j+2*x*k+k, half2_t{__half(reg_c10[x]),__half(reg_c11[x])});
+  if(half_output) {
+    __half* hout = (__half*) out;
+    int out_nc = nc + (threadIdx.y)*32 + (threadIdx.x & 12)*2;
+    int out_j =  j + (threadIdx.z)*32 + ((threadIdx.x >> 4)&3)*8 + (threadIdx.x & 3)*2;
+    for(int x=0; x<4; x++) 
+      atomicAdd2(hout, out_nc*k+out_j+2*x*k, half2_t{__half(reg_c00[x]),__half(reg_c01[x])});
+    for(int x=0; x<4; x++)
+      atomicAdd2(hout, out_nc*k+out_j+2*x*k+k, half2_t{__half(reg_c10[x]),__half(reg_c11[x])});
+  }
+  else {          
+    int out_nc = nc + (threadIdx.y)*32 + (threadIdx.x & 12)*2;
+    int out_j =  j + (threadIdx.z)*32 + ((threadIdx.x >> 4)&3)*8 + (threadIdx.x & 3)*2;
+    for(int x=0; x<4; x++) {
+      amd_buffer_atomic_add(out, out_nc*k+out_j+2*x*k, reg_c00[x]);
+      amd_buffer_atomic_add(out, out_nc*k+out_j+2*x*k+1, reg_c01[x]);
+    }
+    for(int x=0; x<4; x++) {
+      amd_buffer_atomic_add(out, out_nc*k+out_j+2*x*k+k, reg_c10[x]);
+      amd_buffer_atomic_add(out, out_nc*k+out_j+2*x*k+k+1, reg_c11[x]);
     }
   }
 }
-
 
 __global__ void convolve_bwdw_1x1x1(int n, int k, int c, int a, const __half* p1, const __half* p2, float* out)
 {
@@ -1041,7 +1097,8 @@ void doConvolveManual(const __half* input1, const __half* input2, __half* output
   dim3 grid, block;
 
   if(a==7*7 && ((c==512 && k==2048) || (c==2048 && k==512))) {
-    auto cf = (c==512) ? convolve_bwdw_1x1x1x7x7_xdlops<9,11> : convolve_bwdw_1x1x1x7x7_xdlops<11,9>;
+    //auto cf = (c==512) ? convolve_bwdw_1x1x1x7x7_xdlops<9,11> : convolve_bwdw_1x1x1x7x7_xdlops<11,9>;
+    auto cf = (c==512) ? low_a_kernel<true,49,9,11,3> : low_a_kernel<true,49,11,9,3>;
     const int blocks_a = 8;
     const int log_zone_y = 2;
     const int log_zone_z = 2;
@@ -1051,7 +1108,7 @@ void doConvolveManual(const __half* input1, const __half* input2, __half* output
     block = dim3(64, 1<<log_blocks_y, 1<<log_blocks_z);
     hipMemsetAsync(output, 0, c*k*2, stream);
     hipLaunchKernelGGL(cf, grid, block, 0, stream,
-        n, k, c, a, input1, input2, output);
+        n, k, c, a, input1, input2, (float*)output);
     call_count++;
     return;
   } else if(a==56*56 && c==64 && k==64) {
