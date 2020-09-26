@@ -72,10 +72,6 @@ ENV HIP_PLATFORM=hcc
 ENV ROCM_TOOLKIT_PATH=${ROCM_PATH}
 ENV TF_CONFIGURE_IOS=0
 ENV TF_NEED_ROCM=1
-# Downgrade the THUNK to ROCm3.3 as per Peng's recommendation
-# See the following page for details on why :
-# http://confluence.amd.com/display/~pensun/ROCm3.5+multi-GPU+workloads+Seg+faults+on+older+kernel+driver
-RUN cd /root && wget https://www.dropbox.com/s/6kbhm2l1yf589j4/rocm3.3-thunk.sh && bash rocm3.3-thunk.sh
 
 # Add target file to help determine which device(s) to build for
 RUN bash -c 'echo -e "gfx803\ngfx900\ngfx906\ngfx908" >> ${ROCM_PATH}/bin/target.lst'
