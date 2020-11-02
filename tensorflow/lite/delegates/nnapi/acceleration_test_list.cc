@@ -214,6 +214,7 @@ TypesGatherOpTest/Float32Int32,29
 TypesGatherOpTest/Int32Int32,29
 TypesGatherOpTest/Uint8Int32,29
 TypesGatherOpTest/Int8Int32,29
+-TypesGatherOpTest/.*Int16.*
 
 # hashtable_lookup_test
 # All test excepted the string one should be accelerated
@@ -243,9 +244,22 @@ CifgPeepholeNoProjectionNoClippingUnidirectionalLstmTest/NonLayerNormLstmBlackBo
 -.+UnidirectionalLstmTest/.+
 
 # lstm_test
--.+LstmTest/Hybrid.+Int8
--LSTMOpModel/InvalidTypeTest
-.+LstmTest/.+,29
+-LstmOpTest/InvalidTypes
+# Float
+Parameterized/LstmOpTest.+/0,29
+Parameterized/LstmOpTest.+/1,29
+Parameterized/LstmOpTest.+/2,29
+Parameterized/LstmOpTest.+/3,29
+# HybridUint8
+Parameterized/LstmOpTest.+/4,29
+Parameterized/LstmOpTest.+/5,29
+Parameterized/LstmOpTest.+/6,29
+Parameterized/LstmOpTest.+/7,29
+# HybridInt8
+-Parameterized/LstmOpTest.+/8
+-Parameterized/LstmOpTest.+/9
+-Parameterized/LstmOpTest.+/10
+-Parameterized/LstmOpTest.+/11
 
 # maximum_minimum_test
 MaxMinOpTest/.+nt8Test,29
@@ -293,8 +307,13 @@ PowOpModel/.+,29
 # quant_basic_lstm_test
 QuantizedLstmTest/BasicQuantizedLstmTest/29
 
+# quantized_lstm op test
+IntegerLstmOpTest/NoCifg_NoPeephole_Projection_LayerNorm,30
+
 # quantize_test
 QuantizeOpTest/UINT8,29
+QuantizeOpTest/UInt8UInt8.+,29
+QuantizeOpTest/Int8Int8.+,30
 QuantizeOpTest/INT8,30
 
 # rank
@@ -331,6 +350,8 @@ ResizeBilinearOpTest/ResizeBilinearOpTest/.+/0,29
 // align_corners & half_pixel_centers are not implemented in NNAPI before API 30
 ResizeNearestNeighborOpTest/ResizeNearestNeighborOpTest.+AlignCorners.*/0,30
 ResizeNearestNeighborOpTest/ResizeNearestNeighborOpTest.+HalfPixelCenters.*/0,30
+// 16-bit tests are not supported
+-ResizeNearestNeighborOpTest.+Int16/.+
 // Only models with constant size tensor are accelerated
 ResizeNearestNeighborOpTest/ResizeNearestNeighborOpTest/.+/0,29
 
@@ -346,6 +367,7 @@ SelectOpTest/.+,29
 -SliceOpTest/SliceOpTest/SliceString/.+
 -SliceOpTest/SliceOpTest/SliceInt64/.+
 -SliceOpTest/SliceOpTest/SliceBool/.+
+-SliceOpTest/SliceOpTest/SliceInt16/.+
 # Only constant tensors
 SliceOpTest/SliceOpTest/.+/0,29
 
@@ -395,6 +417,7 @@ TopKV2OpTest/TopKV2OpTest/.+/0,29
 -TransposeTest/5DDividedIntoTwo2Ds.*
 -TransposeTest/Complex5DTest.*
 -TransposeTest/.+DynamicTensor
+-TransposeTest/TestRefOps4DInt16
 TransposeTest/.+
 
 # transpose_conv_test

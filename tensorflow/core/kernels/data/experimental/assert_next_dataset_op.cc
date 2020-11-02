@@ -18,8 +18,8 @@ limitations under the License.
 
 #include "tensorflow/core/framework/partial_tensor_shape.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/kernels/data/dataset_utils.h"
 #include "tensorflow/core/kernels/data/name_utils.h"
-#include "tensorflow/core/platform/regexp.h"
 
 namespace tensorflow {
 namespace data {
@@ -64,6 +64,11 @@ class AssertNextDatasetOp::Dataset : public DatasetBase {
 
   int64 Cardinality() const override { return input_->Cardinality(); }
 
+  Status InputDatasets(std::vector<const DatasetBase*>* inputs) const override {
+    inputs->push_back(input_);
+    return Status::OK();
+  }
+
   Status CheckExternalState() const override {
     return input_->CheckExternalState();
   }
@@ -97,15 +102,12 @@ class AssertNextDatasetOp::Dataset : public DatasetBase {
       }
       int n = tokens.size();
       for (size_t i = 0; i < dataset()->transformations_.size(); ++i) {
-        std::string transformation_escaped =
-            RE2::QuoteMeta(dataset()->transformations_[i]);
-        std::string version_suffix = "(V\\d+)?";
-        std::string expected_re =
-            absl::StrCat(transformation_escaped, version_suffix);
-        if (!RE2::FullMatch(tokens[n - 2 - i], expected_re)) {
+        if (!MatchesAnyVersion(dataset()->transformations_[i],
+                               tokens[n - 2 - i])) {
           return errors::InvalidArgument("Asserted transformation matching ",
-                                         expected_re, " at offset ", i,
-                                         " but encountered ", tokens[n - 2 - i],
+                                         dataset()->transformations_[i],
+                                         " at offset ", i, " but encountered ",
+                                         tokens[n - 2 - i],
                                          " transformation instead.");
         }
       }

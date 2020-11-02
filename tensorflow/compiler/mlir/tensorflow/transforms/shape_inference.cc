@@ -20,6 +20,7 @@ limitations under the License.
 #include <iterator>
 
 #include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/None.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -39,6 +40,9 @@ limitations under the License.
 #include "mlir/IR/StandardTypes.h"  // from @llvm-project
 #include "mlir/IR/SymbolTable.h"  // from @llvm-project
 #include "mlir/IR/Value.h"  // from @llvm-project
+#include "mlir/Interfaces/CallInterfaces.h"  // from @llvm-project
+#include "mlir/Interfaces/FoldInterfaces.h"  // from @llvm-project
+#include "mlir/Interfaces/InferTypeOpInterface.h"  // from @llvm-project
 #include "mlir/Pass/Pass.h"  // from @llvm-project
 #include "mlir/Pass/PassRegistry.h"  // from @llvm-project
 #include "mlir/Support/LLVM.h"  // from @llvm-project
@@ -49,10 +53,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_types.h"
 #include "tensorflow/compiler/mlir/tensorflow/transforms/passes.h"
-#include "tensorflow/compiler/mlir/tensorflow/translate/export_tf_dialect_op.h"
-#include "tensorflow/compiler/mlir/tensorflow/utils/convert_tensor.h"
-#include "tensorflow/compiler/mlir/tensorflow/utils/convert_type.h"
-#include "tensorflow/core/framework/op.h"
+#include "tensorflow/compiler/mlir/tensorflow/utils/shape_inference_utils.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/framework/types.pb.h"
 
@@ -66,151 +67,13 @@ using tensorflow::shape_inference::ShapeHandle;
 namespace mlir {
 namespace TF {
 namespace {
-Optional<SmallVector<Type, 4>> InferShapeForFunctionReturnType(FuncOp func) {
-  // Find any return ops.
-  SmallVector<ReturnOp, 4> return_ops;
-  for (Block& block : func) {
-    if (auto return_op = dyn_cast<ReturnOp>(block.getTerminator())) {
-      return_ops.push_back(return_op);
-    }
-  }
-
-  // Right now we only handle the case of a single return op.
-  // To handle multiple return ops, we would need to look at all their shapes
-  // and come up with a common shape and insert appropriate casts.
-  if (return_ops.size() != 1) {
-    return None;
-  }
-
-  // Find the return type.
-  auto return_op = return_ops.front();
-
-  // Manually fold tf.Cast that precedes the return instruction and only differs
-  // in shape refinement level.
-  for (OpOperand& arg_op : return_op.getOperation()->getOpOperands()) {
-    Operation* arg_defining_op = arg_op.get().getDefiningOp();
-    if (auto cast_op = dyn_cast_or_null<CastOp>(arg_defining_op)) {
-      // Shape inference should not change the element type.
-      if (cast_op.SrcT() != cast_op.DstT()) continue;
-      // We only refine the result shape if the result a dynamic shape, the
-      // input has static shape, and the two shapes are compatible.
-      auto has_static_shape = [](const Value value) {
-        auto shaped_type = value.getType().dyn_cast<ShapedType>();
-        return shaped_type && shaped_type.hasStaticShape();
-      };
-      Value input = cast_op.x();
-      Value result = cast_op.y();
-      if (!has_static_shape(input) || has_static_shape(result) ||
-          failed(verifyCompatibleShape(input.getType(), result.getType())))
-        continue;
-
-      arg_op.set(cast_op.x());
-      if (cast_op.y().use_empty()) cast_op.erase();
-    }
-  }
-
-  return llvm::to_vector<4>(return_op.getOperandTypes());
-}
-
-// Returns if the shape inference pass supports an op outside the TF dialect.
-bool IsSupportedNonTFOp(Operation* op) {
-  return isa<ReturnOp, tf_device::ReturnOp, tf_executor::EnterOp,
-             tf_executor::ExitOp, tf_executor::FetchOp, tf_executor::GraphOp,
-             tf_executor::IslandOp, tf_executor::LoopCondOp,
-             tf_executor::MergeOp, tf_executor::NextIterationSinkOp,
-             tf_executor::SwitchNOp, tf_executor::SwitchOp,
-             tf_executor::YieldOp>(op);
-}
-
-// Returns whether a cast back would need to be inserted, e.g., whether the
-// operation of which use is an operand allows for shape refinement without
-// a cast.
-bool NeedsCastBack(OpOperand& use, Dialect* tf_dialect) {
-  return use.getOwner()->getDialect() != tf_dialect &&
-         !IsSupportedNonTFOp(use.getOwner());
-}
-
-// Updates the result of an operation to a new inferred type. Also inserts
-// tf.Cast operation for uses that are incompatible with the new type.
-void UpdateTypeAndInsertIncompatibleUseCasts(Dialect* tf_dialect, Type new_type,
-                                             Operation* op, Value result) {
-  // A tf.Cast operation is lazily created on the first use requires a cast.
-  TF::CastOp cast_op;
-  auto get_cast_op = [&]() {
-    if (!cast_op) {
-      OpBuilder b(op);
-      b.setInsertionPointAfter(op);
-      cast_op = b.create<TF::CastOp>(op->getLoc(), result.getType(), result,
-                                     /*truncate=*/b.getBoolAttr(false));
-    }
-    return Value(cast_op);
-  };
-  // First insert cast back for uses that need a cast and then
-  // update the type.
-  for (OpOperand& use : make_early_inc_range(result.getUses())) {
-    if (NeedsCastBack(use, tf_dialect)) use.set(get_cast_op());
-  }
-
-  result.setType(new_type);
-}
-
-// Extracts a PartialTensorShape from the MLIR type.
-Optional<tensorflow::PartialTensorShape> GetShapeFromMlirType(Type t) {
-  if (auto ranked_type = t.dyn_cast<RankedTensorType>()) {
-    // Convert the MLIR shape indices (int64_t) to TensorFlow indices
-    // (int64).
-    ArrayRef<int64_t> shape = ranked_type.getShape();
-    SmallVector<int64, 8> tf_shape(shape.begin(), shape.end());
-    return tensorflow::PartialTensorShape({tf_shape.data(), tf_shape.size()});
-  }
-  return None;
-}
-
-// Gets the subtype's shape and data type for `type`. Templated to support both
-// ResourceType and VariantType.
-template <typename T>
-std::unique_ptr<std::vector<
-    std::pair<tensorflow::PartialTensorShape, tensorflow::DataType>>>
-GetSubtypesHelper(Type type) {
-  auto type_with_subtypes =
-      type.cast<TensorType>().getElementType().dyn_cast<T>();
-  if (!type_with_subtypes || type_with_subtypes.getSubtypes().empty()) {
-    return nullptr;
-  }
-  auto shapes_and_types = absl::make_unique<std::vector<
-      std::pair<tensorflow::PartialTensorShape, tensorflow::DataType>>>();
-  for (auto subtype : type_with_subtypes.getSubtypes()) {
-    auto shape = GetShapeFromMlirType(subtype);
-    // handle_shapes_and_types requires all shapes to be known. So if any
-    // subtype is unknown, clear the vector.
-    if (!shape) {
-      shapes_and_types = nullptr;
-      break;
-    }
-    tensorflow::DataType dtype;
-    auto status =
-        tensorflow::ConvertToDataType(subtype.getElementType(), &dtype);
-    assert(status.ok() && "Unknown element type");
-    shapes_and_types->emplace_back(*shape, dtype);
-  }
-  return shapes_and_types;
-}
-
-// Gets the subtype's shape and data type for `type`.
-std::unique_ptr<std::vector<
-    std::pair<tensorflow::PartialTensorShape, tensorflow::DataType>>>
-GetSubtypes(Type type) {
-  auto subclasses = GetSubtypesHelper<TF::ResourceType>(type);
-  if (subclasses) return subclasses;
-  return GetSubtypesHelper<TF::VariantType>(type);
-}
 
 // Returns whether type can be further refined.
 bool CanBeRefined(Type type) {
   auto shape_type = type.dyn_cast<ShapedType>();
   return shape_type &&
          (!shape_type.hasStaticShape() ||
-          shape_type.getElementType().isa<TF::ResourceType, TF::VariantType>());
+          shape_type.getElementType().isa<TF::TensorFlowTypeWithSubtype>());
 }
 
 // Returns whether `original_type` type can be refined with
@@ -229,6 +92,122 @@ bool CanRefineTypeWith(Type original_type, Type potential_refined_type) {
          !element_type_with_subtype.GetSubtypes().empty();
 }
 
+Optional<TypeRange> InferShapeForFunctionReturnType(FuncOp func,
+                                                    Dialect* tf_dialect) {
+  LLVM_DEBUG(llvm::dbgs() << "Inferring return type for: " << func.getName()
+                          << "\n");
+
+  // Find any return ops.
+  SmallVector<ReturnOp, 4> return_ops;
+  for (Block& block : func) {
+    if (auto return_op = dyn_cast<ReturnOp>(block.getTerminator())) {
+      return_ops.push_back(return_op);
+    }
+  }
+
+  // Right now we only handle the case of a single return op.
+  // To handle multiple return ops, we would need to look at all their shapes
+  // and come up with a common shape and insert appropriate casts.
+  if (return_ops.size() != 1) return None;
+
+  // Find the return type.
+  auto return_op = return_ops.front();
+
+  // Avoid refining result type if not used by TF dialect op. This can be
+  // relaxed once we move to a work queue, but at the moment this can result
+  // in invalid modules (in particular when a std.call is used but we've
+  // already processed the function where the call is made from before this).
+  auto uses = mlir::SymbolTable::getSymbolUses(
+      func.getOperation(), func.getParentOfType<ModuleOp>());
+  if (uses) {
+    for (auto use : *uses) {
+      if (use.getUser()->getDialect() != tf_dialect) {
+        LLVM_DEBUG(llvm::dbgs() << "Skipping refing return type of function "
+                                   "given non-TF dialect use\n");
+        return TypeRange(return_op.getOperandTypes());
+      }
+    }
+  }
+
+  // Manually fold tf.Cast that precedes the return instruction and only differs
+  // in shape refinement level.
+  for (OpOperand& arg_op : return_op.getOperation()->getOpOperands()) {
+    Operation* arg_defining_op = arg_op.get().getDefiningOp();
+    if (auto cast_op = dyn_cast_or_null<CastOp>(arg_defining_op)) {
+      Value input = cast_op.x();
+      Value result = cast_op.y();
+      if (!CanRefineTypeWith(result.getType(), input.getType())) continue;
+
+      LLVM_DEBUG({
+        llvm::errs() << "\tfolding & updating return type ";
+        cast_op.getResult().getType().print(llvm::errs());
+        cast_op.getOperand().getType().print(llvm::errs() << " to ");
+        llvm::errs() << "\n";
+      });
+
+      // Shape inference should not change the element type.
+      if (HasCompatibleElementTypes(input.getType(), result.getType())) {
+        arg_op.set(cast_op.x());
+      } else {
+        OpBuilder b(return_op.getOperation());
+        auto type = RankedTensorType::get(
+            input.getType().cast<TensorType>().getShape(),
+            result.getType().cast<TensorType>().getElementType());
+        auto new_cast_op =
+            b.create<TF::CastOp>(return_op.getLoc(), type, input,
+                                 /*truncate=*/b.getBoolAttr(false));
+        arg_op.set(new_cast_op);
+      }
+      if (cast_op.y().use_empty()) cast_op.erase();
+    }
+  }
+
+  return TypeRange(return_op.getOperandTypes());
+}
+
+// Returns if the shape inference pass supports an op outside the TF dialect.
+bool IsSupportedNonTFOp(Operation* op) {
+  return isa<tf_device::ReturnOp, tf_device::ClusterOp, tf_device::LaunchOp,
+             tf_executor::EnterOp, tf_executor::ExitOp, tf_executor::FetchOp,
+             tf_executor::GraphOp, tf_executor::IslandOp,
+             tf_executor::LoopCondOp, tf_executor::MergeOp,
+             tf_executor::NextIterationSinkOp, tf_executor::SwitchNOp,
+             tf_executor::SwitchOp, tf_executor::YieldOp>(op);
+}
+
+// Returns whether a cast back would need to be inserted, e.g., whether the
+// operation of which use is an operand allows for shape refinement without
+// a cast.
+bool NeedsCastBack(OpOperand& use, Dialect* tf_dialect) {
+  return use.getOwner()->getDialect() != tf_dialect &&
+         !IsSupportedNonTFOp(use.getOwner());
+}
+
+// Updates the result of an operation to a new inferred type. Also inserts
+// tf.Cast operation for uses that are incompatible with the new type.
+void UpdateTypeAndInsertIncompatibleUseCasts(Dialect* tf_dialect, Type new_type,
+                                             Value result) {
+  // A tf.Cast operation is lazily created on the first use requires a cast.
+  TF::CastOp cast_op;
+  auto get_cast_op = [&]() {
+    if (!cast_op) {
+      Operation* op = result.getDefiningOp();
+      OpBuilder b(op);
+      b.setInsertionPointAfter(op);
+      cast_op = b.create<TF::CastOp>(op->getLoc(), result.getType(), result,
+                                     /*truncate=*/b.getBoolAttr(false));
+    }
+    return Value(cast_op);
+  };
+  // First insert cast back for uses that need a cast and then
+  // update the type.
+  for (OpOperand& use : make_early_inc_range(result.getUses())) {
+    if (NeedsCastBack(use, tf_dialect)) use.set(get_cast_op());
+  }
+
+  result.setType(new_type);
+}
+
 // Refines the type of `result` of `op` using the type `potential_refined_type`.
 // Return true if the type was changed.
 bool RefineResultType(Operation* op, Value result,
@@ -237,20 +216,18 @@ bool RefineResultType(Operation* op, Value result,
     return false;
 
   UpdateTypeAndInsertIncompatibleUseCasts(op->getDialect(),
-                                          potential_refined_type, op, result);
+                                          potential_refined_type, result);
   return true;
 }
 
 // Infers the shape from a (Stateful)PartionedCall operation by looking up the
 // called function and propagating the return type.
-bool InferShapeForCall(Operation* op) {
-  auto call_op = cast<CallOpInterface>(op);
-  CallInterfaceCallable callable = call_op.getCallableForCallee();
-  SymbolRefAttr sym = callable.dyn_cast<SymbolRefAttr>();
-  if (!sym) return false;
-  FuncOp func = dyn_cast<FuncOp>(SymbolTable::lookupNearestSymbolFrom(op, sym));
+bool InferShapeForCall(CallOpInterface call_op) {
+  FuncOp func = dyn_cast<FuncOp>(call_op.resolveCallable());
   if (!func) return false;
 
+  LLVM_DEBUG(llvm::dbgs() << "Infer shape for call " << func.getName());
+  Operation* op = call_op.getOperation();
   bool changed = false;
   // Map each of the results of the call to the returned type of the
   // function.
@@ -258,26 +235,11 @@ bool InferShapeForCall(Operation* op) {
     changed = RefineResultType(op, std::get<0>(result), std::get<1>(result)) ||
               changed;
   }
+  LLVM_DEBUG(llvm::dbgs() << " changed ? " << changed << "\n");
 
   return changed;
 }
 
-// Infer the shape IfRegion outputs based on the shapes of the then and else
-// yields.
-bool InferShapeForIfRegion(IfRegionOp op) {
-  bool changed = false;
-
-  Operation* then_yield = op.then_branch().front().getTerminator();
-  Operation* else_yield = op.else_branch().front().getTerminator();
-  for (auto result : zip(op.getResults(), then_yield->getOperandTypes(),
-                         else_yield->getOperandTypes())) {
-    // If then and else types do not match, skip refinement for that result.
-    if (std::get<1>(result) != std::get<2>(result)) continue;
-    changed = RefineResultType(op, std::get<0>(result), std::get<1>(result)) ||
-              changed;
-  }
-  return changed;
-}
 bool InferShapeForCast(CastOp op, Dialect* tf_dialect) {
   Value result = op.getResult();
   if (!CanBeRefined(result.getType())) return false;
@@ -301,9 +263,39 @@ bool InferShapeForCast(CastOp op, Dialect* tf_dialect) {
       ranked_op_type.getShape(),
       result.getType().cast<ShapedType>().getElementType());
 
-  UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect, new_type, op,
-                                          op.getResult());
+  UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect, new_type, op.getResult());
   return true;
+}
+
+// Infer the shape IfOp outputs based on the shapes of the then and else
+// function result types.
+bool InferShapeForIf(IfOp op) {
+  bool changed = false;
+  auto then_results = op.then_function().getType().getResults();
+  auto else_results = op.else_function().getType().getResults();
+  for (auto it : llvm::zip(op.getResults(), then_results, else_results)) {
+    // If then and else types do not match, skip refinement for that result.
+    if (std::get<1>(it) != std::get<2>(it)) continue;
+    changed = RefineResultType(op, std::get<0>(it), std::get<1>(it)) || changed;
+  }
+  return changed;
+}
+
+// Infer the shape IfRegion outputs based on the shapes of the then and else
+// yields.
+bool InferShapeForIfRegion(IfRegionOp op) {
+  bool changed = false;
+
+  Operation* then_yield = op.then_branch().front().getTerminator();
+  Operation* else_yield = op.else_branch().front().getTerminator();
+  for (auto result : zip(op.getResults(), then_yield->getOperandTypes(),
+                         else_yield->getOperandTypes())) {
+    // If then and else types do not match, skip refinement for that result.
+    if (std::get<1>(result) != std::get<2>(result)) continue;
+    changed = RefineResultType(op, std::get<0>(result), std::get<1>(result)) ||
+              changed;
+  }
+  return changed;
 }
 
 bool RefineWithInferTypeOpInterface(InferTypeOpInterface infer_ti,
@@ -327,7 +319,7 @@ bool RefineWithInferTypeOpInterface(InferTypeOpInterface infer_ti,
     if (std::get<0>(result).getType() == std::get<1>(result)) continue;
 
     UpdateTypeAndInsertIncompatibleUseCasts(
-        op->getDialect(), std::get<1>(result), op, std::get<0>(result));
+        op->getDialect(), std::get<1>(result), std::get<0>(result));
     changed = true;
   }
   return changed;
@@ -518,7 +510,7 @@ class ShapeInference {
   //      like predicate).
   LogicalResult PropagateShapeToFunctions(
       ModuleOp module, Operation::operand_type_range input_types,
-      ArrayRef<StringRef> func_names, int64_t max_iteration);
+      ArrayRef<FuncOp> functions, int64_t max_iteration);
 
   // Propagates shapes to regions given the shapes of the inputs of the regions.
   // All regions provided in `regions` are assumed to have inputs of type
@@ -540,13 +532,13 @@ class ShapeInference {
   //
   // TODO(b/154065712): Move this to a more general inter-procedural constant
   // folding pass.
-  void PropagateConstantToCallee(CallOpInterface call_op,
-                                 SymbolRefAttr callee_sym, ModuleOp module);
+  void PropagateConstantToCallee(CallOpInterface call_op, FuncOp func,
+                                 ModuleOp module);
 
   // Propagates any constant return value of the callee function to the call
   // op's corresponding result.
-  void PropagateConstantFromCallee(CallOpInterface call_op,
-                                   SymbolRefAttr callee_sym, ModuleOp module);
+  void PropagateConstantFromCallee(CallOpInterface call_op, FuncOp func,
+                                   ModuleOp module);
 
   // Tries to compute the result of folding the op. This doesn't actually
   // perform constant folding, it is just computes the equivalent constants.
@@ -566,13 +558,14 @@ class ShapeInference {
   // whether any result type changed.
   bool InferShapeForNonTFDialectOperation(Operation* op);
 
+  Dialect* const tf_dialect_;
+
  private:
   // Mapping between ValuePort (which corresponds to an OpResult or smaller,
   // e.g., first element of OpResult produced) to an Attribute if the ValuePort
   // corresponds to a constant value.
   ValuePortResultMap results_;
   int64_t graph_version_;
-  Dialect* tf_dialect_;
 
   // TODO(b/154065712): Remove propagate_caller_callee_constants once using
   // SCCP pass instead.
@@ -581,10 +574,9 @@ class ShapeInference {
 
 ShapeInference::ShapeInference(int64_t graph_version, MLIRContext* context,
                                bool propagate_caller_callee_constants)
-    : graph_version_(graph_version),
-      propagate_caller_callee_constants_(propagate_caller_callee_constants) {
-  tf_dialect_ = context->getRegisteredDialect<TensorFlowDialect>();
-}
+    : tf_dialect_(context->getLoadedDialect<TensorFlowDialect>()),
+      graph_version_(graph_version),
+      propagate_caller_callee_constants_(propagate_caller_callee_constants) {}
 
 ShapeHandle ShapeInference::ComputeOutputAsShape(OpResult result,
                                                  InferenceContext* ic) {
@@ -671,8 +663,7 @@ bool ShapeInference::RefineTypeForPassThroughOperands(Operation* op,
              .isa<TF::TensorFlowRefType>())
       continue;
 
-    UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect_, operand_type, op,
-                                            result);
+    UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect_, operand_type, result);
     changed = true;
   }
   return changed;
@@ -684,11 +675,8 @@ bool ShapeInference::RefineShapeForPassThroughOps(Operation* op) {
     // TODO(jpienaar): The tf.Cast op, which is uniformly inserted at the
     // moment, cannot handle arbirary types (e.g., it can't handle quantized
     // types). This restriction can be relaxed if not only tf.Cast is used.
-    auto kind = t.getKind();
-    return (kind >= Type::FIRST_STANDARD_TYPE &&
-            kind < Type::LAST_STANDARD_TYPE) ||
-           (kind >= Type::FIRST_TENSORFLOW_TYPE &&
-            kind < Type::LAST_TENSORFLOW_TYPE);
+    return t.getDialect().getNamespace().empty() ||
+           isa<TensorFlowDialect>(t.getDialect());
   };
 
   bool changed = false;
@@ -707,7 +695,7 @@ bool ShapeInference::RefineShapeForPassThroughOps(Operation* op) {
 
     auto new_type = RankedTensorType::get(operand_type.getShape(),
                                           result_type.getElementType());
-    UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect_, new_type, op, result);
+    UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect_, new_type, result);
     changed = true;
   }
   return changed;
@@ -731,6 +719,11 @@ bool ShapeInference::InferShapeForNonTFDialectOperation(Operation* op) {
   }
   if (auto launch_op = dyn_cast<tf_device::LaunchOp>(op)) {
     auto terminator = launch_op.GetBody().getTerminator();
+    return RefineTypeForPassThroughOperands(op, terminator->getOperands(),
+                                            op->getResults());
+  }
+  if (auto cluster_op = dyn_cast<tf_device::ClusterOp>(op)) {
+    auto terminator = cluster_op.GetBody().getTerminator();
     return RefineTypeForPassThroughOperands(op, terminator->getOperands(),
                                             op->getResults());
   }
@@ -764,14 +757,7 @@ bool ShapeInference::InferShapeForSingleOperation(Operation* op) {
 
   // Handle call operations by looking up callee and infering return shape as
   // needed.
-  if (isa<PartitionedCallOp, StatefulPartitionedCallOp, TPUPartitionedCallOp>(
-          op))
-    return InferShapeForCall(op);
-
-  // Handle IfRegion operations by infering return shape from the then and else
-  // branches.
-  if (auto if_region = dyn_cast<IfRegionOp>(op))
-    return InferShapeForIfRegion(if_region);
+  if (auto call = dyn_cast<CallOpInterface>(op)) return InferShapeForCall(call);
 
   // tf.Cast are only inferred if they have at least one user in the TF dialect
   // or feeding into the function return. This is necessary to avoid inserting
@@ -779,182 +765,65 @@ bool ShapeInference::InferShapeForSingleOperation(Operation* op) {
   if (auto cast_op = dyn_cast<CastOp>(op))
     return InferShapeForCast(cast_op, tf_dialect_);
 
-  StringRef op_name = op->getName().getStringRef();
-  // Drop the `tf.` prefix to query TF registry.
-  auto node_name =
-      op_name.drop_front(TensorFlowDialect::getDialectNamespace().size() + 1);
+  // Handle IfOp here by inferring the shape from the else/then function
+  // results. Since `output_shapes` is a derived attribute, avoid going down the
+  // TF InferenceContext path as IfOp shape inference is implemented as just
+  // a lookup of the output_shapes attribute.
+  if (auto if_op = dyn_cast<IfOp>(op)) return InferShapeForIf(if_op);
 
-  // Get information from the registry and check if we have a shape function for
-  // this op.
-  const tensorflow::OpRegistrationData* op_reg_data =
-      tensorflow::OpRegistry::Global()->LookUp(node_name.data());
-  if (!op_reg_data) {
-    LLVM_DEBUG(llvm::dbgs() << "Skipping inference for unregistered op '"
-                            << op->getName() << "'.\n");
-    return false;
-  }
-  if (op_reg_data->shape_inference_fn == nullptr) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "Skipping inference for op without shape function '"
-               << op->getName() << "'.\n");
-    return false;
-  }
+  // Handle IfRegion operations by infering return shape from the then and else
+  // branches.
+  if (auto if_region = dyn_cast<IfRegionOp>(op))
+    return InferShapeForIfRegion(if_region);
 
-  // Convert the operation to a NodeDef to be able to use the InferenceContext
-  // and the TensorFlow shape function.
-  auto node_def_or = tensorflow::ConvertTFDialectOpToNodeDef(
-      op, node_name, /*ignore_unregistered_attrs=*/true);
-  if (!node_def_or.ok()) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "Error converting op '" << *op << "' to NodeDef: "
-               << node_def_or.status().error_message() << "\n");
-    return false;
-  }
-  std::unique_ptr<tensorflow::NodeDef> node_def =
-      std::move(node_def_or).ValueOrDie();
-
-  // Collect an array with input values for constant operands and input shapes
-  // for all the operands.
-  std::vector<const tensorflow::Tensor*> input_tensors(op->getNumOperands());
-  std::vector<tensorflow::PartialTensorShape> input_shapes(
-      op->getNumOperands());
-  std::vector<tensorflow::Tensor> tensors(op->getNumOperands());
-  std::vector<std::unique_ptr<std::vector<
-      std::pair<tensorflow::PartialTensorShape, tensorflow::DataType>>>>
-      handle_shapes_and_types(op->getNumOperands());
-  for (auto it : llvm::enumerate(op->getOperands())) {
-    Value operand = it.value();
-    size_t index = it.index();
-
-    // If the operand is constant, then convert it to Tensor.
+  // Return operand as a constant attribute.
+  auto operand_as_constant_fn = [&](Value operand) {
     ValuePort vp(operand);
     Attribute attr = ComputeOutputComponent(vp);
     if (!attr && matchPattern(operand, m_Constant(&attr)))
       RecordValue(vp, attr);
-    if (attr) {
-      tensorflow::Tensor* input_tensor = &tensors[index];
-      auto status =
-          tensorflow::ConvertToTensor(attr.cast<ElementsAttr>(), input_tensor);
-      if (status.ok()) {
-        input_tensors[index] = input_tensor;
-      } else {
-        LLVM_DEBUG(llvm::dbgs()
-                   << "Error converting input " << index << " of op '" << *op
-                   << "' to Tensor: " << status.error_message() << "\n");
-      }
-    }
+    return attr;
+  };
 
-    Type operand_type = operand.getType();
-    if (auto shape = GetShapeFromMlirType(operand_type)) {
-      input_shapes[index] = *shape;
-    }
-    // Collect the handle shapes and types for a resource/variant.
-    handle_shapes_and_types[index] = GetSubtypes(operand_type);
-  }
+  // Return op result as a shape.
+  auto op_result_as_shape_fn = [&](InferenceContext& context,
+                                   OpResult op_result) {
+    return ComputeOutputAsShape(op_result, &context);
+  };
 
-  // Perform the shape inference using an InferenceContext with the input
-  // shapes. This object is abstracting the information that the ShapeInference
-  // function operates on.
-  InferenceContext c(graph_version_, *node_def, op_reg_data->op_def,
-                     input_shapes, input_tensors,
-                     /*input_tensors_as_shapes=*/{}, handle_shapes_and_types);
-  auto status = c.Run(op_reg_data->shape_inference_fn);
-  if (!status.ok()) {
-    LLVM_DEBUG(llvm::dbgs() << "Shape inference error for '" << *op
-                            << "': " << status.error_message() << "\n");
+  // Return result element type at `index`.
+  auto result_element_type_fn = [&](int index) {
+    return op->getResult(index).getType().cast<TensorType>().getElementType();
+  };
+
+  llvm::SmallVector<ShapedTypeComponents, 4> inferred_return_shapes;
+  if (failed(InferReturnTypeComponentsForTFOp(
+          /*location=*/None, op, graph_version_, operand_as_constant_fn,
+          op_result_as_shape_fn, result_element_type_fn,
+          inferred_return_shapes)))
     return false;
-  }
-
-  // Determine if, during shape computation, the shape functions attempted to
-  // query an input operand as shape where the input was not known/constant.
-  bool requires_inputs =
-      any_of(llvm::seq<int>(0, c.num_inputs()), [&](int input) {
-        return c.requested_input_tensor_as_partial_shape(input) &&
-               !input_tensors[input];
-      });
-  if (requires_inputs) {
-    LLVM_DEBUG(llvm::dbgs() << "\trequired input\n");
-    std::vector<ShapeHandle> input_tensors_as_shapes;
-    for (int input : llvm::seq<int>(0, c.num_inputs())) {
-      if (c.requested_input_tensor_as_partial_shape(input) &&
-          !input_tensors[input]) {
-        LLVM_DEBUG(llvm::dbgs() << "Requesting " << input << " as shape\n");
-        auto op_result = op->getOperand(input).dyn_cast<OpResult>();
-        if (!op_result) continue;
-        // Resize on first valid shape computed.
-        input_tensors_as_shapes.resize(c.num_inputs());
-        auto handle = ComputeOutputAsShape(op_result, &c);
-        LLVM_DEBUG(llvm::dbgs() << "Requested " << input << " as shape "
-                                << (handle.Handle() ? "found" : "not found"));
-        if (handle.Handle()) input_tensors_as_shapes[input] = handle;
-      }
-    }
-
-    // Attempt to compute the unknown operands as shapes.
-    // Note: in the case where no partial outputs could be computed, this would
-    // be empty.
-    if (!input_tensors_as_shapes.empty()) {
-      c.set_input_tensors_as_shapes(input_tensors_as_shapes);
-      auto status = c.Run(op_reg_data->shape_inference_fn);
-      if (!status.ok()) {
-        LLVM_DEBUG(llvm::dbgs() << "Shape inference error for '" << *op
-                                << "': " << status.error_message() << "\n");
-        return false;
-      }
-    }
-  }
-
-  assert(c.num_outputs() == op->getNumResults() &&
-         "inference context matches the MLIR number of results.");
 
   // Update the shape for each of the operation result if the InferenceContext
   // has more precise shapes recorded.
   bool changed = false;
-  for (int output : llvm::seq<int>(0, c.num_outputs())) {
-    // Skip already statically shaped results.
-    Value result = op->getResult(output);
-    if (!CanBeRefined(result.getType())) continue;
-    auto shaped_type = result.getType().cast<ShapedType>();
+  for (auto result : llvm::zip(op->getResults(), inferred_return_shapes)) {
+    Value op_result = std::get<0>(result);
+    if (!CanBeRefined(op_result.getType())) continue;
 
-    ShapeHandle shape_handle = c.output(output);
-    LLVM_DEBUG(llvm::dbgs() << "Inferred output " << output << " : "
-                            << c.DebugString(shape_handle) << "\n");
-    auto get_tensor_type = [&c](const ShapeHandle& sh,
-                                Type element_type) -> TensorType {
-      if (!c.RankKnown(sh)) return UnrankedTensorType::get(element_type);
-      // Convert the shape from TensorFlow (int64) to MLIR (int64_t).
-      SmallVector<int64_t, 8> shape;
-      for (int dim : llvm::seq<int>(0, c.Rank(sh)))
-        shape.push_back(c.Value(c.Dim(sh, dim)));
-      return RankedTensorType::get(shape, element_type);
-    };
-    auto new_element_type = shaped_type.getElementType();
-    // Populate the handle shapes for a resource/variant.
-    if (new_element_type.isa<TF::ResourceType, TF::VariantType>()) {
-      auto handle_shapes_types = c.output_handle_shapes_and_types(output);
-      if (handle_shapes_types) {
-        SmallVector<TensorType, 1> subtypes;
-        OpBuilder b(op);
-        for (const auto& shape_n_type : *handle_shapes_types) {
-          Type element_type;
-          auto status =
-              tensorflow::ConvertDataType(shape_n_type.dtype, b, &element_type);
-          assert(status.ok() && "Unknown element type");
-          subtypes.push_back(get_tensor_type(shape_n_type.shape, element_type));
-        }
-        if (new_element_type.isa<TF::ResourceType>()) {
-          new_element_type = TF::ResourceType::get(subtypes, op->getContext());
-        } else {
-          new_element_type = TF::VariantType::get(subtypes, op->getContext());
-        }
-      }
-    }
-    auto new_type = get_tensor_type(shape_handle, new_element_type);
-    if (result.getType() == new_type) continue;
+    ShapedTypeComponents inferred = std::get<1>(result);
+    TensorType inferred_type;
+    if (inferred.hasRank())
+      inferred_type =
+          RankedTensorType::get(inferred.getDims(), inferred.getElementType());
+    else
+      inferred_type = UnrankedTensorType::get(inferred.getElementType());
 
-    UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect_, new_type, op, result);
+    if (op_result.getType() == inferred_type) continue;
+    UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect_, inferred_type,
+                                            op_result);
     changed = true;
   }
+
   if (changed)
     LLVM_DEBUG(llvm::dbgs()
                << "Modified after shape inference: '" << *op << "'\n");
@@ -963,14 +832,12 @@ bool ShapeInference::InferShapeForSingleOperation(Operation* op) {
 
 LogicalResult ShapeInference::PropagateShapeToFunctions(
     ModuleOp module, Operation::operand_type_range input_types,
-    ArrayRef<StringRef> func_names, int64_t max_iteration) {
+    ArrayRef<FuncOp> functions, int64_t max_iteration) {
   bool all_succeeded = true;
-  auto types = llvm::to_vector<4>(input_types);
   // If shape propagation fails for one function, return failure, but do not
   // early exit and attempt to propagate shapes for all provided functions to
   // have a best-effort propagation.
-  for (auto func_name : func_names) {
-    FuncOp func = module.lookupSymbol<FuncOp>(func_name);
+  for (FuncOp func : functions) {
     auto func_uses = SymbolTable::getSymbolUses(func, &module.getBodyRegion());
     if (!llvm::hasSingleElement(func_uses.getValue())) {
       int num_uses = std::distance(func_uses->begin(), func_uses->end());
@@ -983,8 +850,8 @@ LogicalResult ShapeInference::PropagateShapeToFunctions(
     }
 
     FunctionType func_type = func.getType();
-    func.setType(
-        FunctionType::get(types, func_type.getResults(), func.getContext()));
+    func.setType(FunctionType::get(input_types, func_type.getResults(),
+                                   func.getContext()));
 
     auto res =
         PropagateShapeToRegions(input_types, {&func.getBody()}, max_iteration);
@@ -993,9 +860,9 @@ LogicalResult ShapeInference::PropagateShapeToFunctions(
       continue;
     }
 
-    auto new_return_types = InferShapeForFunctionReturnType(func);
+    auto new_return_types = InferShapeForFunctionReturnType(func, tf_dialect_);
     if (new_return_types)
-      func.setType(FunctionType::get(types, new_return_types.getValue(),
+      func.setType(FunctionType::get(input_types, new_return_types.getValue(),
                                      func.getContext()));
   }
   return success(all_succeeded);
@@ -1005,16 +872,17 @@ LogicalResult ShapeInference::PropagateShapeToRegions(
     Operation::operand_type_range input_types, ArrayRef<Region*> regions,
     int64_t max_iteration) {
   bool all_succeeded = true;
-  auto types = llvm::to_vector<4>(input_types);
   // If shape propagation fails for one region, return failure, but do not
   // early exit and attempt to propagate shapes for all provided regions to
   // have a best-effort propagation.
   for (auto region : regions) {
     // Refine region arguments.
     Block& entry = region->front();
-    assert(types.size() == entry.getNumArguments());
-    for (auto arg_and_idx : llvm::enumerate(entry.getArguments())) {
-      arg_and_idx.value().setType(types[arg_and_idx.index()]);
+    assert(llvm::size(input_types) == entry.getNumArguments());
+    for (auto it : llvm::zip(entry.getArguments(), input_types)) {
+      BlockArgument arg = std::get<0>(it);
+      Type type = std::get<1>(it);
+      arg.setType(type);
     }
 
     // Propagate shapes into the region.
@@ -1025,12 +893,9 @@ LogicalResult ShapeInference::PropagateShapeToRegions(
 }
 
 void ShapeInference::PropagateConstantToCallee(CallOpInterface call_op,
-                                               SymbolRefAttr callee_sym,
-                                               ModuleOp module) {
-  auto func = module.lookupSymbol<FuncOp>(callee_sym.getRootReference());
+                                               FuncOp func, ModuleOp module) {
   auto func_uses = SymbolTable::getSymbolUses(func, &module.getBodyRegion());
-  int num_uses = std::distance(func_uses->begin(), func_uses->end());
-  if (num_uses != 1) return;
+  if (!llvm::hasSingleElement(func_uses.getValue())) return;
 
   OpBuilder builder(&func.front().front());
   Operation* op = call_op.getOperation();
@@ -1056,9 +921,7 @@ void ShapeInference::PropagateConstantToCallee(CallOpInterface call_op,
 }
 
 void ShapeInference::PropagateConstantFromCallee(CallOpInterface call_op,
-                                                 SymbolRefAttr callee_sym,
-                                                 ModuleOp module) {
-  auto func = module.lookupSymbol<FuncOp>(callee_sym.getRootReference());
+                                                 FuncOp func, ModuleOp module) {
   // If the return value is a constant, use the constant as the value of
   // the call return.
   Operation* op = call_op.getOperation();
@@ -1090,28 +953,26 @@ LogicalResult ShapeInference::PropagateShapeIntoAttachedFunctions(
   if (auto if_op = dyn_cast<TF::IfOp>(op)) {
     return PropagateShapeToFunctions(
         module, drop_begin(if_op.getOperandTypes(), 1),
-        {if_op.then_branch(), if_op.else_branch()}, max_iteration);
+        {if_op.then_function(), if_op.else_function()}, max_iteration);
   } else if (auto case_op = dyn_cast<TF::CaseOp>(op)) {
-    SmallVector<StringRef, 4> branches;
-    for (Attribute branch : case_op.branches())
-      branches.push_back(branch.cast<FlatSymbolRefAttr>().getValue());
+    SmallVector<FuncOp, 4> branches;
+    case_op.get_branch_functions(branches);
     return PropagateShapeToFunctions(module,
                                      drop_begin(case_op.getOperandTypes(), 1),
                                      branches, max_iteration);
   } else if (auto while_op = dyn_cast<TF::WhileOp>(op)) {
-    return PropagateShapeToFunctions(module, while_op.getOperandTypes(),
-                                     {while_op.cond(), while_op.body()},
-                                     max_iteration);
+    return PropagateShapeToFunctions(
+        module, while_op.getOperandTypes(),
+        {while_op.cond_function(), while_op.body_function()}, max_iteration);
   } else if (auto call_op = dyn_cast<CallOpInterface>(op)) {
-    CallInterfaceCallable callable = call_op.getCallableForCallee();
-    if (SymbolRefAttr sym = callable.dyn_cast<SymbolRefAttr>()) {
-      PropagateConstantToCallee(call_op, sym, module);
-      if (failed(PropagateShapeToFunctions(
-              module, call_op.getArgOperands().getTypes(),
-              {sym.getRootReference()}, max_iteration))) {
+    if (auto func = dyn_cast<FuncOp>(call_op.resolveCallable())) {
+      PropagateConstantToCallee(call_op, func, module);
+      if (failed(PropagateShapeToFunctions(module,
+                                           call_op.getArgOperands().getTypes(),
+                                           {func}, max_iteration))) {
         return failure();
       }
-      PropagateConstantFromCallee(call_op, sym, module);
+      PropagateConstantFromCallee(call_op, func, module);
       return success();
     }
   }
@@ -1162,10 +1023,11 @@ LogicalResult ShapeInference::TryToFold(Operation* op) {
     if (!dialect) return failure();
     // Only attempt TF dialect fallback if there are no unknown operands.
     if (some_unknown && dialect == tf_dialect_) return failure();
-    SmallVector<Attribute, 8> constants;
-    if (failed(dialect->constantFoldHook(op, constant_operands, constants)))
+    auto* interface = dialect->getRegisteredInterface<DialectFoldInterface>();
+    if (!interface) return failure();
+
+    if (failed(interface->fold(op, constant_operands, fold_results)))
       return failure();
-    fold_results.assign(constants.begin(), constants.end());
   }
 
   for (auto result : zip(op->getResults(), fold_results)) {
@@ -1182,7 +1044,7 @@ LogicalResult ShapeInference::TryToFold(Operation* op) {
     if (ElementsAttr eattr = attr.dyn_cast_or_null<ElementsAttr>()) {
       if (std::get<0>(result).getType() == eattr.getType()) continue;
 
-      UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect_, eattr.getType(), op,
+      UpdateTypeAndInsertIncompatibleUseCasts(tf_dialect_, eattr.getType(),
                                               std::get<0>(result));
     }
   }
@@ -1252,7 +1114,8 @@ LogicalResult InferShapeForFunction(FuncOp func,
       return failure();
     // TODO(b/156276510): Verify that it is always fine to refine a function's
     // return type, as long as we do not change the argument shapes.
-    if (auto return_types = InferShapeForFunctionReturnType(func)) {
+    if (auto return_types =
+            InferShapeForFunctionReturnType(func, context.tf_dialect_)) {
       func.setType(FunctionType::get(func.getType().getInputs(),
                                      return_types.getValue(),
                                      func.getContext()));
@@ -1300,7 +1163,8 @@ LogicalResult InferShapeForFunction(FuncOp func,
     return failure();
   }
 
-  auto return_types = InferShapeForFunctionReturnType(func);
+  auto return_types =
+      InferShapeForFunctionReturnType(func, context.tf_dialect_);
   func.setType(FunctionType::get(new_arg_types,
                                  return_types.hasValue()
                                      ? return_types.getValue()

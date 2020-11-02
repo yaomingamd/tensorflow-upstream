@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/lite/kernels/internal/compatibility.h"
 #include "tensorflow/lite/schema/schema_generated.h"
+#include "tensorflow/lite/schema/schema_utils.h"
 
 namespace tflite {
 namespace {
@@ -176,6 +177,9 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       return 1;
 
     case BuiltinOperator_GATHER:
+      if (op_sig.input_types.at(0) == TensorType_INT16) {
+        return 4;
+      }
       // If the op takes bool input, it is version 3.
       if (op_sig.input_types.at(0) == TensorType_BOOL) {
         return 3;
@@ -234,6 +238,9 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       return 1;
 
     case BuiltinOperator_TRANSPOSE:
+      if (op_sig.input_types.at(0) == TensorType_INT16) {
+        return 5;
+      }
       if (op_sig.options.single_input_op.num_dims > 4) {
         return 4;
       }
@@ -317,6 +324,9 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       return 1;
 
     case BuiltinOperator_SLICE:
+      if (op_sig.input_types.at(0) == TensorType_INT16) {
+        return 4;
+      }
       // Version 3 supports string input types.
       if (op_sig.input_types.at(0) == TensorType_STRING) {
         return 3;
@@ -365,6 +375,7 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       }
       return 1;
 
+    case BuiltinOperator_ABS:
     case BuiltinOperator_RELU:
       if (op_sig.input_types.at(0) == TensorType_INT8 ||
           op_sig.input_types.at(0) == TensorType_UINT8) {
@@ -396,8 +407,10 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       }
       return 1;
     case BuiltinOperator_RESIZE_NEAREST_NEIGHBOR:
-      if (op_sig.options.resize.half_pixel_centers ||
-          op_sig.options.resize.align_corners) {
+      if (op_sig.input_types.at(0) == TensorType_INT16) {
+        return 4;
+      } else if (op_sig.options.resize.half_pixel_centers ||
+                 op_sig.options.resize.align_corners) {
         return 3;
       } else if (op_sig.input_types.at(0) == TensorType_INT8) {
         return 2;
@@ -447,13 +460,31 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       }
       return 1;
 
+    case BuiltinOperator_ADD:
+      if (op_sig.input_types.at(0) == TensorType_INT16 &&
+          op_sig.output_types.at(0) == TensorType_INT16) {
+        if (!op_sig.options.addsub.pot_scale_int16) {
+          return 3;
+        }
+      }
+      if (op_sig.input_types.at(0) == TensorType_INT8) {
+        return 2;
+      }
+      return 1;
+
     case BuiltinOperator_SUB:
+      if (op_sig.input_types.at(0) == TensorType_INT16 &&
+          op_sig.output_types.at(0) == TensorType_INT16) {
+        if (!op_sig.options.addsub.pot_scale_int16) {
+          return 5;
+        }
+      }
       if (!op_sig.input_types.empty() &&
           op_sig.input_types.at(0) == TensorType_INT64) {
         return 4;
       }
-      if (op_sig.options.broadcast.need_broadcast &&
-          op_sig.options.broadcast.num_dims > 4) {
+      if (op_sig.options.addsub.need_broadcast &&
+          op_sig.options.addsub.num_dims > 4) {
         return 3;
       }
       if (op_sig.input_types.at(0) == TensorType_INT8) {
@@ -513,6 +544,7 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       return 1;
 
     case BuiltinOperator_CONCATENATION:
+    case BuiltinOperator_BATCH_MATMUL:
     case BuiltinOperator_SOFTMAX:
     case BuiltinOperator_MEAN:
     case BuiltinOperator_PAD:
@@ -539,7 +571,7 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
         }
       }
       return 1;
-    case BuiltinOperator_ADD:
+
     case BuiltinOperator_SPACE_TO_DEPTH:
     case BuiltinOperator_SPLIT_V:
     case BuiltinOperator_SUM:
@@ -555,7 +587,6 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
     case BuiltinOperator_LESS:
     case BuiltinOperator_LESS_EQUAL:
     case BuiltinOperator_SELECT:
-    case BuiltinOperator_BATCH_MATMUL:
       if (op_sig.input_types.at(0) == TensorType_INT8) {
         return 2;
       }
@@ -591,9 +622,10 @@ TensorType GetTensorType(int32_t idx, const SubGraph* subgraph) {
 // options to decide op version.
 OpSignature GetOpSignature(const OperatorCode* op_code, const Operator* op,
                            const SubGraph* subgraph) {
-  OpSignature op_sig = {op_code->builtin_code()};
+  auto builtin_code = GetBuiltinCode(op_code);
+  OpSignature op_sig = {builtin_code};
 
-  switch (op_code->builtin_code()) {
+  switch (builtin_code) {
     case BuiltinOperator_DEPTHWISE_CONV_2D: {
       auto conv_option = op->builtin_options_as_DepthwiseConv2DOptions();
       if (conv_option) {
@@ -666,6 +698,26 @@ OpSignature GetOpSignature(const OperatorCode* op_code, const Operator* op,
       }
     } break;
 
+    case BuiltinOperator_ADD: {
+      auto add_option = op->builtin_options_as_AddOptions();
+      op_sig.options.addsub.pot_scale_int16 = true;
+      if (add_option) {
+        op_sig.options.addsub.pot_scale_int16 = add_option->pot_scale_int16();
+      }
+    } break;
+
+    case BuiltinOperator_SUB: {
+      auto sub_option = op->builtin_options_as_SubOptions();
+      op_sig.options.addsub.need_broadcast =
+          !HaveSameShapes(subgraph, op, 0, 1);
+      op_sig.options.addsub.num_dims =
+          std::max(GetNumDims(subgraph, op, 0), GetNumDims(subgraph, op, 1));
+      op_sig.options.addsub.pot_scale_int16 = true;
+      if (sub_option) {
+        op_sig.options.addsub.pot_scale_int16 = sub_option->pot_scale_int16();
+      }
+    } break;
+
     case BuiltinOperator_LSTM: {
       auto lstm_option = op->builtin_options_as_LSTMOptions();
       if (lstm_option) {
@@ -711,7 +763,7 @@ OpSignature GetOpSignature(const OperatorCode* op_code, const Operator* op,
     case BuiltinOperator_TRANSPOSE: {
       op_sig.options.single_input_op.num_dims = GetNumDims(subgraph, op, 0);
     } break;
-    case BuiltinOperator_SUB:
+
     case BuiltinOperator_DIV:
     case BuiltinOperator_MAXIMUM:
     case BuiltinOperator_MINIMUM: {
@@ -747,14 +799,15 @@ void UpdateOpVersion(uint8_t* model_buffer_pointer) {
       OperatorCode* op_code =
           model->mutable_operator_codes()->GetMutableObject(op->opcode_index());
 
-      if (op_code->builtin_code() != BuiltinOperator_CUSTOM) {
+      auto builtin_code = GetBuiltinCode(op_code);
+      if (builtin_code != BuiltinOperator_CUSTOM) {
         OpSignature op_sig = GetOpSignature(op_code, op, subgraph);
         // Update builtin operator version.
         int32_t op_ver = GetBuiltinOperatorVersion(op_sig);
         if (!op_code->mutate_version(op_ver)) {
           LOG(ERROR) << "Can't set operator "
-                     << EnumNameBuiltinOperator(op_code->builtin_code())
-                     << " to version " << op_ver;
+                     << EnumNameBuiltinOperator(builtin_code) << " to version "
+                     << op_ver;
         }
       }
     }

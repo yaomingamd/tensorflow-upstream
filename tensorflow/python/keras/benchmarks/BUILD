@@ -8,7 +8,11 @@ package(
     licenses = ["notice"],  # Apache 2.0
 )
 
-exports_files(["LICENSE"])
+filegroup(
+    name = "all_py_srcs",
+    srcs = glob(["*.py"]),
+    visibility = ["//tensorflow/python/keras/google/private_tf_api_test:__pkg__"],
+)
 
 # To run CPU benchmarks:
 #   bazel run -c opt benchmarks_test -- --benchmarks=.
@@ -28,7 +32,17 @@ py_library(
     name = "keras_benchmark_lib_pip",
     deps = [
         ":benchmark_util",
+        ":distribution_util",
         "//tensorflow/python/keras/benchmarks/saved_model_benchmarks:saved_model_benchmark_util",
+    ],
+)
+
+# This lib is mainly for running benchmarks on mlcompass infra.
+py_library(
+    name = "profiler_lib",
+    visibility = [
+        "//learning/brain/contrib/keras_benchmark:__subpackages__",
+        "//tensorflow/python/keras:__subpackages__",
     ],
 )
 
@@ -45,6 +59,7 @@ py_test(
     tags = COMMON_TAGS,
     deps = [
         ":benchmark_util",
+        ":profiler_lib",
         "//tensorflow:tensorflow_py",
         "//third_party/py/numpy",
     ],
@@ -55,9 +70,13 @@ cuda_py_test(
     size = "medium",
     srcs = ["eager_microbenchmarks_test.py"],
     python_version = "PY3",
-    tags = COMMON_TAGS,
+    tags = COMMON_TAGS + [
+        "no_oss_py38",  # TODO(b/162044699)
+    ],
     deps = [
+        ":profiler_lib",
         "//tensorflow:tensorflow_py",
+        "//tensorflow/python/keras/utils:tf_inspect",
     ],
 )
 
@@ -66,6 +85,7 @@ cuda_py_test(
     srcs = ["model_components_benchmarks_test.py"],
     python_version = "PY3",
     deps = [
+        ":profiler_lib",
         "//tensorflow:tensorflow_py",
     ],
 )
@@ -74,24 +94,25 @@ py_library(
     name = "benchmark_util",
     srcs = ["benchmark_util.py"],
     deps = [
+        ":distribution_util",
         "//tensorflow:tensorflow_py",
         "//third_party/py/numpy",
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "bidirectional_lstm_benchmark_test",
-    size = "medium",
     srcs = ["keras_examples_benchmarks/bidirectional_lstm_benchmark_test.py"],
     python_version = "PY3",
     tags = COMMON_TAGS,
     deps = [
         ":benchmark_util",
+        ":profiler_lib",
         "//tensorflow:tensorflow_py",
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "text_classification_transformer_benchmark_test",
     srcs = ["keras_examples_benchmarks/text_classification_transformer_benchmark_test.py"],
     python_version = "PY3",
@@ -102,7 +123,7 @@ py_test(
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "antirectifier_benchmark_test",
     srcs = ["keras_examples_benchmarks/antirectifier_benchmark_test.py"],
     python_version = "PY3",
@@ -113,7 +134,7 @@ py_test(
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "mnist_conv_benchmark_test",
     srcs = ["keras_examples_benchmarks/mnist_conv_benchmark_test.py"],
     python_version = "PY3",
@@ -125,7 +146,7 @@ py_test(
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "mnist_hierarchical_rnn_benchmark_test",
     srcs = ["keras_examples_benchmarks/mnist_hierarchical_rnn_benchmark_test.py"],
     python_version = "PY3",
@@ -136,7 +157,7 @@ py_test(
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "mnist_irnn_benchmark_test",
     srcs = ["keras_examples_benchmarks/mnist_irnn_benchmark_test.py"],
     python_version = "PY3",
@@ -147,7 +168,7 @@ py_test(
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "reuters_mlp_benchmark_test",
     srcs = ["keras_examples_benchmarks/reuters_mlp_benchmark_test.py"],
     python_version = "PY3",
@@ -159,7 +180,7 @@ py_test(
     ],
 )
 
-py_test(
+cuda_py_test(
     name = "cifar10_cnn_benchmark_test",
     srcs = ["keras_examples_benchmarks/cifar10_cnn_benchmark_test.py"],
     python_version = "PY3",
@@ -168,4 +189,38 @@ py_test(
         ":benchmark_util",
         "//tensorflow:tensorflow_py",
     ],
+)
+
+cuda_py_test(
+    name = "mnist_conv_custom_training_benchmark_test",
+    srcs = ["keras_examples_benchmarks/mnist_conv_custom_training_benchmark_test.py"],
+    python_version = "PY3",
+    tags = COMMON_TAGS,
+    deps = [
+        ":distribution_util",
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+py_library(
+    name = "distribution_util",
+    srcs = ["distribution_util.py"],
+    deps = [
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+# Run memory profiler on Keras model.
+# Please make sure `meomry_profiler` is installed.
+# To run the memory profiler:
+# With CPU:
+#   bazel run -c opt model_memory_profile -- --model=YOUR_MODEL_NAME
+# With GPU:
+#   bazel run -c opt --config=cuda model_memory_profile -- --model=YOUR_MODEL_NAME
+py_binary(
+    name = "model_memory_profile",
+    srcs = ["model_memory_profile.py"],
+    python_version = "PY3",
+    tags = ["no_oss"],
+    deps = ["//tensorflow:tensorflow_py"],
 )

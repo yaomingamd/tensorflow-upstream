@@ -21,6 +21,8 @@ from __future__ import print_function
 
 import collections
 import enum
+import typing
+from typing import Any
 
 from absl import logging
 import numpy as np
@@ -50,7 +52,6 @@ from tensorflow.python.tpu import tpu_function
 from tensorflow.python.tpu.ops import tpu_ops
 from tensorflow.python.util import compat
 from tensorflow.python.util import nest
-from tensorflow.python.util.compat import collections_abc
 from tensorflow.python.util.tf_export import tf_export
 
 ops.NotDifferentiable("TPUReplicatedInput")
@@ -287,6 +288,7 @@ class TPUReplicateContext(control_flow_ops.XLAControlFlowContext):
     self._outer_device_function_stack = None
     self._oc_dev_fn_stack = None
     self._outside_compilation_cluster = None
+    self._outside_compilation_v2_context = None
     self._outside_compilation_counter = 0
     self._in_gradient_colocation = None
     self._gradient_colocation_stack = []
@@ -378,6 +380,21 @@ class TPUReplicateContext(control_flow_ops.XLAControlFlowContext):
 
   def EnterGradientColocation(self, op, gradient_uid):
     if op is not None:
+      if ops.get_default_graph()._control_flow_context is None:  # pylint: disable=protected-access
+        # If we are in TF 2 functions (control flow V2 functions, or
+        # tf.function()), we need to attach _xla_outside_compilation attribute
+        # directly because we are not in TPUReplicateContext.
+        try:
+          outside_attr = op.get_attr(_OUTSIDE_COMPILATION_ATTR).decode("ascii")
+        except ValueError:
+          # The attr was not present: do nothing.
+          return
+        parts = outside_attr.split(".")
+        cluster = parts[0] + "." + gradient_uid
+        self._outside_compilation_v2_context = OutsideCompilationV2Context(
+            cluster)
+        self._outside_compilation_v2_context.Enter()
+        return
       self._gradient_colocation_stack.append(op)
       if not self._outside_compilation_cluster:
         try:
@@ -417,6 +434,17 @@ class TPUReplicateContext(control_flow_ops.XLAControlFlowContext):
 
   def ExitGradientColocation(self, op, gradient_uid):
     if op is not None:
+      if ops.get_default_graph()._control_flow_context is None:  # pylint: disable=protected-access
+        # Inside a TF2 tf.function or control flow graph and `op` was not
+        # marked to be outside compiled.
+        assert self._outside_compilation_v2_context is None
+        return
+      if self._outside_compilation_v2_context is not None:
+        # Inside a TF2 tf.function or control flow graph and `op` was
+        # marked to be outside compiled.
+        self._outside_compilation_v2_context.Exit()
+        self._outside_compilation_v2_context = None
+        return
       if not self._gradient_colocation_stack:
         raise errors.InternalError(
             op.node_def, op,
@@ -605,6 +633,9 @@ class TPUReplicateContext(control_flow_ops.XLAControlFlowContext):
 
   def AddValue(self, val):
     """Add `val` to the current context and its outer context recursively."""
+    if not self._outer_context:
+      return val
+
     if val.name in self._values:
       # Use the real value if it comes from outer context.
       result = self._external_values.get(val.name)
@@ -826,7 +857,7 @@ class XLAOptions(
       requested.
   """
 
-  def __new__(cls, use_spmd_for_xla_partitioning=False):
+  def __new__(cls, use_spmd_for_xla_partitioning=True):
     return super(XLAOptions, cls).__new__(cls, use_spmd_for_xla_partitioning)
 
 
@@ -1227,7 +1258,7 @@ def split_compile_and_replicate(computation,
       nest.flatten(per_replica_input, expand_composites=True)
       for per_replica_input in inputs
   ]
-  # Mask parallel to one replicat's inputs with True for tensors coming from
+  # Mask parallel to one replica's inputs with True for tensors coming from
   # composites.
   is_composite = nest.flatten(nest.map_structure(
       lambda x: _flatten_and_filter_composite(x, False, True), inputs[0]))
@@ -1412,15 +1443,20 @@ def split_compile_and_replicate(computation,
 
     outputs_is_flat = xla.is_flat(outputs)
     if outputs_is_flat:
-      output_tensors, control_deps = _postprocess_flat_outputs(outputs)
+      output_tensors, control_deps, pack_template = _postprocess_flat_outputs(
+          outputs)
     else:
-      output_tensors, control_deps = _postprocess_non_flat_outputs(outputs)
+      output_tensors, control_deps, pack_template = (
+          _postprocess_non_flat_outputs(outputs))
 
     # tensor_tracer imports tpu.py. Local import to tensor_tracer to avoid
     # import-cycle
-    # pylint: disable=g-import-not-at-top
-    from tensorflow.python.tpu import tensor_tracer
-    # pylint: enable=g-import-not-at-top
+    if typing.TYPE_CHECKING:
+      tensor_tracer = Any
+    else:
+      # pylint: disable=g-import-not-at-top
+      from tensorflow.python.tpu import tensor_tracer
+      # pylint: enable=g-import-not-at-top
     if tensor_tracer.TensorTracer.is_enabled():
       tt = tensor_tracer.TensorTracer()
       output_tensors = tt.trace_tpu(ops.get_default_graph(),
@@ -1473,11 +1509,10 @@ def split_compile_and_replicate(computation,
             array_ops.identity(
                 ys[replica], name="output_%d_shard_%d" % (i, replica)))
 
-  if not outputs_is_flat:
-    replicated_outputs = [
-        nest.pack_sequence_as(outputs, replica_outs)
-        for replica_outs in replicated_outputs
-    ]
+  replicated_outputs = [
+      nest.pack_sequence_as(pack_template, replica_outs, expand_composites=True)
+      for replica_outs in replicated_outputs
+  ]
 
   return [compile_status, replicated_outputs]
 
@@ -1489,7 +1524,9 @@ def _postprocess_flat_outputs(outputs):
     outputs: Output from `computation` inside `tpu.rewrite`.
 
   Returns:
-    Tensors and Operations extracted from outputs.
+    - Tensors extracted from outputs.
+    - Operations extracted from outputs.
+    - A pack template for use with nest.pack_sequence_as to pack the tensors.
   """
   # Following code segment is to preserve legacy behavior. Previously we only
   # supported flat outputs and thus for consistency it was nice to convert even
@@ -1500,9 +1537,17 @@ def _postprocess_flat_outputs(outputs):
   # If the computation returns `None`, make it an empty tuple.
   if outputs is None:
     outputs = tuple()
-  # If the computation only returned one value, makes it a tuple.
-  if not isinstance(outputs, collections_abc.Sequence):
-    outputs = (outputs,)
+
+  # For legacy / backwards compatibility reasons we return a list for "flat"
+  # output values (even if the user's flat return value was a different type or
+  # even just a scalar value) so use nest.flatten to compute a flat list pack
+  # template.
+  pack_template = nest.flatten(outputs, expand_composites=False)
+
+  # Even though outputs is already "flat", we flatten any composites so their
+  # component tensors can be tagged and replicated. The pack_template will be
+  # used by the caller to repack the composite tensors.
+  outputs = nest.flatten(outputs, expand_composites=True)
 
   # Append `no_op` here so that fetching any return value of this function
   # will trigger TPUExecute node.
@@ -1527,6 +1572,11 @@ def _postprocess_flat_outputs(outputs):
         "TPU functions must return zero-or more Tensor values followed by "
         "zero or more Operations.")
 
+  # Trim operations off the end of the pack template. output_operations has 1
+  # extra element due to the no-op that is added.
+  if len(output_operations) > 1:
+    pack_template = pack_template[:1 - len(output_operations)]
+
   # Wraps outputs in Identity ops. Otherwise a replicated input copied
   # straight to an output would bypass the replicate(). This would be bad
   # because the TPUReplicatedInput/TPUReplicatedOutput operator would not
@@ -1540,7 +1590,7 @@ def _postprocess_flat_outputs(outputs):
       o.op._set_attr("_tpu_output_identity", attr_value_pb2.AttrValue(b=True))
       # pylint: enable=protected-access
       new_output_tensors.append(o)
-  return new_output_tensors, output_operations
+  return new_output_tensors, output_operations, pack_template
 
 
 def _postprocess_non_flat_outputs(outputs):
@@ -1550,12 +1600,14 @@ def _postprocess_non_flat_outputs(outputs):
     outputs: Output from `computation` inside `tpu.rewrite`.
 
   Returns:
-    Tensors extracted from outputs and an empty list because Operations are not
-    allowed in non-flat outputs..
+    - Tensors extracted from outputs.
+    - An empty Operations list because Operations are not allowed in non-flat
+      outputs.
+    - A pack template for use with nest.pack_sequence_as to pack the tensors.
   """
 
   # Flatten output items.
-  flat_outputs = nest.flatten(outputs)
+  flat_outputs = nest.flatten(outputs, expand_composites=True)
 
   # Convert all non-Operation outputs to Tensors.
   for i, o in enumerate(flat_outputs):
@@ -1586,7 +1638,7 @@ def _postprocess_non_flat_outputs(outputs):
       flat_outputs[i] = array_ops.identity(o)
 
   # All flat_outputs are Tensors, and no Operations.
-  return flat_outputs, []
+  return flat_outputs, [], outputs
 
 
 def split_compile_and_shard(computation,

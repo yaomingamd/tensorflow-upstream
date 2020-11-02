@@ -294,7 +294,7 @@ class _Node(_Convertible):
       The object referred to by 'input_name'.
     """
 
-    # The logic below oversimplifes the semantics, but is good enough for the
+    # The logic below oversimplifies the semantics, but is good enough for the
     # purposes of converting to constants. The introduction of new types of
     # operations may change this, forcing the code to be more generic.
     #
@@ -612,12 +612,14 @@ class _While(_FunctionCaller):
   def convert_variable_to_constant(self, incoming_edge, tensor_data):
     super(_While, self).convert_variable_to_constant(incoming_edge, tensor_data)
     node = self.converted_self()
-    node.node.attr["output_shapes"].list.shape[
-        incoming_edge.destination.index].CopyFrom(
-            tensor_shape_pb2.TensorShapeProto(dim=[
-                tensor_shape_pb2.TensorShapeProto.Dim(size=dim)
-                for dim in tensor_data.numpy.shape
-            ]))
+    if node.node.attr["output_shapes"].list.shape:
+      node.node.attr["output_shapes"].list.shape[
+          incoming_edge.destination.index].CopyFrom(
+              tensor_shape_pb2.TensorShapeProto(dim=[
+                  tensor_shape_pb2.TensorShapeProto.Dim(size=dim)
+                  for dim in tensor_data.numpy.shape
+              ]))
+
     # The while's body inputs and outputs have the same type, so here we can go
     # ahead and change that function's output type.
     body_name = self._node.attr["body"].func.name
@@ -784,7 +786,7 @@ class _FunctionConverterData(_ConverterData):
       func: ConcreteFunction.
       lower_control_flow: Boolean indicating whether or not to lower control
         flow ops such as If and While.
-      aggressive_inlining: Boolean indicating whether or not to to aggressive
+      aggressive_inlining: Boolean indicating whether or not to do aggressive
         function inlining (might be unsafe if function has stateful ops, not
         properly connected to control outputs).
       variable_names_allowlist: The set of variable names to convert (by
@@ -916,7 +918,7 @@ def _run_inline_graph_optimization(func, lower_control_flow,
     func: ConcreteFunction.
     lower_control_flow: Boolean indicating whether or not to lower control flow
       ops such as If and While. (default True)
-    aggressive_inlining: Boolean indicating whether or not to to aggressive
+    aggressive_inlining: Boolean indicating whether or not to do aggressive
       function inlining (might be unsafe if function has stateful ops not
       properly connected to control outputs).
 
@@ -1055,7 +1057,7 @@ def convert_variables_to_constants_v2(func,
     func: ConcreteFunction.
     lower_control_flow: Boolean indicating whether or not to lower control flow
       ops such as If and While. (default True)
-    aggressive_inlining: Boolean indicating whether or not to to aggressive
+    aggressive_inlining: Boolean indicating whether or not to do aggressive
       function inlining (might be unsafe if function has stateful ops, not
       properly connected to control outputs). (default False)
 
@@ -1088,7 +1090,7 @@ def convert_variables_to_constants_v2_as_graph(func,
     func: ConcreteFunction.
     lower_control_flow: Boolean indicating whether or not to lower control flow
       ops such as If and While. (default True)
-    aggressive_inlining: Boolean indicating whether or not to to aggressive
+    aggressive_inlining: Boolean indicating whether or not to do aggressive
       function inlining (might be unsafe if function has stateful ops, not
       properly connected to control outputs).
 

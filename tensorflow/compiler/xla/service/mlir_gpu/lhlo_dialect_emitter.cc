@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <utility>
 
+#include "llvm/IR/DataLayout.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"  // from @llvm-project
 #include "mlir/Dialect/StandardOps/IR/Ops.h"  // from @llvm-project
 #include "mlir/IR/Attributes.h"  // from @llvm-project
@@ -203,9 +204,13 @@ LhloDialectEmitter::LhloDialectEmitter(
       builder_(mlir_module_.getContext()),
       buffer_assignment_(assignment),
       platform_(platform) {
-  LLVMDialect* llvmDialect =
-      mlir_module.getContext()->getRegisteredDialect<LLVMDialect>();
-  pointer_size_ = llvmDialect->getLLVMModule().getDataLayout().getPointerSize();
+  llvm::DataLayout data_layout("");
+  if (auto data_layout_attr = mlir_module.getAttrOfType<mlir::StringAttr>(
+          mlir::LLVM::LLVMDialect::getDataLayoutAttrName())) {
+    data_layout.reset(data_layout_attr.getValue());
+  }
+
+  pointer_size_ = data_layout.getPointerSize();
 }
 
 void LhloDialectEmitter::AddThunkToThunkSequence(std::unique_ptr<Thunk> thunk) {
@@ -317,12 +322,9 @@ Status LhloDialectEmitter::HandleGather(HloInstruction* instr) {
   TF_ASSIGN_OR_RETURN(auto function, CreateFunction(*instr));
   OpBuilder func_builder(function.getBody());
 
-  // TODO(pifon): Clean-up LHLO GatherOp to be consistent with HLO GatherOp.
   func_builder.create<lhlo::GatherOp>(
       getLocation(instr), function.getArgument(0), function.getArgument(1),
-      dim_numbers.index_vector_dim(), dim_numbers.offset_dims(), slice_sizes,
-      dim_numbers.collapsed_slice_dims(), dim_numbers.start_index_map(),
-      function.getArgument(2));
+      dim_numbers, slice_sizes, function.getArgument(2));
 
   return Status::OK();
 }

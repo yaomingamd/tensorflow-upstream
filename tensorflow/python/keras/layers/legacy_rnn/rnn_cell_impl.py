@@ -25,20 +25,23 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+import warnings
 
 from tensorflow.python.eager import context
+from tensorflow.python.framework import config as tf_config
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import tensor_util
 from tensorflow.python.keras import activations
+from tensorflow.python.keras import backend
 from tensorflow.python.keras import initializers
 from tensorflow.python.keras.engine import base_layer_utils
 from tensorflow.python.keras.engine import input_spec
 from tensorflow.python.keras.layers.legacy_rnn import rnn_cell_wrapper_impl
+from tensorflow.python.keras.legacy_tf_layers import base as base_layer
 from tensorflow.python.keras.utils import tf_utils
-from tensorflow.python.layers import base as base_layer
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import clip_ops
 from tensorflow.python.ops import init_ops
@@ -50,7 +53,6 @@ from tensorflow.python.ops import variables as tf_variables
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training.tracking import base as trackable
 from tensorflow.python.util import nest
-from tensorflow.python.util.deprecation import deprecated
 from tensorflow.python.util.tf_export import tf_export
 
 _BIAS_VARIABLE_NAME = "bias"
@@ -282,7 +284,7 @@ class RNNCell(base_layer.Layer):
   def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
     if inputs is not None:
       # Validate the given batch_size and dtype against inputs if provided.
-      inputs = ops.convert_to_tensor(inputs, name="inputs")
+      inputs = ops.convert_to_tensor_v2_with_dispatch(inputs, name="inputs")
       if batch_size is not None:
         if tensor_util.is_tensor(batch_size):
           static_batch_size = tensor_util.constant_value(
@@ -334,7 +336,7 @@ class RNNCell(base_layer.Layer):
       if (last_batch_size == batch_size and last_dtype == dtype and
           last_state_size == state_size):
         return last_output
-    with ops.name_scope(type(self).__name__ + "ZeroState", values=[batch_size]):
+    with backend.name_scope(type(self).__name__ + "ZeroState"):
       output = _zero_state_tensors(state_size, batch_size, dtype)
     if is_eager:
       self._last_zero_state = (state_size, batch_size, dtype, output)
@@ -409,8 +411,6 @@ class BasicRNNCell(LayerRNNCell):
       `trainable` etc when constructing the cell from configs of get_config().
   """
 
-  @deprecated(None, "This class is equivalent as tf.keras.layers.SimpleRNNCell,"
-              " and will be replaced by that in Tensorflow 2.0.")
   def __init__(self,
                num_units,
                activation=None,
@@ -418,10 +418,14 @@ class BasicRNNCell(LayerRNNCell):
                name=None,
                dtype=None,
                **kwargs):
+    warnings.warn("`tf.nn.rnn_cell.BasicRNNCell` is deprecated and will be "
+                  "removed in a future version. This class "
+                  "is equivalent as `tf.keras.layers.SimpleRNNCell`, "
+                  "and will be replaced by that in Tensorflow 2.0.")
     super(BasicRNNCell, self).__init__(
         _reuse=reuse, name=name, dtype=dtype, **kwargs)
     _check_supported_dtypes(self.dtype)
-    if context.executing_eagerly() and context.num_gpus() > 0:
+    if context.executing_eagerly() and tf_config.list_logical_devices("GPU"):
       logging.warn(
           "%s: Note that this cell is not optimized for performance. "
           "Please use tf.contrib.cudnn_rnn.CudnnRNNTanh for better "
@@ -513,8 +517,6 @@ class GRUCell(LayerRNNCell):
       ([pdf](http://emnlp2014.org/papers/pdf/EMNLP2014179.pdf))
   """
 
-  @deprecated(None, "This class is equivalent as tf.keras.layers.GRUCell,"
-              " and will be replaced by that in Tensorflow 2.0.")
   def __init__(self,
                num_units,
                activation=None,
@@ -524,11 +526,15 @@ class GRUCell(LayerRNNCell):
                name=None,
                dtype=None,
                **kwargs):
+    warnings.warn("`tf.nn.rnn_cell.GRUCell` is deprecated and will be removed "
+                  "in a future version. This class "
+                  "is equivalent as `tf.keras.layers.GRUCell`, "
+                  "and will be replaced by that in Tensorflow 2.0.")
     super(GRUCell, self).__init__(
         _reuse=reuse, name=name, dtype=dtype, **kwargs)
     _check_supported_dtypes(self.dtype)
 
-    if context.executing_eagerly() and context.num_gpus() > 0:
+    if context.executing_eagerly() and tf_config.list_logical_devices("GPU"):
       logging.warn(
           "%s: Note that this cell is not optimized for performance. "
           "Please use tf.contrib.cudnn_rnn.CudnnGRU for better "
@@ -661,8 +667,6 @@ class BasicLSTMCell(LayerRNNCell):
   better performance on CPU.
   """
 
-  @deprecated(None, "This class is equivalent as tf.keras.layers.LSTMCell,"
-              " and will be replaced by that in Tensorflow 2.0.")
   def __init__(self,
                num_units,
                forget_bias=1.0,
@@ -695,6 +699,10 @@ class BasicLSTMCell(LayerRNNCell):
         When restoring from CudnnLSTM-trained checkpoints, must use
         `CudnnCompatibleLSTMCell` instead.
     """
+    warnings.warn("`tf.nn.rnn_cell.BasicLSTMCell` is deprecated and will be "
+                  "removed in a future version. This class "
+                  "is equivalent as `tf.keras.layers.LSTMCell`, "
+                  "and will be replaced by that in Tensorflow 2.0.")
     super(BasicLSTMCell, self).__init__(
         _reuse=reuse, name=name, dtype=dtype, **kwargs)
     _check_supported_dtypes(self.dtype)
@@ -702,7 +710,7 @@ class BasicLSTMCell(LayerRNNCell):
       logging.warn(
           "%s: Using a concatenated state is slower and will soon be "
           "deprecated.  Use state_is_tuple=True.", self)
-    if context.executing_eagerly() and context.num_gpus() > 0:
+    if context.executing_eagerly() and tf_config.list_logical_devices("GPU"):
       logging.warn(
           "%s: Note that this cell is not optimized for performance. "
           "Please use tf.contrib.cudnn_rnn.CudnnLSTM for better "
@@ -837,8 +845,6 @@ class LSTMCell(LayerRNNCell):
       ([pdf](http://ml.jku.at/publications/older/3504.pdf))
   """
 
-  @deprecated(None, "This class is equivalent as tf.keras.layers.LSTMCell,"
-              " and will be replaced by that in Tensorflow 2.0.")
   def __init__(self,
                num_units,
                use_peepholes=False,
@@ -894,6 +900,10 @@ class LSTMCell(LayerRNNCell):
         When restoring from CudnnLSTM-trained checkpoints, use
         `CudnnCompatibleLSTMCell` instead.
     """
+    warnings.warn("`tf.nn.rnn_cell.LSTMCell` is deprecated and will be "
+                  "removed in a future version. This class "
+                  "is equivalent as `tf.keras.layers.LSTMCell`, "
+                  "and will be replaced by that in Tensorflow 2.0.")
     super(LSTMCell, self).__init__(
         _reuse=reuse, name=name, dtype=dtype, **kwargs)
     _check_supported_dtypes(self.dtype)
@@ -906,7 +916,7 @@ class LSTMCell(LayerRNNCell):
           "%s: The num_unit_shards and proj_unit_shards parameters are "
           "deprecated and will be removed in Jan 2017.  "
           "Use a variable scope with a partitioner instead.", self)
-    if context.executing_eagerly() and context.num_gpus() > 0:
+    if context.executing_eagerly() and tf_config.list_logical_devices("GPU"):
       logging.warn(
           "%s: Note that this cell is not optimized for performance. "
           "Please use tf.contrib.cudnn_rnn.CudnnLSTM for better "
@@ -1216,9 +1226,6 @@ class MultiRNNCell(RNNCell):
   ```
   """
 
-  @deprecated(None, "This class is equivalent as "
-              "tf.keras.layers.StackedRNNCells, and will be replaced by "
-              "that in Tensorflow 2.0.")
   def __init__(self, cells, state_is_tuple=True):
     """Create a RNN cell composed sequentially of a number of RNNCells.
 
@@ -1232,6 +1239,9 @@ class MultiRNNCell(RNNCell):
       ValueError: if cells is empty (not allowed), or at least one of the cells
         returns a state tuple but the flag `state_is_tuple` is `False`.
     """
+    logging.warning("`tf.nn.rnn_cell.MultiRNNCell` is deprecated. This class "
+                    "is equivalent as `tf.keras.layers.StackedRNNCells`, "
+                    "and will be replaced by that in Tensorflow 2.0.")
     super(MultiRNNCell, self).__init__()
     if not cells:
       raise ValueError("Must specify at least one cell for MultiRNNCell.")
@@ -1269,7 +1279,7 @@ class MultiRNNCell(RNNCell):
     return self._cells[-1].output_size
 
   def zero_state(self, batch_size, dtype):
-    with ops.name_scope(type(self).__name__ + "ZeroState", values=[batch_size]):
+    with backend.name_scope(type(self).__name__ + "ZeroState"):
       if self._state_is_tuple:
         return tuple(cell.zero_state(batch_size, dtype) for cell in self._cells)
       else:

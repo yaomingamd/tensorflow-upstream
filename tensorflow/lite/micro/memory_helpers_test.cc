@@ -20,9 +20,15 @@ limitations under the License.
 
 namespace {
 
-TfLiteStatus FakeAllocatePersistentBuffer(TfLiteContext* context, size_t bytes,
-                                          void** ptr) {
-  return kTfLiteOk;
+// This just needs to be big enough to handle the array of 5 ints allocated
+// in TestAllocateOutputDimensionsFromInput below.
+const int kGlobalPersistentBufferLength = 100;
+char global_persistent_buffer[kGlobalPersistentBufferLength];
+
+// Only need to handle a single allocation at a time for output dimensions
+// in TestAllocateOutputDimensionsFromInput.
+void* FakeAllocatePersistentBuffer(TfLiteContext* context, size_t bytes) {
+  return reinterpret_cast<void*>(global_persistent_buffer);
 }
 
 }  // namespace
@@ -174,15 +180,15 @@ TF_LITE_MICRO_TEST(TestAllocateOutputDimensionsFromInput) {
   const int input1_dims[] = {1, 1};
   const int input2_dims[] = {kDimsLen, 5, 5, 5, 5};
   int output_dims[] = {0, 0, 0, 0, 0};
-  TfLiteTensor input_tensor1 = tflite::testing::CreateInt32Tensor(
+  TfLiteTensor input_tensor1 = tflite::testing::CreateTensor<int32_t>(
       nullptr, tflite::testing::IntArrayFromInts(input1_dims));
-  TfLiteTensor input_tensor2 = tflite::testing::CreateInt32Tensor(
+  TfLiteTensor input_tensor2 = tflite::testing::CreateTensor<int32_t>(
       nullptr, tflite::testing::IntArrayFromInts(input2_dims));
-  TfLiteTensor output_tensor = tflite::testing::CreateInt32Tensor(
+  TfLiteTensor output_tensor = tflite::testing::CreateTensor<int32_t>(
       nullptr, tflite::testing::IntArrayFromInts(output_dims));
   TfLiteContext context;
-  // Set allocator to no-op to avoid segfault. Memory is already allocated for
-  // output dims.
+  // Only need to allocate space for output_tensor.dims.  Use a simple
+  // fake allocator.
   context.AllocatePersistentBuffer = FakeAllocatePersistentBuffer;
 
   TF_LITE_MICRO_EXPECT_EQ(

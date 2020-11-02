@@ -11,8 +11,6 @@ package(
     licenses = ["notice"],  # Apache 2.0
 )
 
-exports_files(["LICENSE"])
-
 tf_py_test(
     name = "forwardprop_test",
     srcs = ["forwardprop_test.py"],
@@ -97,10 +95,26 @@ tpu_py_test(
     name = "tpu_strategy_test",
     srcs = ["tpu_strategy_test.py"],
     disable_experimental = True,
+    disable_mlir_bridge = False,
     python_version = "PY3",
     tags = ["no_oss"],
     deps = [
         "//tensorflow:tensorflow_py",
         "//tensorflow/python:extra_py_tests_deps",
+    ],
+)
+
+tf_py_test(
+    name = "multi_worker_tutorial_test",
+    srcs = ["multi_worker_tutorial_test.py"],
+    python_version = "PY3",
+    shard_count = 3,
+    tags = [
+        "noasan",  # TODO(b/156029134)
+        "nomsan",  # TODO(b/156029134)
+        "notsan",  # TODO(b/156029134)
+    ],
+    deps = [
+        "//tensorflow:tensorflow_py",
     ],
 )

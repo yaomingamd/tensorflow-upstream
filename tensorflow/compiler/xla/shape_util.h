@@ -269,6 +269,14 @@ class ShapeUtil {
     if (SameElementType(a, b)) {
       return a.element_type();
     }
+    // If only one of A and B are floating use the floating point type.
+    if (ElementIsFloating(a) && !ElementIsFloating(b)) {
+      return a.element_type();
+    }
+    if (ElementIsFloating(b) && !ElementIsFloating(a)) {
+      return b.element_type();
+    }
+    // Use the higher precision type.
     return primitive_util::BitWidth(a.element_type()) <
                    primitive_util::BitWidth(b.element_type())
                ? b.element_type()
@@ -774,6 +782,10 @@ class ShapeUtil {
   // normalized shape of `b` or the 0-2-1 shape.
   static absl::optional<std::vector<int64>> FindTranspose021(const Shape& a,
                                                              const Shape& b);
+
+  // Strips device-specific information, namely tiling and memory-space
+  // information, from a shape.
+  static Shape DeviceShapeToHostShape(Shape s);
 
  private:
   // Validates the shape size is sane. This makes sure it's safe to do
