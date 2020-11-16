@@ -21,7 +21,7 @@ namespace tensorflow {
 
 string RocdlRoot() {
 #if TENSORFLOW_COMPILER_IS_HIP_CLANG
-  return tensorflow::io::JoinPath(tensorflow::RocmRoot(), "lib");
+  return tensorflow::io::JoinPath(tensorflow::RocmRoot(), "amdgcn/bitcode");
 #else
   return tensorflow::io::JoinPath(tensorflow::RocmRoot(), "hcc/lib");
 #endif
