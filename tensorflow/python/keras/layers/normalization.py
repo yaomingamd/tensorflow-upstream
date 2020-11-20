@@ -30,12 +30,12 @@ from tensorflow.python.keras.engine.base_layer import Layer
 from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow.python.keras.utils import control_flow_util
 from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn
 from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import variables as tf_variables
+from tensorflow.python.ops.control_flow_ops import get_enclosing_xla_context
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util.tf_export import keras_export
 
@@ -243,25 +243,26 @@ class BatchNormalizationBase(Layer):
     # channel dimension on axis 1 or 3, when no virtual batch size or adjustment
     # is used.
     if self.renorm:
-      raise ValueError('Passing both fused=True and renorm=True is '
-                       'unsupported')
+      raise ValueError('Passing both `fused=True` and `renorm=True` is '
+                       'not supported')
     axis = [self.axis] if isinstance(self.axis, int) else self.axis
     # Axis -3 is equivalent to 1, and axis -1 is equivalent to 3, because the
     # input rank is required to be 4 (which is checked later).
     if len(axis) > 1 or axis[0] not in (-3, -1, 1, 3):
-      raise ValueError('Passing fused=True is only supported when axis is 1 '
-                       'or 3')
+      raise ValueError('Passing `fused=True` is only supported when axis is 1 '
+                       'or 3. Got axis %s' % (axis,))
     if self.virtual_batch_size is not None:
-      raise ValueError('Passing fused=True is unsupported when '
-                       'virtual_batch_size is specified.')
+      raise ValueError('Passing `fused=True` is not supported when '
+                       '`virtual_batch_size` is specified.')
     if self.adjustment is not None:
-      raise ValueError('Passing fused=True is unsupported when '
-                       'adjustment is specified.')
+      raise ValueError('Passing `fused=True` is not supported when '
+                       '`adjustment` is specified.')
     # TODO(reedwm): Support fp64 in FusedBatchNorm then remove this check.
     if self._compute_dtype not in ('float16', 'bfloat16', 'float32', None):
-      raise ValueError('Passing fused=True is only supported when the compute '
-                       'dtype is float16, bfloat16, or float32. Got dtype: %s' %
-                       (self._compute_dtype,))
+      raise ValueError(
+          'Passing `fused=True` is only supported when the compute '
+          'dtype is float16, bfloat16, or float32. Got dtype: %s' %
+          (self._compute_dtype,))
 
   def _fused_can_be_used(self):
     try:
@@ -294,7 +295,7 @@ class BatchNormalizationBase(Layer):
   def build(self, input_shape):
     input_shape = tensor_shape.TensorShape(input_shape)
     if not input_shape.ndims:
-      raise ValueError('Input has undefined rank:', input_shape)
+      raise ValueError('Input has undefined rank.')
     ndims = len(input_shape)
 
     # Convert axis to list and resolve negatives
@@ -308,19 +309,20 @@ class BatchNormalizationBase(Layer):
     # Validate axes
     for x in self.axis:
       if x < 0 or x >= ndims:
-        raise ValueError('Invalid axis: %d' % x)
+        raise ValueError('Invalid axis: %s' % (self.axis,))
     if len(self.axis) != len(set(self.axis)):
-      raise ValueError('Duplicate axis: %s' % self.axis)
+      raise ValueError('Duplicate axis: %s' % (self.axis,))
 
     if self.virtual_batch_size is not None:
       if self.virtual_batch_size <= 0:
         raise ValueError('virtual_batch_size must be a positive integer that '
-                         'divides the true batch size of the input Tensor')
+                         'divides the true batch size of the input tensor')
       # If using virtual batches, the first dimension must be the batch
       # dimension and cannot be the batch norm axis
       if 0 in self.axis:
         raise ValueError('When using virtual_batch_size, the batch dimension '
-                         'must be 0 and thus axis cannot include 0')
+                         'must be 0 and thus axis cannot include 0. '
+                         'Received axis=%s' % (self.axis,))
       if self.adjustment is not None:
         raise ValueError('When using virtual_batch_size, adjustment cannot '
                          'be specified')
@@ -332,8 +334,10 @@ class BatchNormalizationBase(Layer):
         if self.fused is None:
           self.fused = ndims in (4, 5)
         elif self.fused and ndims not in (4, 5):
-          raise ValueError('Batch normalization layers with fused=True only '
-                           'support 4D or 5D input tensors.')
+          raise ValueError('Batch normalization layers with `fused=True` only '
+                           'support 4D or 5D input tensors. '
+                           'Received tensor with shape: %s' %
+                           (tuple(input_shape),))
       else:
         assert self.fused is not None
         self.fused = (ndims in (4, 5) and self._fused_can_be_used())
@@ -358,15 +362,23 @@ class BatchNormalizationBase(Layer):
         # due to unsupported axis.
         self.fused = False
       else:
-        raise ValueError('Unsupported axis, fused batch norm only supports '
-                         'axis == [1] or axis == [3] for 4D input tensors or '
-                         'axis == [1] or axis == [4] for 5D input tensors')
+        if ndims == 4:
+          raise ValueError(
+              'Unsupported axis. The use of `fused=True` is only possible with '
+              '`axis=1` or `axis=3` for 4D input tensors. Received '
+              'axis=%s' % (self.axis,))
+        else:
+          raise ValueError(
+              'Unsupported axis. The use of `fused=True` is only possible with '
+              '`axis=1` or `axis=4` for 5D input tensors. Received '
+              'axis=%s' % (self.axis,))
 
     axis_to_dim = {x: input_shape.dims[x].value for x in self.axis}
     for x in axis_to_dim:
       if axis_to_dim[x] is None:
-        raise ValueError('Input has undefined `axis` dimension. Input shape: ',
-                         input_shape)
+        raise ValueError('Input has undefined `axis` dimension. Received input '
+                         'with shape %s. Axis value: %s' %
+                         (tuple(input_shape), self.axis))
     self.input_spec = InputSpec(ndim=ndims, axes=axis_to_dim)
 
     if len(axis_to_dim) == 1 and self.virtual_batch_size is None:
@@ -534,7 +546,7 @@ class BatchNormalizationBase(Layer):
     use_fused_avg_updates = (
         ops.executing_eagerly_outside_functions() and
         isinstance(self.momentum, (float, int)) and
-        enclosing_xla_context() is None)
+        get_enclosing_xla_context() is None)
     if use_fused_avg_updates:
       exponential_avg_factor = 1.0 - self.momentum
     else:
@@ -951,23 +963,6 @@ def replace_in_base_docstring(replacements):
     assert old in string
     string = string.replace(old, new)
   return string
-
-
-def enclosing_xla_context():
-  """Recursively find and return the XLAControlFlowContext."""
-  graph = ops.get_default_graph()
-  while graph is not None:
-    # pylint: disable=protected-access
-    context_ = graph._get_control_flow_context()
-    # pylint: enable=protected-access
-    while context_ is not None:
-      if isinstance(context_, control_flow_ops.XLAControlFlowContext):
-        return context_
-      context_ = context_.outer_context
-    # This may be a FuncGraph due to defuns or v2 control flow. We need to
-    # find the original graph with the XLAControlFlowContext.
-    graph = getattr(graph, 'outer_graph', None)
-  return None
 
 
 # pylint: disable=missing-docstring
