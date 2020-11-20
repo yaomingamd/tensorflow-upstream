@@ -77,7 +77,7 @@ class MatrixSolveOp : public LinearAlgebraOp<Scalar> {
 
   void ComputeMatrix(OpKernelContext* context, const ConstMatrixMaps& inputs,
                      MatrixMaps* outputs) final {
-ample_configs/framework/RaviPram/tf_executor.json   const ConstMatrixMap& matrix = inputs[0];
+    const ConstMatrixMap& matrix = inputs[0];
     const ConstMatrixMap& rhs = inputs[1];
     if (matrix.rows() == 0 || matrix.cols() == 0 || rhs.cols() == 0) {
       // To be consistent with the MatrixInverse op, we define the solution for
