@@ -18,7 +18,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_KERNELS_LINALG_ROCM_SOLVERS_H_
 
 // This header declares the class ROCmSolver, which contains wrappers of linear
-// algebra solvers in the cuBlas and cuSolverDN libraries for use in TensorFlow
+// algebra solvers in the rocBlas and rocSolverDN libraries for use in TensorFlow
 // kernels.
 
 #if TENSORFLOW_USE_ROCM
@@ -51,7 +51,7 @@ struct ROCmComplexT<std::complex<double>> {
   typedef hipDoubleComplex type;
 };
 // Converts pointers of std::complex<> to pointers of
-// cuComplex/cuDoubleComplex. No type conversion for non-complex types.
+// ROCmComplex/ROCmDoubleComplex. No type conversion for non-complex types.
 template <typename T>
 inline const typename ROCmComplexT<T>::type* ROCmComplex(const T* p) {
   return reinterpret_cast<const typename ROCmComplexT<T>::type*>(p);
