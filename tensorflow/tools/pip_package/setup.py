@@ -50,7 +50,7 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.4.0-rc3'
+_VERSION = '2.4.0-rc4'
 
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
@@ -83,7 +83,7 @@ REQUIRED_PACKAGES = [
     'keras_preprocessing ~= 1.1.2',
     'numpy ~= 1.19.2',
     'opt_einsum ~= 3.3.0',
-    'protobuf ~= 3.13.0',
+    'protobuf >= 3.9.2',
     'six ~= 1.15.0',
     'termcolor ~= 1.1.0',
     'typing_extensions ~= 3.7.4',
