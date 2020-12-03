@@ -517,7 +517,7 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
     // 3. Solve op(A) X = B (in column major form).
     // We use a trick here: If adjoint_ is true, we converted A to column major
     // form above. If adjoint is false then I leave A in row-major form and use
-    // trans_a = CUBLAS_OP_T to effectively transform it to column-major on the
+    // trans_a = rocblas_operation_transpose to effectively transform it to column-major on the
     // fly. (This means that we actually use the LU-factorization of A^T in that
     // case, but that is equally good for solving AX=B). This way we save an
     // explicit transpose in the more common case of adjoint_ == false.
