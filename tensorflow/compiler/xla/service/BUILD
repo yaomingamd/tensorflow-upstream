@@ -1037,7 +1037,7 @@ cc_library(
 # This flag enables experimental MLIR GPU support.
 config_setting(
     name = "with_mlir_gpu_support",
-    values = {"define": "with_mlir_gpu_support=true"},
+    define_values = {"with_mlir_gpu_support": "true"},
     visibility = ["//visibility:public"],
 )
 
@@ -2456,6 +2456,7 @@ cc_library(
         ":hlo",
         ":hlo_creation_utils",
         ":hlo_pass",
+        ":pattern_matcher",
         ":shape_inference",
         "//tensorflow/compiler/xla:literal",
         "//tensorflow/compiler/xla:literal_util",
@@ -2881,6 +2882,7 @@ cc_library(
     srcs = ["computation_placer.cc"],
     hdrs = ["computation_placer.h"],
     deps = [
+        ":global_device_id",
         "//tensorflow/compiler/xla:array2d",
         "//tensorflow/compiler/xla:literal",
         "//tensorflow/compiler/xla:shape_util",
@@ -3720,6 +3722,7 @@ cc_library(
         ":hlo_casting_utils",
         ":hlo_pass",
         ":shape_inference",
+        "//tensorflow/compiler/xla:comparison_util",
         "//tensorflow/compiler/xla:shape_util",
         "//tensorflow/compiler/xla:status_macros",
         "//tensorflow/compiler/xla:util",
@@ -5221,5 +5224,64 @@ tf_cc_test(
         "//tensorflow/compiler/xla/tests:test_utils",
         "//tensorflow/compiler/xla/tests:xla_internal_test_main",
         "//tensorflow/core:test",
+    ],
+)
+
+cc_library(
+    name = "integral_upcaster",
+    srcs = ["integral_upcaster.cc"],
+    hdrs = ["integral_upcaster.h"],
+    deps = [
+        ":hlo",
+        ":op_expander_pass",
+        ":shape_inference",
+    ],
+)
+
+tf_cc_test(
+    name = "integral_upcaster_test",
+    srcs = ["integral_upcaster_test.cc"],
+    deps = [
+        ":hlo_matchers",
+        ":integral_upcaster",
+        "//tensorflow/compiler/xla:shape_util",
+        "//tensorflow/compiler/xla/tests:hlo_test_base",
+        "//tensorflow/compiler/xla/tests:xla_internal_test_main",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "global_device_id",
+    srcs = ["global_device_id.cc"],
+    hdrs = ["global_device_id.h"],
+    deps = [
+        "//tensorflow/compiler/xla:types",
+        "//tensorflow/core:lib_internal",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "convert_operand_folding",
+    srcs = ["convert_operand_folding.cc"],
+    hdrs = ["convert_operand_folding.h"],
+    deps = [
+        ":hlo",
+        ":op_expander_pass",
+    ],
+)
+
+tf_cc_test(
+    name = "convert_operand_folding_test",
+    srcs = ["convert_operand_folding_test.cc"],
+    deps = [
+        ":convert_operand_folding",
+        ":hlo_matchers",
+        "//tensorflow/compiler/xla:shape_util",
+        "//tensorflow/compiler/xla/tests:hlo_test_base",
+        "//tensorflow/compiler/xla/tests:xla_internal_test_main",
+        "@com_google_absl//absl/strings",
     ],
 )

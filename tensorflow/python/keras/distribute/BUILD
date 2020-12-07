@@ -244,7 +244,7 @@ distribute_py_test(
     disable_mlir_bridge = False,
     main = "custom_training_loop_metrics_test.py",
     tags = [
-        "no_rocm",
+        "no_rocm",  # Intermitently times out on ROCm
         "multi_and_single_gpu",
     ],
     deps = [
@@ -267,6 +267,7 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # times out
+        "no_rocm",  # Intermitently times out on ROCm
         "notsan",  # TODO(b/170954243)
     ],
     tpu_tags = [
@@ -329,6 +330,7 @@ py_library(
         "//tensorflow/python/distribute:parameter_server_strategy_v2",
         "//tensorflow/python/distribute:strategy_combinations",
         "//tensorflow/python/distribute:tpu_strategy",
+        "//tensorflow/python/distribute:values",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:test",
         "//tensorflow/python/estimator:estimator_py",

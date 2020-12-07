@@ -74,11 +74,9 @@ cc_library(
     deps = [
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla:types",
-        "//tensorflow/core:lib_internal",
+        "//tensorflow/compiler/xla/service:global_device_id",
         "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -117,7 +115,7 @@ cc_library(
 
 tf_cc_test(
     name = "custom_call_test",
-    srcs = if_cuda_is_configured(["custom_call_test.cc"]),
+    srcs = if_cuda_or_rocm(["custom_call_test.cc"]),
     tags = tf_cuda_tests_tags(),
     deps = [
         "//tensorflow/compiler/xla/tests:xla_internal_test_main",  # fixdeps: keep
@@ -254,6 +252,7 @@ cc_library(
         "ir_emitter_unnested.h",
         "kernel_mapping_scheme.h",
     ],
+    copts = if_cuda_is_configured(["-DGOOGLE_CUDA=1"]),
     deps = [
         ":backend_configs_cc",
         ":buffer_allocations",
@@ -272,6 +271,7 @@ cc_library(
         "//tensorflow/compiler/mlir:name_utils",
         "//tensorflow/compiler/mlir/hlo",
         "//tensorflow/compiler/mlir/hlo:lhlo",
+        "//tensorflow/compiler/mlir/hlo:lhlo_gpu",
         "//tensorflow/compiler/mlir/xla:hlo_module_importer",
         "//tensorflow/compiler/mlir/xla:hlo_utils",
         "//tensorflow/compiler/mlir/xla:mhlo_to_lhlo_with_xla",
@@ -541,6 +541,8 @@ cc_library(
     ] + if_cuda_is_configured([
         "cholesky_thunk.cc",
         "custom_call_thunk.cc",
+    ]) + if_rocm_is_configured([
+        "custom_call_thunk.cc",
     ]),
     hdrs = [
         "collective_permute_thunk.h",
@@ -564,6 +566,8 @@ cc_library(
         "while_thunk.h",
     ] + if_cuda_is_configured([
         "cholesky_thunk.h",
+        "custom_call_thunk.h",
+    ]) + if_rocm_is_configured([
         "custom_call_thunk.h",
     ]),
     deps = [
@@ -614,9 +618,9 @@ cc_library(
         "//tensorflow/stream_executor",
         "//tensorflow/stream_executor:blas",
         "//tensorflow/stream_executor:device_memory",
+        "//tensorflow/stream_executor:device_memory_allocator",
         "//tensorflow/stream_executor:kernel",
         "//tensorflow/stream_executor/gpu:gpu_stream",
-        "//tensorflow/stream_executor:device_memory_allocator",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -1243,6 +1247,7 @@ cc_library(
         "//tensorflow/compiler/xla/service:hlo_proto_util",
         "//tensorflow/compiler/xla/service:hlo_subcomputation_unification",
         "//tensorflow/compiler/xla/service:hlo_verifier",
+        "//tensorflow/compiler/xla/service:integral_upcaster",
         "//tensorflow/compiler/xla/service:llvm_compiler",
         "//tensorflow/compiler/xla/service:logistic_expander",
         "//tensorflow/compiler/xla/service:loop_schedule_linearizer",
@@ -1355,7 +1360,7 @@ cc_library(
         "amdgpu_compiler.cc",
     ],
     hdrs = [
-        "amdgpu_compiler.h"
+        "amdgpu_compiler.h",
     ],
     deps = [
         ":gemm_rewriter",

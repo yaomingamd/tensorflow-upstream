@@ -1268,8 +1268,8 @@ class DynamicReshapeOpNotActuallyDynamic
 
 void DynamicReshapeOp::getCanonicalizationPatterns(
     OwningRewritePatternList& results, MLIRContext* context) {
-  results.insert<DynamicReshapeOpNotActuallyDynamic, ShapeOfDynamicReshape>(
-      context);
+  results.insert<DynamicReshapeOpNotActuallyDynamic,
+                 RemoveRedundantDynamicReshape, ShapeOfDynamicReshape>(context);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1937,6 +1937,12 @@ OpFoldResult ReshapeOp::fold(ArrayRef<Attribute> operands) {
   }
 
   return {};
+}
+
+void ReshapeOp::getCanonicalizationPatterns(OwningRewritePatternList& results,
+                                            MLIRContext* context) {
+  results.insert<IdentityBroadcastReshape, IdentityBroadcastInDimReshape>(
+      context);
 }
 
 //===----------------------------------------------------------------------===//

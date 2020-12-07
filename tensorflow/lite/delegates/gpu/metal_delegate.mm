@@ -339,7 +339,7 @@ class Delegate {
 
     std::string device_name = std::string([[metal_device_ name] UTF8String]);
     GpuInfo gpu_info;
-    GetGpuInfoFromDeviceDescription(device_name, &gpu_info);
+    GetGpuInfoFromDeviceDescription(device_name, GpuApi::kMetal, &gpu_info);
     size_t storage_type_size;
     RuntimeOptions runtime_options;
     if (options_.allow_precision_loss) {
@@ -444,13 +444,10 @@ class Delegate {
 
     inference_context_ = [[TFLInferenceContext alloc] init];
     RETURN_IF_ERROR([inference_context_ compileModelWithDevice:metal_device_
-                                               taskDescriptors:optimized_model
+                                                         model:optimized_model
+                                                inputBufferIDs:input_ids
                                                outputBufferIDs:output_ids
                                                 runtimeOptions:runtime_options]);
-    std::map<::tflite::gpu::ValueId, BHWC> output_dimensions;
-    RETURN_IF_ERROR([inference_context_ setInputDimensions:input_dimensions
-                                          outputDimensions:&output_dimensions
-                                           taskDescriptors:optimized_model]);
     return absl::OkStatus();
   }
 

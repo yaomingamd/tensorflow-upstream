@@ -181,6 +181,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         ":platform",
+        "@com_google_absl//absl/strings:cord",
     ] + tf_platform_deps("cord"),
 )
 
@@ -449,6 +450,7 @@ cc_library(
         ":strcat",
         ":stringpiece",
         ":types",
+        "@com_google_absl//absl/algorithm:container",
     ],
     alwayslink = True,
 )

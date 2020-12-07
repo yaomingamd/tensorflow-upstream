@@ -61,7 +61,6 @@ py_library(
         "//tensorflow/python:check_ops",
         "//tensorflow/python:client",
         "//tensorflow/python:clip_ops",
-        "//tensorflow/python:composite_tensor_utils",
         "//tensorflow/python:constant_op",
         "//tensorflow/python:control_flow_ops",
         "//tensorflow/python:ctc_ops",
@@ -558,9 +557,7 @@ tf_py_test(
     size = "medium",
     srcs = ["callbacks_v1_test.py"],
     python_version = "PY3",
-    tags = [
-        "notsan",
-    ],
+    tags = ["notsan"],
     deps = [
         ":callbacks",
         ":callbacks_v1",

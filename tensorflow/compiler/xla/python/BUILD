@@ -83,7 +83,6 @@ py_test(
     tags = [
         "no_oss",
         "requires-gpu-nvidia",
-        "gpu",
     ],  # TODO(phawkins): This test passes, but requires --config=monolithic.
     deps = [
         ":xla_client",
@@ -466,7 +465,7 @@ cc_library(
 
 config_setting(
     name = "enable_gpu",
-    values = {"define": "xla_python_enable_gpu=true"},
+    define_values = {"xla_python_enable_gpu": "true"},
 )
 
 pybind_extension(

@@ -466,6 +466,7 @@ tf_cc_test(
         ":kernel_stats_utils",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
+        "//tensorflow/core/profiler/internal/gpu:cupti_collector_header",
         "//tensorflow/core/profiler/protobuf:kernel_stats_proto_cc",
     ],
 )
@@ -511,9 +512,6 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "@com_google_absl//absl/container:flat_hash_map",
-    ],
-    tags = [
-        "no_rocm",
     ],
 )
 

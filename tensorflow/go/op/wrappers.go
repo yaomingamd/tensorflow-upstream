@@ -2019,7 +2019,45 @@ func PreventGradient(scope *Scope, input tf.Output, optional ...PreventGradientA
 // taken into account for computing gradients.
 //
 // This is useful any time you want to compute a value with TensorFlow but need
-// to pretend that the value was a constant. Some examples include:
+// to pretend that the value was a constant. For example, the softmax function
+// for a vector x can be written as
+//
+// ```python
+//
+//   def softmax(x):
+//     numerator = tf.exp(x)
+//     denominator = tf.reduce_sum(numerator)
+//     return numerator / denominator
+// ```
+//
+// This however is susceptible to overflow if the values in x are large. An
+// alternative more stable way is to subtract the maximum of x from each of the
+// values.
+//
+// ```python
+//
+//   def stable_softmax(x):
+//     z = x - tf.reduce_max(x)
+//     numerator = tf.exp(z)
+//     denominator = tf.reduce_sum(numerator)
+//     return numerator / denominator
+// ```
+//
+// However, when we backprop through the softmax to x, we dont want to backprop
+// through the `tf.reduce_max(x)` (if the max values are not unique then the
+// gradient could flow to the wrong input) calculation and treat that as a
+// constant. Therefore, we should write this out as
+//
+// ```python
+//
+//   def stable_softmax(x):
+//     z = x - tf.stop_gradient(tf.reduce_max(x))
+//     numerator = tf.exp(z)
+//     denominator = tf.reduce_sum(numerator)
+//     return numerator / denominator
+// ```
+//
+// Some other examples include:
 //
 // *  The *EM* algorithm where the *M-step* should not involve backpropagation
 //    through the output of the *E-step*.
@@ -7242,63 +7280,6 @@ func TensorArrayGradV2(scope *Scope, handle tf.Output, flow_in tf.Output, source
 		Type: "TensorArrayGradV2",
 		Input: []tf.Input{
 			handle, flow_in,
-		},
-		Attrs: attrs,
-	}
-	op := scope.AddOperation(opspec)
-	return op.Output(0)
-}
-
-// TensorArrayV2Attr is an optional argument to TensorArrayV2.
-type TensorArrayV2Attr func(optionalAttr)
-
-// TensorArrayV2ElementShape sets the optional element_shape attribute to value.
-// If not specified, defaults to <unknown_rank:true >
-func TensorArrayV2ElementShape(value tf.Shape) TensorArrayV2Attr {
-	return func(m optionalAttr) {
-		m["element_shape"] = value
-	}
-}
-
-// TensorArrayV2DynamicSize sets the optional dynamic_size attribute to value.
-// If not specified, defaults to false
-func TensorArrayV2DynamicSize(value bool) TensorArrayV2Attr {
-	return func(m optionalAttr) {
-		m["dynamic_size"] = value
-	}
-}
-
-// TensorArrayV2ClearAfterRead sets the optional clear_after_read attribute to value.
-// If not specified, defaults to true
-func TensorArrayV2ClearAfterRead(value bool) TensorArrayV2Attr {
-	return func(m optionalAttr) {
-		m["clear_after_read"] = value
-	}
-}
-
-// TensorArrayV2TensorArrayName sets the optional tensor_array_name attribute to value.
-// If not specified, defaults to ""
-func TensorArrayV2TensorArrayName(value string) TensorArrayV2Attr {
-	return func(m optionalAttr) {
-		m["tensor_array_name"] = value
-	}
-}
-
-// Deprecated. Use TensorArrayV3
-//
-// DEPRECATED at GraphDef version 26: Use TensorArrayV3
-func TensorArrayV2(scope *Scope, size tf.Output, dtype tf.DataType, optional ...TensorArrayV2Attr) (handle tf.Output) {
-	if scope.Err() != nil {
-		return
-	}
-	attrs := map[string]interface{}{"dtype": dtype}
-	for _, a := range optional {
-		a(attrs)
-	}
-	opspec := tf.OpSpec{
-		Type: "TensorArrayV2",
-		Input: []tf.Input{
-			size,
 		},
 		Attrs: attrs,
 	}
@@ -20701,9 +20682,9 @@ func CombinedNonMaxSuppressionClipBoxes(value bool) CombinedNonMaxSuppressionAtt
 // representing a single score corresponding to each box (each row of boxes).
 //	max_output_size_per_class: A scalar integer tensor representing the maximum number of
 // boxes to be selected by non max suppression per class
-//	max_total_size: A scalar representing maximum number of boxes retained over all classes. Note
-// that setting this value to a large number may result in OOM error depending on
-// the system workload.
+//	max_total_size: An int32 scalar representing the maximum number of boxes retained over all
+// classes. Note that setting this value to a large number may result in OOM error
+// depending on the system workload.
 //	iou_threshold: A 0-D float tensor representing the threshold for deciding whether
 // boxes overlap too much with respect to IOU.
 //	score_threshold: A 0-D float tensor representing the threshold for deciding when to remove
@@ -23188,51 +23169,6 @@ func ExperimentalStatsAggregatorSummary(scope *Scope, iterator tf.Output) (summa
 		Input: []tf.Input{
 			iterator,
 		},
-	}
-	op := scope.AddOperation(opspec)
-	return op.Output(0)
-}
-
-// MeanAttr is an optional argument to Mean.
-type MeanAttr func(optionalAttr)
-
-// MeanKeepDims sets the optional keep_dims attribute to value.
-//
-// value: If true, retain reduced dimensions with length 1.
-// If not specified, defaults to false
-func MeanKeepDims(value bool) MeanAttr {
-	return func(m optionalAttr) {
-		m["keep_dims"] = value
-	}
-}
-
-// Computes the mean of elements across dimensions of a tensor.
-//
-// Reduces `input` along the dimensions given in `axis`. Unless
-// `keep_dims` is true, the rank of the tensor is reduced by 1 for each entry in
-// `axis`. If `keep_dims` is true, the reduced dimensions are
-// retained with length 1.
-//
-// Arguments:
-//	input: The tensor to reduce.
-//	axis: The dimensions to reduce. Must be in the range
-// `[-rank(input), rank(input))`.
-//
-// Returns The reduced tensor.
-func Mean(scope *Scope, input tf.Output, axis tf.Output, optional ...MeanAttr) (output tf.Output) {
-	if scope.Err() != nil {
-		return
-	}
-	attrs := map[string]interface{}{}
-	for _, a := range optional {
-		a(attrs)
-	}
-	opspec := tf.OpSpec{
-		Type: "Mean",
-		Input: []tf.Input{
-			input, axis,
-		},
-		Attrs: attrs,
 	}
 	op := scope.AddOperation(opspec)
 	return op.Output(0)
@@ -30059,6 +29995,59 @@ func InplaceAdd(scope *Scope, x tf.Output, i tf.Output, v tf.Output) (y tf.Outpu
 	}
 	op := scope.AddOperation(opspec)
 	return op.Output(0)
+}
+
+// SelfAdjointEigV2Attr is an optional argument to SelfAdjointEigV2.
+type SelfAdjointEigV2Attr func(optionalAttr)
+
+// SelfAdjointEigV2ComputeV sets the optional compute_v attribute to value.
+//
+// value: If `True` then eigenvectors will be computed and returned in `v`.
+// Otherwise, only the eigenvalues will be computed.
+// If not specified, defaults to true
+func SelfAdjointEigV2ComputeV(value bool) SelfAdjointEigV2Attr {
+	return func(m optionalAttr) {
+		m["compute_v"] = value
+	}
+}
+
+// Computes the eigen decomposition of one or more square self-adjoint matrices.
+//
+// Computes the eigenvalues and (optionally) eigenvectors of each inner matrix in
+// `input` such that `input[..., :, :] = v[..., :, :] * diag(e[..., :])`. The eigenvalues
+// are sorted in non-decreasing order.
+//
+// ```python
+// # a is a tensor.
+// # e is a tensor of eigenvalues.
+// # v is a tensor of eigenvectors.
+// e, v = self_adjoint_eig(a)
+// e = self_adjoint_eig(a, compute_v=False)
+// ```
+//
+// Arguments:
+//	input: `Tensor` input of shape `[N, N]`.
+//
+// Returns:
+//	e: Eigenvalues. Shape is `[N]`.
+//	v: Eigenvectors. Shape is `[N, N]`.
+func SelfAdjointEigV2(scope *Scope, input tf.Output, optional ...SelfAdjointEigV2Attr) (e tf.Output, v tf.Output) {
+	if scope.Err() != nil {
+		return
+	}
+	attrs := map[string]interface{}{}
+	for _, a := range optional {
+		a(attrs)
+	}
+	opspec := tf.OpSpec{
+		Type: "SelfAdjointEigV2",
+		Input: []tf.Input{
+			input,
+		},
+		Attrs: attrs,
+	}
+	op := scope.AddOperation(opspec)
+	return op.Output(0), op.Output(1)
 }
 
 // FractionalMaxPoolAttr is an optional argument to FractionalMaxPool.
@@ -39201,6 +39190,51 @@ func StatefulTruncatedNormal(scope *Scope, resource tf.Output, algorithm tf.Outp
 	return op.Output(0)
 }
 
+// MeanAttr is an optional argument to Mean.
+type MeanAttr func(optionalAttr)
+
+// MeanKeepDims sets the optional keep_dims attribute to value.
+//
+// value: If true, retain reduced dimensions with length 1.
+// If not specified, defaults to false
+func MeanKeepDims(value bool) MeanAttr {
+	return func(m optionalAttr) {
+		m["keep_dims"] = value
+	}
+}
+
+// Computes the mean of elements across dimensions of a tensor.
+//
+// Reduces `input` along the dimensions given in `axis`. Unless
+// `keep_dims` is true, the rank of the tensor is reduced by 1 for each entry in
+// `axis`. If `keep_dims` is true, the reduced dimensions are
+// retained with length 1.
+//
+// Arguments:
+//	input: The tensor to reduce.
+//	axis: The dimensions to reduce. Must be in the range
+// `[-rank(input), rank(input))`.
+//
+// Returns The reduced tensor.
+func Mean(scope *Scope, input tf.Output, axis tf.Output, optional ...MeanAttr) (output tf.Output) {
+	if scope.Err() != nil {
+		return
+	}
+	attrs := map[string]interface{}{}
+	for _, a := range optional {
+		a(attrs)
+	}
+	opspec := tf.OpSpec{
+		Type: "Mean",
+		Input: []tf.Input{
+			input, axis,
+		},
+		Attrs: attrs,
+	}
+	op := scope.AddOperation(opspec)
+	return op.Output(0)
+}
+
 // PaddingFIFOQueueV2Attr is an optional argument to PaddingFIFOQueueV2.
 type PaddingFIFOQueueV2Attr func(optionalAttr)
 
@@ -42284,6 +42318,63 @@ func DatasetToGraph(scope *Scope, input_dataset tf.Output, optional ...DatasetTo
 	return op.Output(0)
 }
 
+// TensorArrayV2Attr is an optional argument to TensorArrayV2.
+type TensorArrayV2Attr func(optionalAttr)
+
+// TensorArrayV2ElementShape sets the optional element_shape attribute to value.
+// If not specified, defaults to <unknown_rank:true >
+func TensorArrayV2ElementShape(value tf.Shape) TensorArrayV2Attr {
+	return func(m optionalAttr) {
+		m["element_shape"] = value
+	}
+}
+
+// TensorArrayV2DynamicSize sets the optional dynamic_size attribute to value.
+// If not specified, defaults to false
+func TensorArrayV2DynamicSize(value bool) TensorArrayV2Attr {
+	return func(m optionalAttr) {
+		m["dynamic_size"] = value
+	}
+}
+
+// TensorArrayV2ClearAfterRead sets the optional clear_after_read attribute to value.
+// If not specified, defaults to true
+func TensorArrayV2ClearAfterRead(value bool) TensorArrayV2Attr {
+	return func(m optionalAttr) {
+		m["clear_after_read"] = value
+	}
+}
+
+// TensorArrayV2TensorArrayName sets the optional tensor_array_name attribute to value.
+// If not specified, defaults to ""
+func TensorArrayV2TensorArrayName(value string) TensorArrayV2Attr {
+	return func(m optionalAttr) {
+		m["tensor_array_name"] = value
+	}
+}
+
+// Deprecated. Use TensorArrayV3
+//
+// DEPRECATED at GraphDef version 26: Use TensorArrayV3
+func TensorArrayV2(scope *Scope, size tf.Output, dtype tf.DataType, optional ...TensorArrayV2Attr) (handle tf.Output) {
+	if scope.Err() != nil {
+		return
+	}
+	attrs := map[string]interface{}{"dtype": dtype}
+	for _, a := range optional {
+		a(attrs)
+	}
+	opspec := tf.OpSpec{
+		Type: "TensorArrayV2",
+		Input: []tf.Input{
+			size,
+		},
+		Attrs: attrs,
+	}
+	op := scope.AddOperation(opspec)
+	return op.Output(0)
+}
+
 // ResizeNearestNeighborAttr is an optional argument to ResizeNearestNeighbor.
 type ResizeNearestNeighborAttr func(optionalAttr)
 
@@ -45221,59 +45312,6 @@ func ResourceApplyFtrlV2(scope *Scope, var_ tf.Output, accum tf.Output, linear t
 		Attrs: attrs,
 	}
 	return scope.AddOperation(opspec)
-}
-
-// SelfAdjointEigV2Attr is an optional argument to SelfAdjointEigV2.
-type SelfAdjointEigV2Attr func(optionalAttr)
-
-// SelfAdjointEigV2ComputeV sets the optional compute_v attribute to value.
-//
-// value: If `True` then eigenvectors will be computed and returned in `v`.
-// Otherwise, only the eigenvalues will be computed.
-// If not specified, defaults to true
-func SelfAdjointEigV2ComputeV(value bool) SelfAdjointEigV2Attr {
-	return func(m optionalAttr) {
-		m["compute_v"] = value
-	}
-}
-
-// Computes the eigen decomposition of one or more square self-adjoint matrices.
-//
-// Computes the eigenvalues and (optionally) eigenvectors of each inner matrix in
-// `input` such that `input[..., :, :] = v[..., :, :] * diag(e[..., :])`. The eigenvalues
-// are sorted in non-decreasing order.
-//
-// ```python
-// # a is a tensor.
-// # e is a tensor of eigenvalues.
-// # v is a tensor of eigenvectors.
-// e, v = self_adjoint_eig(a)
-// e = self_adjoint_eig(a, compute_v=False)
-// ```
-//
-// Arguments:
-//	input: `Tensor` input of shape `[N, N]`.
-//
-// Returns:
-//	e: Eigenvalues. Shape is `[N]`.
-//	v: Eigenvectors. Shape is `[N, N]`.
-func SelfAdjointEigV2(scope *Scope, input tf.Output, optional ...SelfAdjointEigV2Attr) (e tf.Output, v tf.Output) {
-	if scope.Err() != nil {
-		return
-	}
-	attrs := map[string]interface{}{}
-	for _, a := range optional {
-		a(attrs)
-	}
-	opspec := tf.OpSpec{
-		Type: "SelfAdjointEigV2",
-		Input: []tf.Input{
-			input,
-		},
-		Attrs: attrs,
-	}
-	op := scope.AddOperation(opspec)
-	return op.Output(0), op.Output(1)
 }
 
 // Computes softmax cross entropy cost and gradients to backpropagate.

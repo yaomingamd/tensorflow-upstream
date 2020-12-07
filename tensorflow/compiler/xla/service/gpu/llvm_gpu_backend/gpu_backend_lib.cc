@@ -53,9 +53,6 @@ limitations under the License.
 #include "llvm/Transforms/IPO/Internalize.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Scalar.h"
-#if TENSORFLOW_USE_ROCM
-#include "rocm/rocm_config.h"
-#endif
 #include "tensorflow/compiler/xla/service/gpu/llvm_gpu_backend/dump_ir_pass.h"
 #include "tensorflow/compiler/xla/service/gpu/llvm_gpu_backend/utils.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/llvm_util.h"
@@ -297,6 +294,9 @@ Status LinkWithBitcodeVector(llvm::Module* module,
 
     std::unique_ptr<llvm::Module> bitcode_module =
         LoadIRModule(bitcode_path, &module->getContext());
+    // Ignore the data layout of the module we're importing. This avoids a
+    // warning from the linker.
+    bitcode_module->setDataLayout(module->getDataLayout());
     if (linker.linkInModule(
             std::move(bitcode_module), llvm::Linker::Flags::LinkOnlyNeeded,
             [](llvm::Module& M, const llvm::StringSet<>& GVS) {
@@ -800,8 +800,16 @@ Status AMDGPUTargetModuleLinker(llvm::Module* module, GpuVersion gpu_version,
 std::unique_ptr<llvm::TargetMachine> AMDGPUGetTargetMachine(
     llvm::Triple target_triple, int amdgpu_version,
     const HloModuleConfig& hlo_module_config) {
+  string feature_str = "+code-object-v3";
+#if TF_ROCM_VERSION >= 30900
+  // code-object-v3 is default, so no need to expliticitly specify it
+  // in the feature string. Also, starting with ROCm 4.0, this feature string
+  // is deprecated, and we get a warning to that effect. So removing that
+  // feature string
+  feature_str = "";
+#endif
   return GetTargetMachine(target_triple, absl::StrCat("gfx", amdgpu_version),
-                          hlo_module_config, "+code-object-v3");
+                          hlo_module_config, feature_str);
 }
 
 void AMDGPUBackendInit(const HloModuleConfig& hlo_module_config) {
