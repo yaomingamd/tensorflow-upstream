@@ -2540,10 +2540,11 @@ tf_cc_test(
     ],
 )
 
-tf_cc_test(
+tf_cc_test_gpu(
     name = "lower_if_op_test",
     size = "small",
     srcs = ["lower_if_op_test.cc"],
+    tags = tf_cuda_tests_tags(),
     deps = [
         ":core_cpu",
         ":core_cpu_internal",

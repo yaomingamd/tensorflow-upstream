@@ -38,9 +38,7 @@ load(
     "//third_party/mkl:build_defs.bzl",
     "if_enable_mkl",
     "if_mkl",
-    "if_mkl_lnx_x64",
     "if_mkl_ml",
-    "mkl_deps",
 )
 load(
     "//third_party/mkl_dnn:build_defs.bzl",
@@ -51,6 +49,7 @@ load(
     "//third_party/ngraph:build_defs.bzl",
     "if_ngraph",
 )
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
 # version for the shared libraries, can
 # not contain rc or alpha, only numbers.
@@ -117,11 +116,6 @@ def tf_android_core_proto_headers(core_proto_sources_relative):
         _add_tfcore_prefix(p).replace(":", "/").replace(".proto", ".proto.h")
         for p in core_proto_sources_relative
     ])
-
-# Wrapper for portable protos which currently just creates an empty rule.
-def tf_portable_proto_library(name, proto_deps, deps = [], **kwargs):
-    _ignore = [kwargs]
-    cc_library(name = name, deps = deps + [dep + "_cc" for dep in proto_deps])
 
 def tf_portable_full_lite_protos(full, lite):
     return select({
@@ -270,6 +264,12 @@ def if_libtpu(if_true, if_false = []):
         "//conditions:default": if_false,
     })
 
+def if_registration_v2(if_true, if_false = []):
+    return select({
+        "//tensorflow:registration_v2": if_true,
+        "//conditions:default": if_false,
+    })
+
 # Linux systems may required -lrt linker flag for e.g. clock_gettime
 # see https://github.com/tensorflow/tensorflow/issues/15129
 def lrt_if_needed():
@@ -357,7 +357,12 @@ def tf_copts(
     )
 
 def tf_openmp_copts():
-    return (if_mkl_lnx_x64(["-fopenmp"]) + if_mkldnn_threadpool(["-fno-openmp"]))
+    # We assume when compiling on Linux gcc/clang will be used and MSVC on Windows
+    return select({
+        "@org_tensorflow//third_party/mkl:build_with_mkl_lnx_openmp": ["-fopenmp"],
+        "@org_tensorflow//third_party/mkl:build_with_mkl_windows_openmp": ["/openmp"],
+        "//conditions:default": [],
+    })
 
 def tf_opts_nortti():
     return [
@@ -777,7 +782,7 @@ def tf_gen_op_wrapper_cc(
             out_ops_file + "_internal.cc",
         ],
         srcs = srcs,
-        exec_tools = [":" + tool] + tf_binary_additional_srcs(),
+        tools = [":" + tool] + tf_binary_additional_srcs(),
         cmd = ("$(location :" + tool + ") $(location :" + out_ops_file + ".h) " +
                "$(location :" + out_ops_file + ".cc) " +
                str(include_internal_ops) + " " + api_def_args_str),
@@ -985,7 +990,7 @@ def tf_gen_op_wrapper_py(
             name = name + "_pygenrule",
             outs = [out],
             srcs = api_def_srcs + [hidden_file],
-            exec_tools = [tool_name] + tf_binary_additional_srcs(),
+            tools = [tool_name] + tf_binary_additional_srcs(),
             cmd = ("$(location " + tool_name + ") " + api_def_args_str +
                    " @$(location " + hidden_file + ") > $@"),
             compatible_with = compatible_with,
@@ -995,7 +1000,7 @@ def tf_gen_op_wrapper_py(
             name = name + "_pygenrule",
             outs = [out],
             srcs = api_def_srcs,
-            exec_tools = [tool_name] + tf_binary_additional_srcs(),
+            tools = [tool_name] + tf_binary_additional_srcs(),
             cmd = ("$(location " + tool_name + ") " + api_def_args_str + " " +
                    op_list_arg + " " +
                    ("1" if op_list_is_whitelist else "0") + " > $@"),
@@ -1268,7 +1273,7 @@ def tf_cc_test_mkl(
                     "-lm",
                 ],
             }) + _rpath_linkopts(src_to_test_name(src)),
-            deps = deps + tf_binary_dynamic_kernel_deps(kernels) + mkl_deps(),
+            deps = deps + tf_binary_dynamic_kernel_deps(kernels) + if_mkl_ml(["//third_party/mkl:intel_binary_blob"]),
             data = data + tf_binary_dynamic_kernel_dsos(),
             exec_properties = tf_exec_properties({"tags": tags}),
             linkstatic = linkstatic,
@@ -1569,7 +1574,7 @@ def tf_mkl_kernel_library(
         hdrs = hdrs,
         deps = deps,
         alwayslink = alwayslink,
-        copts = copts,
+        copts = copts + if_override_eigen_strong_inline(["/DEIGEN_STRONG_INLINE=inline"]),
         features = disable_header_modules,
     )
 
@@ -2380,7 +2385,7 @@ def tf_generate_proto_text_sources(name, srcs_relative_dir, srcs, protodeps = []
         cmd =
             "$(location //tensorflow/tools/proto_text:gen_proto_text_functions) " +
             "$(@D) " + srcs_relative_dir + " $(SRCS)",
-        exec_tools = [
+        tools = [
             clean_dep("//tensorflow/tools/proto_text:gen_proto_text_functions"),
         ],
         compatible_with = compatible_with,
@@ -2677,7 +2682,7 @@ def tf_python_pybind_extension(
         features = features,
         copts = copts,
         hdrs = hdrs,
-        deps = deps + tf_binary_pybind_deps() + mkl_deps(),
+        deps = deps + tf_binary_pybind_deps() + if_mkl_ml(["//third_party/mkl:intel_binary_blob"]),
         defines = defines,
         visibility = visibility,
         link_in_framework = True,
@@ -2833,3 +2838,66 @@ def internal_tfrt_deps():
 
 def internal_cuda_deps():
     return []
+
+def _tf_gen_options_header_impl(ctx):
+    header_depset = depset([ctx.outputs.output_header])
+
+    define_vals = {True: "true", False: "false"}
+    substitutions = {}
+    for target, identifier in ctx.attr.build_settings.items():
+        setting_val = target[BuildSettingInfo].value
+        lines = [
+            "// %s" % target.label,
+            "#define TF_OPTION_%s() %s" % (identifier, define_vals[setting_val]),
+        ]
+        substitutions["#define_option %s" % identifier] = "\n".join(lines)
+
+    ctx.actions.expand_template(
+        template = ctx.file.template,
+        output = ctx.outputs.output_header,
+        substitutions = substitutions,
+    )
+
+    return [
+        DefaultInfo(files = header_depset),
+    ]
+
+tf_gen_options_header = rule(
+    attrs = {
+        "output_header": attr.output(
+            doc = "File path for the generated header (output)",
+            mandatory = True,
+        ),
+        "template": attr.label(
+            doc = """Template for the header.
+            For each option name 'X' (see build_settings attribute),
+            '#define_option X' results in a macro 'TF_OPTION_X()'
+            """,
+            allow_single_file = True,
+            mandatory = True,
+        ),
+        "build_settings": attr.label_keyed_string_dict(
+            doc = """Dictionary from build-setting labels to option names. Example:
+               {"//tensorflow:x_setting" : "X"}
+            """,
+            providers = [BuildSettingInfo],
+        ),
+    },
+    implementation = _tf_gen_options_header_impl,
+    doc = """
+    Generates a header file for Bazel build settings.
+
+    This is an alternative to setting preprocessor defines on the compiler
+    command line. It has a few advantages:
+      - Usage of the options requires #include-ing the header, and thus a
+        Bazel-level dependency.
+      - Each option has a definition site in source code, which mentions the
+        corresponding Bazel setting. This is particularly useful when
+        navigating code with the assistance of static analysis (e.g.
+        https://cs.opensource.google/tensorflow).
+      - Each option is represented as a FUNCTION()-style macro, which is always
+        defined (i.e. one uses #if instead of #ifdef). This allows forms like
+        'if constexpr (TF_OPTION_FOO()) { ... }', and helps catch missing
+        dependencies (if 'F' is undefined, '#if F()' results in an error).
+    """,
+)

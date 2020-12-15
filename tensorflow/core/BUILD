@@ -133,7 +133,6 @@ load("@local_config_tensorrt//:build_defs.bzl", "if_tensorrt")
 load(
     "//third_party/mkl:build_defs.bzl",
     "if_mkl",
-    "mkl_deps",
 )
 
 package(
@@ -452,6 +451,7 @@ tf_cuda_library(
         "//tensorflow/core/framework:reader_op_kernel.h",
         "//tensorflow/core/framework:register_types.h",
         "//tensorflow/core/framework:register_types_traits.h",
+        "//tensorflow/core/framework:registration_options.h",
         "//tensorflow/core/framework:resource_mgr.h",
         "//tensorflow/core/framework:resource_op_kernel.h",
         "//tensorflow/core/framework:rng_alg.h",
@@ -1733,7 +1733,7 @@ tf_cuda_library(
     ] + if_static(
         extra_deps = ["@com_google_protobuf//:protobuf"],
         otherwise = ["@com_google_protobuf//:protobuf_headers"],
-    ) + mkl_deps(),
+    ),
     alwayslink = 1,
 )
 

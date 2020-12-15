@@ -78,24 +78,26 @@ REQUIRED_PACKAGES = [
     'absl-py ~= 0.10',
     'astunparse ~= 1.6.3',
     'flatbuffers ~= 1.12.0',
-    'gast ~= 0.4',
     'google_pasta ~= 0.2',
     'h5py ~= 2.10.0',
     'keras_preprocessing ~= 1.1.2',
     'numpy ~= 1.19.2',
     'opt_einsum ~= 3.3.0',
-    'protobuf ~= 3.13.0',
+    'protobuf >= 3.9.2',
     'six ~= 1.15.0',
     'termcolor ~= 1.1.0',
     'typing_extensions ~= 3.7.4',
     'wheel ~= 0.35',
     'wrapt ~= 1.12.1',
+    # These packages needs to be pinned exactly as newer versions are
+    # incompatible with the rest of the ecosystem
+    'gast == 0.3.3',
     # TensorFlow ecosystem packages that TF exposes API for
     # These need to be in sync with the existing TF version
     # They are updated during the release process
     # When updating these, please also update the nightly versions below
-    'tensorboard ~= 2.3',
-    'tensorflow_estimator ~= 2.3.0',
+    'tensorboard ~= 2.4',
+    'tensorflow_estimator >= 2.4.0 , < 2.5.0',
 ]
 
 
@@ -144,6 +146,7 @@ CONSOLE_SCRIPTS = [
     'tflite_convert = tensorflow.lite.python.tflite_convert:main',
     'toco = tensorflow.lite.python.tflite_convert:main',
     'saved_model_cli = tensorflow.python.tools.saved_model_cli:main',
+    'import_pb_to_tensorboard = tensorflow.python.tools.import_pb_to_tensorboard:main',
     # We need to keep the TensorBoard command, even though the console script
     # is now declared by the tensorboard pip package. If we remove the
     # TensorBoard command, pip will inappropriately remove it during install,

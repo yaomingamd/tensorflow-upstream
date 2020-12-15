@@ -488,35 +488,92 @@ class FromConcreteFunctionTest(lite_v2_test_util.ModelTest):
     converter.convert()
     self._assertValidDebugInfo(converter._debug_info)
 
+  def _getIntegerQuantizationModelWithFlexOp(self):
+    np.random.seed(0)
+
+    root = tracking.AutoTrackable()
+
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=[3, 3, 3, 3, 3], dtype=tf.float32)
+    ])
+    def func(inp):
+      tanh = tf.math.tanh(inp)
+      conv3d = tf.nn.conv3d(
+          tanh,
+          tf.ones([3, 3, 3, 3, 3]),
+          strides=[1, 1, 1, 1, 1],
+          padding='SAME')
+      output = tf.math.tanh(conv3d)
+      return output
+
+    def calibration_gen():
+      for _ in range(5):
+        yield [
+            np.random.uniform(-1, 1, size=(3, 3, 3, 3, 3)).astype(np.float32)
+        ]
+
+    root.f = func
+    return (root.f.get_concrete_function(), calibration_gen)
+
+  @parameterized.named_parameters(
+      ('_Default', False, False, dtypes.float32),
+      ('_INT8InputOutput', False, False, dtypes.int8),
+      ('_UINT8InputOutput', False, False, dtypes.uint8),
+      ('_INT16Quantize', False, True, dtypes.float32),
+      ('_INT16Quantize_INT16InputOutput', False, True, dtypes.int16),
+      ('_IntOnly', True, False, dtypes.float32),
+      ('_IntOnly_INT8InputOutput', True, False, dtypes.int8),
+      ('_IntOnly_UINT8InputOutput', True, False, dtypes.uint8),
+      ('_IntOnly_INT16Quantize', True, True, dtypes.float32),
+      ('_IntOnly_INT16Quantize_INT16InputOutput', True, True, dtypes.int16))
   @test_util.run_v2_only
-  def testFlexOpWithInt8OpSet(self):
-    model = tf.keras.Sequential()
-    input_shape = (1, 4, 4, 4, 1)
-    model.add(
-        tf.keras.layers.Conv3D(
-            4,
-            kernel_size=(1, 1, 1),
-            activation='relu',
-            input_shape=input_shape[1:]))
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(2, activation='relu'))
+  def testIntegerQuantizationWithFlexOp(self, is_int_only, is_int16_quantize,
+                                        inference_input_output_type):
+    func, calibration_gen = self._getIntegerQuantizationModelWithFlexOp()
 
-    @tf.function(
-        input_signature=[tf.TensorSpec(shape=input_shape, dtype=tf.float32)])
-    def _call_fn(inputs):
-      return model(inputs, training=False)
+    quantized_converter = tf.lite.TFLiteConverter.from_concrete_functions(
+        [func])
+    quantized_converter.optimizations = [lite.Optimize.DEFAULT]
+    quantized_converter.representative_dataset = calibration_gen
+    if is_int_only:
+      if is_int16_quantize:
+        quantized_converter.target_spec.supported_ops = [
+            lite.OpsSet.\
+            EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8,
+            lite.OpsSet.SELECT_TF_OPS
+        ]
+      else:
+        quantized_converter.target_spec.supported_ops = [
+            lite.OpsSet.TFLITE_BUILTINS_INT8, lite.OpsSet.SELECT_TF_OPS
+        ]
+    else:
+      if is_int16_quantize:
+        quantized_converter.target_spec.supported_ops = [
+            lite.OpsSet.\
+            EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8,
+            lite.OpsSet.TFLITE_BUILTINS,
+            lite.OpsSet.SELECT_TF_OPS
+        ]
+      else:
+        quantized_converter.target_spec.supported_ops = [
+            lite.OpsSet.TFLITE_BUILTINS, lite.OpsSet.SELECT_TF_OPS
+        ]
 
-    concrete_func = _call_fn.get_concrete_function(
-        tf.TensorSpec(input_shape, dtype=tf.float32))
+    quantized_converter.inference_input_type = inference_input_output_type
+    quantized_converter.inference_output_type = inference_input_output_type
+    quantized_tflite_model = quantized_converter.convert()
+    self.assertIsNotNone(quantized_tflite_model)
 
-    converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    converter.target_spec.supported_ops = [
-        tf.lite.OpsSet.TFLITE_BUILTINS_INT8,
-        tf.lite.OpsSet.SELECT_TF_OPS,
-    ]
-    tflite_model = converter.convert()
-    self.assertTrue(tflite_model)
+    interpreter = Interpreter(model_content=quantized_tflite_model)
+    interpreter.allocate_tensors()
+    input_details = interpreter.get_input_details()
+    self.assertLen(input_details, 1)
+    self.assertEqual(inference_input_output_type.as_numpy_dtype,
+                     input_details[0]['dtype'])
+    output_details = interpreter.get_output_details()
+    self.assertLen(output_details, 1)
+    self.assertEqual(inference_input_output_type.as_numpy_dtype,
+                     output_details[0]['dtype'])
 
 
 class FromSavedModelTest(lite_v2_test_util.ModelTest):
@@ -1245,6 +1302,55 @@ class UnknownShapes(lite_v2_test_util.ModelTest):
         'None is only supported in the 1st dimension. Tensor '
         '\'in_tensor\' has invalid shape \'[1, None, 16, 3]\'.',
         str(error.exception))
+
+
+class AffineOpThenMulFusionTest(lite_v2_test_util.ModelTest):
+
+  @parameterized.named_parameters(('should_fuse_1d', [2], True),
+                                  ('should_fuse_1x2', [1, 2], True),
+                                  ('should_not_fuse_2x1', [2, 1], False),
+                                  ('should_not_fuse_2x2', [2, 2], False))
+  @test_util.run_v2_only
+  def testFullyConnectedFusion(self, multiplier_shape, can_fuse):
+    """Test fusion of (x ∗ w) * m into fullyconnected."""
+
+    @tf.function
+    def func(x):
+      w = tf.constant([3., 4., 5., 6.], shape=[2, 2])
+      m_value = [7., 8.] if sum(multiplier_shape) < 4 else [7., 8., 9., 10.]
+      m = tf.constant(m_value, shape=multiplier_shape)
+      return tf.matmul(x, w) * m
+
+    input_data = tf.constant([1., 2.], shape=[1, 2])
+    self._checkAffineFusion(func, input_data, 1 if can_fuse else 2)
+
+  @parameterized.named_parameters(('should_fuse_1d', [2], True),
+                                  ('should_fuse_1x2', [1, 2], True),
+                                  ('should_not_fuse_2x1', [2, 1], False))
+  @test_util.run_v2_only
+  def testConvFusion(self, multiplier_shape, can_fuse):
+    """Test fusion of (x ∗ w) * m into conv2d."""
+
+    @tf.function
+    def func(x):
+      w = tf.constant([3., 4., 5., 6.], shape=[2, 1, 1, 2])
+      m = tf.constant([7., 8.], shape=multiplier_shape)
+      return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding='SAME') * m
+
+    input_data = tf.constant([1., 2.], shape=[1, 1, 2, 1])
+    self._checkAffineFusion(func, input_data, 1 if can_fuse else 2)
+
+  def _checkAffineFusion(self, func, input_data, expected_number_of_ops):
+    concrete_func = func.get_concrete_function(input_data)
+    converter = lite.TFLiteConverterV2.from_concrete_functions([concrete_func])
+    tflite_model = converter.convert()
+
+    interpreter = Interpreter(model_content=tflite_model)
+    assert len(interpreter._get_ops_details()) == expected_number_of_ops
+
+    expected_value = func(input_data)
+    actual_value = self._evaluateTFLiteModel(tflite_model, [input_data])[0]
+    self.assertAllClose(expected_value.numpy(), actual_value)
 
 
 if __name__ == '__main__':

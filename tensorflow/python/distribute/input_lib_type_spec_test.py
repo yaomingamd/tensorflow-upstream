@@ -205,11 +205,6 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
       combinations.combine(
           mode=["eager"],
           distribution=[
-              strategy_combinations.one_device_strategy,
-              strategy_combinations.mirrored_strategy_with_one_cpu,
-              strategy_combinations.mirrored_strategy_with_gpu_and_cpu,
-              strategy_combinations.tpu_strategy,
-              strategy_combinations.central_storage_strategy_with_gpu_and_cpu,
               strategy_combinations.multi_worker_mirrored_2x1_cpu,
               strategy_combinations.multi_worker_mirrored_2x1_gpu,
               strategy_combinations.multi_worker_mirrored_2x2_gpu,
@@ -321,11 +316,9 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
               strategy_combinations.multi_worker_mirrored_2x2_gpu,
           ],
           tf_api_version=2,
-          enable_get_next_as_optional=[True, False],
           drop_remainder=[True, False],
       ))
   def testFromDatasetDoesNotTriggerFunctionTracing(self, distribution,
-                                                   enable_get_next_as_optional,
                                                    drop_remainder):
     self.trace_count = 0
 
@@ -334,8 +327,7 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
       del v
       self.trace_count += 1
 
-    distribution.extended.experimental_enable_get_next_as_optional = (
-        enable_get_next_as_optional)
+    distribution.extended.experimental_enable_get_next_as_optional = True
     # Total dataset size 5 allows us to have full batches, partial batches and
     # empty batches.
     dataset = dataset_ops.DatasetV2.from_tensor_slices(np.ones((5, 3))).batch(
@@ -354,11 +346,10 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
               strategy_combinations.multi_worker_mirrored_2x2_gpu,
           ],
           tf_api_version=2,
-          enable_get_next_as_optional=[True, False],
           drop_remainder=[True, False],
       ))
   def testFromDatasetFileShardingDoesNotTriggerFunctionTracing(
-      self, distribution, enable_get_next_as_optional, drop_remainder):
+      self, distribution, drop_remainder):
     # Create files that produce partial/empty batches at different batch.
     fname1 = os.path.join(self.get_temp_dir(), "1.txt")
     _create_text_file(fname1, 5)
@@ -372,8 +363,7 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
       del v
       self.trace_count += 1
 
-    distribution.extended.experimental_enable_get_next_as_optional = (
-        enable_get_next_as_optional)
+    distribution.extended.experimental_enable_get_next_as_optional = True
     dataset = readers.TextLineDatasetV2([fname1, fname2]).batch(
         4, drop_remainder=drop_remainder)
     dataset = distribution.experimental_distribute_dataset(dataset)
@@ -390,11 +380,10 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
               strategy_combinations.multi_worker_mirrored_2x2_gpu,
           ],
           tf_api_version=2,
-          enable_get_next_as_optional=[True, False],
           drop_remainder=[True, False],
       ))
-  def testFromFunctionDoesNotTriggerFunctionTracing(
-      self, distribution, enable_get_next_as_optional, drop_remainder):
+  def testFromFunctionDoesNotTriggerFunctionTracing(self, distribution,
+                                                    drop_remainder):
 
     def dataset_fn(input_context):
       # Total dataset size 5 allows us to have full batches, partial batches and
@@ -413,8 +402,7 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
       del v
       self.trace_count += 1
 
-    distribution.extended.experimental_enable_get_next_as_optional = (
-        enable_get_next_as_optional)
+    distribution.extended.experimental_enable_get_next_as_optional = True
     dataset = distribution.experimental_distribute_datasets_from_function(
         dataset_fn)
     for v in iter(dataset):
@@ -430,11 +418,10 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
               strategy_combinations.multi_worker_mirrored_2x2_gpu,
           ],
           tf_api_version=2,
-          enable_get_next_as_optional=[True, False],
           drop_remainder=[True, False],
       ))
   def testFromFunctionFileShardingDoesNotTriggerFunctionTracing(
-      self, distribution, enable_get_next_as_optional, drop_remainder):
+      self, distribution, drop_remainder):
     # Create files that produce partial/empty batches at different batch.
     fname1 = os.path.join(self.get_temp_dir(), "1.txt")
     _create_text_file(fname1, 5)
@@ -456,14 +443,82 @@ class InputTypeSpecTest(test.TestCase, parameterized.TestCase):
       del v
       self.trace_count += 1
 
-    distribution.extended.experimental_enable_get_next_as_optional = (
-        enable_get_next_as_optional)
+    distribution.extended.experimental_enable_get_next_as_optional = True
     dataset = distribution.experimental_distribute_datasets_from_function(
         dataset_fn)
     for v in iter(dataset):
       f(v)
     self.assertEqual(self.trace_count, 1)
 
+  @combinations.generate(
+      combinations.combine(
+          mode=["eager"],
+          tf_api_version=2,
+          distribution=[
+              strategy_combinations.mirrored_strategy_with_two_gpus,
+              strategy_combinations.mirrored_strategy_with_cpu_1_and_2,
+              strategy_combinations.mirrored_strategy_with_gpu_and_cpu,
+          ],
+          enable_get_next_as_optional=[True, False],
+          experimental_place_dataset_on_device=[True, False],
+          experimental_prefetch_to_device=[True, False],))
+  def testFromFunctionInputSignatureForPerReplicaValuesWithOptions(
+      self, distribution, enable_get_next_as_optional,
+      experimental_place_dataset_on_device,
+      experimental_prefetch_to_device):
+
+    if experimental_place_dataset_on_device and experimental_prefetch_to_device:
+      self.skipTest("Setting experimental_place_dataset_on_device and "
+                    "experimental_prefetch_to_device to `True` is not "
+                    "allowed when using "
+                    "distribute_lib.InputReplicationMode.PER_REPLICA.")
+
+    fname1 = os.path.join(self.get_temp_dir(), "1.txt")
+    _create_text_file(fname1, 5)
+    fname2 = os.path.join(self.get_temp_dir(), "2.txt")
+    _create_text_file(fname2, 9)
+
+    def dataset_fn(input_context):
+      dataset = dataset_ops.DatasetV2.from_tensor_slices([fname1, fname2])
+      dataset = dataset.shard(input_context.num_input_pipelines,
+                              input_context.input_pipeline_id)
+      return readers.TextLineDatasetV2(dataset).map(
+          string_ops.string_to_number).batch(
+              input_context.get_per_replica_batch_size(4))
+
+    options = distribute_lib.InputOptions(
+      experimental_place_dataset_on_device=experimental_place_dataset_on_device,
+      experimental_prefetch_to_device=experimental_prefetch_to_device,
+      experimental_replication_mode=(
+        distribute_lib.InputReplicationMode.PER_REPLICA
+      ))
+
+    distribution.extended.experimental_enable_get_next_as_optional = (
+        enable_get_next_as_optional)
+    ds = distribution.experimental_distribute_datasets_from_function(dataset_fn,
+                                                                     options)
+
+    iterator = iter(ds)
+    _check_type_spec_structure(iterator)
+    spec = iterator._type_spec
+    tensor_list = spec._to_components(iterator)
+    re_iterator = spec._from_components(tensor_list)
+
+    _check_type_spec_structure(iter(ds))
+    element_spec = ds.element_spec
+    iter_element_spec = iter(ds).element_spec
+    nest.assert_same_structure(element_spec, iter_element_spec)
+    self.assertAllEqual(
+        nest.flatten(element_spec), nest.flatten(iter_element_spec))
+    self.assertEqual(iterator._input_workers, re_iterator._input_workers)
+    self.assertAllEqual(iterator._iterators, re_iterator._iterators) 
+
+    @def_function.function(input_signature=[element_spec])
+    def process_inputs(inputs):
+      distribution.run(lambda inputs: inputs, args=(inputs,))
+
+    for x in ds:
+      process_inputs(x)
 
 class RaggedTensorDistributedIteratorTest(test.TestCase,
                                           parameterized.TestCase):
