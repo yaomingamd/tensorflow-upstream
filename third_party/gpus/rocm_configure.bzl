@@ -339,9 +339,6 @@ def _find_libs(repository_ctx, rocm_config, bash_bin):
 
 def _exec_find_rocm_config(repository_ctx, script_path):
     python_bin = get_python_bin(repository_ctx)
-<<<<<<< HEAD
-    return execute(repository_ctx, [python_bin, script_path])
-=======
 
     # If used with remote execution then repository_ctx.execute() can't
     # access files from the source tree. A trick is to read the contents
@@ -363,7 +360,6 @@ def _exec_find_rocm_config(repository_ctx, script_path):
     )
 
     return execute(repository_ctx, [python_bin, "-c", decompress_and_execute_cmd])
->>>>>>> origin/r2.4
 
 def find_rocm_config(repository_ctx, script_path):
     """Returns ROCm config dictionary from running find_rocm_config.py"""
@@ -533,11 +529,7 @@ def _create_local_rocm_repository(repository_ctx):
         "rocm:rocm_config.h",
     ]}
 
-<<<<<<< HEAD
-    find_rocm_config_script = repository_ctx.path(Label("@org_tensorflow//third_party/gpus:find_rocm_config.py"))
-=======
     find_rocm_config_script = repository_ctx.path(Label("@org_tensorflow//third_party/gpus:find_rocm_config.py.gz.base64"))
->>>>>>> origin/r2.4
 
     bash_bin = get_bash_bin(repository_ctx)
     rocm_config = _get_rocm_config(repository_ctx, bash_bin, find_rocm_config_script)

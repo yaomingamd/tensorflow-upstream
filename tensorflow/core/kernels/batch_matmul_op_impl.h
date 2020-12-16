@@ -313,12 +313,8 @@ template <typename Scalar>
 struct LaunchBatchMatMul<GPUDevice, Scalar> {
   static void Launch(OpKernelContext* context, const Tensor& in_x,
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
-<<<<<<< HEAD
                      bool trans_y, const MatMulBCast& bcast, bool use_autotune,
                      Tensor* out, float alpha = 1.0, float beta = 0.0) {
-=======
-                     bool trans_y, const MatMulBCast& bcast, Tensor* out) {
->>>>>>> origin/r2.4
     se::blas::Transpose trans[] = {se::blas::Transpose::kNoTranspose,
                                    se::blas::Transpose::kTranspose,
                                    se::blas::Transpose::kConjugateTranspose};
@@ -577,7 +573,6 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
     if (batch_size == 1) {
       // This is a regular matrix*matrix or matrix*vector multiply. Avoid the
       // overhead of the scratch allocator and the batch interface.
-<<<<<<< HEAD
       // Note that the GEMV call here does not support Eigen::half, so we do not
       // use this path in that case. A workaround is applied to the pointers
       // passed to the call itself to avoid compilation errors.
@@ -627,22 +622,6 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
               ", b.shape=", in_y.shape().DebugString(), ", m=", m, ", n=", n,
               ", k=", k));
         }
-=======
-      // TODO(benbarsdell): Use fp16 Gemv if it becomes supported by CUBLAS
-      bool blas_launch_status =
-          stream
-              ->ThenBlasGemm(blas_transpose_b, blas_transpose_a, n, m, k,
-                             static_cast<Coefficient>(1.0), *(b_ptrs[0]),
-                             adj_y || trans_y ? k : n, *(a_ptrs[0]),
-                             adj_x || trans_x ? m : k,
-                             static_cast<Coefficient>(0.0), c_ptrs[0], n)
-              .ok();
-      if (!blas_launch_status) {
-        context->SetStatus(errors::Internal(
-            "Blas xGEMM launch failed : a.shape=", in_x.shape().DebugString(),
-            ", b.shape=", in_y.shape().DebugString(), ", m=", m, ", n=", n,
-            ", k=", k));
->>>>>>> origin/r2.4
       }
     } else if (use_strided_batched) {
       bool blas_launch_status =
