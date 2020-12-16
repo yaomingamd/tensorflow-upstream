@@ -94,7 +94,6 @@ struct IndirectLinearData {
   Entry* const backing_data;
 };
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <typename T>
 struct StridedData {
   typedef impl::Entry<T> Entry;

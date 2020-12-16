@@ -69,7 +69,6 @@ py_test(
     ],
     python_version = "PY3",
     srcs_version = "PY2AND3",
-    tags = ["no_rocm"],
     deps = [
         ":policy",
         "//tensorflow/python:client_testlib",
@@ -79,7 +78,6 @@ py_test(
         "//tensorflow/python/keras/mixed_precision:loss_scale_optimizer",
         "//tensorflow/python/keras/optimizer_v2",
     ],
-    tags = ["no_rocm"],
 )
 
 py_library(

@@ -2552,7 +2552,6 @@ tf_py_test(
     srcs = ["framework/importer_test.py"],
     main = "framework/importer_test.py",
     python_version = "PY3",
-    tfrt_enabled = True,
     tags = ["no_rocm"],
     deps = [
         ":array_ops",
@@ -2689,7 +2688,6 @@ tf_py_test(
         "no_pip", # test_ops_2 is not available in pip.
         "no_rocm",
     ], 
-    tfrt_enabled = True,
     deps = [
         ":cond_v2",
         ":control_flow_ops",
@@ -5390,7 +5388,6 @@ cuda_py_test(
     srcs = ["ops/nn_fused_batchnorm_test.py"],
     python_version = "PY3",
     shard_count = 24,
-    tfrt_enabled = True,
     deps = [
         ":array_ops",
         ":client_testlib",

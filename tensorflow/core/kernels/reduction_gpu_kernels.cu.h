@@ -1319,13 +1319,15 @@ struct ReduceFunctor<GPUDevice, functor::MeanReducer<Eigen::half>> {
 };
 
 template <typename T>
-struct ReduceFunctor<GPUDevice, Eigen::internal::MaxReducer<T>> {
+struct ReduceFunctor<GPUDevice,
+                     Eigen::internal::MaxReducer<T, Eigen::PropagateNaN>> {
   using TM = typename MapComplexToHipComplex<T>::TM;
   template <typename OUT_T, typename IN_T, typename ReductionAxes>
-  static void Reduce(OpKernelContext* ctx, OUT_T out, IN_T in,
-                     const ReductionAxes& reduction_axes,
-                     const Eigen::internal::MaxReducer<T>& reducer) {
-    ReduceImpl<TM, gpuprim::Max, TM*, TM*, ReductionAxes>(
+  static void Reduce(
+      OpKernelContext* ctx, OUT_T out, IN_T in,
+      const ReductionAxes& reduction_axes,
+      const Eigen::internal::MaxReducer<T, Eigen::PropagateNaN>& reducer) {
+    ReduceImpl<TM, MaxPropagateNaN, TM*, TM*, ReductionAxes>(
         ctx, (TM*)out.data(), (TM*)in.data(), in.rank(), in.dimension(0),
         in.rank() >= 2 ? in.dimension(1) : 1,
         in.rank() >= 3 ? in.dimension(2) : 1, out.rank(), reduction_axes,
@@ -1335,18 +1337,22 @@ struct ReduceFunctor<GPUDevice, Eigen::internal::MaxReducer<T>> {
   template <typename OUT_T>
   static void FillIdentity(const GPUDevice& d, OUT_T out,
                            const Eigen::internal::MaxReducer<T>& reducer) {
-    FillIdentityEigenImplWithCast<T>(d, To32Bit(out), Eigen::internal::MaxReducer<TM>());
+    FillIdentityEigenImplWithCast<T>(
+        d, To32Bit(out),
+        Eigen::internal::MaxReducer<TM, Eigen::PropagateNaN>());
   }
 };
 
 template <typename T>
-struct ReduceFunctor<GPUDevice, Eigen::internal::MinReducer<T>> {
+struct ReduceFunctor<GPUDevice,
+                     Eigen::internal::MinReducer<T, Eigen::PropagateNaN>> {
   using TM = typename MapComplexToHipComplex<T>::TM;
   template <typename OUT_T, typename IN_T, typename ReductionAxes>
-  static void Reduce(OpKernelContext* ctx, OUT_T out, IN_T in,
-                     const ReductionAxes& reduction_axes,
-                     const Eigen::internal::MinReducer<T>& reducer) {
-    ReduceImpl<TM, gpuprim::Min, TM*, TM*, ReductionAxes>(
+  static void Reduce(
+      OpKernelContext* ctx, OUT_T out, IN_T in,
+      const ReductionAxes& reduction_axes,
+      const Eigen::internal::MinReducer<T, Eigen::PropagateNaN>& reducer) {
+    ReduceImpl<TM, MinPropagateNaN, TM*, TM*, ReductionAxes>(
         ctx, (TM*)out.data(), (TM*)in.data(), in.rank(), in.dimension(0),
         in.rank() >= 2 ? in.dimension(1) : 1,
         in.rank() >= 3 ? in.dimension(2) : 1, out.rank(), reduction_axes,
@@ -1354,9 +1360,12 @@ struct ReduceFunctor<GPUDevice, Eigen::internal::MinReducer<T>> {
   }
 
   template <typename OUT_T>
-  static void FillIdentity(const GPUDevice& d, OUT_T out,
-                           const Eigen::internal::MinReducer<T>& reducer) {
-    FillIdentityEigenImplWithCast<T>(d, To32Bit(out), Eigen::internal::MinReducer<TM>());
+  static void FillIdentity(
+      const GPUDevice& d, OUT_T out,
+      const Eigen::internal::MinReducer<T, Eigen::PropagateNaN>& reducer) {
+    FillIdentityEigenImplWithCast<T>(
+        d, To32Bit(out),
+        Eigen::internal::MinReducer<TM, Eigen::PropagateNaN>());
   }
 };
 

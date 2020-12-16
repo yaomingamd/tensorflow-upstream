@@ -85,7 +85,6 @@ tf_py_test(
 tf_py_test(
     name = "batch_scatter_ops_test",
     srcs = ["batch_scatter_ops_test.py"],
-    tfrt_enabled = True,
     tags = ["no_rocm"],
     deps = [
         "//tensorflow/python:array_ops",
@@ -2553,7 +2552,6 @@ cuda_py_test(
     name = "relu_op_test",
     size = "small",
     srcs = ["relu_op_test.py"],
-    tfrt_enabled = True,
     tags = ["no_rocm"],
     deps = [
         "//tensorflow/python:client_testlib",
@@ -4005,7 +4003,6 @@ cuda_py_test(
     size = "medium",
     srcs = ["tridiagonal_matmul_op_test.py"],
     shard_count = 10,
-    tfrt_enabled = True,
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework_for_generated_wrappers",
