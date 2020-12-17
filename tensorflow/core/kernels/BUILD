@@ -3236,6 +3236,7 @@ cc_library(
     deps = [
         ":aggregate_ops",
         ":argmax_op",
+        ":batch_matmul_op",
         ":betainc_op",
         ":bincount_op",
         ":bucketize_op",
@@ -3327,6 +3328,18 @@ tf_kernel_library(
     name = "argmax_op",
     prefix = "argmax_op",
     deps = MATH_DEPS,
+)
+
+tf_kernel_library(
+    name = "batch_matmul_op",
+    # <prefix>*impl.h are excluded by default from the CPU build, add explicitly.
+    hdrs = ["batch_matmul_op_impl.h"],
+    prefix = "batch_matmul_op",
+    deps = MATH_DEPS + [":eigen_contraction_kernel"] + if_mkl_ml([
+        "//third_party/mkl:intel_binary_blob",
+    ]) + if_cuda_or_rocm([
+        "//tensorflow/core/kernels:gpu_utils",
+    ]),
 )
 
 tf_kernel_library(
@@ -3599,6 +3612,25 @@ tf_cuda_cc_test(
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
         "@com_google_absl//absl/algorithm:container",
+    ],
+)
+
+tf_cuda_cc_test(
+    name = "batch_matmul_op_test",
+    size = "small",
+    srcs = ["batch_matmul_op_test.cc"],
+    deps = [
+        ":batch_matmul_op",
+        ":broadcast_to_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
     ],
 )
 
@@ -5922,6 +5954,7 @@ filegroup(
     srcs = [
         "argmax_op.h",
         "avgpooling_op.h",
+        "batch_matmul_op_impl.h",
         "batch_norm_op.h",
         "bincount_op.h",
         "broadcast_to_op.h",
@@ -6012,6 +6045,7 @@ filegroup(
         ":android_extended_ops_headers",
         "argmax_op.cc",
         "avgpooling_op.cc",
+        "batch_matmul_op_real.cc",
         "batch_norm_op.cc",
         "bcast_ops.cc",
         "check_numerics_op.cc",
@@ -7425,6 +7459,7 @@ test_suite(
         "manual",  # Avoid redundancy when using wildcard test patterns.
     ],
     tests = [
+        ":batch_matmul_op_test",
         ":batch_norm_op_test",
         ":broadcast_to_op_test",
         ":cast_op_test",

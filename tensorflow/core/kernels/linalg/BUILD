@@ -276,6 +276,7 @@ tf_kernel_library(
     deps = [
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
+        "//tensorflow/core/kernels:batch_matmul_op",
         "//tensorflow/core/kernels:fill_functor",
         "//tensorflow/core/kernels:reduction_ops",
         "//tensorflow/core/kernels:transpose_functor",

@@ -1335,8 +1335,9 @@ struct ReduceFunctor<GPUDevice,
   }
 
   template <typename OUT_T>
-  static void FillIdentity(const GPUDevice& d, OUT_T out,
-                           const Eigen::internal::MaxReducer<T>& reducer) {
+  static void FillIdentity(
+      const GPUDevice& d, OUT_T out,
+      const Eigen::internal::MaxReducer<T, Eigen::PropagateNaN>& reducer) {
     FillIdentityEigenImplWithCast<T>(
         d, To32Bit(out),
         Eigen::internal::MaxReducer<TM, Eigen::PropagateNaN>());
