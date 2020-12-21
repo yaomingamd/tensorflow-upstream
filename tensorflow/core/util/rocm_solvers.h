@@ -28,6 +28,7 @@ limitations under the License.
 
 #include "rocm/include/hip/hip_complex.h"
 #include "rocm/include/rocblas.h"
+#include "rocm/include/rocsolver.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_reference.h"
@@ -84,7 +85,6 @@ class ROCmSolver {
   Status Trsm(rocblas_side side, rocblas_fill uplo, rocblas_operation trans,
               rocblas_diagonal diag, int m, int n, const Scalar* alpha,
               const Scalar* A, int lda, Scalar* B, int ldb);
-
  private:
   OpKernelContext* context_;  // not owned.
   hipStream_t hip_stream_;

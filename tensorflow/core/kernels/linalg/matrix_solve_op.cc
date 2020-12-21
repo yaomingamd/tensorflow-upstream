@@ -467,18 +467,19 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
         n <= kMaxMatrixSizeToBatchSizeRatio * batch_size;
     if (use_batched_solver) {
       // For small matrices or large batch sizes, we use the batched interface
-      // from cuBlas.
+      // from hipBLAS.
       const Scalar** input_copy_ptrs_base =
           reinterpret_cast<const Scalar**>(input_copy_ptrs.mutable_data());
       for (int batch = 0; batch < batch_size; ++batch) {
         input_copy_ptrs_base[batch] = &input_copy_reshaped(batch, 0, 0);
       }
       dev_info.push_back(
-          solver->GetDeviceLapackInfo(batch_size, "getrfBatched"));
+          solver->GetDeviceLapackInfo(batch_size, "getrf_batched"));
       OP_REQUIRES_OK_ASYNC(
           context,
-          solver->GetrfBatched(n, input_copy_ptrs_base, n, pivots_mat.data(),
-                               &dev_info.back(), batch_size),
+          solver->getrf_batched(solver->rocblas_handle_, 
+                                n, n, input_copy_ptrs_base, n, pivots_mat.data(),
+                                n, &dev_info.back(), batch_size),
           done);
     } else {
       // For small batch sizes or large matrices, we use the non-batched
@@ -487,7 +488,7 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
       for (int batch = 0; batch < batch_size; ++batch) {
         OP_REQUIRES_OK_ASYNC(
             context,
-            solver->Getrf(n, n, &input_copy_reshaped(batch, 0, 0), n,
+            solver->getrf(solver->rocblas_handle_, n, n, &input_copy_reshaped(batch, 0, 0), n,
                           &pivots_mat(batch, 0), &dev_info.back()(batch)),
             done);
       }
@@ -531,6 +532,7 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
     auto transposed_rhs_reshaped =
         transposed_rhs.template flat_inner_dims<Scalar, 3>();
     if (use_batched_solver) {
+      dev_info.push_back(solver->GetDeviceLapackInfo(batch_size, "getrs_batched"));
       const Scalar** input_copy_ptrs_base =
           reinterpret_cast<const Scalar**>(input_copy_ptr_array.mutable_data());
       const Scalar** transposed_rhs_ptrs_base =
@@ -543,12 +545,12 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
       int host_info = 0;
       OP_REQUIRES_OK_ASYNC(
           context,
-          solver->getrs_batched(adjoint_ ? rocblas_operation_conjugate_transpose
+          solver->getrs_batched(solver->rocblas_handle_,
+                                adjoint_ ? rocblas_operation_conjugate_transpose
                                          : rocblas_operation_transpose,
-                               n, nrhs,
-                               input_copy_ptrs_base, n, pivots_mat.data(),
-                               transposed_rhs_ptrs_base, n, &host_info,
-                               batch_size),
+                                n, nrhs,
+                                input_copy_ptrs_base, n, pivots_mat.data(),
+                                n, transposed_rhs_ptrs_base, n, batch_size),
           done);
       OP_REQUIRES_ASYNC(
           context, host_info == 0,
@@ -561,13 +563,13 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
       for (int batch = 0; batch < batch_size; ++batch) {
         OP_REQUIRES_OK_ASYNC(
             context,
-            solver->getrs(adjoint_ ? rocblas_operation_conjugate_transpose
+            solver->getrs(solver->rocblas_handle_,
+                          adjoint_ ? rocblas_operation_conjugate_transpose
                                          : rocblas_operation_transpose,
                           n, nrhs,
                           &input_copy_reshaped(batch, 0, 0), n,
                           &pivots_mat(batch, 0),
-                          &transposed_rhs_reshaped(batch, 0, 0), n,
-                          &dev_info.back()(batch)),
+                          &transposed_rhs_reshaped(batch, 0, 0), n),
             done);
       }
     }
