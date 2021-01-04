@@ -650,6 +650,7 @@ cc_library(
         "//tensorflow/core/kernels:sparse",
         "//tensorflow/core/kernels:state",
         "//tensorflow/core/kernels:stateless_random_ops",
+        "//tensorflow/core/kernels:stateless_random_gamma_op",
         "//tensorflow/core/kernels:string",
         "//tensorflow/core/kernels:summary_kernels",
         "//tensorflow/core/kernels:training_ops",
@@ -1258,7 +1259,7 @@ cc_library(
             "-lpthread",
         ],
     }),
-    visibility = ["//tensorflow/python:__pkg__"],
+    visibility = ["//tensorflow/python:__subpackages__"],
     deps = tf_additional_lib_deps() + [
         "@com_google_absl//absl/meta:type_traits",
         "@com_google_absl//absl/strings",

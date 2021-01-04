@@ -1201,7 +1201,7 @@ class _EagerTensorBase(Tensor):
   def gpu(self, gpu_index=0):
     """A copy of this Tensor with contents backed by memory on the GPU.
 
-    Arguments:
+    Args:
       gpu_index: Identifies which GPU to place the contents on the returned
         Tensor in.
 
@@ -2335,7 +2335,7 @@ class Operation(object):
     Note: this is generally unsafe to use. This is used in certain situations in
     conjunction with _set_type_list_attr.
 
-    Arguments:
+    Args:
       types: list of DTypes
       shapes: list of TensorShapes
     """
@@ -5333,13 +5333,12 @@ def _colocate_with(op, ignore_existing=False):
 def control_dependencies(control_inputs):
   """Wrapper for `Graph.control_dependencies()` using the default graph.
 
-  See `tf.Graph.control_dependencies`
-  for more details.
+  See `tf.Graph.control_dependencies` for more details.
 
   Note: *In TensorFlow 2 with eager and/or Autograph, you should not require
-  this method, as code executes in the expected order.* Only use
-  `tf.control_dependencies` when working with v1-style code or in a graph
-  context such as inside `Dataset.map`.
+  this method, as ops execute in the expected order thanks to automatic control
+  dependencies.* Only use `tf.control_dependencies` when working with v1
+  `tf.Graph` code.
 
   When eager execution is enabled, any callable object in the `control_inputs`
   list will be called.

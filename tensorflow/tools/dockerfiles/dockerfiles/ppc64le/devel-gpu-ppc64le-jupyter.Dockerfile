@@ -130,7 +130,7 @@ RUN python3 -m pip --no-cache-dir install \
     enum34
 
 # Build and install bazel
-ENV BAZEL_VERSION 3.1.0
+ENV BAZEL_VERSION 3.7.2
 WORKDIR /
 RUN mkdir /bazel && \
     cd /bazel && \
@@ -151,9 +151,7 @@ RUN jupyter serverextension enable --py jupyter_http_over_ws
 
 RUN mkdir -p /tf/tensorflow-tutorials && chmod -R a+rwx /tf/
 RUN mkdir /.local && chmod a+rwx /.local
-RUN apt-get install -y --no-install-recommends wget
-# some examples require git to fetch dependencies
-RUN apt-get install -y --no-install-recommends git
+RUN apt-get update && apt-get install -y --no-install-recommends wget git
 WORKDIR /tf/tensorflow-tutorials
 RUN wget https://raw.githubusercontent.com/tensorflow/docs/master/site/en/tutorials/keras/classification.ipynb
 RUN wget https://raw.githubusercontent.com/tensorflow/docs/master/site/en/tutorials/keras/overfit_and_underfit.ipynb

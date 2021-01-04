@@ -421,7 +421,8 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
   pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
 
   if (RequireDeterminism() ||
-      hlo_module->config().debug_options().xla_gpu_deterministic_reductions()) {
+      hlo_module->config().debug_options().xla_gpu_deterministic_reductions() ||
+      hlo_module->config().debug_options().xla_gpu_deterministic_ops()) {
     pipeline.AddPass<HloPassFix<GpuTreeReductionRewriter>>();
   }
 
@@ -783,7 +784,9 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
     std::unique_ptr<HloModule> module, se::StreamExecutor* stream_exec,
     const CompileOptions& options) {
   XLA_SCOPED_LOGGING_TIMER("GpuCompiler::RunBackend");
-  auto slow_compile_alarm = SlowCompilationAlarm();
+  std::string slow_compilation_msg =
+      absl::StrCat("Compiling module ", module->name());
+  auto slow_compile_alarm = SlowCompilationAlarm(slow_compilation_msg);
 
   TF_RET_CHECK(stream_exec != nullptr);
 
@@ -862,12 +865,22 @@ StatusOr<std::unique_ptr<Executable>> GpuCompiler::RunBackend(
                             thunk_schedule->ToString());
   }
 
+  using OutputInfoMap =
+      absl::flat_hash_map<ShapeIndex, GpuExecutable::OutputInfo>;
+  TF_ASSIGN_OR_RETURN(OutputInfoMap output_info,
+                      GetOutputInfo(*module, *buffer_assignment));
+  auto buffer_assignment_proto =
+      std::make_unique<BufferAssignmentProto>(buffer_assignment->ToProto());
+  std::vector<BufferAllocation> allocations =
+      buffer_assignment->ReleaseAllocations();
+
   GpuVersion gpu_version = GetGpuVersion(stream_exec);
   auto* gpu_executable = new GpuExecutable(
-      backend_result.first, backend_result.second, gpu_version,
-      std::move(thunk_schedule), std::move(module),
-      std::move(buffer_assignment), std::move(profile_printer),
-      std::move(profile_index_map), std::move(constants));
+      {std::move(backend_result.first), std::move(backend_result.second),
+       gpu_version, std::move(thunk_schedule), std::move(constants),
+       std::move(output_info), std::move(module), std::move(allocations),
+       std::move(buffer_assignment_proto), std::move(profile_printer),
+       std::move(profile_index_map)});
   if (embed_ir_in_executable) {
     DCHECK_NE("", ir_module_string_before_opt);
     gpu_executable->set_ir_module_string(ir_module_string_before_opt);

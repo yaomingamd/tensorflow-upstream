@@ -755,7 +755,6 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
-        "notsan",  # TODO(b/171000704): data race
     ],
     deps = [
         ":xla_test",
@@ -789,6 +788,7 @@ tf_xla_py_test(
     name = "listdiff_op_test",
     size = "small",
     srcs = ["listdiff_op_test.py"],
+    enable_mlir_bridge = True,
     python_version = "PY3",
     tags = [
         "no_cuda_asan",  # times out
@@ -1388,6 +1388,7 @@ tf_xla_py_test(
     name = "unary_ops_test",
     size = "medium",
     srcs = ["unary_ops_test.py"],
+    enable_mlir_bridge = True,
     python_version = "PY3",
     tags = [
         "no_cuda_asan",  # times out
@@ -1966,6 +1967,9 @@ tf_xla_py_test(
     srcs = ["risc_ops_test.py"],
     enabled_backends = ["cpu"],
     python_version = "PY3",
+    tags = [
+        "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+    ],
     deps = [
         ":xla_test",
         "//tensorflow/python:framework",
