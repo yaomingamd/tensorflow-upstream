@@ -118,7 +118,7 @@ class MatrixSolveOp : public LinearAlgebraOp<Scalar> {
   TF_DISALLOW_COPY_AND_ASSIGN(MatrixSolveOp);
 };
 
-#if GOOGLE_CUDA || TESNORFLOW_USE_ROCM
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 typedef Eigen::GpuDevice GPUDevice;
 
 
