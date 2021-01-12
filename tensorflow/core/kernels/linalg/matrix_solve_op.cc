@@ -33,8 +33,8 @@ limitations under the License.
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
-#if GOOGLE_CUDA
 #include "tensorflow/core/kernels/transpose_functor.h"
+#if GOOGLE_CUDA
 #include "tensorflow/core/util/cuda_solvers.h"
 #elif TENSORFLOW_USE_ROCM
 #include "tensorflow/core/util/rocm_solvers.h"
