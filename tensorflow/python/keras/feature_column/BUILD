@@ -1,4 +1,4 @@
-load("//tensorflow:tensorflow.bzl", "py_test", "tf_py_test")
+load("//tensorflow:tensorflow.bzl", "tf_py_test")
 
 package(
     default_visibility = [
@@ -45,10 +45,10 @@ py_library(
     deps = [
         ":base_feature_layer",
         "//tensorflow/python:framework_ops",
-        "//tensorflow/python:tf_export",
         "//tensorflow/python:util",
         "//tensorflow/python/feature_column:feature_column_v2",
         "//tensorflow/python/keras:backend",
+        "//tensorflow/python/util:tf_export",
     ],
 )
 
@@ -61,8 +61,8 @@ py_library(
         ":base_feature_layer",
         ":dense_features",
         "//tensorflow/python:framework_ops",
-        "//tensorflow/python:tf_export",
         "//tensorflow/python/feature_column:feature_column_v2",
+        "//tensorflow/python/util:tf_export",
     ],
 )
 
@@ -125,9 +125,9 @@ py_library(
         "//tensorflow/python:array_ops",
         "//tensorflow/python:check_ops",
         "//tensorflow/python:framework_ops",
-        "//tensorflow/python:tf_export",
         "//tensorflow/python/feature_column:feature_column_v2",
         "//tensorflow/python/keras:backend",
+        "//tensorflow/python/util:tf_export",
     ],
 )
 
@@ -153,7 +153,7 @@ tf_py_test(
     ],
 )
 
-py_test(
+tf_py_test(
     name = "sequence_feature_column_integration_test",
     srcs = ["sequence_feature_column_integration_test.py"],
     python_version = "PY3",

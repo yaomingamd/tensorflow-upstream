@@ -1,12 +1,12 @@
 # Description:
 #   Contains Keras test utils and integration tests.
 
-load("//tensorflow:tensorflow.bzl", "cuda_py_test")
+load("//tensorflow/compiler/tests:build_defs.bzl", "tf_xla_py_test")
 
 # buildifier: disable=same-origin-load
+load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 load("//tensorflow:tensorflow.bzl", "tf_py_test")
 load("//tensorflow/python/tpu:tpu.bzl", "tpu_py_test")
-load("//tensorflow/compiler/tests:build_defs.bzl", "tf_xla_py_test")
 
 package(
     default_visibility = [
@@ -147,7 +147,6 @@ tf_py_test(
     python_version = "PY3",
     shard_count = 16,
     tags = [
-        "no_rocm",
         "notsan",
     ],
     deps = [
@@ -279,23 +278,6 @@ tf_py_test(
     ],
 )
 
-cuda_py_test(
-    name = "summary_ops_test",
-    size = "small",
-    srcs = ["summary_ops_test.py"],
-    deps = [
-        "//tensorflow/core:protos_all_py",
-        "//tensorflow/python:client_testlib",
-        "//tensorflow/python:framework_test_lib",
-        "//tensorflow/python:lib",
-        "//tensorflow/python:platform",
-        "//tensorflow/python:summary_ops_v2",
-        "//tensorflow/python/keras:testing_utils",
-        "//tensorflow/python/keras/engine",
-        "//tensorflow/python/keras/layers:core",
-    ],
-)
-
 tf_py_test(
     name = "saved_model_test",
     size = "small",
@@ -407,7 +389,6 @@ tf_py_test(
     python_version = "PY3",
     tags = ["notsan"],  # b/74395663
     deps = [
-        "//tensorflow/compiler/tests:xla_test",
         "//tensorflow/python:checkpoint_management",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:constant_op",

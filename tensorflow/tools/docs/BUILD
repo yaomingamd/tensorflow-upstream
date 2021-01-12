@@ -78,7 +78,6 @@ tpu_py_test(
     deps = [
         ":tf_doctest_lib",
         "//tensorflow:tensorflow_py",
-        "//tensorflow/python/keras/preprocessing",
         "//third_party/py/numpy",
     ],
 )
@@ -184,8 +183,8 @@ py_library(
         ":base_dir_oss",
         "//tensorflow:tensorflow_py",
         "//tensorflow/python:framework_ops",
-        "//tensorflow/python:tf_export",
         "//tensorflow/python:util",
+        "//tensorflow/python/util:tf_export",
         "@absl_py//absl:app",
         "@absl_py//absl/flags",
     ],

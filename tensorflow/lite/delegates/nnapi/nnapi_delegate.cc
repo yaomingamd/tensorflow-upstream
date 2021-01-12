@@ -221,6 +221,8 @@ bool IsScalarInputSupported(int builtin_code) {
     case kTfLiteBuiltinPow:
     case kTfLiteBuiltinMaximum:
     case kTfLiteBuiltinMinimum:
+    case kTfLiteBuiltinPrelu:
+    case kTfLiteBuiltinLeakyRelu:
       return true;
     default:
       return false;
@@ -496,9 +498,9 @@ TfLiteStatus GetDeviceHandle(const NnApi* nnapi, TfLiteContext* context,
 }
 
 // Compute the hash of a TfLiteIntArray.
-uint64_t GetHash(const TfLiteIntArray* int_array) {
+uint64_t GetHash(const TfLiteIntArray* int_array, uint64_t combine_with = 0) {
   constexpr auto kHashConst = 0x9e3779b97f4a7800ULL;
-  uint64_t result = 0;
+  uint64_t result = combine_with;
   for (auto i : TfLiteIntArrayView(int_array)) {
     result = result ^ (i + kHashConst + (result << 10) + (result >> 4));
   }
@@ -1390,7 +1392,7 @@ class NNAPIOpBuilder {
     if (tensor->allocation_type == kTfLiteMmapRo) {
       if (IsQuantized(tensor_type) && need_int8_conversion &&
           nn_type != ANEURALNETWORKS_TENSOR_QUANT8_SYMM_PER_CHANNEL) {
-        // We need to to add a tensor and convert the weights into uint8.
+        // We need to add a tensor and convert the weights into uint8.
         // Currently this is only needed for fully_connected. The new_tensor is
         // needed for lifetime management for the converted weights.
         int new_tensor_index = -1;
@@ -1876,14 +1878,25 @@ bool NNAPIDelegateKernel::Validate(
     case kTfLiteBuiltinReshape: {
       ExpectOpVersion(version, 1, &val_ctx);
       ExpectIsFloatOrQuant8Operator(context, node, &val_ctx);
-      Expect(node->inputs->size >= 2,
-             NNAPIValidationFailureType::kMissingRequiredOperand,
-             "Expected at least 2 inputs", &val_ctx);
       if (node->inputs->size >= 2) {
         Expect(context->tensors[node->inputs->data[1]].allocation_type ==
                    kTfLiteMmapRo,
                NNAPIValidationFailureType::kInputTensorShouldHaveConstantShape,
                "The shape input tensor must be constant.", &val_ctx);
+      }
+      if (node->inputs->size == 1) {
+        // reject scalar reshaping
+        auto* params =
+            reinterpret_cast<TfLiteReshapeParams*>(node->builtin_data);
+        int num_dimensions = params->num_dimensions;
+        if (num_dimensions == 1 && params->shape[0] == 0) {
+          // Legacy tflite models use a shape parameter of [0] to indicate
+          // scalars.
+          num_dimensions = 0;
+        }
+        Expect(num_dimensions > 0,
+               NNAPIValidationFailureType::kUnsupportedOperandRank,
+               "New shape rank should be > 0", &val_ctx);
       }
     } break;
     case kTfLiteBuiltinResizeBilinear: {
@@ -2223,7 +2236,7 @@ bool NNAPIDelegateKernel::Validate(
       ExpectIsFloatOperator(context, node, &val_ctx);
     } break;
     case kTfLiteBuiltinTransposeConv: {
-      ExpectOpVersion(version, 1, &val_ctx);
+      ExpectMaxOpVersion(version, 2, &val_ctx);
       ExpectMinAndroidSdkVersion(android_sdk_version, kMinSdkVersionForNNAPI12,
                                  &val_ctx);
       Expect((node->inputs->size > 1) &&
@@ -2448,6 +2461,7 @@ bool NNAPIDelegateKernel::Validate(
             &val_ctx);
       }
     } break;
+    case kTfLiteBuiltinLeakyRelu:
     case kTfLiteBuiltinPrelu: {
       ExpectOpVersion(version, 1, &val_ctx);
       ExpectMinAndroidSdkVersion(android_sdk_version, kMinSdkVersionForNNAPI12,
@@ -2526,7 +2540,7 @@ bool NNAPIDelegateKernel::Validate(
           context->tensors[node->inputs->data[1]].dims;
       Expect(TfLiteIntArrayEqual(condition_shape, input_shape),
              NNAPIValidationFailureType::kUnsupportedOperandValue,
-             "Condition and inputs tensors shuld have the same shape",
+             "Condition and inputs tensors should have the same shape",
              &val_ctx);
     } break;
     case kTfLiteBuiltinGather: {
@@ -2810,6 +2824,18 @@ TfLiteStatus NNAPIDelegateKernel::Map(
       *nn_op_type = ANEURALNETWORKS_SOFTMAX;
     } break;
     case kTfLiteBuiltinReshape: {
+      if (mapping_args.node->inputs->size == 1) {
+        // if no new_shape tensor, construct the new shape from params.
+        auto* params = reinterpret_cast<TfLiteReshapeParams*>(
+            mapping_args.node->builtin_data);
+        int num_dimensions = params->num_dimensions;
+        std::vector<int32_t> output_shape(num_dimensions);
+        for (int i = 0; i < num_dimensions; ++i) {
+          output_shape[i] = params->shape[i];
+        }
+        mapping_args.builder->AddVectorInt32Operand(
+            output_shape.data(), static_cast<uint32_t>(num_dimensions));
+      }
       *nn_op_type = ANEURALNETWORKS_RESHAPE;
     } break;
     case kTfLiteBuiltinResizeBilinear: {
@@ -3357,6 +3383,38 @@ TfLiteStatus NNAPIDelegateKernel::Map(
     case kTfLiteBuiltinCast: {
       *nn_op_type = ANEURALNETWORKS_CAST;
     } break;
+    case kTfLiteBuiltinLeakyRelu: {
+      const auto input_type =
+          mapping_args.context->tensors[mapping_args.node->inputs->data[0]]
+              .type;
+      auto builtin = reinterpret_cast<TfLiteLeakyReluParams*>(
+          mapping_args.node->builtin_data);
+
+      TfLiteTensor alpha_tensor;
+      alpha_tensor.type = input_type;
+      alpha_tensor.allocation_type = kTfLiteDynamic;
+      alpha_tensor.dims = TfLiteIntArrayCreate(1);
+      alpha_tensor.dims->data[0] = 1;
+      alpha_tensor.params.zero_point = 0;
+
+      int new_tensor_index = -1;
+      if (input_type == kTfLiteFloat32) {
+        alpha_tensor.params.scale = 0;
+        std::vector<float> alpha_value = {builtin->alpha};
+        mapping_args.builder->AddNewInputConstantTensor(
+            ANEURALNETWORKS_TENSOR_FLOAT32, kTfLiteFloat32, alpha_tensor.dims,
+            alpha_value, alpha_tensor.params, &new_tensor_index);
+      } else {
+        alpha_tensor.params.scale = builtin->alpha;
+        std::vector<uint8_t> alpha_value = {1};
+        mapping_args.builder->AddNewInputConstantTensor(
+            ANEURALNETWORKS_TENSOR_QUANT8_ASYMM, kTfLiteUInt8,
+            alpha_tensor.dims, alpha_value, alpha_tensor.params,
+            &new_tensor_index);
+      }
+
+      *nn_op_type = ANEURALNETWORKS_PRELU;
+    } break;
     case kTfLiteBuiltinPrelu: {
       *nn_op_type = ANEURALNETWORKS_PRELU;
     } break;
@@ -3559,15 +3617,27 @@ TfLiteStatus NNAPIDelegateKernel::Init(TfLiteContext* context,
     // token.
     // TODO(b/133342794): use a generic token generator class.
     uint64_t token_parts[4];
-    // bits from model_token.
+    // Create bits from model_token.
+    // TODO(b/172237993): should not use std::hash, as that is not
+    // guaranteed to be stable across program invocations.
     token_parts[0] = std::hash<std::string>{}(model_token);
-    // bits from params->nodes_to_replace.
+    // Create bits from params->nodes_to_replace.
     token_parts[1] = GetHash(params->nodes_to_replace);
-    // bits from params->input_tensors.
+    // Create bits from params->input_tensors. These include the input tensor
+    // sizes, as the cached compilations are size-dependent.
     token_parts[2] = GetHash(params->input_tensors);
+    for (int i : TfLiteIntArrayView(params->input_tensors)) {
+      if (i != kTfLiteOptionalTensor) {
+        TfLiteTensor* t = &context->tensors[i];
+        TF_LITE_ENSURE(context, t->dims);
+        token_parts[2] = GetHash(t->dims, token_parts[2]);
+      }
+    }
     // bits from params->output_tensors.
     token_parts[3] = GetHash(params->output_tensors);
     // NNAPI requires the token to be 256bit long.
+    // TODO(b/172238515): get token size from header instead of
+    // hardcoding.
     std::vector<uint8_t> nnapi_cache_token(32, 0);
     // Copy the token bits.
     uint8_t* p = reinterpret_cast<uint8_t*>(token_parts);
@@ -4478,8 +4548,9 @@ TfLiteStatus NNAPIDelegateKernel::AddOpsAndTensors(
                   builder.AddTensorInput(input_index, hybrid_op));
               break;
             case kTfLiteInt64: {
-              // We made sure that dimensions are constant and fit into int32 in
-              // Map(), so we can safely create a new tensor with casted values.
+              // We made sure that dimensions are constant and fit into int32
+              // in Map(), so we can safely create a new tensor with casted
+              // values.
               const int dims_size = dims_tensor.dims->data[0];
               std::vector<int32_t> dims_int32(dims_size);
               std::copy(dims_tensor.data.i64, dims_tensor.data.i64 + dims_size,

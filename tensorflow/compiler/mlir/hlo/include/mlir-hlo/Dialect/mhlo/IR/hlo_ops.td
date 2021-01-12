@@ -41,7 +41,9 @@ def HLO_OUTPUT_FUSION : StrEnumAttrCase<"kOutput">;
 def HLO_CUSTOM_FUSION : StrEnumAttrCase<"kCustom">;
 def HLO_FusionKindAttr : StrEnumAttr<"FusionKind", "fusion kind", [
     HLO_LOOP_FUSION, HLO_INPUT_FUSION, HLO_OUTPUT_FUSION, HLO_CUSTOM_FUSION
-]>;
+]> {
+  let cppNamespace = "::mlir::mhlo";
+}
 
 //===----------------------------------------------------------------------===//
 // MHLO nullary op definitions.
@@ -144,10 +146,9 @@ class HLO_UnaryElementwiseOp<string mnemonic, list<OpTrait> traits,
 
 // Abs supports complex to real, so element type is not guaranteed to match.
 def HLO_AbsOp: HLO_UnaryElementwiseOp<"abs",
-    [NoSideEffect, SameOperandsAndResultShape],
+    [NoSideEffect, SameOperandsAndResultShape,
+     DeclareOpInterfaceMethods<InferTypeOpInterface>],
      TensorOf<[HLO_SInt, AnyFloat, HLO_Complex]>>, BASE_HLO_AbsOp {
-  let builders = [
-    OpBuilderDAG<(ins "Value":$operand)>];
 }
 
 def HLO_CbrtOp: HLO_UnaryElementwiseOp<"cbrt",
@@ -488,7 +489,8 @@ def HLO_RecvOp : HLO_Op<"recv", []> {
 // MHLO parallelism related op definitions.
 //===----------------------------------------------------------------------===//
 
-def HLO_ReplicaIdOp : HLO_Op<"replica_id", [NoSideEffect]>,
+def HLO_ReplicaIdOp : HLO_Op<"replica_id", [NoSideEffect,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]>,
       BASE_HLO_ReplicaIdOp {
   let results = (outs TensorOf<[UI32]>);
 }
@@ -896,9 +898,10 @@ def HLO_ConvOp : HLO_Op<"convolution", [NoSideEffect]>, BASE_HLO_ConvOp {
     (ins
        HLO_Tensor:$lhs,
        HLO_Tensor:$rhs),
-    ConvolutionAttributes<HLO_Dialect>.attributes);
+    ConvolutionAttributes.attributes);
 
   let results = (outs HLO_Tensor);
+  let hasCustomHLOConverter = 1;
 }
 
 def HLO_CopyOp: HLO_Op<"copy", [NoSideEffect, SameOperandsAndResultType]>, BASE_HLO_CopyOp {
@@ -925,7 +928,7 @@ def HLO_CustomCallOp: HLO_Op<"custom_call", []>, BASE_HLO_CustomCallOp {
     DefaultValuedAttr<BoolAttr, "false">:$has_side_effect,
     DefaultValuedAttr<StrAttr, "">:$backend_config
   );
-  let results = (outs HLO_Tensor);
+  let results = (outs Variadic<HLO_Tensor>);
   let hasCustomHLOConverter = 1;
 }
 
@@ -1017,7 +1020,7 @@ def HLO_GetDimensionSizeOp: HLO_Op<"get_dimension_size", [NoSideEffect]>,
       BASE_HLO_GetDimensionSizeOp {
   let arguments = (ins
     HLO_Tensor:$operand,
-    I32Attr:$dimension
+    I64Attr:$dimension
   );
   // TODO(hinsu): Allow 64-bit result types once XLA HLO dialect based on the
   // XLA semantics is available. This limitation is because of the current XLA
@@ -1046,6 +1049,7 @@ def HLO_ReshapeOp: HLO_Op<"reshape",
 
   let results = (outs HLO_StaticShapeTensor);
   let hasFolder = 1;
+  let hasCanonicalizer = 1;
 
   let hasCustomHLOConverter = 1;
 }
@@ -1129,9 +1133,11 @@ def HLO_SetDimensionSizeOp: HLO_Op<"set_dimension_size", [NoSideEffect]>,
   let arguments = (ins
     HLO_Tensor:$operand,
     I32Tensor:$size,
-    I32Attr:$dimension
+    I64Attr:$dimension
   );
   let results = (outs HLO_Tensor);
+
+  let hasFolder = 1;
 }
 
 def HLO_SortOp : HLO_Op<"sort", [RecursiveSideEffects, SameOperandsAndResultShape]>, BASE_HLO_SortOp {

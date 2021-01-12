@@ -46,7 +46,6 @@ const constexpr char* NnapiAccelerationTestParams::kAccelerationTestConfig =
 #test-id,min-android-sdk-version
 
 # activations_test
-QuantizedActivationsOpTest/Relu6Uint8
 FloatActivationsOpTest/Softmax[13]D,29
 QuantizedActivationsOpTest/Softmax[13]D.+nt8,29
 FloatActivationsOpTest/Softmax\dD
@@ -60,7 +59,7 @@ FloatActivationsOpTest/Elu,30
 FloatActivationsOpTest/HardSwish
 QuantizedActivationsOpTest/HardSwish
 QuantizedActivationsOpTest/HardSwishBias
-QuantizedActivationsOpTest/Relu*
+QuantizedActivationsOpTest/Relu.+nt8
 QuantizedActivationsOpTest/PRelu,29
 QuantizedActivationsOpTest/PReluSameShapes,29
 QuantizedActivationsOpTest/PReluInt8.+,30
@@ -161,7 +160,7 @@ DepthToSpaceOpModel/int8
 FloatDivOpTest/.+
 
 # elementwise_test
-ElementWise/Abs
+ElementWise/Abs,29
 ElementWise/Sin,29
 ElementWise/Log,29
 ElementWise/Sqrt,29
@@ -335,10 +334,11 @@ ConstFloat(Mean|Any)OpTest/KeepDims
 ConstFloat(Sum|Prod|Max|Min)OpTest/ScalarAxis,29
 
 # reshape_test
-# Acceleration would be only for the test with shape being a constant tensor
-VariedShapeSpec/ReshapeOpTest/InvalidShape/1
-VariedShapeSpec/ReshapeOpTest/RegularShapes/1
-VariedShapeSpec/ReshapeOpTest/WithStretchDimension/1
+# Acceleration would be only for the test with shape being a constant tensor or
+# as hardcoded options.
+VariedShapeSpec/ReshapeOpTest/InvalidShape/[01]
+VariedShapeSpec/ReshapeOpTest/RegularShapes/[01]
+VariedShapeSpec/ReshapeOpTest/WithStretchDimension/[01]
 
 # resize_bilinear_test
 // align_corners & half_pixel_centers are not implemented in NNAPI before API 30

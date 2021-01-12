@@ -12,6 +12,7 @@ package(
     default_visibility = [
         "//learning/brain:__subpackages__",
         "//learning/deepmind:__subpackages__",
+        "//learning/serving:__subpackages__",
         "//research/graph:__subpackages__",
         "//tensorflow:__subpackages__",
     ],
@@ -33,7 +34,6 @@ py_test(
         "no_oss_py2",
         "no_oss_py35",
         "no_pip",
-        "no_rocm",
     ],
     deps = [
         "//tensorflow/python:client_testlib",
@@ -87,6 +87,16 @@ tpu_py_test(
         "//tensorflow/python:platform",
         "//tensorflow/python/distribute/cluster_resolver:cluster_resolver_lib",
         "//third_party/py/numpy",
+    ],
+)
+
+pytype_library(
+    name = "device_assignment",
+    srcs = ["device_assignment.py"],
+    deps = [
+        ":topology",
+        "//tensorflow/python:platform",
+        "//tensorflow/python/util:tf_export",
     ],
 )
 
@@ -154,6 +164,17 @@ py_library(
     ],
 )
 
+pytype_library(
+    name = "topology",
+    srcs = ["topology.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow/core/protobuf/tpu:topology_proto_py",
+        "//tensorflow/python/util:tf_export",
+        "//third_party/py/numpy",
+    ],
+)
+
 py_library(
     name = "tpu",
     srcs = [
@@ -192,31 +213,30 @@ pytype_library(
     srcs = [
         "__init__.py",
         "bfloat16.py",
-        "device_assignment.py",
         "session_support.py",
         "tensor_tracer.py",
         "tensor_tracer_flags.py",
         "tensor_tracer_report.py",
-        "topology.py",
-        "tpu_feed.py",
         "tpu_optimizer.py",
-        "tpu_sharding.py",
         "tpu_strategy_util.py",
         "training_loop.py",
     ],
     srcs_version = "PY2AND3",
     deps = [
         ":datasets",
+        ":device_assignment",
         ":functional",
+        ":topology",
+        ":tpu_feed",
         ":tpu_function",
         ":tpu_ops",
+        ":tpu_sharding",
         "//tensorflow/compiler/xla/experimental/xla_sharding",
         "//tensorflow/compiler/xla/python_api:xla_shape",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/core/protobuf/tpu:compilation_result_proto_py",
         "//tensorflow/core/protobuf/tpu:dynamic_padding_proto_py",
         "//tensorflow/core/protobuf/tpu:optimization_parameters_proto_py",
-        "//tensorflow/core/protobuf/tpu:topology_proto_py",
         "//tensorflow/core/protobuf/tpu:tpu_embedding_configuration_proto_py",
         "//tensorflow/core/protobuf/tpu:tpu_embedding_output_layout_proto_py",
         "//tensorflow/python:array_ops",
@@ -246,9 +266,13 @@ pytype_library(
     name = "tpu_py",
     srcs = ["tpu.py"],
     deps = [
+        ":device_assignment",
+        ":tpu_feed",
         ":tpu_function",
+        ":tpu_name_util",
         ":tpu_ops",
         "//tensorflow/core/protobuf/tpu:dynamic_padding_proto_py",
+        "//tensorflow/core/protobuf/tpu:tpu_embedding_configuration_proto_py",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:auto_control_deps",
         "//tensorflow/python:c_api_util",
@@ -263,12 +287,12 @@ pytype_library(
         "//tensorflow/python:function",
         "//tensorflow/python:math_ops",
         "//tensorflow/python:tensor_shape",
-        "//tensorflow/python:tf_export",
         "//tensorflow/python:util",
         "//tensorflow/python:variable_scope",
         "//tensorflow/python/compiler/xla",
         "//tensorflow/python/distribute:device_util",
         "//tensorflow/python/distribute:distribute_lib",
+        "//tensorflow/python/util:tf_export",
         "//third_party/py/numpy",
         "@absl_py//absl/logging",
         "@enum34_archive//:enum",
@@ -277,9 +301,32 @@ pytype_library(
 )
 
 pytype_library(
+    name = "tpu_feed",
+    srcs = ["tpu_feed.py"],
+    deps = [
+        ":tpu_name_util",
+        ":tpu_ops",
+        ":tpu_sharding",
+        "//tensorflow/compiler/xla/experimental/xla_sharding",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:dtypes",
+        "//tensorflow/python:ops",
+        "//tensorflow/python:tensor_shape",
+    ],
+)
+
+pytype_library(
     name = "tpu_function",
     srcs = ["tpu_function.py"],
     deps = [
+    ],
+)
+
+pytype_library(
+    name = "tpu_sharding",
+    srcs = ["tpu_sharding.py"],
+    deps = [
+        "//tensorflow/python:tensor_shape",
     ],
 )
 
@@ -351,7 +398,7 @@ tf_py_test(
     size = "small",
     srcs = ["tpu_sharding_test.py"],
     deps = [
-        ":tpu",
+        ":tpu_sharding",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework",
     ],
@@ -384,7 +431,7 @@ tf_py_test(
     size = "medium",
     srcs = ["topology_test.py"],
     deps = [
-        ":tpu",
+        ":topology",
         "//tensorflow/python:framework_test_lib",
     ],
 )
@@ -423,6 +470,14 @@ pytype_library(
         "//tensorflow/python/distribute/cluster_resolver:tpu_cluster_resolver_py",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:tape",
+    ],
+)
+
+py_library(
+    name = "tpu_name_util",
+    srcs = ["tpu_name_util.py"],
+    deps = [
+        "//tensorflow/python/util:tf_export",
     ],
 )
 

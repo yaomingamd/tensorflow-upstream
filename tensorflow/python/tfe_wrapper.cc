@@ -1006,8 +1006,6 @@ PYBIND11_MODULE(_pywrap_tfe, m) {
   });
   m.def("TFE_ContextOptionsSetDevicePlacementPolicy",
         &TFE_ContextOptionsSetDevicePlacementPolicy);
-  m.def("TFE_ContextOptionsSetLazyRemoteInputsCopy",
-        &TFE_ContextOptionsSetLazyRemoteInputsCopy);
   m.def("TFE_ContextOptionsSetTfrt", &TFE_ContextOptionsSetTfrt);
   m.def("TFE_ContextOptionsSetAsync", &TFE_ContextOptionsSetAsync);
   m.def("TFE_DeleteContextOptions", &TFE_DeleteContextOptions,
@@ -1029,12 +1027,6 @@ PYBIND11_MODULE(_pywrap_tfe, m) {
   // Additional Context Logic
   m.def("TFE_Py_SetEagerContext", [](const py::handle& o) {
     return tensorflow::PyoOrThrow(TFE_Py_SetEagerContext(o.ptr()));
-  });
-  m.def("TFE_ContextStartStep", [](py::handle& o) {
-    TFE_ContextStartStep(tensorflow::InputTFE_Context(o.ptr()));
-  });
-  m.def("TFE_ContextEndStep", [](py::handle& o) {
-    TFE_ContextEndStep(tensorflow::InputTFE_Context(o.ptr()));
   });
   m.def("TFE_Py_RegisterVSpace", [](const py::handle& o) {
     return tensorflow::PyoOrThrow(TFE_Py_RegisterVSpace(o.ptr()));

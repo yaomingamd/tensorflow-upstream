@@ -67,6 +67,10 @@ limitations under the License.
 #include "tensorflow/core/profiler/lib/traceme.h"
 #include "tensorflow/core/util/env_var.h"
 
+#if !defined(PLATFORM_GOOGLE) && TENSORFLOW_USE_ROCM
+#include "rocm/rocm_config.h"
+#endif
+
 namespace xla {
 namespace gpu {
 namespace {
@@ -261,13 +265,14 @@ void FeedLLVMWithFlags(const std::vector<string>& cl_opts) {
 }
 
 // Returns whether the module could use any device bitcode library functions.
-// This function may have false positives -- the module might not use libdevice
-// on NVPTX or ROCm-Device-Libs on AMDGPU even if this function returns true.
 bool CouldNeedDeviceBitcode(const llvm::Module& module) {
   for (const llvm::Function& function : module.functions()) {
-    // This is a conservative approximation -- not all such functions are in
-    // libdevice or ROCm-Device-Libs.
-    if (!function.isIntrinsic() && function.isDeclaration()) {
+    // The list of prefixes should be in sync with library functions used in
+    // target_util.cc.
+    if (!function.isIntrinsic() && function.isDeclaration() &&
+        (function.getName().startswith("__nv_") ||
+         function.getName().startswith("__ocml_") ||
+         function.getName().startswith("__ockl_"))) {
       return true;
     }
   }
@@ -290,6 +295,9 @@ Status LinkWithBitcodeVector(llvm::Module* module,
 
     std::unique_ptr<llvm::Module> bitcode_module =
         LoadIRModule(bitcode_path, &module->getContext());
+    // Ignore the data layout of the module we're importing. This avoids a
+    // warning from the linker.
+    bitcode_module->setDataLayout(module->getDataLayout());
     if (linker.linkInModule(
             std::move(bitcode_module), llvm::Linker::Flags::LinkOnlyNeeded,
             [](llvm::Module& M, const llvm::StringSet<>& GVS) {
@@ -560,11 +568,18 @@ namespace {
 static std::vector<string> GetROCDLPaths(int amdgpu_version,
                                          const string& rocdl_dir_path) {
   // AMDGPU version-neutral bitcodes.
+#if TF_ROCM_VERSION >= 30900
+  static std::vector<string>* rocdl_filenames = new std::vector<string>(
+      {"hc.bc", "opencl.bc", "ocml.bc", "ockl.bc", "oclc_finite_only_off.bc",
+       "oclc_daz_opt_off.bc", "oclc_correctly_rounded_sqrt_on.bc",
+       "oclc_unsafe_math_off.bc", "oclc_wavefrontsize64_on.bc"});
+#else
   static std::vector<string>* rocdl_filenames = new std::vector<string>(
       {"hc.amdgcn.bc", "opencl.amdgcn.bc", "ocml.amdgcn.bc", "ockl.amdgcn.bc",
        "oclc_finite_only_off.amdgcn.bc", "oclc_daz_opt_off.amdgcn.bc",
        "oclc_correctly_rounded_sqrt_on.amdgcn.bc",
        "oclc_unsafe_math_off.amdgcn.bc", "oclc_wavefrontsize64_on.amdgcn.bc"});
+#endif
 
   // Construct full path to ROCDL bitcode libraries.
   std::vector<string> result;
@@ -575,7 +590,11 @@ static std::vector<string> GetROCDLPaths(int amdgpu_version,
   // Add AMDGPU version-specific bitcodes.
   result.push_back(tensorflow::io::JoinPath(
       rocdl_dir_path,
+#if TF_ROCM_VERSION >= 30900
+      absl::StrCat("oclc_isa_version_", amdgpu_version, ".bc")));
+#else
       absl::StrCat("oclc_isa_version_", amdgpu_version, ".amdgcn.bc")));
+#endif
   return result;
 }
 
@@ -782,8 +801,16 @@ Status AMDGPUTargetModuleLinker(llvm::Module* module, GpuVersion gpu_version,
 std::unique_ptr<llvm::TargetMachine> AMDGPUGetTargetMachine(
     llvm::Triple target_triple, int amdgpu_version,
     const HloModuleConfig& hlo_module_config) {
+  string feature_str = "+code-object-v3";
+#if TF_ROCM_VERSION >= 30900
+  // code-object-v3 is default, so no need to expliticitly specify it
+  // in the feature string. Also, starting with ROCm 4.0, this feature string
+  // is deprecated, and we get a warning to that effect. So removing that
+  // feature string
+  feature_str = "";
+#endif
   return GetTargetMachine(target_triple, absl::StrCat("gfx", amdgpu_version),
-                          hlo_module_config, "+code-object-v3");
+                          hlo_module_config, feature_str);
 }
 
 void AMDGPUBackendInit(const HloModuleConfig& hlo_module_config) {
@@ -820,11 +847,11 @@ StatusOr<std::vector<uint8>> CompileToHsaco(
   // Delete the first two lines, since they usually vary even when the rest of
   // the code is the same (but verify that they are what we expect).
   if (str.size() >= 13 && str.substr(0, 13) == "; ModuleID = ") {
-    auto pos = str.find("\n");
+    auto pos = str.find('\n');
     if (pos != std::string::npos) str = str.substr(pos + 1);
   }
   if (str.size() >= 18 && str.substr(0, 18) == "source_filename = ") {
-    auto pos = str.find("\n");
+    auto pos = str.find('\n');
     if (pos != std::string::npos) str = str.substr(pos + 1);
   }
   str += hlo_module_config.compilation_cache_key();

@@ -265,10 +265,6 @@ TF_CAPI_EXPORT extern void TFE_MonitoringDeleteSampler2(
 TF_CAPI_EXPORT extern TFE_MonitoringSamplerCell* TFE_MonitoringGetCellSampler2(
     TFE_MonitoringSampler2* sampler, const char* label1, const char* label2);
 
-// Sets whether to copy the remote inputs of a function lazily.
-TF_CAPI_EXPORT extern void TFE_ContextOptionsSetLazyRemoteInputsCopy(
-    TFE_ContextOptions*, bool lazy_copy);
-
 // Sets whether to use TFRT
 TF_CAPI_EXPORT extern void TFE_ContextOptionsSetTfrt(TFE_ContextOptions*,
                                                      bool use_tfrt);
@@ -481,7 +477,7 @@ typedef struct TFE_CustomDevice {
 // "/job:localhost/replica:0/task:0/device:CUSTOM:0".
 //
 // The custom device defines copy operations for moving TensorHandles on and
-// off, and an an execution operation for named operations. Often execution will
+// off, and an execution operation for named operations. Often execution will
 // simply wrap op execution on one or more physical devices.
 //
 // device_info is an opaque caller-defined type stored with the custom device

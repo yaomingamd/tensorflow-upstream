@@ -30,7 +30,8 @@ namespace tensorflow {
 // This is an early experimental API, ideally we should return a wrapper object
 // around a Python binding to the MLIR module.
 std::string ImportGraphDef(const std::string &proto,
-                           const std::string &pass_pipeline, TF_Status *status);
+                           const std::string &pass_pipeline,
+                           bool show_debug_info, TF_Status *status);
 
 // Simple wrapper to support tf.mlir.experimental.convert_function.
 // Load FunctionDef and FunctionDefLibrary (binary or textual proto format),
@@ -40,7 +41,8 @@ std::string ImportGraphDef(const std::string &proto,
 // around a Python binding to the MLIR module.
 std::string ImportFunction(const std::string &functiondef_proto,
                            const std::string &functiondef_library_proto,
-                           const std::string &pass_pipeline, TF_Status *status);
+                           const std::string &pass_pipeline,
+                           bool show_debug_info, TF_Status *status);
 
 // Load a SavedModel and return a textual MLIR string corresponding to it.
 //
@@ -54,6 +56,21 @@ std::string ImportFunction(const std::string &functiondef_proto,
 std::string ExperimentalConvertSavedModelToMlir(
     const std::string &saved_model_path, const std::string &exported_names_str,
     bool show_debug_info, TF_Status *status);
+
+// Load a SavedModel V1 and return a textual MLIR string corresponding to it
+// without any MLIR graph transformation.
+//
+// Args:
+//   saved_model_path: File path from which to load the SavedModel.
+//   tags: Tags to identify MetaGraphDef that need to be loaded.
+//   upgrade_legacy: Boolean flag that indicates whether to upgrade legacy
+//                   graphs
+//
+// Returns:
+//   A string of textual MLIR representing the raw imported SavedModel.
+std::string ExperimentalConvertSavedModelV1ToMlirLite(
+    const std::string &saved_model_path, const std::string &tags,
+    bool upgrade_legacy, bool show_debug_info, TF_Status *status);
 
 // Load a SavedModel V1 and return a textual MLIR string corresponding to it.
 //

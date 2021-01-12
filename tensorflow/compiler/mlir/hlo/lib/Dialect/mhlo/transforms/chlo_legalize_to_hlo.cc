@@ -13,6 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+// Enable the use of M_* math constants.
+// NOTE: this must be first in the file to ensure that if cmath is transitively
+// included by any other header it has the define set on first processing.
+// https://docs.microsoft.com/en-us/cpp/c-runtime-library/math-constants
+#define _USE_MATH_DEFINES
+#include <cmath>
 #include <numeric>
 
 #include "mlir-hlo/Dialect/mhlo/IR/chlo_ops.h"
@@ -23,11 +29,12 @@ limitations under the License.
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/IR/StandardTypes.h"
 #include "mlir/Transforms/DialectConversion.h"
 
 namespace mlir {
@@ -60,7 +67,8 @@ struct ConvertConstantLikeOp : public OpConversionPattern<ConstantLikeOp> {
         loc, extent_tensor_type, transformed.operand());
     Type shape_ty =
         RankedTensorType::get({result_ty.getRank()}, rewriter.getIndexType());
-    Value shape = rewriter.create<TensorCastOp>(loc, shape_ty, uncasted_shape);
+    Value shape =
+        rewriter.create<tensor::CastOp>(loc, shape_ty, uncasted_shape);
     rewriter.replaceOpWithNewOp<mhlo::DynamicBroadcastInDimOp>(
         op, result_ty, constant, shape, rewriter.getI64TensorAttr({}));
     return success();
