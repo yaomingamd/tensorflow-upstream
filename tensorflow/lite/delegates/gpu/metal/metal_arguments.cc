@@ -17,9 +17,10 @@ limitations under the License.
 #include <string>
 
 #include "absl/strings/substitute.h"
-#include "tensorflow/lite/delegates/gpu/metal/buffer.h"
-#include "tensorflow/lite/delegates/gpu/common/util.h"
 #include "tensorflow/lite/delegates/gpu/common/task/util.h"
+#include "tensorflow/lite/delegates/gpu/common/util.h"
+#include "tensorflow/lite/delegates/gpu/metal/buffer.h"
+#include "tensorflow/lite/delegates/gpu/metal/metal_spatial_tensor.h"
 
 namespace tflite {
 namespace gpu {
@@ -128,6 +129,14 @@ absl::Status CreateMetalObject(id<MTLDevice> device, GPUObjectDescriptor* desc,
     return absl::OkStatus();
   }
 
+  const auto* tensor_desc = dynamic_cast<const TensorDescriptor*>(desc);
+  if (tensor_desc) {
+    MetalSpatialTensor gpu_tensor;
+    RETURN_IF_ERROR(gpu_tensor.CreateFromDescriptor(*tensor_desc, device));
+    *result = absl::make_unique<MetalSpatialTensor>(std::move(gpu_tensor));
+    return absl::OkStatus();
+  }
+
   return absl::InvalidArgumentError("Unknown GPU descriptor.");
 }
 }  // namespace
@@ -135,14 +144,24 @@ absl::Status CreateMetalObject(id<MTLDevice> device, GPUObjectDescriptor* desc,
 // Static
 constexpr char MetalArguments::kArgsPrefix[];
 
-absl::Status MetalArguments::Init(id<MTLDevice> device, int buffer_offset,
-                                  Arguments* args, std::string* code) {
+absl::Status MetalArguments::Init(
+    id<MTLDevice> device, const std::map<std::string, std::string>& linkables,
+    Arguments* args, std::string* code) {
   RETURN_IF_ERROR(AllocateObjects(*args, device));
   RETURN_IF_ERROR(AddObjectArgs(args));
-  RETURN_IF_ERROR(ResolveSelectorsPass(*args, {}, code));
-  RETURN_IF_ERROR(SetObjectsResources(*args));
+  RETURN_IF_ERROR(ResolveSelectorsPass(*args, linkables, code));
   object_refs_ = std::move(args->object_refs_);
   args->GetActiveArguments(kArgsPrefix, *code);
+  std::string struct_desc = ScalarArgumentsToStructWithVec4Fields(args, code);
+  RETURN_IF_ERROR(SetObjectsResources(*args));
+  ResolveArgsPass(code);
+  *code =
+      absl::Substitute(*code, struct_desc, GetListOfArgs(/*buffer_offset*/ 0));
+  return absl::OkStatus();
+}
+
+std::string MetalArguments::ScalarArgumentsToStructWithScalarFields(
+    Arguments* args, std::string* code) {
   std::string struct_desc = "struct uniforms_buffer {\n";
   int pos = 0;
   for (auto& fvalue : args->float_values_) {
@@ -191,9 +210,67 @@ absl::Status MetalArguments::Init(id<MTLDevice> device, int buffer_offset,
   } else {
     struct_desc = "";
   }
-  ResolveArgsPass(code);
-  *code = absl::Substitute(*code, struct_desc, GetListOfArgs(buffer_offset));
-  return absl::OkStatus();
+  return struct_desc;
+}
+
+std::string MetalArguments::ScalarArgumentsToStructWithVec4Fields(
+    Arguments* args, std::string* code) {
+  std::string struct_desc = "struct uniforms_buffer {\n";
+  int pos = 0;
+  std::string channels[4] = {".x", ".y", ".z", ".w"};
+  for (auto& fvalue : args->float_values_) {
+    auto& new_val = float_values_[fvalue.first];
+    new_val.value = fvalue.second.value;
+    new_val.active = fvalue.second.active;
+    if (fvalue.second.active) {
+      new_val.bytes_offset = pos * 4;
+      if (pos % 4 == 0) {
+        struct_desc += "  float4 cmp_float4_" + std::to_string(pos / 4) + ";\n";
+      }
+      std::string new_name =
+          "U.cmp_float4_" + std::to_string(pos / 4) + channels[pos % 4];
+      ReplaceAllWords(kArgsPrefix + fvalue.first, new_name, code);
+      pos++;
+    }
+  }
+  pos = AlignByN(pos, 4);
+  for (auto& ivalue : args->int_values_) {
+    auto& new_val = int_values_[ivalue.first];
+    new_val.value = ivalue.second.value;
+    new_val.active = ivalue.second.active;
+    if (ivalue.second.active) {
+      new_val.bytes_offset = pos * 4;
+      if (pos % 4 == 0) {
+        struct_desc += "  int4 cmp_int4_" + std::to_string(pos / 4) + ";\n";
+      }
+      std::string new_name =
+          "U.cmp_int4_" + std::to_string(pos / 4) + channels[pos % 4];
+      ReplaceAllWords(kArgsPrefix + ivalue.first, new_name, code);
+      pos++;
+    }
+  }
+  if (pos != 0) {
+    int aligned_pos = AlignByN(pos, 4);
+    struct_desc += "};";
+    const_data_.resize(aligned_pos * 4);
+    for (auto& it : float_values_) {
+      if (it.second.active) {
+        float* ptr =
+            reinterpret_cast<float*>(&const_data_[it.second.bytes_offset]);
+        *ptr = it.second.value;
+      }
+    }
+    for (auto& it : int_values_) {
+      if (it.second.active) {
+        int32_t* ptr =
+            reinterpret_cast<int32_t*>(&const_data_[it.second.bytes_offset]);
+        *ptr = it.second.value;
+      }
+    }
+  } else {
+    struct_desc = "";
+  }
+  return struct_desc;
 }
 
 absl::Status MetalArguments::SetInt(const std::string& name, int value) {
@@ -239,14 +316,7 @@ absl::Status MetalArguments::SetObjectRef(const std::string& name,
   }
   GPUResourcesWithValue resources;
   RETURN_IF_ERROR(object.GetGPUResources(it->second.get(), &resources));
-  for (const auto& r : resources.ints) {
-    RETURN_IF_ERROR(SetInt(absl::StrCat(name, "_", r.first), r.second));
-  }
-  for (const auto& r : resources.floats) {
-    RETURN_IF_ERROR(SetFloat(absl::StrCat(name, "_", r.first), r.second));
-  }
-  return absl::OkStatus();
-  // return SetGPUResources(name, resources);
+  return SetGPUResources(name, resources);
 }
 
 void MetalArguments::Encode(id<MTLComputeCommandEncoder> encoder,
@@ -278,14 +348,7 @@ absl::Status MetalArguments::AddObjectArgs(Arguments* args) {
     AddGPUResources(t.first, t.second->GetGPUResources(), args);
   }
   for (auto& t : args->object_refs_) {
-    auto resources = t.second->GetGPUResources();
-    for (const auto& r : resources.ints) {
-      args->AddInt(absl::StrCat(t.first, "_", r));
-    }
-    for (const auto& r : resources.floats) {
-      args->AddFloat(absl::StrCat(t.first, "_", r));
-    }
-    // AddGPUResources(t.first, t.second->GetGPUResources(), args);
+    AddGPUResources(t.first, t.second->GetGPUResources(), args);
   }
   return absl::OkStatus();
 }
@@ -428,6 +491,31 @@ absl::Status MetalArguments::ResolveSelector(
         absl::StrCat("No object with name - ", object_name));
   }
   auto names = desc_ptr->GetGPUResources().GetNames();
+  const auto* tensor_desc = dynamic_cast<const TensorDescriptor*>(desc_ptr);
+  if (tensor_desc && (selector == "Write" || selector == "Linking")) {
+    auto it = linkables.find(object_name);
+    if (it != linkables.end()) {
+      if (desc_ptr->GetAccess() != AccessType::WRITE &&
+          desc_ptr->GetAccess() != AccessType::READ_WRITE) {
+        return absl::FailedPreconditionError(absl::StrCat(
+            "Object with name - ", object_name, " should have Write access."));
+      }
+      std::string value_name, x_coord, y_coord, s_coord;
+      RETURN_IF_ERROR(tensor_desc->GetLinkingContextFromWriteSelector(
+          function_args, &value_name, &x_coord, &y_coord, &s_coord));
+      // x_coord can have batch size property of link_object
+      ResolveObjectNames(object_name, names, &x_coord);
+      *result = it->second;
+      ReplaceAllWords("in_out_value", value_name, result);
+      ReplaceAllWords("X_COORD", x_coord, result);
+      ReplaceAllWords("Y_COORD", y_coord, result);
+      ReplaceAllWords("S_COORD", s_coord, result);
+      RETURN_IF_ERROR(ResolveSelectorsPass(args, {}, result));
+      if (selector == "Linking") {
+        return absl::OkStatus();
+      }
+    }
+  }
   std::string patch;
   RETURN_IF_ERROR(desc_ptr->PerformSelector(selector, function_args,
                                             template_args, &patch));

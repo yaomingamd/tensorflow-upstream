@@ -16,10 +16,13 @@ limitations under the License.
 #include "tensorflow/lite/delegates/gpu/metal/compute_task.h"
 
 #include <Availability.h>
+
+#include <map>
 #include <string>
 #include <tuple>
 
-#include "tensorflow/lite/delegates/gpu/metal/metal_arguments.h"
+#include "absl/strings/match.h"
+#include "absl/strings/substitute.h"
 #include "tensorflow/lite/delegates/gpu/common/model.h"
 #include "tensorflow/lite/delegates/gpu/common/shape.h"
 #include "tensorflow/lite/delegates/gpu/common/status.h"
@@ -34,10 +37,10 @@ namespace metal {
 absl::Status ComputeTask::CompileWithDevice(id<MTLDevice> device,
                                             const NodeDescriptor& desc,
                                             CalculationsPrecision precision) {
-  size_t offset = desc.src_tensors_ids.size() +
-                  desc.task->uniform_buffers.size() +
-                  desc.task->immutable_buffers.size() + 1;
-  RETURN_IF_ERROR(metal_args_.Init(device, offset, &desc.task->args,
+  desc.task->AssembleCode();
+  const std::map<std::string, std::string> linkables = {
+      {desc.task->dst_tensors_names[0], desc.task->elementwise_code}};
+  RETURN_IF_ERROR(metal_args_.Init(device, linkables, &desc.task->args,
                                    &desc.task->shader_source));
   NSString* barrier;
   // simdgroup_barrier is supported on macOS 10.13+ and Metal shading language
@@ -94,29 +97,13 @@ absl::Status ComputeTask::CompileWithDevice(id<MTLDevice> device,
   if (!program) {
     return absl::InternalError("Unknown shader compilation error");
   }
-  for (auto& id : desc.src_tensors_ids) {
-    input_buffers_.emplace_back(InputBuffer{id, nil});
-  }
-  for (auto& uniform : desc.task->uniform_buffers) {
-    uniform_buffers_.emplace_back(UniformBuffer{{}, uniform.data_function});
-  }
-  output_buffers_.emplace_back(OutputBuffer{desc.dst_tensors_ids[0], nil});
-  const bool f32_storage = precision == CalculationsPrecision::F32;
-  for (auto& immutable : desc.task->immutable_buffers) {
-    int padding = 4 * (f32_storage ? sizeof(float) : sizeof(HalfBits));
-    int paddedSize = AlignByN(immutable.data.size(), padding);
-    immutable.data.resize(paddedSize);
-    id<MTLBuffer> metalBuffer =
-        [device newBufferWithBytes:immutable.data.data()
-                            length:immutable.data.size()
-                           options:MTLResourceStorageModeShared];
-    immutable_buffers_.emplace_back(metalBuffer);
-  }
+  input_buffers_ = desc.src_tensors_ids;
+  output_buffers_ = desc.dst_tensors_ids;
+  update_function_ = desc.task->update_function;
   resize_function_ = desc.task->resize_function;
   program_ = program;
   src_tensors_names_ = desc.task->src_tensors_names;
   dst_tensors_names_ = desc.task->dst_tensors_names;
-  tensors_as_args_ = desc.task->tensors_as_args;
   return absl::OkStatus();
 }
 
@@ -125,22 +112,20 @@ absl::Status ComputeTask::UpdateParamsWithDevice(
   std::vector<BHWC> src_shapes;
   std::vector<BHWC> dst_shapes;
   for (const auto& in_buf : input_buffers_) {
-    auto it = tensor_shapes.find(in_buf.uid);
+    auto it = tensor_shapes.find(in_buf);
     if (it == tensor_shapes.end()) {
       return absl::InvalidArgumentError("Missing tensor shape");
     }
     src_shapes.push_back(it->second);
   }
   for (const auto& out_buf : output_buffers_) {
-    auto it = tensor_shapes.find(out_buf.uid);
+    auto it = tensor_shapes.find(out_buf);
     if (it == tensor_shapes.end()) {
       return absl::InvalidArgumentError("Missing tensor shape");
     }
     dst_shapes.push_back(it->second);
   }
-  for (auto& uniform : uniform_buffers_) {
-    uniform.data = uniform.data_function(src_shapes, dst_shapes);
-  }
+  RETURN_IF_ERROR(update_function_(src_shapes, dst_shapes, &metal_args_));
 
   // Dispatch parameters re-calculation
   auto workGroups = resize_function_(src_shapes, dst_shapes);
@@ -165,12 +150,12 @@ absl::Status ComputeTask::UpdateParamsWithDevice(
 
 bool ComputeTask::HasInOutIds(const std::set<ValueId>& ids) const {
   for (auto& buffer : input_buffers_) {
-    if (ids.count(buffer.uid)) {
+    if (ids.count(buffer)) {
       return true;
     }
   }
   for (auto& buffer : output_buffers_) {
-    if (ids.count(buffer.uid)) {
+    if (ids.count(buffer)) {
       return true;
     }
   }
@@ -186,24 +171,6 @@ void ComputeTask::EncodeWithEncoder(id<MTLComputeCommandEncoder> encoder) {
   [encoder setComputePipelineState:program_];
 
   int bindIndex = 0;
-  for (const auto& buffer : output_buffers_) {
-    [encoder setBuffer:buffer.metal_handle offset:0 atIndex:bindIndex];
-    bindIndex++;
-  }
-  for (const auto& buffer : input_buffers_) {
-    [encoder setBuffer:buffer.metal_handle offset:0 atIndex:bindIndex];
-    bindIndex++;
-  }
-  for (auto& immutable : immutable_buffers_) {
-    [encoder setBuffer:immutable offset:0 atIndex:bindIndex];
-    bindIndex++;
-  }
-  for (auto& uniform : uniform_buffers_) {
-    [encoder setBytes:uniform.data.data()
-               length:uniform.data.size()
-              atIndex:bindIndex];
-    bindIndex++;
-  }
   metal_args_.Encode(encoder, bindIndex);
 
   MTLSize groupsCount =
@@ -214,39 +181,17 @@ void ComputeTask::EncodeWithEncoder(id<MTLComputeCommandEncoder> encoder) {
 }
 
 std::vector<ValueId> ComputeTask::GetOutputIds() const {
-  std::vector<tflite::gpu::ValueId> result;
-  for (auto& buffer : output_buffers_) {
-    result.push_back(buffer.uid);
-  }
-  return result;
+  return output_buffers_;
 }
 
-std::vector<ValueId> ComputeTask::GetInputIds() const {
-  std::vector<tflite::gpu::ValueId> result;
-  for (auto& buffer : input_buffers_) {
-    result.push_back(buffer.uid);
-  }
-  return result;
-}
+std::vector<ValueId> ComputeTask::GetInputIds() const { return input_buffers_; }
 
 void ComputeTask::SetSrcTensor(const MetalSpatialTensor& tensor, int index) {
-  input_buffers_[index].metal_handle = tensor.GetBufferHandle();
-  if (tensors_as_args_ && index < src_tensors_names_.size()) {
-    auto name = src_tensors_names_[index];
-    // extracting tensor_name from "device FLT4* tensor_name_buffer";
-    name = name.substr(13, name.size() - 20);
-    auto status = metal_args_.SetObjectRef(name, tensor);
-  }
+  auto status = metal_args_.SetObjectRef(src_tensors_names_[index], tensor);
 }
 
 void ComputeTask::SetDstTensor(const MetalSpatialTensor& tensor, int index) {
-  output_buffers_[index].metal_handle = tensor.GetBufferHandle();
-  if (tensors_as_args_) {
-    auto name = dst_tensors_names_[index];
-    // extracting tensor_name from "device FLT4* tensor_name_buffer";
-    name = name.substr(13, name.size() - 20);
-    auto status = metal_args_.SetObjectRef(name, tensor);
-  }
+  auto status = metal_args_.SetObjectRef(dst_tensors_names_[index], tensor);
 }
 
 void ComputeTask::SetDescription(const std::string& description) {

@@ -1507,12 +1507,6 @@ Status SpmdPartitioningVisitor::HandleConcatenate(HloInstruction* hlo) {
   // allocate the full output shape, each partition updates its owned region,
   // all-reduce across partitions, and then slice its output region.
 
-  // We currently don't support subgroup all-reduce along partitions, so more
-  // than 1 partitioned dimensions is not supported.
-  if (sharding.tile_assignment().dim(dimension) != num_partitions_) {
-    return DefaultAction(hlo);
-  }
-
   // temp_output_shape is the output shape where the concatenate dimension
   // is changed to the full (and padded to shard count) dimension size.
   auto temp_output_shape = MakePartitionedShape(hlo->shape(), sharding);
@@ -1554,12 +1548,24 @@ Status SpmdPartitioningVisitor::HandleConcatenate(HloInstruction* hlo) {
         temp_output_shape, temp_output, spmd_operand, start_indices));
     offset += operand->shape().dimensions(dimension);
   }
-  auto all_reduce = collective_ops_creator_.create_cross_partition_all_reduce(
-      &b_, temp_output, MakeBinaryAdd(hlo->shape().element_type(), module_), {},
-      NewChannel());
+  std::vector<int64> non_concat_dims;
+  non_concat_dims.reserve(hlo->shape().rank() - 1);
+  for (int64 i = 0; i < hlo->shape().rank(); ++i) {
+    if (i != dimension) {
+      non_concat_dims.push_back(i);
+    }
+  }
+  auto grouped = GroupShardingOnDims(sharding, non_concat_dims);
+  auto per_group_partitioner_state = CreatePerGroupPartitioningState(
+      MakePartitioningState(), grouped.device_groups, &b_);
+  auto all_reduce = per_group_partitioner_state.collective_ops_creator
+                        .create_cross_partition_all_reduce(
+                            &b_, temp_output,
+                            MakeBinaryAdd(hlo->shape().element_type(), module_),
+                            {}, NewChannel());
   SetPartitionedHlo(hlo, [&] {
-    auto start_indices =
-        MakeTiledPartitionOrdinals(hlo->sharding(), partition_id_, &b_);
+    auto start_indices = MakeTiledPartitionOrdinals(
+        grouped.sharding, per_group_partitioner_state.partition_id, &b_);
     start_indices[dimension] = MultiplyAddDivideOffsetCalculation(
                                    shard_shape.dimensions(dimension), 0, 1)
                                    .Calculate(start_indices[dimension], &b_);
@@ -3323,9 +3329,12 @@ Status SpmdPartitioningVisitor::HandleOutfeed(HloInstruction* hlo) {
   auto token = GetPartitionedHlo(hlo->operand(1)).hlo();
 
   if (EvenlyPartitions(shape, sharding)) {
+    Shape outfeed_shape = operand->shape();
+    TF_RETURN_IF_ERROR(LayoutUtil::CopyLayoutBetweenShapes(hlo->outfeed_shape(),
+                                                           &outfeed_shape));
     SetPartitionedHlo(hlo, [&]() {
       return b_.AddInstruction(HloInstruction::CreateOutfeed(
-          operand->shape(), operand, token, hlo->outfeed_config()));
+          outfeed_shape, operand, token, hlo->outfeed_config()));
     });
     return Status::OK();
   }
@@ -3434,6 +3443,8 @@ Status SpmdPartitioningVisitor::HandleOutfeed(HloInstruction* hlo) {
       };
       outfeed_data = slice_outfeed({}, outfeed_data);
     }
+    TF_RETURN_IF_ERROR(LayoutUtil::CopyLayoutBetweenShapes(
+        hlo->outfeed_shape(), &per_branch_partitioned_shapes[i]));
     branch_b.AddInstruction(HloInstruction::CreateOutfeed(
         per_branch_partitioned_shapes[i], outfeed_data, outfeed_token,
         hlo->outfeed_config()));
