@@ -75,6 +75,7 @@ class ROCmSolver {
   // ROCmSolver object.
   Status allocate_scoped_tensor(DataType type, const TensorShape& shape,
                                 Tensor* scoped_tensor);
+
   Status forward_input_or_allocate_scoped_tensor(
       gtl::ArraySlice<int> candidate_input_indices, DataType type,
       const TensorShape& shape, Tensor* input_alias_or_new_scoped_tensor);
@@ -82,9 +83,59 @@ class ROCmSolver {
   OpKernelContext* context() { return context_; }
 
   template <typename Scalar>
+  ScratchSpace<Scalar> GetScratchSpace(const TensorShape& shape,
+                                       const std::string& debug_info,
+                                       bool on_host);
+  template <typename Scalar>
+  ScratchSpace<Scalar> GetScratchSpace(int64 size,
+                                       const std::string& debug_info,
+                                       bool on_host);
+  // Returns a DeviceLapackInfo that will live for the duration of the
+  // ROCmSolver object.
+  inline DeviceLapackInfo GetDeviceLapackInfo(int64 size,
+                                              const std::string& debug_info);
+
+  // ====================================================================
+  // Wrappers for ROCSolver start here
+  //
+  // The method names below
+  // map to those in ROCSolver, which follow the naming
+  // convention in LAPACK see
+
+  // LU factorization.
+  // Computes LU factorization with partial pivoting P * A = L * U.
+  template <typename Scalar>
+  Status getrf(rocblas_handle handle, int m, int n, Scalar* dev_A, int lda, int* dev_pivots,
+               int* dev_lapack_info) TF_MUST_USE_RESULT;
+
+  // Uses LU factorization to solve A * X = B.
+  template <typename Scalar>
+  Status getrs(rocblas_handle handle, int n, int nrhs, const Scalar* A,
+               int lda, const int* pivots, Scalar* B, int ldb,
+               int* dev_lapack_info) const TF_MUST_USE_RESULT;
+
+  // Computes partially pivoted LU factorizations for a batch of small matrices.
+  // Returns Status::OK() if the kernel was launched successfully. See:
+  template <typename Scalar>
+  Status getrfBatched(rocblas_handle handle, int n, const Scalar* const host_a_dev_ptrs[], int lda,
+                      int* dev_pivots, DeviceLapackInfo* dev_lapack_info,
+                      int batch_size) TF_MUST_USE_RESULT;
+
+  // Batched linear solver using LU factorization from getrfBatched.
+  // Notice that lapack_info is returned on the host, as opposed to
+  // most of the other functions that return it on the device. 
+  template <typename Scalar>
+  Status getrsBatched(rocblas_handle handle, int n, int nrhs,
+                      const Scalar* const dev_Aarray[], int lda,
+                      const int* devIpiv, const Scalar* const dev_Barray[],
+                      int ldb, int* host_lapack_info,
+                      int batch_size) TF_MUST_USE_RESULT;
+
+  template <typename Scalar>
   Status Trsm(rocblas_side side, rocblas_fill uplo, rocblas_operation trans,
               rocblas_diagonal diag, int m, int n, const Scalar* alpha,
               const Scalar* A, int lda, Scalar* B, int ldb);
+
  private:
   OpKernelContext* context_;  // not owned.
   hipStream_t hip_stream_;
