@@ -73,6 +73,7 @@ objc_library(
         "Metal",
     ],
     deps = [
+        "//tensorflow/lite/delegates/gpu/common:gpu_info",
         "//tensorflow/lite/delegates/gpu/common:status",
     ],
 )
@@ -131,11 +132,13 @@ objc_library(
     deps = [
         "//tensorflow/lite/delegates/gpu/common:model",
         "//tensorflow/lite/delegates/gpu/common:shape",
+        "//tensorflow/lite/delegates/gpu/common:status",
         "//tensorflow/lite/delegates/gpu/common:types",
         "//tensorflow/lite/delegates/gpu/common:util",
         "//tensorflow/lite/delegates/gpu/common/task:arguments",
         "//tensorflow/lite/delegates/gpu/common/task:gpu_operation",
         "@FP16",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -172,8 +175,10 @@ objc_library(
         "//tensorflow/lite/delegates/gpu/common:shape",
         "//tensorflow/lite/delegates/gpu/common:status",
         "//tensorflow/lite/delegates/gpu/common:util",
+        "//tensorflow/lite/delegates/gpu/common/task:storage_type_util",
         "//tensorflow/lite/delegates/gpu/metal/selectors:operation_selector",
         "//tensorflow/lite/delegates/gpu/metal/selectors:subgraph",
+        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 
