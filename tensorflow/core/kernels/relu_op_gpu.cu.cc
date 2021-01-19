@@ -237,6 +237,64 @@ struct Relu<Device, qint8> {
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+
+#if TENSORFLOW_USE_ROCM
+__device__ float copysign(float x, unsigned int sgn) {
+   unsigned int ix = *(unsigned int*) &x;
+   ix = (ix & 0x7FFFFFFF) | (sgn<<31);
+   return *(float*)&ix;
+}
+
+// With double in branch 1 and 7 terms in branch 3, this gives us ~1.5 ULP
+//  worst case accuracy (around |x|=0.6), due to inherent error of __expf
+// With float in branch 1, 2.5 ULP worst case
+// We are keeping this in float because some Vega and Navi chips have slow DP,
+//  and it has not been benchmarked there
+__device__ float fast_tanhf(float x) {
+  float ax = fabs(x);
+  unsigned int sgn = x>=0 ? 0 : 1;
+  constexpr float ts1 = 1.0/3.0;
+  constexpr float ts2 = 2.0/15.0;
+  constexpr float ts3 = 17.0/315.0;
+  constexpr float ts4 = 62.0/2835.0;
+  constexpr float ts5 = 1382.0/155925.0;
+  constexpr float ts6 = 21844.0/6081075.0;
+  constexpr float ts7 = 929569.0/638512875.0;
+  float e = __expf(-2*ax);
+  float y = x*x;
+  float rv;
+  if(ax > 0.55f)
+      rv = (1.0f - e) * __frcp_rn(1.0f + e);
+//       rv = (1.0 - e) * __drcp_rn(1.0 + e);
+  else
+      rv = ax - ax*y*(ts1 - y*(ts2 - y*(ts3-y*(ts4-y*(ts5-y*(ts6-y*ts7))))));
+  return copysign(rv, sgn);
+}
+
+__device__ __half fast_tanhf(__half x) {
+   return __float2half(fast_tanhf(__half2float(x)));
+}
+
+__device__ double fast_tanhf(double x) {
+   return tanh(x);
+}
+#else
+#define fast_tanhf tanh
+#endif
+
+#if TENSORFLOW_USE_ROCM
+template <class T>
+__global__ void TanhKernel(const T* in, T* out, int32 count) {
+  int i = threadIdx.x + blockIdx.x * blockDim.x;
+  if (i >= count) return;
+  out[i] = fast_tanhf(in[i]);
+}
+
+template __global__ void TanhKernel(const __half* in, __half* out, int32 count);
+template __global__ void TanhKernel(const float* in, float* out, int32 count);
+template __global__ void TanhKernel(const double* in, double* out, int32 count);
+#endif
+
 template <class T>
 __global__ void GeluKernel(const T* in, T* out, int32 count) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
@@ -245,7 +303,7 @@ __global__ void GeluKernel(const T* in, T* out, int32 count) {
   const auto p1 = scale;
   const auto p3 = static_cast<T>(0.044715 * 0.7978845608028654);
   T x = in[i];
-  out[i] = 0.5 * x * (1 + tanh(p1 * x + p3 * x * x * x));
+   out[i] = T(0.5) * x * (1 + fast_tanhf(p1 * x + p3 * x * x * x));
 }
 
 template <class T>
@@ -253,15 +311,16 @@ __global__ void GeluGradKernel(const T* gradient, const T* feature, T* backprop,
                                int32 count) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   if (i >= count) return;
-
+  T x = feature[i];
+  T g = gradient[i];
   const T p1 = static_cast<T>(0.7978845608028654);
   const T p3 = static_cast<T>(0.044715 * 0.7978845608028654);
-  T x = feature[i];
+  const T one = static_cast<T>(1.0);
   T z = p1 * x + p3 * x * x * x;
-  T g = gradient[i];
-  T cz = 1. / cosh(z);
+  T tz = fast_tanhf(z);
+  T cz2 = one - tz*tz;
   backprop[i] = static_cast<T>(
-      g * 0.5 * (1. + tanh(z) + x * (p1 + 3 * p3 * x * x) * cz * cz));
+      g * T(0.5) * (one + tz + x * (p1 + 3 * p3 * x * x) * cz2));
 }
 
 template <>
@@ -275,7 +334,7 @@ __global__ void GeluKernel<Eigen::half>(const Eigen::half* _in,
   const float p1 = scale;
   const float p3 = 0.044715 * 0.7978845608028654;
   float x = in[i];
-  out[i] = 0.5 * x * (1 + tanh(p1 * x + p3 * x * x * x));
+  out[i] = 0.5f * x * (1 + fast_tanhf(p1 * x + p3 * x * x * x));
 }
 
 template <>
@@ -294,9 +353,11 @@ __global__ void GeluGradKernel<Eigen::half>(const Eigen::half* _gradient,
   float x = feature[i];
   float z = p1 * x + p3 * x * x * x;
   float g = gradient[i];
-  float cz = 1. / cosh(z);
-  backprop[i] = g * 0.5 * (1. + tanh(z) + x * (p1 + 3 * p3 * x * x) * cz * cz);
+  float tz = fast_tanhf(z);
+  float cz2 = 1.0f - tz*tz;
+  backprop[i] = g * 0.5f * (1.0f + tz + x * (p1 + 3 * p3 * x * x) * cz2);
 }
+
 
 template <typename T>
 struct Gelu<GPUDevice, T> {
@@ -345,7 +406,6 @@ struct GeluGrad<GPUDevice, T> {
 
 TF_CALL_GPU_NUMBER_TYPES(DEFINE_GPU_KERNELS);
 template struct functor::Relu<GPUDevice, qint8>;
-
 }  // end namespace tensorflow
 
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
