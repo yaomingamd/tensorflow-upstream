@@ -1145,10 +1145,8 @@ class LayerNormalization(Layer):
       can_use_fused = True
 
     # fused_batch_norm will silently raise epsilon to be at least 1.001e-5, so
-    # we cannot used the fused version if epsilon is below that value. Also, the
-    # variable dtype must be float32, as fused_batch_norm only supports float32
-    # variables.
-    if self.epsilon < 1.001e-5 or self.dtype != 'float32':
+    # we cannot used the fused version if epsilon is below that value. 
+    if self.epsilon < 1.001e-5 or (self.dtype != 'float32' and self.dtype!='float16'):
       can_use_fused = False
 
     return can_use_fused

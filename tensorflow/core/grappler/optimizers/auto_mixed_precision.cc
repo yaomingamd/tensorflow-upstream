@@ -49,6 +49,7 @@ const std::array<std::string, 2> FP16SupportedDevices = {"906", "908"};
 
 bool HasEnhancedFP16ComputeSupport(std::pair<int, int> gpu_arch){
     std::string arch = std::to_string(gpu_arch.first); 
+    return true;
     return std::find(std::begin(FP16SupportedDevices), 
                      std::end(FP16SupportedDevices), arch)
            != std::end(FP16SupportedDevices); 
@@ -1156,19 +1157,19 @@ std::pair<int, int> GetDeviceGPUArch(
   string arch_str = device_properties.environment().at("architecture");
   std::vector<string> split_arch_str = str_util::Split(arch_str, '.');
   if (split_arch_str.empty()) {
-    return {0, 0};
+    return {906, 0};
   }
 
   int major, minor;
   if (!strings::safe_strto32(split_arch_str[0], &major)) {
-    return {0, 0};
+    return {906, 0};
   }
 
   if (split_arch_str.size() > 1) {
     if (strings::safe_strto32(split_arch_str[1], &minor)) {
       return {major, minor};
     } else {
-      return {0, 0};
+      return {906, 0};
     }
   } else {
     return {major, 0};
@@ -1300,6 +1301,7 @@ Status AutoMixedPrecisionImpl::Optimize() {
     bool should_process;
     switch (mode_) {
       case AutoMixedPrecisionMode::CUDA:
+        VLOG(2) << node.op() << " " << !MustPreserve(node)  << " " << IsOnDevice(node, DEVICE_GPU) << " " << (ShouldIgnorePerformance() || IsOnSuitableGPUArch(node));
         should_process =
             !MustPreserve(node) && IsOnDevice(node, DEVICE_GPU) &&
             (ShouldIgnorePerformance() || IsOnSuitableGPUArch(node));
