@@ -82,6 +82,7 @@ HeuristicLayoutAssignment(const HloInstruction* instr,
   if (instr->operand(0)->shape().element_type() != xla::PrimitiveType::F16 ||
       !IsVoltaOrLater(*stream_executor) ||
       instr->shape().tuple_shapes(0).dimensions_size() != 4) {
+    VLOG(2) << "Using NCHW layout for " << instr->ToString();
     return kAllNCHW;
   }
 
@@ -105,12 +106,14 @@ HeuristicLayoutAssignment(const HloInstruction* instr,
               std::make_tuple(7, 3) &&
           instr->custom_call_target() == kCudnnConvBackwardInputCallTarget &&
           window_util::HasStride(instr->window())) {
+	VLOG(2) << "Using NCHW layout for " << instr->ToString();
         return kAllNCHW;
       }
     }
   }
 
   // For other Volta f16 convolutions, use NHWC.
+  VLOG(2) << "Using NHWC layout for " << instr->ToString();
   return kAllNHWC;
 }
 
