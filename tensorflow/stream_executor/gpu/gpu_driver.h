@@ -398,6 +398,17 @@ class GpuDriver {
   // (supported on ROCm only)
   static port::Status GetGpuISAVersion(int* version, GpuDeviceHandle device);
 
+  // Return the full GCN Architecture Name for the the device
+  // for eg: amdgcn-amd-amdhsa--gfx908:sramecc+:xnack-
+  // (supported on ROCm only)
+  static port::Status GetGpuGCNArchName(GpuDeviceHandle device,
+                                        std::string* gcnArchName);
+
+#if TENSORFLOW_USE_ROCM
+  // tests the current device for MFMA insn support (ROCm only)
+  static port::Status GetMFMASupport(bool& support);
+#endif
+
   // Returns the number of multiprocessors on the device (note that the device
   // may be multi-GPU-per-board).
   static port::StatusOr<int> GetMultiprocessorCount(GpuDeviceHandle device);
