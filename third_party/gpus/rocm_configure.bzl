@@ -196,6 +196,7 @@ def _rocm_include_path(repository_ctx, rocm_confiagi, bash_bin):
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/10.0.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/11.0.0/include")
     inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/12.0.0/include")
+    inc_dirs.append(rocm_toolkit_path + "/llvm/lib/clang/13.0.0/include")
 
     return inc_dirs
 
