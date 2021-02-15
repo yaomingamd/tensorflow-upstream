@@ -72,6 +72,7 @@ std::unique_ptr<llvm::TargetMachine> GetTargetMachine(llvm::Module* module) {
 xla::StatusOr<std::string> EmitToBinary(mlir::ModuleOp module) {
   // Translate the module.
   llvm::LLVMContext llvm_context;
+  mlir::registerLLVMDialectTranslation(*module->getContext());
   std::unique_ptr<llvm::Module> llvm_module =
       mlir::translateModuleToLLVMIR(module, llvm_context);
 
@@ -158,7 +159,7 @@ int main(int argc, char** argv) {
       llvm::cl::init(false));
   llvm::cl::list<std::string> architectures(
       "arch", llvm::cl::desc("target architectures (e.g. sm_70 or compute_75)"),
-      llvm::cl::OneOrMore, llvm::cl::CommaSeparated);
+      llvm::cl::ZeroOrMore, llvm::cl::CommaSeparated);
   llvm::cl::list<int64_t> tile_sizes(
       "tile_sizes", llvm::cl::desc("tile sizes to use"), llvm::cl::ZeroOrMore,
       llvm::cl::CommaSeparated);
