@@ -7,8 +7,6 @@ ifneq ($(DOWNLOAD_RESULT), SUCCESS)
   $(error Something went wrong with the GCC download: $(DOWNLOAD_RESULT))
 endif
 
-$(eval $(call add_third_party_download,$(STM32_BARE_LIB_URL),$(STM32_BARE_LIB_MD5),stm32_bare_lib,))
-
 DOWNLOAD_RESULT := $(shell $(MAKEFILE_DIR)/renode_download.sh ${MAKEFILE_DIR}/downloads)
 ifneq ($(DOWNLOAD_RESULT), SUCCESS)
   $(error Something went wrong with the renode download: $(DOWNLOAD_RESULT))
@@ -17,6 +15,11 @@ endif
 DOWNLOAD_RESULT := $(shell $(MAKEFILE_DIR)/ext_libs/cmsis_download.sh ${MAKEFILE_DIR}/downloads)
 ifneq ($(DOWNLOAD_RESULT), SUCCESS)
   $(error Something went wrong with the CMSIS download: $(DOWNLOAD_RESULT))
+endif
+
+DOWNLOAD_RESULT := $(shell $(MAKEFILE_DIR)/ext_libs/stm32_bare_lib_download.sh ${MAKEFILE_DIR}/downloads)
+ifneq ($(DOWNLOAD_RESULT), SUCCESS)
+  $(error Something went wrong with the STM32 Bare Lib download: $(DOWNLOAD_RESULT))
 endif
 
 PLATFORM_FLAGS = \
@@ -33,6 +36,9 @@ PLATFORM_FLAGS = \
 # TODO(b/168334217): Currently we always add -DNDEBUG because the build is
 # broken w/o it. Remove this workaround once the issue is resolved.
 PLATFORM_FLAGS += -DNDEBUG
+
+# TODO(#46937): Remove once initialization of global variables is sorted out.
+PLATFORM_FLAGS += -DRENODE
 
 CXXFLAGS += $(PLATFORM_FLAGS) -fno-use-cxa-atexit
 CCFLAGS += $(PLATFORM_FLAGS)

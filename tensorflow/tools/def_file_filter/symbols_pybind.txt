@@ -22,6 +22,9 @@ tensorflow::swig::RegisterType
 tensorflow::swig::IsEagerTensorSlow
 tensorflow::swig::GetRegisteredPyObject
 
+[//tensorflow/python/util:cpp_nest] # nest
+tensorflow::FlattenDictItems
+
 [//tensorflow/core/util:port] # util_port
 tensorflow::IsGoogleCudaEnabled
 tensorflow::IsBuiltWithROCm
@@ -108,10 +111,6 @@ toco::TocoGetPotentiallySupportedOps
 toco::MlirQuantizeModel
 toco::MlirSparsifyModel
 toco::RegisterCustomOpdefs
-
-[//tensorflow/tools/graph_transforms:transform_graph_lib] # transform_graph
-tensorflow::graph_transforms::TransformGraph
-tensorflow::graph_transforms::ParseTransformParameters
 
 [//tensorflow/c:checkpoint_reader] # py_checkpoint_reader
 tensorflow::checkpoint::CheckpointReader

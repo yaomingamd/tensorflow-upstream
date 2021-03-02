@@ -122,24 +122,28 @@ Operation* CreateRecvAtHostOp(OpBuilder& builder, Location loc,
       /*device_ordinal=*/builder.getI64IntegerAttr(0));
 }
 
-// Creates a IfRegionOp with `predicate` and then/else region with yield op and
-// an empty block.
-TF::IfRegionOp CloneEmptyIfWithPredicate(Value predicate, bool is_stateless,
-                                         Location loc, OpBuilder& builder) {
+// Clones an IfRegionOp 'if_region' and attributes and creates then/else regions
+// with yield op and an empty block.
+TF::IfRegionOp CloneEmptyIfWithPredicate(TF::IfRegionOp if_region,
+                                         OpBuilder& builder) {
   auto host_side_if = builder.create<TF::IfRegionOp>(
-      loc, llvm::SmallVector<Type, 4>{}, predicate, is_stateless);
+      if_region.getLoc(), llvm::SmallVector<Type, 4>{}, if_region.cond(),
+      if_region.is_stateless(), if_region._then_func_nameAttr(),
+      if_region._else_func_nameAttr());
 
   // Create empty then branch region.
   auto& then_branch = host_side_if.then_branch();
   then_branch.push_back(new Block);
   builder.setInsertionPointToEnd(&then_branch.front());
-  builder.create<TF::YieldOp>(loc, /*operands=*/ArrayRef<Value>{});
+  builder.create<TF::YieldOp>(if_region.getLoc(),
+                              /*operands=*/ArrayRef<Value>{});
 
   // Create empty else branch region.
   auto& else_branch = host_side_if.else_branch();
   else_branch.push_back(new Block);
   builder.setInsertionPointToEnd(&else_branch.front());
-  builder.create<TF::YieldOp>(loc, /*operands=*/ArrayRef<Value>{});
+  builder.create<TF::YieldOp>(if_region.getLoc(),
+                              /*operands=*/ArrayRef<Value>{});
   return host_side_if;
 }
 // Creates a WhileRegionOp cond and body regions with yield op and
@@ -169,7 +173,7 @@ TF::WhileRegionOp CloneEmptyWhile(bool is_stateless,
 TF::_TPUCompileMlirPlaceholderProgramKeyOp CreateCompilationKeyPlaceholder(
     Location loc, OpBuilder& builder) {
   auto result_type =
-      RankedTensorType::get({2}, builder.getType<TF::StringType>());
+      RankedTensorType::get({3}, builder.getType<TF::StringType>());
   return builder.create<TF::_TPUCompileMlirPlaceholderProgramKeyOp>(
       loc, /*program=*/result_type, llvm::ArrayRef<Value>{});
 }
@@ -248,7 +252,7 @@ TF::_XlaHostComputeMlirOp CreateHostCompute(
 
 void MarkOutsideCompiled(Operation* op) {
   op->setAttr(kXlaOutsideCompilationAttr,
-              StringAttr::get("temp", op->getContext()));
+              StringAttr::get(op->getContext(), "temp"));
 }
 
 // Move outside compiled ops in `src` to to `insertion_point` in host
@@ -297,6 +301,7 @@ void MoveOpsToHost(tf_device::ClusterOp tpu_cluster, Block* src,
     auto recv_at_host = CreateRecvAtHostOp(
         builder, op.getLoc(), host_operand_types, compilation_key,
         device_ordinal, args_communication_key);
+    auto original_op_block = op.getBlock();
     op.moveAfter(recv_at_host);
     op.removeAttr(Identifier::get(kDeviceAttr, op.getContext()));
     if (!external_outputs.empty()) {
@@ -309,7 +314,8 @@ void MoveOpsToHost(tf_device::ClusterOp tpu_cluster, Block* src,
     auto replace_operand_usage = [&](OpOperand& operand) {
       return insertion_point->getParentRegion()->isAncestor(
                  operand.getOwner()->getParentRegion()) ||
-             HasOutsideCompilationAncestor(operand.getOwner());
+             (HasOutsideCompilationAncestor(operand.getOwner()) &&
+              original_op_block == operand.getOwner()->getBlock());
     };
     if (external_operands.empty()) {
       recv_at_host->erase();
@@ -355,8 +361,7 @@ void DecomposeControlFlow(tf_device::ClusterOp tpu_cluster,
     if (auto if_op = llvm::dyn_cast<TF::IfRegionOp>(op)) {
       if (!HasOutsideCompilationNested(op)) return;
       OpBuilder builder(if_op);
-      auto host_if = CloneEmptyIfWithPredicate(
-          if_op.cond(), if_op.is_stateless(), if_op.getLoc(), builder);
+      auto host_if = CloneEmptyIfWithPredicate(if_op, builder);
       MoveOpsToHost(tpu_cluster, &if_op.then_branch().front(),
                     host_if.then_branch().front().getTerminator(),
                     compilation_key, device_ordinal, communication_key_index);
@@ -492,8 +497,8 @@ void TPUExtractOutsideCompilation::runOnOperation() {
   module.walk([&](tf_device::ClusterOp tpu_cluster) {
     if (HasOutsideCompilationNested(tpu_cluster.getOperation())) {
       std::string host_device;
-      tensorflow::GetHostDeviceOutsideComputation(devices, tpu_cluster,
-                                                  &host_device);
+      (void)tensorflow::GetHostDeviceOutsideComputation(devices, tpu_cluster,
+                                                        &host_device);
       CreateParallelExecuteForOutsideCompilation(module, tpu_cluster,
                                                  host_device);
     }

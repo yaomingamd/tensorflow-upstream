@@ -3,10 +3,10 @@
 FROM ubuntu:bionic
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
-ARG ROCM_DEB_REPO=http://repo.radeon.com/rocm/apt/4.0/
+ARG ROCM_DEB_REPO=http://repo.radeon.com/rocm/apt/4.0.1/
 ARG ROCM_BUILD_NAME=xenial
 ARG ROCM_BUILD_NUM=main
-ARG ROCM_PATH=/opt/rocm-4.0.0
+ARG ROCM_PATH=/opt/rocm-4.0.1
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV TF_NEED_ROCM 1
@@ -64,10 +64,19 @@ RUN apt-get update --allow-insecure-repositories && DEBIAN_FRONTEND=noninteracti
 # Install rocm pkgs
 RUN apt-get update --allow-insecure-repositories && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
-    rocm-dev rocm-libs hipcub rocm-utils rocm-cmake \
-    rocfft miopen-hip miopengemm rocblas hipblas rocrand rccl && \
+    rocm-dev rocm-libs rccl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# explicitly remove the following subdirs from under $ROCM_PATH/include
+# These dirs will be removed from the ROCm install in a (near) future ROCm release, and 
+# ROCm TF has been updated (via a separate commit in the same PR as this commit) to account
+# for this future change.
+# This explicit removal is required because without it the creation of the "local_config_rocm" repo
+# runs into errors relating to two different copy rules (rocm-include + hiprand-include|rocrand-include)
+# trying to copy a header file to the same location.
+RUN rm -rf ${ROCM_PATH}/include/rocrand ${ROCM_PATH}/include/hiprand
+
 
 # Set up paths
 ENV HCC_HOME=$ROCM_PATH/hcc

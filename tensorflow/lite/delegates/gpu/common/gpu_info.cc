@@ -186,7 +186,9 @@ bool AdrenoInfo::IsAdreno6xx() const {
          adreno_gpu == AdrenoGpu::kAdreno685;
 }
 
-bool AdrenoInfo::IsAdreno6xxOrHigher() const { return IsAdreno6xx(); }
+bool AdrenoInfo::IsAdreno6xxOrHigher() const {
+  return !compiler_bugs_in_a6xx && IsAdreno6xx();
+}
 
 int AdrenoInfo::GetMaximumWavesCount() const {
   if (IsAdreno6xx()) {
@@ -401,6 +403,15 @@ bool GpuInfo::IsRoundToNearestSupported() const {
   if (IsApple()) {
     return apple_info.IsRoundToNearestSupported();
   }
+  if (IsAdreno()) {
+    if (adreno_info.IsAdreno1xx() || adreno_info.IsAdreno2xx() ||
+        adreno_info.IsAdreno3xx()) {
+      return false;
+    }
+  }
+  if (IsPowerVR()) {
+    return false;
+  }
   return true;
 }
 
@@ -529,6 +540,9 @@ int GpuInfo::GetMaxWorkGroupSizeForX() const {
   if (IsApiOpenCl()) {
     return opencl_info.max_work_group_size_x;
   }
+  if (IsApiMetal()) {
+    return metal_info.max_work_group_size_x;
+  }
   return 256;
 }
 
@@ -541,6 +555,9 @@ int GpuInfo::GetMaxWorkGroupSizeForY() const {
   }
   if (IsApiOpenCl()) {
     return opencl_info.max_work_group_size_y;
+  }
+  if (IsApiMetal()) {
+    return metal_info.max_work_group_size_y;
   }
   return 256;
 }
@@ -555,6 +572,9 @@ int GpuInfo::GetMaxWorkGroupSizeForZ() const {
   if (IsApiOpenCl()) {
     return opencl_info.max_work_group_size_z;
   }
+  if (IsApiMetal()) {
+    return metal_info.max_work_group_size_z;
+  }
   return 64;
 }
 
@@ -567,6 +587,12 @@ int GpuInfo::GetMaxWorkGroupTotalSize() const {
   }
   if (IsApiOpenCl()) {
     return opencl_info.max_work_group_total_size;
+  }
+  if (IsApiMetal()) {
+    int max_size = metal_info.max_work_group_size_x;
+    max_size = std::max(max_size, metal_info.max_work_group_size_y);
+    max_size = std::max(max_size, metal_info.max_work_group_size_z);
+    return max_size;
   }
   return 256;
 }
@@ -634,6 +660,17 @@ uint64_t GpuInfo::GetMaxImage3DDepth() const {
 uint64_t GpuInfo::GetMaxBufferSize() const {
   if (IsApiOpenCl()) {
     return opencl_info.buffer_max_size;
+  } else if (IsApiMetal()) {
+    return metal_info.buffer_max_size;
+  }
+  return 128 * 1024 * 1024;
+}
+
+uint64_t GpuInfo::GetMaxMemoryAllocationSize() const {
+  if (IsApiOpenCl()) {
+    return opencl_info.max_allocation_size;
+  } else if (IsApiMetal()) {
+    return metal_info.buffer_max_size;
   }
   return 128 * 1024 * 1024;
 }

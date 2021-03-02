@@ -290,6 +290,7 @@ cuda_py_test(
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/distribute:combinations",
         "//tensorflow/python/distribute:test_util",
+        "//tensorflow/python/eager:cancellation",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:def_function",
         "@absl_py//absl/testing:parameterized",
@@ -368,6 +369,7 @@ cuda_py_test(
 py_library(
     name = "cudnn_deterministic_base",
     srcs = ["cudnn_deterministic_base.py"],
+    srcs_version = "PY3",
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:constant_op",
@@ -1754,6 +1756,7 @@ cuda_py_test(
 py_library(
     name = "bias_op_base",
     srcs = ["bias_op_base.py"],
+    srcs_version = "PY3",
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
@@ -2930,7 +2933,10 @@ cuda_py_test(
     name = "atrous_convolution_test",
     size = "medium",
     srcs = ["atrous_convolution_test.py"],
-    tags = ["manual"],
+    tags = [
+        "manual",
+        "no_cuda_asan",
+    ],
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
@@ -3022,22 +3028,6 @@ cuda_py_test(
     shard_count = 3,
     # TODO(b/118842098): Re-enable this test in Kokoro.
     tags = ["no_oss"],
-    deps = [
-        "//tensorflow/python:array_ops",
-        "//tensorflow/python:client_testlib",
-        "//tensorflow/python:framework_for_generated_wrappers",
-        "//tensorflow/python:nn",
-        "//tensorflow/python:nn_grad",
-        "//tensorflow/python:nn_ops",
-        "//third_party/py/numpy",
-    ],
-)
-
-tf_py_test(
-    name = "neon_depthwise_conv_op_test",
-    size = "medium",
-    srcs = ["neon_depthwise_conv_op_test.py"],
-    tags = ["no_windows"],
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
@@ -3247,7 +3237,7 @@ cuda_py_test(
     name = "extract_image_patches_grad_test",
     size = "medium",
     srcs = ["extract_image_patches_grad_test.py"],
-    shard_count = 9,
+    shard_count = 15,
     tags = ["notap"],  # http://b/31080670
     deps = [
         "//tensorflow/python:array_ops",
@@ -3350,7 +3340,9 @@ cuda_py_test(
     size = "large",
     srcs = ["conv_ops_3d_test.py"],
     shard_count = 30,
-    tags = ["no_cuda11"],
+    tags = [
+        "no_cuda11",
+    ],
     deps = [
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework_for_generated_wrappers",
@@ -3364,7 +3356,10 @@ cuda_py_test(
     size = "large",
     srcs = ["cwise_ops_test.py"],
     shard_count = 50,
-    tags = ["no_windows"],  # b/163222163
+    tags = [
+        "no_cuda_asan",  # b/179032113
+        "no_windows",  # b/163222163
+    ],
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
@@ -3872,6 +3867,9 @@ cuda_py_test(
     name = "critical_section_test",
     size = "medium",
     srcs = ["critical_section_test.py"],
+    tags = [
+        "notsan",  # TODO(b/180454366): Re-enable.
+    ],
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",

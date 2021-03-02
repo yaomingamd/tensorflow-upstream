@@ -204,16 +204,19 @@ template <typename IN, typename OUT>
 void PortableReductionSumVector(const IN* input_vector, OUT* output_vector,
                                 int output_size, int reduction_size) {
   for (int o = 0; o < output_size; o++) {
+    OUT result = 0;
     for (int r = 0; r < reduction_size; r++) {
-      output_vector[o] += *input_vector++;
+      result += input_vector[r];
     }
+    output_vector[o] = result;
+    input_vector += reduction_size;
   }
 }
 
 // Layer norm for each batch.
-void PortableMeanStddevNormalization(const float* input_vector,
-                                     float* output_vector, int v_size,
-                                     int n_batch);
+void PortableMeanStddevNormalization(const float* __restrict__ input_vector,
+                                     float* __restrict__ output_vector,
+                                     int v_size, int n_batch);
 
 // Saturate Add.
 void PortableTwoGateSaturatingAdd(const int8_t* input, int8_t input_zp,

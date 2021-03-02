@@ -71,6 +71,7 @@ constexpr char kPipe[] = "|";
 constexpr char kColon[] = ":";
 
 constexpr char kTFDataResourceTag[] = "tfdata";
+constexpr char kTraceInfoUnavailable[] = "unavailable";
 
 class DatasetBase;
 class SerializationContext;
@@ -319,7 +320,7 @@ class SplitProvider {
   // Saves the state of this split provider.
   virtual Status Save(std::function<std::string(std::string)> full_name,
                       IteratorStateWriter* writer) = 0;
-  // Saves the state of this split provider.
+  // Restores the state of this split provider.
   virtual Status Restore(std::function<std::string(std::string)> full_name,
                          IteratorStateReader* reader) = 0;
 };
@@ -708,6 +709,11 @@ class IteratorBase {
     return Status::OK();
   }
 
+  Status RestoreInput(IteratorContext&& ctx, IteratorStateReader* reader,
+                      const std::unique_ptr<IteratorBase>& input) {
+    return RestoreInput(&ctx, reader, input);
+  }
+
   // Saves the state of this iterator.
   //
   // This method is used to store the state of the iterator in a checkpoint.
@@ -1089,6 +1095,7 @@ class DatasetBaseIterator : public IteratorBase {
     return model && model->collect_resource_usage() && node_;
   }
 
+  string traceme_metadata_;
   BaseParams params_;
 };
 

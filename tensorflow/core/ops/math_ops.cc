@@ -374,7 +374,7 @@ REGISTER_OP("Rint")
 #define BINARY_MORE()                                                          \
   Input("x: T").Input("y: T").Output("z: T").Attr(                             \
       "T: {bfloat16, half, float, double, uint8, int8, uint16, int16, int32, " \
-      "int64, complex64, complex128}")
+      "uint32, uint64, int64, complex64, complex128}")
 
 #define BINARY_FEWER()                                               \
   Input("x: T").Input("y: T").Output("z: T").Attr(                   \
@@ -395,8 +395,8 @@ REGISTER_OP("AddV2")
     .Input("y: T")
     .Output("z: T")
     .Attr(
-        "T: {bfloat16, half, float, double, uint8, int8, int16, uint32, int32, "
-        "int64, complex64, complex128}")
+        "T: {bfloat16, half, float, double, uint8, uint16, uint32, uint64, "
+        "int8, int16, int32, int64, complex64, complex128}")
     .SetShapeFn(shape_inference::BroadcastBinaryOpShapeFn)
     .SetIsAggregate()
     .SetIsCommutative();
@@ -446,7 +446,7 @@ REGISTER_OP("Sub")
     .Output("z: T")
     .Attr(
         "T: {bfloat16, half, float, double, uint8, int8, uint16, int16, int32, "
-        "int64, complex64, complex128, uint32}")
+        "int64, complex64, complex128, uint32, uint64}")
     .SetShapeFn(shape_inference::BroadcastBinaryOpShapeFn);
 
 REGISTER_OP("_MklSub")
@@ -682,7 +682,9 @@ REGISTER_OP("Maximum")
     .Input("x: T")
     .Input("y: T")
     .Output("z: T")
-    .Attr("T: {bfloat16, half, float, double, uint8, int16, int32, int64}")
+    .Attr(
+        "T: {bfloat16, half, float, double, int8, int16, int32, int64, "
+        "uint8, uint16, uint32, uint64}")
     .SetShapeFn(shape_inference::BroadcastBinaryOpShapeFn);
 
 // Note: This op is not commutative w.r.t. to all its inputs.
@@ -735,8 +737,8 @@ REGISTER_OP("Pow")
     .Input("y: T")
     .Output("z: T")
     .Attr(
-        "T: {bfloat16, float, half, double, int32, int64, complex64, "
-        "complex128}")
+        "T: {bfloat16, float, half, double, int8, int16, int32, int64, "
+        "complex64, complex128}")
     .SetShapeFn(shape_inference::BroadcastBinaryOpShapeFn);
 
 REGISTER_OP("Igammac")
@@ -1598,7 +1600,9 @@ REGISTER_OP("Range")
     .Input("limit: Tidx")
     .Input("delta: Tidx")
     .Output("output: Tidx")
-    .Attr("Tidx: {bfloat16, half, float, double, int32, int64} = DT_INT32")
+    .Attr(
+        "Tidx: {bfloat16, half, float, double, int8, int16, int32, int64} = "
+        "DT_INT32")
     .SetShapeFn([](InferenceContext* c) {
       ShapeHandle unused;
       TF_RETURN_WITH_CONTEXT_IF_ERROR(c->WithRank(c->input(0), 0, &unused),
@@ -1618,6 +1622,10 @@ REGISTER_OP("Range")
       }
       if (dtype == DT_INT32) {
         return RangeSize<int32>(start_t, limit_t, delta_t, c);
+      } else if (dtype == DT_INT16) {
+        return RangeSize<int16>(start_t, limit_t, delta_t, c);
+      } else if (dtype == DT_INT8) {
+        return RangeSize<int8>(start_t, limit_t, delta_t, c);
       } else if (dtype == DT_INT64) {
         return RangeSize<int64>(start_t, limit_t, delta_t, c);
       } else if (dtype == DT_FLOAT) {
