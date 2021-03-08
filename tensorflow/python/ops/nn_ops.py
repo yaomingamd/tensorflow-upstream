@@ -40,6 +40,7 @@ from tensorflow.python.ops import gen_nn_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import random_ops
 from tensorflow.python.ops import variables as variables_lib
+from tensorflow.python.ops import control_flow_util
 # go/tf-wildcard-import
 # pylint: disable=wildcard-import
 from tensorflow.python.ops.gen_nn_ops import *
@@ -3476,6 +3477,7 @@ def leaky_relu(features, alpha=0.2, name=None):
   Source: [Rectifier Nonlinearities Improve Neural Network Acoustic Models.
   AL Maas, AY Hannun, AY Ng - Proc. ICML, 2013]
   (https://ai.stanford.edu/~amaas/papers/relu_hybrid_icml2013_final.pdf).
+
   Args:
     features: A `Tensor` representing preactivation values. Must be one of
       the following types: `float16`, `float32`, `float64`, `int32`, `int64`.
@@ -5177,11 +5179,13 @@ def dropout_v2(x, rate, noise_shape=None, seed=None, name=None):
 
     # Should there be ROCm support, use it. Otherwise fallback to generic
     # implementation
+    is_in_XLA_context = control_flow_util.GraphOrParentsInXlaContext(
+        ops.get_default_graph())
     def_dropout = os.environ.get("TF_ROCM_OLD_DROPOUT")
     if build_info.build_info['is_rocm_build'] and \
        (x.dtype == dtypes.float64 or x.dtype == dtypes.float32 \
         or x.dtype == dtypes.float16) and def_dropout != "1" \
-        and null_noise_shape:
+        and not is_in_XLA_context and null_noise_shape:
       if seed is None:
         seed = 0
       out, _ = gen_nn_ops.dropout(x, rate, noise_shape=noise_shape, seed=seed)
