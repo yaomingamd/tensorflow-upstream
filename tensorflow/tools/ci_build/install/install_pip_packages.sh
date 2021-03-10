@@ -28,7 +28,7 @@ if [[ "$ubuntu_version" == "18" ]]; then
   wget https://bootstrap.pypa.io/get-pip.py
   python3 get-pip.py
   rm -f get-pip.py
-  wget https://bootstrap.pypa.io/2.7/get-pip.py
+  wget https://bootstrap.pypa.io/pip/2.7/get-pip.py
   python get-pip.py
   rm -f get-pip.py
 else
