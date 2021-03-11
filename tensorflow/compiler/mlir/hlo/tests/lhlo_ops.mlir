@@ -788,6 +788,36 @@ func @collective_permute_memrefs(%arg0: memref<128x32xf32>, %arg_out: memref<128
 
 // -----
 
+func @invalid_collective_permute(%arg0: memref<128x32xf32>, %arg_out: memref<128x32xf32>) -> () {
+  // expected-error@+1{{expect source_target_pairs attribute of shape (N, 2), but got (1, 3)}}
+  "lmhlo.collective_permute"(%arg0, %arg_out) {
+    source_target_pairs = dense<[[2, 3, 4]]> : tensor<1x3xi64>
+  } : (memref<128x32xf32>, memref<128x32xf32>) -> ()
+  return
+}
+
+// -----
+
+func @invalid_collective_permute(%arg0: memref<128x32xf32>, %arg_out: memref<128x32xf32>) -> () {
+  // expected-error@+1{{duplicate sources not allowed.}}
+  "lmhlo.collective_permute"(%arg0, %arg_out) {
+    source_target_pairs = dense<[[1,2], [1,3]]> : tensor<2x2xi64>
+  } : (memref<128x32xf32>, memref<128x32xf32>) -> ()
+  return
+}
+
+// -----
+
+func @invalid_collective_permute(%arg0: memref<128x32xf32>, %arg_out: memref<128x32xf32>) -> () {
+  // expected-error@+1{{duplicate targets not allowed.}}
+  "lmhlo.collective_permute"(%arg0, %arg_out) {
+    source_target_pairs = dense<[[1,2], [0,2]]> : tensor<2x2xi64>
+  } : (memref<128x32xf32>, memref<128x32xf32>) -> ()
+  return
+}
+
+// -----
+
 // CHECK-LABEL: func @fft_memrefs
 func @fft_memrefs(%arg0: memref<3x9xf32>, %arg_out: memref<3x5xcomplex<f32>>) -> () {
   "lmhlo.fft"(%arg0, %arg_out) {fft_length = dense<9> : tensor<1xi64>, fft_type = "RFFT"} : (memref<3x9xf32>, memref<3x5xcomplex<f32>>) -> ()
@@ -987,5 +1017,138 @@ func @sort_memrefs(%arg0: memref<16x16xf32>, %arg1: memref<16x16xf16>,
     %7 = "mhlo.compare"(%a, %b) {comparison_direction = "GT"} : (tensor<f32>, tensor<f32>) -> tensor<i1>
     "mhlo.return"(%7) : (tensor<i1>) -> ()
   }) : (memref<16x16xf32>, memref<16x16xf16>, memref<16x16xf32>, memref<16x16xf16>) -> ()
+  return
+}
+
+// -----
+
+// CHECK-LABEL: func @valid_custom_call
+func @valid_custom_call(%arg0:memref<1xf32>, %arg1:memref<1xf32>) -> () {
+  "lmhlo.custom_call"(%arg0, %arg0, %arg1, %arg1) {
+    backend_config = "",
+    call_target_name = "foo",
+    has_side_effects = false,
+    operand_segment_sizes = dense<2> : vector<2xi32>,
+    target_arg_mapping = {
+      num_args = 4 : i64,
+      num_results = 3 : i64,
+      args_to_target_args = [0,3],
+      results_to_target_results = [1,2]
+    }
+  } : (memref<1xf32>, memref<1xf32>, memref<1xf32>, memref<1xf32>) -> ()
+  return
+}
+
+// -----
+
+func @invalid_custom_call(%arg0:memref<1xf32>, %arg1:memref<1xf32>) -> () {
+  // expected-error @+1 {{number of entries in the mapping for args (1) should match the number of args for the operation (2)}}
+  "lmhlo.custom_call"(%arg0, %arg0, %arg1, %arg1) {
+    backend_config = "",
+    call_target_name = "foo",
+    has_side_effects = false,
+    operand_segment_sizes = dense<2> : vector<2xi32>,
+    target_arg_mapping = {
+      num_args = 4 : i64,
+      num_results = 3 : i64,
+      args_to_target_args = [0],
+      results_to_target_results = [1,2]
+    }
+  } : (memref<1xf32>, memref<1xf32>, memref<1xf32>, memref<1xf32>) -> ()
+  return
+}
+
+// -----
+
+func @invalid_custom_call(%arg0:memref<1xf32>, %arg1:memref<1xf32>) -> () {
+  // expected-error @+1 {{number of entries in the mapping for results (1) should match the number of results for the operation (2)}}
+  "lmhlo.custom_call"(%arg0, %arg0, %arg1, %arg1) {
+    backend_config = "",
+    call_target_name = "foo",
+    has_side_effects = false,
+    operand_segment_sizes = dense<2> : vector<2xi32>,
+    target_arg_mapping = {
+      num_args = 4 : i64,
+      num_results = 3 : i64,
+      args_to_target_args = [0, 3],
+      results_to_target_results = [1]
+    }
+  } : (memref<1xf32>, memref<1xf32>, memref<1xf32>, memref<1xf32>) -> ()
+  return
+}
+
+// -----
+
+func @invalid_custom_call(%arg0:memref<1xf32>, %arg1:memref<1xf32>) -> () {
+  // expected-error @+1 {{entry 0 cannot appear more than once in the mapping for args}}
+  "lmhlo.custom_call"(%arg0, %arg0, %arg1, %arg1) {
+    backend_config = "",
+    call_target_name = "foo",
+    has_side_effects = false,
+    operand_segment_sizes = dense<2> : vector<2xi32>,
+    target_arg_mapping = {
+      num_args = 4 : i64,
+      num_results = 3 : i64,
+      args_to_target_args = [0, 0],
+      results_to_target_results = [1, 2]
+    }
+  } : (memref<1xf32>, memref<1xf32>, memref<1xf32>, memref<1xf32>) -> ()
+  return
+}
+
+// -----
+
+func @invalid_custom_call(%arg0:memref<1xf32>, %arg1:memref<1xf32>) -> () {
+  // expected-error @+1 {{entry 1 cannot appear more than once in the mapping for results}}
+  "lmhlo.custom_call"(%arg0, %arg0, %arg1, %arg1) {
+    backend_config = "",
+    call_target_name = "foo",
+    has_side_effects = false,
+    operand_segment_sizes = dense<2> : vector<2xi32>,
+    target_arg_mapping = {
+      num_args = 4 : i64,
+      num_results = 3 : i64,
+      args_to_target_args = [0, 1],
+      results_to_target_results = [1, 1]
+    }
+  } : (memref<1xf32>, memref<1xf32>, memref<1xf32>, memref<1xf32>) -> ()
+  return
+}
+
+// -----
+
+func @invalid_custom_call(%arg0:memref<1xf32>, %arg1:memref<1xf32>) -> () {
+  // expected-error @+1 {{entries in mapping for args must be >= 0 and less than target's number of args (4)}}
+  "lmhlo.custom_call"(%arg0, %arg0, %arg1, %arg1) {
+    backend_config = "",
+    call_target_name = "foo",
+    has_side_effects = false,
+    operand_segment_sizes = dense<2> : vector<2xi32>,
+    target_arg_mapping = {
+      num_args = 4 : i64,
+      num_results = 3 : i64,
+      args_to_target_args = [0, 6],
+      results_to_target_results = [1, 2]
+    }
+  } : (memref<1xf32>, memref<1xf32>, memref<1xf32>, memref<1xf32>) -> ()
+  return
+}
+
+// -----
+
+func @invalid_custom_call(%arg0:memref<1xf32>, %arg1:memref<1xf32>) -> () {
+  // expected-error @+1 {{entries in mapping for results must be >= 0 and less than target's number of results (3)}}
+  "lmhlo.custom_call"(%arg0, %arg0, %arg1, %arg1) {
+    backend_config = "",
+    call_target_name = "foo",
+    has_side_effects = false,
+    operand_segment_sizes = dense<2> : vector<2xi32>,
+    target_arg_mapping = {
+      num_args = 4 : i64,
+      num_results = 3 : i64,
+      args_to_target_args = [0, 1],
+      results_to_target_results = [1, 3]
+    }
+  } : (memref<1xf32>, memref<1xf32>, memref<1xf32>, memref<1xf32>) -> ()
   return
 }

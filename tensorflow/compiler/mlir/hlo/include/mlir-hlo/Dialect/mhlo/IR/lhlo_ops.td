@@ -37,12 +37,9 @@ include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ViewLikeInterface.td"
+include "mlir-hlo/Dialect/mhlo/IR/lhlo_dialect.td"
 include "mlir-hlo/Dialect/mhlo/IR/lhlo_ops_base.td"
-
-def LHLO_Dialect : Dialect {
-  let name = "lmhlo";
-  let cppNamespace = "::mlir::lmhlo";
-}
+include "mlir-hlo/Dialect/mhlo/IR/lhlo_ops_structs.td"
 
 //===----------------------------------------------------------------------===//
 // LMHLO nullary op definitions.
@@ -274,8 +271,10 @@ def LHLO_CustomCallOp : LHLO_Op<"custom_call", [AttrSizedOperandSegments]>,
     Arg<Variadic<LHLO_Buffer>, "", [MemWrite]>:$output,
     StrAttr:$call_target_name,
     DefaultValuedAttr<BoolAttr, "false">:$has_side_effect,
-    DefaultValuedAttr<StrAttr, "">:$backend_config
+    DefaultValuedAttr<StrAttr, "">:$backend_config,
+    OptionalAttr<CustomCallTargetArgMapping>:$target_arg_mapping
   );
+  let verifier = [{ return Verify(*this); }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -585,6 +584,7 @@ def LHLO_CollectivePermuteOp: LHLO_Op<"collective_permute", [SameTypeOperands]>,
     I64ElementsAttr:$source_target_pairs,
     OptionalAttr<ChannelHandle>:$channel_id
   );
+  let verifier = [{ return Verify(*this); }];
 }
 
 def LHLO_FftOp: LHLO_Op<"fft", []>, BASE_HLO_FftOp {
@@ -692,7 +692,7 @@ def FusionOp : LHLO_Op<"fusion", [SingleBlockImplicitTerminator<"TerminatorOp">]
 
   let skipDefaultBuilders = 1;
   let builders = [
-     OpBuilderDAG<(ins CArg<"ArrayRef<NamedAttribute>", "{}">:$attributes)>
+     OpBuilder<(ins CArg<"ArrayRef<NamedAttribute>", "{}">:$attributes)>
   ];
 
   let extraClassDeclaration = [{
@@ -741,7 +741,7 @@ def TerminatorOp :
     Terminator operation for the LHLO dialect.
   }];
   let builders = [
-    OpBuilderDAG<(ins "ValueRange":$operands),
+    OpBuilder<(ins "ValueRange":$operands),
     [{ build($_builder, $_state, llvm::None, operands, llvm::None); }]>];
 }
 

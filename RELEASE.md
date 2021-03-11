@@ -30,13 +30,20 @@
         for synchronous training workloads where example sizes vary. With strict
         round robin reads, users can guarantee that consumers get similar-sized
         examples in the same step.
-    *   tf.data service supports custom data transfer protocols (other than
-        gRPC).
+    *   tf.data service now supports optional compression. Previously data would
+        always be compressed, but now you can disable compression by passing
+        `compression=None` to `tf.data.experimental.service.distribute(...)`.
     *   `tf.data.Dataset.batch()` now supports `num_parallel_calls` and
         `deterministic` arguments. `num_parallel_calls` is used to indicate that
         multiple input batches should be computed in parallel. With
         `num_parallel_calls` set, `deterministic` is used to indicate that
         outputs can be obtained in the non-deterministic order.
+    *   Options returned by `tf.data.Dataset.options()` are no longer mutable.
+* `tf.lite`
+    *   Enabled the new MLIR-based quantization backend by default
+        *   The new backend is used for 8 bits full integer post-training quantization
+        *   The new backend removes the redundant rescales and fixes some bugs (shared weight/bias, extremely small scales, etc)
+        *   Set `experimental_new_quantizer` in tf.lite.TFLiteConverter to False to disable this change
 
 ## Bug Fixes and Other Changes
 
@@ -64,9 +71,16 @@
     *   Add `.element_spec` property to `tf.data.DatasetSpec` to access the
         inner spec. This can be used to extract the structure of nested
         datasets.
+    *   Add `tf.data.experimental.AutoShardingPolicy.HINT` which can be used
+        to provide hints to tf.distribute-based auto-sharding as to where in
+        the input pipeline to insert sharding transformations.
 *   XLA compilation:
     *   `tf.function(experimental_compile=True)` has become a stable API,
         renamed `tf.function(jit_compile=True)`.
+
+*   `tf.distribute`:
+    *   Rename `experimental_prefetch_to_device` in `tf.distribute.InputOptions`
+        to `experimental_fetch_to_device` to better reflect the purpose.
 
 *   `tf.lite`:
     *   class `tflite::Subgraph`:
@@ -105,6 +119,16 @@
     *  Add nominal support for unsigned 32-bit integer tensor types. Note that
        very few TFLite kernels support this type natively, so its use in mobile
        ML authoring is generally discouraged.
+    *  Add support for static hash tables through
+         `TFLiteConverter.from_saved_model`.
+    *  Quantized x86 execution defaults to Ruy GEMM library for platforms with
+       AVX support.
+    *  Deprecate `tf.compat.v1.lite.experimental.get_potentially_supported_ops`.
+       Use `tf.lite.TFLiteConverter` directly to check whether a model is
+       convertible.
+    * Add support to select one of three different built-in op resolvers to be
+      used in Python Interpreter API.
+
 *   TF Core:
     *   Corrected higher-order gradients of control flow constructs (`tf.cond`,
         `tf.while_loop`, and compositions like `tf.foldl`) computed with
@@ -115,6 +139,10 @@
       `tf.config.experimental.get_memory_usage` in favor of this new function.
     *   Extended `tf.config.experimental.enable_tensor_float_32_execution` to
         control Tensor-Float-32 evaluation in RNNs.
+    *   Added a 'experimental_payloads' field to tf.errors.OpError and
+        its subclasses to support more detailed error reporting.
+        This is inspired from Abseil Status payloads:
+        https://github.com/abseil/abseil-cpp/blob/master/absl/status/status.h
 
 *   `tf.summary`:
   *   New `tf.summary.graph` allows manual write of TensorFlow graph
@@ -136,7 +164,11 @@
         `max_batch_size`. Previously, we issued a warning when the value of
         `rewriter_config_template` is not None. We issued an error when the
         value of `is_dynamic_op` is not True. We didn't use the value for
-        `max_batch_size` for building TensorRT engines.
+        `max_batch_size` for building TensorRT engines. Add parameters
+         `use_dynamic_shape` to enable dynamic shape support. The default is to
+         disable dynamic shape support. Add `dynamic_shape_profile_strategy`
+         for selecting a dynamic shape profile strategy. The default is profile
+         strategy is `Range`.
     *   Issue a warning when function get_tensorrt_rewriter_config is used.
 
 *   TF XLA

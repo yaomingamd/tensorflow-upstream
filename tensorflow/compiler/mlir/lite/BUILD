@@ -259,6 +259,7 @@ cc_library(
         "//tensorflow/compiler/mlir/tensorflow",
         "//tensorflow/compiler/mlir/tensorflow:tensorflow_ops",
         "//tensorflow/compiler/mlir/tensorflow:tensorflow_types",
+        "//tensorflow/core:framework",
         "//tensorflow/lite/schema:schema_fbs",
         "//third_party/eigen3",
         "@llvm-project//llvm:Support",
@@ -452,6 +453,7 @@ cc_library(
         "transforms/generated_prepare_tf.inc",
         "transforms/initialize_variables.cc",
         "transforms/insert_call_once_op.cc",
+        "transforms/legalize_hashtables.cc",
         "transforms/legalize_tf.cc",
         "transforms/legalize_tf_while.cc",
         "transforms/legalize_variables.cc",
@@ -526,7 +528,7 @@ cc_library(
         "transforms/passes.h",
     ],
     deps = [
-        "convert_type",
+        ":convert_type",
         ":tensorflow_lite",
         ":validators",
         "//tensorflow/compiler/mlir/lite/quantization:quantization_lib",
@@ -626,6 +628,7 @@ tf_native_cc_binary(
     srcs = [
         "converter_gen.cc",
     ],
+    compatible_with = get_compatible_with_cloud(),
     deps = [
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TableGen",
@@ -665,6 +668,7 @@ cc_library(
         "flatbuffer_operator.h",
     ],
     deps = [
+        ":convert_type",
         ":tensorflow_lite",
         "//tensorflow/compiler/mlir/tensorflow:tensorflow_types",
         "//tensorflow/compiler/xla:statusor",
@@ -974,6 +978,7 @@ cc_library(
         "//tensorflow/compiler/mlir/tensorflow:translate_lib",
         "//tensorflow/core:core_cpu_base",
         "//tensorflow/lite/toco:model_flags_proto_cc",
+        "//tensorflow/lite/toco:toco_flags_proto_cc",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:AllPassesAndDialectsNoRegistration",
         "@llvm-project//mlir:IR",
