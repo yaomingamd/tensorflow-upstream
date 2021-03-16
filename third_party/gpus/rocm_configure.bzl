@@ -732,23 +732,41 @@ def _create_local_rocm_repository(repository_ctx):
         ),
         make_copy_dir_rule(
             repository_ctx,
-            name = "hiprand-include",
-            src_dir = rocm_toolkit_path + "/hiprand/include",
-            out_dir = "rocm/include/hiprand",
-        ),
-        make_copy_dir_rule(
-            repository_ctx,
-            name = "rocrand-include",
-            src_dir = rocm_toolkit_path + "/rocrand/include",
-            out_dir = "rocm/include/rocrand",
-        ),
-        make_copy_dir_rule(
-            repository_ctx,
             name = "hipsparse-include",
             src_dir = rocm_toolkit_path + "/hipsparse/include",
             out_dir = "rocm/include/hipsparse",
         ),
     ]
+
+    # explicitly copy (into the local_config_rocm repo) the $ROCM_PATH/hiprand/include and
+    # $ROCM_PATH/rocrand/include dirs, only once the softlink to them in $ROCM_PATH/include
+    # dir has been removed. This removal will happen in a near-future ROCm release.
+    hiprand_include = ""
+    hiprand_include_softlink = repository_ctx.path(rocm_config.rocm_toolkit_path + "/include/hiprand")
+    if not hiprand_include_softlink.exists:
+        hiprand_include = '":hiprand-include",\n'
+        copy_rules.append(
+            make_copy_dir_rule(
+                repository_ctx,
+                name = "hiprand-include",
+                src_dir = rocm_toolkit_path + "/hiprand/include",
+                out_dir = "rocm/include/hiprand",
+            )
+        )
+
+    rocrand_include = ""
+    rocrand_include_softlink = repository_ctx.path(rocm_config.rocm_toolkit_path + "/include/rocrand")
+    if not rocrand_include_softlink.exists:
+        rocrand_include = '":rocrand-include",\n'
+        copy_rules.append(
+            make_copy_dir_rule(
+                repository_ctx,
+                name = "rocrand-include",
+                src_dir = rocm_toolkit_path + "/rocrand/include",
+                out_dir = "rocm/include/rocrand",
+            )
+        )
+
 
     rocm_libs = _find_libs(repository_ctx, rocm_config)
     rocm_lib_srcs = []
@@ -791,8 +809,8 @@ def _create_local_rocm_repository(repository_ctx):
                                 '":rocblas-include",\n' +
                                 '":miopen-include",\n' +
                                 '":rccl-include",\n' +
-                                '":hiprand-include",\n' +
-                                '":rocrand-include",\n'),
+                                hiprand_include +
+                                rocrand_include),
         },
     )
 
