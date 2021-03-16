@@ -49,5 +49,6 @@ bazel test \
       --test_output=errors \
       --test_sharding_strategy=disabled \
       --test_size_filters=small,medium,large \
+      --test_env=TF_PER_DEVICE_MEMORY_LIMIT_MB=2048 \
       -- \
       //tensorflow/core/nccl:nccl_manager_test
