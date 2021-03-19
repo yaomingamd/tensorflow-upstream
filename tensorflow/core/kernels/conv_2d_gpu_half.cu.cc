@@ -37,6 +37,13 @@ template struct ReverseTransformFilter<Eigen::GpuDevice, Eigen::half, 4>;
 template struct NHWCToNCHW<Eigen::GpuDevice, Eigen::half, 4>;
 template struct NCHWToNHWC<Eigen::GpuDevice, Eigen::half, 4>;
 template struct PadInput<Eigen::GpuDevice, Eigen::half, int, 4>;
+
+template struct TransformFilter<Eigen::GpuDevice, bfloat16, int, 4>;
+template struct ReverseTransformFilter<Eigen::GpuDevice, bfloat16, 4>;
+template struct NHWCToNCHW<Eigen::GpuDevice, bfloat16, 4>;
+template struct NCHWToNHWC<Eigen::GpuDevice, bfloat16, 4>;
+template struct PadInput<Eigen::GpuDevice, bfloat16, int, 4>;
+
 template struct ConvertToBFloat16<Eigen::GpuDevice, Eigen::half, 4>;
 template struct ConvertFromBFloat16<Eigen::GpuDevice, Eigen::half, 4>;
 
@@ -46,6 +53,12 @@ template struct ReverseTransformFilter<Eigen::GpuDevice, Eigen::half, 5>;
 template struct NHWCToNCHW<Eigen::GpuDevice, Eigen::half, 5>;
 template struct NCHWToNHWC<Eigen::GpuDevice, Eigen::half, 5>;
 template struct PadInput<Eigen::GpuDevice, Eigen::half, int, 5>;
+
+template struct TransformFilter<Eigen::GpuDevice, bfloat16, int, 5>;
+template struct ReverseTransformFilter<Eigen::GpuDevice, bfloat16, 5>;
+template struct NHWCToNCHW<Eigen::GpuDevice, bfloat16, 5>;
+template struct NCHWToNHWC<Eigen::GpuDevice, bfloat16, 5>;
+template struct PadInput<Eigen::GpuDevice, bfloat16, int, 5>;
 
 }  // namespace functor
 }  // namespace tensorflow

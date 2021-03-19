@@ -646,6 +646,13 @@ class Stream {
 
   Stream &ThenPoolForward(const dnn::PoolingDescriptor &pooling_dimensions,
                           const dnn::BatchDescriptor &input_dimensions,
+                          const DeviceMemory<Eigen::bfloat16> &input_data,
+                          const dnn::BatchDescriptor &output_dimensions,
+                          DeviceMemory<Eigen::bfloat16> *output_data,
+                          ScratchAllocator *workspace_allocator = nullptr);
+
+  Stream &ThenPoolForward(const dnn::PoolingDescriptor &pooling_dimensions,
+                          const dnn::BatchDescriptor &input_dimensions,
                           const DeviceMemory<int8> &input_data,
                           const dnn::BatchDescriptor &output_dimensions,
                           DeviceMemory<int8> *output_data,
@@ -676,6 +683,15 @@ class Stream {
                            const DeviceMemory<Eigen::half> &output_data,
                            const DeviceMemory<Eigen::half> &input_diff_data,
                            DeviceMemory<Eigen::half> *output_diff_data,
+                           ScratchAllocator *workspace_allocator = nullptr);
+
+  Stream &ThenPoolBackward(const dnn::PoolingDescriptor &pooling_dimensions,
+                           const dnn::BatchDescriptor &input_dimensions,
+                           const DeviceMemory<Eigen::bfloat16> &input_data,
+                           const dnn::BatchDescriptor &output_dimensions,
+                           const DeviceMemory<Eigen::bfloat16> &output_data,
+                           const DeviceMemory<Eigen::bfloat16> &input_diff_data,
+                           DeviceMemory<Eigen::bfloat16> *output_diff_data,
                            ScratchAllocator *workspace_allocator = nullptr);
 
   Stream &ThenNormalizeWithDimensions(

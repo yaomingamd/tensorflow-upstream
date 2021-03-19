@@ -292,15 +292,15 @@ __global__ void SwapDimension1And2InTensor3UsingTiles(
   // One extra line in the inner dimension to avoid share memory bank conflict.
   // This is to mimic the following, but no constructor of T can be invoked.
   //     __shared__ T shared_memory_tile[TileSizeI][TileSizeJ + 1];
-#if GOOGLE_CUDA
+//#if GOOGLE_CUDA
   __shared__ __align__(
       alignof(T)) char shared_mem_raw[TileSizeI * (TileSizeJ + 1) * sizeof(T)];
   typedef T(*SharedMemoryTile)[TileSizeJ + 1];
   SharedMemoryTile shared_memory_tile =
       reinterpret_cast<SharedMemoryTile>(shared_mem_raw);
-#elif TENSORFLOW_USE_ROCM
-  __shared__ T shared_memory_tile[TileSizeI][TileSizeJ + 1];
-#endif
+//#elif TENSORFLOW_USE_ROCM
+//  __shared__ T shared_memory_tile[TileSizeI][TileSizeJ + 1];
+//#endif
 
   int x = threadIdx.x;
 
