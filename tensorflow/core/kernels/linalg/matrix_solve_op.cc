@@ -415,7 +415,6 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
       return;
     }
 
-    // TODO(stevenireeves): Convert to std::make_unique when available.
     std::unique_ptr<ROCmSolver> solver(new ROCmSolver(context));
 
     // Make a copy of the input for the factorization step, or, if adjoint_ is
@@ -455,10 +454,10 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
                                        TensorShape{batch_size, n}, &pivots),
         done);
     auto pivots_mat = pivots.template matrix<int>();
-
+    int info; 
     // 1. Compute the partially pivoted LU factorization(s) of the
     // matrix/matrices.
-    std::vector<DeviceLapackInfo> dev_info;
+//    std::vector<DeviceLapackInfo> dev_info;
     auto input_copy_ptrs = solver->GetScratchSpace<uint8>(
         sizeof(Scalar*) * batch_size, "input_copt_ptrs",
         /* on_host */ true);
@@ -473,23 +472,22 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
       for (int batch = 0; batch < batch_size; ++batch) {
         input_copy_ptrs_base[batch] = &input_copy_reshaped(batch, 0, 0);
       }
-      dev_info.push_back(
-          solver->GetDeviceLapackInfo(batch_size, "getrf_batched"));
+/*      dev_info.push_back(
+          solver->GetDeviceLapackInfo(batch_size, "getrf_batched")); */
       OP_REQUIRES_OK_ASYNC(
           context,
-          solver->getrf_batched(solver->rocblas_handle_, 
-                                n, n, input_copy_ptrs_base, n, pivots_mat.data(),
-                                n, &dev_info.back(), batch_size),
+          solver->getrf_batched(n, n, input_copy_ptrs_base, n, pivots_mat.data(),
+                                n, &info, batch_size),
           done);
     } else {
       // For small batch sizes or large matrices, we use the non-batched
       // interface from ROCmSolver, which is much faster for large matrices.
-      dev_info.push_back(solver->GetDeviceLapackInfo(batch_size, "getrf"));
+      // dev_info.push_back(solver->GetDeviceLapackInfo(batch_size, "getrf"));
       for (int batch = 0; batch < batch_size; ++batch) {
         OP_REQUIRES_OK_ASYNC(
             context,
-            solver->getrf(solver->rocblas_handle_, n, n, &input_copy_reshaped(batch, 0, 0), n,
-                          &pivots_mat(batch, 0), &dev_info.back()(batch)),
+            solver->getrf(n, n, &input_copy_reshaped(batch, 0, 0), n,
+                          &pivots_mat(batch, 0)),
             done);
       }
     }
@@ -545,8 +543,7 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
       int host_info = 0;
       OP_REQUIRES_OK_ASYNC(
           context,
-          solver->getrs_batched(solver->rocblas_handle_,
-                                adjoint_ ? rocblas_operation_conjugate_transpose
+          solver->getrs_batched(adjoint_ ? rocblas_operation_conjugate_transpose
                                          : rocblas_operation_transpose,
                                 n, nrhs,
                                 input_copy_ptrs_base, n, pivots_mat.data(),
@@ -563,8 +560,7 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
       for (int batch = 0; batch < batch_size; ++batch) {
         OP_REQUIRES_OK_ASYNC(
             context,
-            solver->getrs(solver->rocblas_handle_,
-                          adjoint_ ? rocblas_operation_conjugate_transpose
+            solver->getrs(adjoint_ ? rocblas_operation_conjugate_transpose
                                          : rocblas_operation_transpose,
                           n, nrhs,
                           &input_copy_reshaped(batch, 0, 0), n,

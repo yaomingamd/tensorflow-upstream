@@ -1083,12 +1083,11 @@ class ProgbarLogger(Callback):
       logs.pop('batch', None)
       add_seen = num_steps * batch_size
       self.seen += add_seen
+
     if self.verbose == 1:
       # Only block async when verbose = 1.
       logs = tf_utils.to_numpy_or_python_type(logs)
-      items = list(logs.items())
-      items.sort()
-      self.progbar.update(self.seen, items, finalize=False)
+      self.progbar.update(self.seen, list(logs.items()), finalize=False)
 
   def _finalize_progbar(self, logs, counter):
     logs = tf_utils.to_numpy_or_python_type(logs or {})
@@ -2143,7 +2142,6 @@ class TensorBoard(Callback, version_utils.TensorBoardVersionSelector):
     self.embeddings_freq = embeddings_freq
     self.embeddings_metadata = embeddings_metadata
     self._init_profile_batch(profile_batch)
-    self._epoch = 0
     self._global_train_batch = 0
     self._previous_epoch_iterations = 0
     self._train_accumulated_time = 0
@@ -2417,7 +2415,6 @@ class TensorBoard(Callback, version_utils.TensorBoardVersionSelector):
 
   def on_epoch_begin(self, epoch, logs=None):
     # Keeps track of epoch for profiling.
-    self._epoch = epoch
     if self.write_steps_per_second:
       self._previous_epoch_iterations = self.model.optimizer.iterations.numpy()
       self._train_accumulated_time = 0

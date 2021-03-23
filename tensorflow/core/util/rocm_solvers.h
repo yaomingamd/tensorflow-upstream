@@ -90,11 +90,6 @@ class ROCmSolver {
   ScratchSpace<Scalar> GetScratchSpace(int64 size,
                                        const std::string& debug_info,
                                        bool on_host);
-  // Returns a DeviceLapackInfo that will live for the duration of the
-  // ROCmSolver object.
-  inline DeviceLapackInfo GetDeviceLapackInfo(int64 size,
-                                              const std::string& debug_info);
-
   // ====================================================================
   // Wrappers for ROCSolver start here
   //
@@ -105,31 +100,28 @@ class ROCmSolver {
   // LU factorization.
   // Computes LU factorization with partial pivoting P * A = L * U.
   template <typename Scalar>
-  Status getrf(rocblas_handle handle, int m, int n, Scalar* dev_A, int lda, int* dev_pivots,
-               int* dev_lapack_info) TF_MUST_USE_RESULT;
+  Status 
+  ROCmSolver::getrf(int m, int n, Scalar* dev_A,
+                    int lda, int* dev_pivots);
 
   // Uses LU factorization to solve A * X = B.
   template <typename Scalar>
-  Status getrs(rocblas_handle handle, int n, int nrhs, const Scalar* A,
-               int lda, const int* pivots, Scalar* B, int ldb,
-               int* dev_lapack_info) const TF_MUST_USE_RESULT;
+  Status
+  ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Salar* A,
+                    int lda, const int* dev_pivots, Scalar* B, int ldb);
 
-  // Computes partially pivoted LU factorizations for a batch of small matrices.
-  // Returns Status::OK() if the kernel was launched successfully. See:
   template <typename Scalar>
-  Status getrfBatched(rocblas_handle handle, int n, const Scalar* const host_a_dev_ptrs[], int lda,
-                      int* dev_pivots, DeviceLapackInfo* dev_lapack_info,
-                      int batch_size) TF_MUST_USE_RESULT;
+  Status
+  ROCmSolver::getrf_batched(int m, int n, Salar* dev_A, int lda, int* dev_pivots,
+                          rocblas_stride stride, int* info, const int batch_count);
 
-  // Batched linear solver using LU factorization from getrfBatched.
-  // Notice that lapack_info is returned on the host, as opposed to
-  // most of the other functions that return it on the device. 
   template <typename Scalar>
-  Status getrsBatched(rocblas_handle handle, int n, int nrhs,
-                      const Scalar* const dev_Aarray[], int lda,
-                      const int* devIpiv, const Scalar* const dev_Barray[],
-                      int ldb, int* host_lapack_info,
-                      int batch_size) TF_MUST_USE_RESULT;
+  Status
+  ROCmSolver::getrs_batched(const rocblas_operation trans, int n,
+                            int nrhs, const Salar* A, int lda, int* dev_pivots,
+                            rocblas_stride stride, Scalar* B, const int ldb,
+                            const int batch_count);
+
 
   template <typename Scalar>
   Status Trsm(rocblas_side side, rocblas_fill uplo, rocblas_operation trans,
