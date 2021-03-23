@@ -64,10 +64,8 @@ RUN apt-get update --allow-insecure-repositories && \
     rm -rf /var/lib/apt/lists/*
 
 # Set up paths
-ENV HCC_HOME=${ROCM_PATH}/hcc
 ENV HIP_PATH=${ROCM_PATH}/hip
-ENV PATH=$HCC_HOME/bin:$HIP_PATH/bin:${ROCM_PATH}/opencl/bin:${ROCM_PATH}/bin:$PATH
-ENV HIP_PLATFORM=hcc
+ENV PATH=$HIP_PATH/bin:${ROCM_PATH}/opencl/bin:${ROCM_PATH}/bin:$PATH
 ENV ROCM_TOOLKIT_PATH=${ROCM_PATH}
 ENV TF_CONFIGURE_IOS=0
 ENV TF_NEED_ROCM=1
