@@ -107,18 +107,18 @@ class ROCmSolver {
   // Uses LU factorization to solve A * X = B.
   template <typename Scalar>
   Status
-  ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Salar* A,
+  ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Scalar* A,
                     int lda, const int* dev_pivots, Scalar* B, int ldb);
 
   template <typename Scalar>
   Status
-  ROCmSolver::getrf_batched(int m, int n, Salar* dev_A, int lda, int* dev_pivots,
+  ROCmSolver::getrf_batched(int m, int n, Scalar* dev_A, int lda, int* dev_pivots,
                           rocblas_stride stride, int* info, const int batch_count);
 
   template <typename Scalar>
   Status
   ROCmSolver::getrs_batched(const rocblas_operation trans, int n,
-                            int nrhs, const Salar* A, int lda, int* dev_pivots,
+                            int nrhs, const Scalar* A, int lda, int* dev_pivots,
                             rocblas_stride stride, Scalar* B, const int ldb,
                             const int batch_count);
 
