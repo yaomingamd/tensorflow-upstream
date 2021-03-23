@@ -167,7 +167,7 @@ ROCmSolver::~ROCmSolver() {
 
 template <typename Scalar>
 Status
-ROCmSolver::getrf(int m, int n, Salar* dev_A, int lda, int* dev_pivots)
+ROCmSolver::getrf(int m, int n, Scalar* dev_A, int lda, int* dev_pivots)
 {
     Status status = wrap::rocsolverXgetrf(*rocm_blas_handle_, m, n, dev_A, lda, dev_pivots);
     return status; 
@@ -175,7 +175,7 @@ ROCmSolver::getrf(int m, int n, Salar* dev_A, int lda, int* dev_pivots)
 
 template <typename Scalar>
 Status
-ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Salar* A, 
+ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Scalar* A, 
                   int lda, const int* dev_pivots, Scalar* B, int ldb)
 {
     Status status = wrap::rocsolverXgetrs(*rocm_blas_handle_, trans, n, nrhs,
@@ -185,7 +185,7 @@ ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Salar* A
 
 template <typename Scalar>
 Status
-ROCmSolver::getrf_batched(int m, int n, Salar* dev_A, int lda, int* dev_pivots,
+ROCmSolver::getrf_batched(int m, int n, Scalar* dev_A, int lda, int* dev_pivots,
                           rocblas_stride stride, int* info, const int batch_count)
 {
     Status status = wrap::rocsolverXgetrf_batched(*rocm_blas_handle_, m, n, dev_A, lda, dev_pivots,
@@ -196,7 +196,7 @@ ROCmSolver::getrf_batched(int m, int n, Salar* dev_A, int lda, int* dev_pivots,
 template <typename Scalar>
 Status
 ROCmSolver::getrs_batched(const rocblas_operation trans, int n, 
-                          int nrhs, const Salar* A, int lda, int* dev_pivots,
+                          int nrhs, const Scalar* A, int lda, int* dev_pivots,
                           rocblas_stride stride, Scalar* B, const int ldb,
                           const int batch_count)
 {
