@@ -162,6 +162,50 @@ ROCmSolver::~ROCmSolver() {
   }
 }
 
+//Macro to construct rocsolver method names.
+#define SOLVER_FN(method, solver_prefix) wrap::rocsolver##solver_prefix##method
+
+template <typename Scalar>
+Status
+ROCmSolver::getrf(int m, int n, Salar* dev_A, int lda, int* dev_pivots)
+{
+    Status status = wrap::rocsolverXgetrf(*rocm_blas_handle_, m, n, dev_A, lda, dev_pivots);
+    return status; 
+} 
+
+template <typename Scalar>
+Status
+ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Salar* A, 
+                  int lda, const int* dev_pivots, Scalar* B, int ldb)
+{
+    Status status = wrap::rocsolverXgetrs(*rocm_blas_handle_, trans, n, nrhs,
+                                           A, lda, dev_pivots, B, ldb);
+    return status;
+} 
+
+template <typename Scalar>
+Status
+ROCmSolver::getrf_batched(int m, int n, Salar* dev_A, int lda, int* dev_pivots,
+                          rocblas_stride stride, int* info, const int batch_count)
+{
+    Status status = wrap::rocsolverXgetrf_batched(*rocm_blas_handle_, m, n, dev_A, lda, dev_pivots,
+                                                   stride, info, batch_count);
+    return status;
+} 
+
+template <typename Scalar>
+Status
+ROCmSolver::getrs_batched(const rocblas_operation trans, int n, 
+                          int nrhs, const Salar* A, int lda, int* dev_pivots,
+                          rocblas_stride stride, Scalar* B, const int ldb,
+                          const int batch_count)
+{
+    Status status =  wrap::rocsolverXgetrs_batched(*rocm_blas_handle_, trans,
+                                                    n, nrhs, A, lda, dev_pivots, 
+                                                    stride, B, idb, batch_count); 
+    return status;
+} 
+
 #define TF_RETURN_IF_ROCBLAS_ERROR(expr)                                  \
   do {                                                                    \
     auto status = (expr);                                                 \
