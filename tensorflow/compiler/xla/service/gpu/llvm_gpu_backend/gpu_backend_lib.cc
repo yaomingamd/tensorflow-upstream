@@ -565,7 +565,7 @@ StatusOr<string> CompileToPtx(
 namespace {
 
 // Gets the ROCm-Device-Libs filenames for a particular AMDGPU version.
-static std::vector<string> GetROCDLPaths(int amdgpu_version,
+static std::vector<string> GetROCDLPaths(std::string amdgpu_version,
                                          const string& rocdl_dir_path) {
   // AMDGPU version-neutral bitcodes.
 #if TF_ROCM_VERSION >= 30900
@@ -588,6 +588,9 @@ static std::vector<string> GetROCDLPaths(int amdgpu_version,
   }
 
   // Add AMDGPU version-specific bitcodes.
+  std::vector<std::string> tokens = absl::StrSplit(amdgpu_version, ':');
+  if(tokens.size()>=1 && tokens[0].size()>=3)
+    amdgpu_version=tokens[0].substr(3);
   result.push_back(tensorflow::io::JoinPath(
       rocdl_dir_path,
 #if TF_ROCM_VERSION >= 30900
@@ -773,7 +776,7 @@ StatusOr<std::vector<uint8>> EmitModuleToHsaco(
 }
 
 // Links ROCm-Device-Libs into the given module if the module needs it.
-Status LinkROCDLIfNecessary(llvm::Module* module, int amdgpu_version,
+Status LinkROCDLIfNecessary(llvm::Module* module, std::string amdgpu_version,
                             const string& rocdl_dir_path) {
   if (!CouldNeedDeviceBitcode(*module)) {
     return Status::OK();
@@ -792,7 +795,7 @@ Status AMDGPUTargetModuleLinker(llvm::Module* module, GpuVersion gpu_version,
     return xla::InternalError(
         "Incompatible AMD GCN ISA version was specified.");
   }
-  TF_RETURN_IF_ERROR(LinkROCDLIfNecessary(module, amdgpu_version->first,
+  TF_RETURN_IF_ERROR(LinkROCDLIfNecessary(module, amdgpu_version->second,
                                           device_bitcode_dir_path));
   if (hlo_module_config.debug_options().xla_gpu_ftz()) {
     for (llvm::Function& fn : *module) {
@@ -817,18 +820,24 @@ std::string MapGCNArchNameTokenToFeatureStr(const std::string& token) {
   if (token == "sramecc+") {
     return "+sramecc";
   } else if (token == "sramecc-") {
+#if TF_ROCM_VERSION < 40100
+    return "";
+#else
     return "-sramecc";
+#endif
   } else if (token == "xnack+") {
     return "+xnack";
   } else if (token == "xnack-") {
     return "-xnack";
   }
   return "";
+
 }
-
-std::string GetFeatureStrFromGCNArchName(const std::string& gcn_arch_name) {
+OA
+std::pair<std::string, std::string> GetFeatureStrFromGCNArchName(
+    const std::string& gcn_arch_name) {
   std::string feature_str;
-
+  std::string gfx;
 #if TF_ROCM_VERSION < 30900
   // For ROCm versions older than 3.9, hardcode it to "+code-object-v3"
   // This is simply to preserve how things were...nohing else
@@ -841,6 +850,8 @@ std::string GetFeatureStrFromGCNArchName(const std::string& gcn_arch_name) {
   // feature str, based on the underlying GPU HW to get max performance.
   std::vector<std::string> tokens = absl::StrSplit(gcn_arch_name, ':');
   std::vector<std::string> mapped_tokens;
+  if(tokens.size()>0)
+    gfx=tokens[0];
   for (auto it = tokens.begin(); it != tokens.end(); it++) {
     // Skip the first token, that is the gfxNNN str
     // The rest of the tokens are the feature/targetid strings
@@ -853,7 +864,7 @@ std::string GetFeatureStrFromGCNArchName(const std::string& gcn_arch_name) {
   feature_str = absl::StrJoin(mapped_tokens, ",");
 #endif
 
-  return feature_str;
+  return make_pair(gfx, feature_str);
 }
 
 std::unique_ptr<llvm::TargetMachine> AMDGPUGetTargetMachine(
@@ -862,10 +873,9 @@ std::unique_ptr<llvm::TargetMachine> AMDGPUGetTargetMachine(
   auto amdgpu_version = absl::get_if<std::pair<int, std::string>>(&gpu_version);
   int gcn_arch_value = amdgpu_version->first;
   std::string gcn_arch_name = amdgpu_version->second;
-  std::string feature_str = GetFeatureStrFromGCNArchName(gcn_arch_name);
-  return GetTargetMachine(std::move(target_triple),
-                          absl::StrCat("gfx", gcn_arch_value),
-                          hlo_module_config, feature_str);
+  auto arch = GetFeatureStrFromGCNArchName(gcn_arch_name);
+  return GetTargetMachine(std::move(target_triple), arch.first,
+                          hlo_module_config, arch.second);
 }
 
 void AMDGPUBackendInit(const HloModuleConfig& hlo_module_config) {
