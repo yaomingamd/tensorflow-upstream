@@ -202,7 +202,7 @@ ROCmSolver::getrs_batched(const rocblas_operation trans, int n,
 {
     Status status =  wrap::rocsolverXgetrs_batched(*rocm_blas_handle_, trans,
                                                     n, nrhs, A, lda, dev_pivots, 
-                                                    stride, B, idb, batch_count); 
+                                                    stride, B, ldb, batch_count); 
     return status;
 } 
 
