@@ -35,6 +35,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/stream_executor/blas.h"
+#include "tensorflow/stream_executor/rocm/rocsolver_wrapper.h"
 
 namespace tensorflow {
 
@@ -101,26 +102,26 @@ class ROCmSolver {
   // Computes LU factorization with partial pivoting P * A = L * U.
   template <typename Scalar>
   Status 
-  ROCmSolver::getrf(int m, int n, Scalar* dev_A,
-                    int lda, int* dev_pivots);
+  getrf(int m, int n, Scalar* dev_A,
+        int lda, int* dev_pivots);
 
   // Uses LU factorization to solve A * X = B.
   template <typename Scalar>
   Status
-  ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Scalar* A,
-                    int lda, const int* dev_pivots, Scalar* B, int ldb);
+  getrs(const rocblas_operation trans, int n, int nrhs, const Scalar* A,
+        int lda, const int* dev_pivots, Scalar* B, int ldb);
 
   template <typename Scalar>
   Status
-  ROCmSolver::getrf_batched(int m, int n, Scalar* dev_A, int lda, int* dev_pivots,
-                          rocblas_stride stride, int* info, const int batch_count);
+  getrf_batched(int m, int n, Scalar* dev_A, int lda, int* dev_pivots,
+                rocblas_stride stride, int* info, const int batch_count);
 
   template <typename Scalar>
   Status
-  ROCmSolver::getrs_batched(const rocblas_operation trans, int n,
-                            int nrhs, const Scalar* A, int lda, int* dev_pivots,
-                            rocblas_stride stride, Scalar* B, const int ldb,
-                            const int batch_count);
+  getrs_batched(const rocblas_operation trans, int n,
+                int nrhs, const Scalar* A, int lda, int* dev_pivots,
+                rocblas_stride stride, Scalar* B, const int ldb,
+                const int batch_count);
 
 
   template <typename Scalar>
