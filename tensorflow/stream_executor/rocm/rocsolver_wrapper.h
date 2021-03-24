@@ -23,7 +23,7 @@ limitations under the License.
 #include "rocm/include/rocsolver/rocsolver.h"
 #include "tensorflow/stream_executor/lib/env.h"
 #include "tensorflow/stream_executor/platform/dso_loader.h"
-#include "tensorlfow/stream_executor/platform/port.h"
+#include "tensorflow/stream_executor/platform/port.h"
 
 namespace tensorflow {
 namespace wrap {
