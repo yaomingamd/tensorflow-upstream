@@ -162,50 +162,6 @@ ROCmSolver::~ROCmSolver() {
   }
 }
 
-//Macro to construct rocsolver method names.
-#define SOLVER_FN(method, solver_prefix) wrap::rocsolver##solver_prefix##method
-
-template <typename Scalar>
-Status
-ROCmSolver::getrf(int m, int n, Scalar* dev_A, int lda, int* dev_pivots)
-{
-    Status status = wrap::rocsolverXgetrf(*rocm_blas_handle_, m, n, dev_A, lda, dev_pivots);
-    return status; 
-} 
-
-template <typename Scalar>
-Status
-ROCmSolver::getrs(const rocblas_operation trans, int n, int nrhs, const Scalar* A, 
-                  int lda, const int* dev_pivots, Scalar* B, int ldb)
-{
-    Status status = wrap::rocsolverXgetrs(*rocm_blas_handle_, trans, n, nrhs,
-                                           A, lda, dev_pivots, B, ldb);
-    return status;
-} 
-
-template <typename Scalar>
-Status
-ROCmSolver::getrf_batched(int m, int n, Scalar* dev_A, int lda, int* dev_pivots,
-                          rocblas_stride stride, int* info, const int batch_count)
-{
-    Status status = wrap::rocsolverXgetrf_batched(*rocm_blas_handle_, m, n, dev_A, lda, dev_pivots,
-                                                   stride, info, batch_count);
-    return status;
-} 
-
-template <typename Scalar>
-Status
-ROCmSolver::getrs_batched(const rocblas_operation trans, int n, 
-                          int nrhs, const Scalar* A, int lda, int* dev_pivots,
-                          rocblas_stride stride, Scalar* B, const int ldb,
-                          const int batch_count)
-{
-    Status status =  wrap::rocsolverXgetrs_batched(*rocm_blas_handle_, trans,
-                                                    n, nrhs, A, lda, dev_pivots, 
-                                                    stride, B, ldb, batch_count); 
-    return status;
-} 
-
 #define TF_RETURN_IF_ROCBLAS_ERROR(expr)                                  \
   do {                                                                    \
     auto status = (expr);                                                 \
@@ -223,6 +179,120 @@ ROCmSolver::getrs_batched(const rocblas_operation trans, int n,
 
 #define BLAS_SOLVER_FN(method, type_prefix) \
   wrap::rocblas##_##type_prefix##method
+
+//Macro to construct rocsolver method names.
+#define SOLVER_FN(method, solver_prefix) wrap::rocsolver##solver_prefix##method
+
+template <typename Scalar, typename SolverFnT>
+static inline Status GetrfImpl(SolverFnT solver, OpKernelContext* context,
+                               rocblas_handle rocsolver_handle, 
+                               int m, int n, Scalar* A, int lda,
+                               int* dev_pivots){
+  mutex_lock lock(handle_map_mutex);
+  using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
+  TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, m, n, 
+                                    reinterpret_cast<ROCmScalar*> A,
+                                    lda, dev_pivots));
+  return Status::OK(); 
+    
+} 
+
+#define GETRF_INSTANCE(Scalar, type_prefix)                     \
+  template <>                                                   \
+  Status ROCmSolver::getrf<Scalar>(int m, int n, Scalar* dev_A, \
+                                   int lda, int* dev_pivots) {  \
+    return GetrfImpl(SOLVER_FN(getrf, type_prefix), context_,   \
+                     *rocm_blas_handle_, m, n, dev_A, lda,      \
+                      dev_pivots);                              \
+  }  
+
+TF_CALL_LAPACK_TYPES(GETRF_INSTANCE);
+
+template <typename Scalar, typename SolverFnT>
+static inline Status GetrsImpl(SolverFnT solver, OpKernelContext* context, 
+                               rocblas_handle rocsolver_handle, 
+                               const rocblas_operation trans, int n, 
+                               int nrhs, const Scalar* A, int lda, 
+                               const int* dev_pivots, Scalar* B, int ldb)
+{
+  mutex_lock lock(handle_map_mutex);
+  using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
+  TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, trans, n, nrhs,
+                                    reinterpret_cast<ROCmScalar*> A, lda, 
+                                    dev_pivots, reinterpret_cast<ROCmScalar*> B,
+                                    ldb));
+  return Status::OK(); 
+}
+
+#define GETRS_INSTANCE(Scalar, type_prefix)                           \
+  template <>                                                         \
+  Status ROCmSolver::getrs<Scalar>(rocblas_operation trans,           \
+                                   int n, int nrhs, const Scalar* A,  \
+                                   int lda, const int* dev_pivots,    \
+                                   Scalar* B, int ldb) const {        \
+    return GetrsImpl(SOLVER_FN(getrs, type_prefix), context_,         \
+                     *rocm_blas_handle_, n, nrhs, A, lda, dev_pivots, \
+                     B, ldb);                                         \
+  }
+
+TF_CALL_LAPACK_TYPES(GETRS_INSTANCE); 
+
+
+template <typename Scalar, typename SolverFnT>
+static inline Status GetrfBatchedImpl(SolverFnT solver, OpKernelContext* context,
+                                      rocblas_handle rocsolver_handle,
+                                      int m, int n, Scalar* A, int lda, 
+                                      int* dev_pivots, rocblas_stride stride, 
+                                      int* info, const int batch_size)
+{
+  mutex_lock lock(handle_map_mutex);
+  using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
+  TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, m, n, A, lda, 
+                                    dev_pivots, stride, info, batch_size));
+  return Status::OK();
+} 
+
+#define GETRF_BATCHED_INSTANCE(Scalar, type_prefix)                          \
+  template<>                                                                 \
+  Status ROCmSolver::getrf_batched(int m, int n, Scalar* A, int lda,         \
+                                   int* dev_pivots, rocblas_stride stride,   \
+                                   int* info, const int batch_size) {        \
+    return GetrfBatchedImpl(SOLVER_FN(getrf_batched, type_prefix), context_, \
+                            *rocm_blas_handle_, m, n, A, lda, stride, info,  \
+                            batch_size);                                     \
+  }
+
+TF_CALL_LAPACK_TYPES(GETRF_BATCHED_INSTANCE); 
+
+template <typename Scalar, typename SolverFnT>
+static inline Status GetrsBatchedImpl(SolverFnt sover, OpKernelContext* context, 
+                                      rocblas_handle rocsolver_handle, 
+                                      const rocblas_operation trans, int n,
+                                      int nrhs, const Scalar* A, int lda,
+                                      int* dev_pivots,  
+                                      rocblas_stride stride, Scalar* B,
+                                      const int ldb, const int batch_size) {
+  mutex_lock lock(handle_map_mutex);
+  using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
+  TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, trans, n, nrhs, A, 
+                                    lda, dev_pivots, stride, B, ldb, batch_size));
+  return Status::OK(); 
+}
+
+#define GETRS_BATCHED_INSTANCE(Scalar, type_prefix)                             \
+  template <>                                                                   \
+  Status ROCmSolver::getrs_batched(const rocblas_operation trans, int n,        \
+                                   int nrhs, const Scalar* A, int lda,          \
+                                   int* dev_pivots, rocblas_stride stride,      \
+                                   Scalar* B, const int ldb,                    \
+                                   const int batch_size) {                      \
+  return GetrsBatchedImpl(SOLVER_FN(getrs_batched, type_prefix), context_,      \
+                                    *rocm_blas_handle_, trans, n, nrhs, A, lda, \
+                                    dev_pivots, stride, B, ldb, batch_size);    \
+  }
+
+TF_CALL_LAPACK_TYPES(GETRS_BATCHED_INSTANCE);
+ 
 
 // Allocates a temporary tensor. The ROCmSolver object maintains a
 // TensorReference to the underlying Tensor to prevent it from being deallocated
