@@ -191,8 +191,8 @@ static inline Status GetrfImpl(SolverFnT solver, OpKernelContext* context,
   mutex_lock lock(handle_map_mutex);
   using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
   TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, m, n, 
-                                    reinterpret_cast<ROCmScalar*> A,
-                                    lda, dev_pivots));
+                                    reinterpret_cast<ROCmScalar*> (A),
+                                    lda, dev_pivots)));
   return Status::OK(); 
     
 } 
@@ -218,8 +218,8 @@ static inline Status GetrsImpl(SolverFnT solver, OpKernelContext* context,
   mutex_lock lock(handle_map_mutex);
   using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
   TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, trans, n, nrhs,
-                                    reinterpret_cast<ROCmScalar*> A, lda, 
-                                    dev_pivots, reinterpret_cast<ROCmScalar*> B,
+                                    reinterpret_cast<ROCmScalar*> (A), lda, 
+                                    dev_pivots, reinterpret_cast<ROCmScalar*> (B),
                                     ldb));
   return Status::OK(); 
 }
