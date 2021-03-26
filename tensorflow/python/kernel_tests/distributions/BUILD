@@ -62,6 +62,7 @@ cuda_py_test(
     srcs = ["beta_test.py"],
     tags = [
         "nomac",  # b/191763315
+        "no_rocm",  # ROCm 3.9 regression
         "notsan",  # b/173653918
     ],
     xla_tags = [
