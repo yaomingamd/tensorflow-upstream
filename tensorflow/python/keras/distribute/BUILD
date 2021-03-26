@@ -272,6 +272,7 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # times out
+        "no_rocm",
         "notsan",  # TODO(b/170954243)
         "no_rocm", # flaky/timeout with ROCm 4.1
     ],
@@ -375,7 +376,6 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # TODO(b/182391774)
-        "no_oss",  # TODO(b/191770103)
         "no_rocm",  # times out on ROCm
         "no_windows_gpu",
         "noguitar",  # TODO(b/172354344)
@@ -492,7 +492,7 @@ distribute_py_test(
     shard_count = 16,
     tags = [
         "multi_and_single_gpu",
-        "no_rocm", # times out on ROCm
+        "no_rocm",  # times out on ROCm
         "no_windows_gpu",
         "noasan",  # TODO(b/337374867) fails with -fsanitize=null
         "notsan",
@@ -543,7 +543,7 @@ distribute_py_test(
 
 distribute_py_test(
     name = "keras_rnn_model_correctness_test",
-    size = "large",
+    size = "medium",
     srcs = ["keras_rnn_model_correctness_test.py"],
     full_precision = True,
     main = "keras_rnn_model_correctness_test.py",
@@ -612,6 +612,7 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # times out
+        "no_rocm",
         "no_windows_gpu",
         "notsan",
     ],
