@@ -207,7 +207,7 @@ cc_library(
         "//tensorflow/stream_executor/platform:dso_loader",
         "@local_config_rocm//rocm:rocm_headers",
     ] + if_static([
-        "@local_config_rocm//rocm:rocfft",
+        "@local_config_rocm//rocm:hipfft",
     ])),
     alwayslink = True,
 )
