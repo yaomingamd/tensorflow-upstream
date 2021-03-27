@@ -210,28 +210,6 @@ cc_library(
 )
 
 cc_library(
-<<<<<<< HEAD
-    name = "thunk_emitter",
-    srcs = ["thunk_emitter.cc"],
-    hdrs = ["thunk_emitter.h"],
-    copts = if_cuda_is_configured(["-DGOOGLE_CUDA=1"]),
-    deps = [
-        ":backend_configs_cc",
-        ":buffer_allocations",
-        ":gpu_constants",
-        ":gpu_executable",
-        ":ir_emission_utils",
-        ":thunk",
-        "//tensorflow/compiler/xla:statusor",
-        "//tensorflow/compiler/xla:types",
-        "//tensorflow/compiler/xla/service:buffer_assignment",
-        "//tensorflow/compiler/xla/service:hlo_casting_utils",
-    ],
-)
-
-cc_library(
-=======
->>>>>>> 6af429790a6cf791d53a91d9fbf8a5a4b97da94b
     name = "gpu_device_info",
     hdrs = ["gpu_device_info.h"],
 )

@@ -13,10 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-<<<<<<< HEAD
-=======
 // The kernel as written below does not build for ROCm.
->>>>>>> 6af429790a6cf791d53a91d9fbf8a5a4b97da94b
 #if GOOGLE_CUDA
 
 #define EIGEN_USE_GPU
