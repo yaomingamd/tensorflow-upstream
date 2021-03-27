@@ -210,6 +210,7 @@ cc_library(
 )
 
 cc_library(
+<<<<<<< HEAD
     name = "thunk_emitter",
     srcs = ["thunk_emitter.cc"],
     hdrs = ["thunk_emitter.h"],
@@ -229,6 +230,8 @@ cc_library(
 )
 
 cc_library(
+=======
+>>>>>>> 6af429790a6cf791d53a91d9fbf8a5a4b97da94b
     name = "gpu_device_info",
     hdrs = ["gpu_device_info.h"],
 )
@@ -262,7 +265,6 @@ cc_library(
         ":parallel_loop_emitter",
         ":target_util",
         ":thunk",
-        ":thunk_emitter",
         "//tensorflow/compiler/mlir:name_utils",
         "//tensorflow/compiler/mlir/hlo",
         "//tensorflow/compiler/mlir/hlo:lhlo",
@@ -1315,8 +1317,6 @@ cc_library(
         "//tensorflow/compiler/xla/service:hlo_cse",
         "//tensorflow/compiler/xla/service:hlo_dataflow_analysis",
         "//tensorflow/compiler/xla/service:hlo_dce",
-        "//tensorflow/compiler/xla/service:hlo_domain_isolator",
-        "//tensorflow/compiler/xla/service:hlo_domain_remover",
         "//tensorflow/compiler/xla/service:hlo_element_type_converter",
         "//tensorflow/compiler/xla/service:hlo_pass",
         "//tensorflow/compiler/xla/service:hlo_pass_pipeline",

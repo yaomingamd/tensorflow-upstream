@@ -38,6 +38,7 @@ load(
 )
 load(
     "//third_party/mkl_dnn:build_defs.bzl",
+    "if_mkldnn_aarch64_acl",
     "if_mkldnn_openmp",
 )
 load("@bazel_skylib//lib:new_sets.bzl", "sets")
@@ -362,10 +363,19 @@ def tf_copts(
         if_libtpu(["-DLIBTPU_ON_GCE"], []) +
         if_xla_available(["-DTENSORFLOW_USE_XLA=1"]) +
         if_tensorrt(["-DGOOGLE_TENSORRT=1"]) +
+<<<<<<< HEAD
         if_rocm(["-DTENSORFLOW_USE_ROCM=1"]) +
         if_mkl(["-DINTEL_MKL=1"]) +
         if_mkldnn_openmp(["-DENABLE_ONEDNN_OPENMP"]) +
+=======
+        # Compile in oneDNN based ops when building for x86 platforms
+        if_mkl(["-DINTEL_MKL"]) +
+        # Enable additional ops (e.g., ops with non-NHWC data layout) and
+        # optimizations for Intel builds using oneDNN if configured
+>>>>>>> 6af429790a6cf791d53a91d9fbf8a5a4b97da94b
         if_enable_mkl(["-DENABLE_MKL"]) +
+        if_mkldnn_openmp(["-DENABLE_ONEDNN_OPENMP"]) +
+        if_mkldnn_aarch64_acl(["-DENABLE_MKL", "-DENABLE_ONEDNN_OPENMP"]) +
         if_android_arm(["-mfpu=neon"]) +
         if_linux_x86_64(["-msse3"]) +
         if_ios_x86_64(["-msse4.1"]) +
@@ -1142,7 +1152,7 @@ def tf_gpu_cc_test(
         srcs = srcs,
         args = args,
         data = data,
-        extra_copts = extra_copts,
+        extra_copts = extra_copts + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"]),
         kernels = kernels,
         linkopts = linkopts,
         linkstatic = linkstatic,
@@ -1155,7 +1165,7 @@ def tf_gpu_cc_test(
         srcs = srcs,
         args = args,
         data = data,
-        extra_copts = extra_copts,
+        extra_copts = extra_copts + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"]),
         kernels = kernels,
         linkopts = linkopts,
         linkstatic = select({
@@ -1449,7 +1459,7 @@ def tf_gpu_library(deps = None, cuda_deps = None, copts = tf_copts(), **kwargs):
         ]) + if_rocm_is_configured([
             "@local_config_rocm//rocm:rocm_headers",
         ]),
-        copts = (copts + if_cuda(["-DGOOGLE_CUDA=1"]) + if_rocm(["-DTENSORFLOW_USE_ROCM=1"]) + if_xla_available(["-DTENSORFLOW_USE_XLA=1"]) + if_mkl(["-DINTEL_MKL=1"]) + if_enable_mkl(["-DENABLE_MKL"]) + if_tensorrt(["-DGOOGLE_TENSORRT=1"])),
+        copts = (copts + if_cuda(["-DGOOGLE_CUDA=1", "-DNV_CUDNN_DISABLE_EXCEPTION"]) + if_rocm(["-DTENSORFLOW_USE_ROCM=1"]) + if_xla_available(["-DTENSORFLOW_USE_XLA=1"]) + if_mkl(["-DINTEL_MKL=1"]) + if_enable_mkl(["-DENABLE_MKL"]) + if_tensorrt(["-DGOOGLE_TENSORRT=1"])),
         **kwargs
     )
 
@@ -1502,7 +1512,7 @@ def tf_kernel_library(
     if not gpu_copts:
         gpu_copts = []
     textual_hdrs = []
-    copts = copts + tf_copts(is_external = is_external)
+    copts = copts + tf_copts(is_external = is_external) + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"])
 
     # Override EIGEN_STRONG_INLINE to inline when
     # --define=override_eigen_strong_inline=true to avoid long compiling time.

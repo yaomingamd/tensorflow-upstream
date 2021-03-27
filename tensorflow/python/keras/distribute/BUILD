@@ -853,12 +853,13 @@ distribute_py_test(
     ],
 )
 
-tf_py_test(
+distribute_py_test(
     name = "parameter_server_training_test",
     srcs = ["parameter_server_training_test.py"],
     python_version = "PY3",
     shard_count = 1,
     tags = [
+        "multi_and_single_gpu",
         "no_tfrt",  # TODO(b/180537361): Reenable TFRT after the issue is resolved.
     ],
     deps = [
@@ -895,7 +896,11 @@ distribute_py_test(
     shard_count = 50,
     tags = [
         "multi_gpu",
+<<<<<<< HEAD
         "no_rocm",
+=======
+        "no_oss",  # TODO(b/183640564): Reenable
+>>>>>>> 6af429790a6cf791d53a91d9fbf8a5a4b97da94b
         "no_tfrt",  # TODO(b/180537361): Reenable TFRT after the issue is resolved.
     ],
     deps = [
