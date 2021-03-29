@@ -192,7 +192,7 @@ static inline Status GetrfImpl(SolverFnT solver, OpKernelContext* context,
   using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
   TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, m, n, 
                                     reinterpret_cast<ROCmScalar*> (A),
-                                    lda, dev_pivots)));
+                                    lda, dev_pivots));
   return Status::OK(); 
     
 } 
