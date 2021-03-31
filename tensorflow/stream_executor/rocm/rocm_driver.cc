@@ -1103,15 +1103,15 @@ GpuDriver::ContextGetSharedMemConfig(GpuContext* context) {
   result = tensorflow::wrap::hipGetDeviceProperties(&props, dev);
   if (result == hipSuccess) {
     std::string gcnArchName = props.gcnArchName;
-    VLOG(1)<<"GCN arch name " << gcnArchName;
+    VLOG(3)<<"GCN arch name " << gcnArchName;
     auto pos = gcnArchName.find(":");
     if(pos!=string::npos)
        gcnArchName = gcnArchName.substr(0, pos);
     pos = gcnArchName.find("gfx");
     if(pos!=string::npos)
        gcnArchName = gcnArchName.substr(pos+3);
-    VLOG(1)<<"GCN arch name (stripped) " << gcnArchName;
-    supported = (gcnArchName=="908" || gcnArchName=="909");
+    VLOG(3)<<"GCN arch name (stripped) " << gcnArchName;
+    supported = (gcnArchName=="908" || gcnArchName=="90a" || gcnArchName=="910");
     return port::Status::OK();
   }
   return port::Status{
@@ -1258,9 +1258,26 @@ static port::StatusOr<T> GetSimpleAttribute(hipDevice_t device,
     LOG(ERROR) << "failed to query device memory info: " << ToString(res);
     return false;
   }
-
-  *free_out = free;
-  *total_out = total;
+  // On gfx90a, we hide 1 GB of GPU memory from TF, to allow for late
+  // allocations by internal ROCm libraries (e.g. rocBLAS alone needs
+  // ~200 MB to put its kernels as of ROCm 4.1)
+  uint64 reserve = 0;
+  hipDeviceProp_t props;
+  hipDevice_t dev;
+  res = hipGetDevice(&dev);
+  if(res == hipSuccess) {
+    res = tensorflow::wrap::hipGetDeviceProperties(&props, dev);
+    if (res == hipSuccess) {
+      std::string gcnArchName = props.gcnArchName;
+      if (gcnArchName.substr(0,6)=="gfx90a" || gcnArchName.substr(0,6)=="gfx910")
+        reserve = 1048576*1024;
+    }
+  }
+  VLOG(1) << "Device memory: " << total/1048576 << " MB total, "
+          << free/1048576 << " MB free, reserving " 
+          << reserve/1048576 << " MB";
+  *free_out = free>=reserve ? free-reserve : 0;
+  *total_out = total-reserve;
   return true;
 }
 
@@ -1272,8 +1289,17 @@ static port::StatusOr<T> GetSimpleAttribute(hipDevice_t device,
     LOG(ERROR) << "failed to query total available memory: " << ToString(res);
     return false;
   }
-
-  *result = value;
+  uint64 reserve = 0;
+  hipDeviceProp_t props;
+  res = tensorflow::wrap::hipGetDeviceProperties(&props, device);
+  if (res == hipSuccess) {
+    std::string gcnArchName = props.gcnArchName;
+    if(gcnArchName.substr(0,6)=="gfx90a" || gcnArchName.substr(0,6)=="gfx910")
+      reserve = 1048576*1024;
+  }
+  VLOG(1) << "Device memory: " << value/1048576 << " MB, reserving " 
+          << reserve/1048576 << " MB";
+  *result = value-reserve;
   return true;
 }
 
