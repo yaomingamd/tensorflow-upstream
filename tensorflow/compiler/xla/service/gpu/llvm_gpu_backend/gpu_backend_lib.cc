@@ -803,6 +803,11 @@ Status AMDGPUTargetModuleLinker(llvm::Module* module, GpuVersion gpu_version,
     }
   }
 
+  for (llvm::Function& fn : *module) {
+      fn.addFnAttr("denormal-fp-math-f32", "preserve-sign,preserve-sign");
+      fn.addFnAttr("amdgpu-unsafe-fp-atomics", "true");
+  }
+
   return Status::OK();
 }
 
@@ -898,6 +903,7 @@ void AMDGPUBackendInit(const HloModuleConfig& hlo_module_config) {
 #endif
 
 #endif
+  //FeedLLVMWithFlags({"-munsafe-fp-atomics", "-fdenormal-fp-math-f32=preserve-sign,preserve-sign"});
 
   llvm::PassRegistry* registry = llvm::PassRegistry::getPassRegistry();
   InitializePasses(registry);
