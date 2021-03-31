@@ -729,6 +729,24 @@ __device__ inline double GpuAtomicAdd(double* ptr, double value) {
 }
 #endif
 
+#if __gfx90a__
+
+#define ADDRSP1 __attribute__((address_space(1)))
+__device__ float
+__llvm_amdgcn_global_atomic_add_f32(ADDRSP1 float* dst, float val) __asm("llvm.amdgcn.global.atomic.fadd.f32.p1f32.f32");
+
+__device__ float
+__llvm_amdgcn_shared_atomic_add_f32(float* dst, float val) { *dst += val; }
+
+__device__ float
+__llvm_amdgcn_global_atomic_max_f32(ADDRSP1 float* dst, float val) __asm("llvm.amdgcn.global.atomic.fmax.f32.p1f32.f32");
+
+__device__ float
+__llvm_amdgcn_global_atomic_min_f32(ADDRSP1 float* dst, float val) __asm("llvm.amdgcn.global.atomic.fmin.f32.p1f32.f32");
+#endif
+
+
+
 // GpuAtomicAdd
 // Specializations of GpuAtomicAdd for complex types, which GpuAtomicAdd does
 // not support. We treat a std::complex<T>* as a T* (the C++ standard section
@@ -793,6 +811,7 @@ __device__ detail::ToTypeIfConvertible<U, T> GpuAtomicMax(T* ptr, U value) {
 
 #if TENSORFLOW_USE_ROCM
 
+
 /*
  * CUDA runtime headers have the following defined
  *   __device__  int max(int, int)
@@ -805,11 +824,13 @@ __device__ detail::ToTypeIfConvertible<U, T> GpuAtomicMax(T* ptr, U value) {
  * routines for float and double types.
  *
  */
+#if 1 //!__gfx90a__
 
 __device__ inline float GpuAtomicMax(float* ptr, float value) {
   return detail::GpuAtomicCasHelper(
       ptr, [value](float a) { return fmaxf(a, value); });
 }
+#endif
 
 __device__ inline double GpuAtomicMax(double* ptr, double value) {
   return detail::GpuAtomicCasHelper(
@@ -829,6 +850,7 @@ __device__ inline double GpuAtomicMax(double* ptr, double value) {
 }
 
 #endif
+
 
 __device__ inline Eigen::half GpuAtomicMax(Eigen::half* ptr,
                                            Eigen::half value) {
@@ -872,10 +894,12 @@ __device__ detail::ToTypeIfConvertible<U, T> GpuAtomicMin(T* ptr, U value) {
  *
  */
 
+#if 1 //!__gfx90a__
 __device__ inline float GpuAtomicMin(float* ptr, float value) {
   return detail::GpuAtomicCasHelper(
       ptr, [value](float a) { return fminf(a, value); });
 }
+#endif
 
 __device__ inline double GpuAtomicMin(double* ptr, double value) {
   return detail::GpuAtomicCasHelper(
@@ -915,6 +939,42 @@ __device__ inline int64 GpuAtomicMin(int64* ptr, int64 value) {
                                     [value](int64 a) { return min(a, value); });
 }
 #endif
+
+#if __gfx90a__
+// Low level instructions don't return. For now, assume that return value
+// is always unused.
+__device__ float GpuAtomicAdd(float* dst, float val) {
+  ADDRSP1 float* p = (ADDRSP1 float*) dst;
+  __llvm_amdgcn_global_atomic_add_f32(p, val);
+  return val;
+}
+/*
+__device__ float GpuAtomicMax(float* dst, float val) {
+  ADDRSP1 float* p = (ADDRSP1 float*) dst;
+  __llvm_amdgcn_global_atomic_max_f32(p, val);
+  return val;
+}
+
+__device__ float GpuAtomicMin(float* dst, float val) {
+  ADDRSP1 float* p = (ADDRSP1 float*) dst;
+  __llvm_amdgcn_global_atomic_min_f32(p, val);
+  return val;
+}
+*/
+#endif
+
+template <typename T>
+__device__ inline T GpuAtomicAddShared(T* ptr, T value) {
+  return GpuAtomicAdd(ptr, value);
+}
+
+#if __gfx90a__
+__device__ float GpuAtomicAddShared(float* dst, float val) {
+  *dst += val;
+  return val;
+}
+#endif
+
 CREATE_CUDA_DEVICE_FUNCTION_ALIAS(GpuAtomicMin, CudaAtomicMin);
 
 // GpuAtomicMul
