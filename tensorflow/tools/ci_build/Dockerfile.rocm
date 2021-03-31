@@ -3,6 +3,9 @@
 FROM ubuntu:bionic
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
+COPY --from=rocm/tensorflow-testing:ubuntu18.04-manylinux2010-devtoolset /dt7 /dt7
+COPY --from=rocm/tensorflow-testing:ubuntu18.04-manylinux2010-devtoolset /dt8 /dt8
+
 ARG ROCM_DEB_REPO=http://repo.radeon.com/rocm/apt/4.1/
 ARG ROCM_BUILD_NAME=xenial
 ARG ROCM_BUILD_NUM=main
