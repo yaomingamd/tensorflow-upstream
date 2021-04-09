@@ -1373,7 +1373,6 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
             << algorithm_config.algorithm()->algo_id();
     VLOG(4) << "tensor_ops_enabled: "
             << algorithm_config.algorithm()->tensor_ops_enabled();
-  } else {
     if (TestMIOpenBFloat16Support<T>()) {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
         input_desc, bfloat16_input_ptr, filter_desc, bfloat16_filter_ptr,

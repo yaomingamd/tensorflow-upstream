@@ -114,14 +114,14 @@ def _default_tolerance(dtype):
     return None  # Fail fast for unexpected types
 
 def numpy_dtype(dtype):
-  if dtype==dtypes_lib.bfloat16:
+  if dtype == dtypes_lib.bfloat16:
     # for bf16 tests, compute reference with numpy in fp32
     return np.float32
   else:
     return dtype
 
 def tf_dtype(dtype):
-  if dtype==dtypes_lib.bfloat16:
+  if dtype == dtypes_lib.bfloat16:
     return tf.bfloat16
   else:
     return dtype
@@ -137,7 +137,8 @@ class ComparisonOpTest(test.TestCase):
     return ret[0]
 
   def testScalarCompareScalar(self):
-    dtypes = [dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64]
+    dtypes = [dtypes_lib.bfloat16, np.float16, np.float32, np.float64, 
+              np.int32, np.int64]
     data = [-1, 0, 1]
     for t in dtypes:
       for x in data:
@@ -168,14 +169,16 @@ class ComparisonOpTest(test.TestCase):
     ntype = numpy_dtype(dtype)
     np_ans = np_func(x.astype(ntype), y.astype(ntype))
     with test_util.use_gpu():
-      out = tf_func(ops.convert_to_tensor(x, dtype=dtype), ops.convert_to_tensor(y, dtype=dtype))
+      out = tf_func(ops.convert_to_tensor(x, dtype=dtype), 
+                    ops.convert_to_tensor(y, dtype=dtype))
       tf_ans = self.evaluate(out)
     self.assertAllEqual(np_ans, tf_ans)
 
   def testTensorCompareTensor(self):
     x = np.linspace(-15, 15, 6).reshape(1, 3, 2)
     y = np.linspace(20, -10, 6).reshape(1, 3, 2)
-    for t in [dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64]:
+    for t in [dtypes_lib.bfloat16, np.float16, np.float32, np.float64, 
+              np.int32, np.int64]:
       with self.subTest(t=t):
         self._compare(x, y, np.less, math_ops.less, t)
         self._compare(x, y, np.less_equal, math_ops.less_equal, t)
@@ -254,7 +257,8 @@ class ComparisonOpTest(test.TestCase):
         np.not_equal, math_ops.not_equal, include_complex=True)
 
   def testShapeMismatch(self):
-    dtypes = [dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64]
+    dtypes = [dtypes_lib.bfloat16, np.float16, np.float32, np.float64, 
+              np.int32, np.int64]
     funcs = [
         math_ops.less, math_ops.less_equal, math_ops.greater,
         math_ops.greater_equal, math_ops.equal, math_ops.not_equal
@@ -267,7 +271,7 @@ class ComparisonOpTest(test.TestCase):
           with self.assertRaisesIncompatibleShapesError(
               (ValueError, errors.InvalidArgumentError)):
             f(ops.convert_to_tensor(x, dtype=t),
-               ops.convert_to_tensor(y, dtype=t))
+              ops.convert_to_tensor(y, dtype=t))
 
 class LogicalOpTest(test.TestCase):
 
@@ -457,8 +461,8 @@ class SelectOpTest(test.TestCase):
     x = np.random.rand(1, 3, 2) * 100
     y = np.random.rand(1, 3, 2) * 100
     for t in [
-        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64, np.complex64,
-        np.complex128
+        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32,
+        np.int64, np.complex64, np.complex128
     ]:
       with self.subTest(t=t):
         self._compare(fn, c, x, y, use_gpu=False, dtype=t)
@@ -471,8 +475,8 @@ class SelectOpTest(test.TestCase):
 
   def _testScalarBroadcast(self, fn, c, x, y):
     for t in [
-        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64, np.complex64,
-        np.complex128
+        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32,
+        np.int64, np.complex64, np.complex128
     ]:
       with self.subTest(t=t):
         self._compare(fn, c, x, y, use_gpu=False, dtype=t)
@@ -516,8 +520,8 @@ class SelectOpTest(test.TestCase):
     x = np.random.rand(1, 3, 2) * 100
     y = np.random.rand(1, 3, 2) * 100
     for t in [
-        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64, np.complex64,
-        np.complex128
+        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32,
+        np.int64, np.complex64, np.complex128
     ]:
       with self.subTest(t=t):
         self._compare(fn, c, x, y, use_gpu=False, dtype=t)
@@ -530,8 +534,8 @@ class SelectOpTest(test.TestCase):
 
   def _testBasicBroadcast(self, fn, c, x, y):
     for t in [
-        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64, np.complex64,
-        np.complex128
+        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32,
+        np.int64, np.complex64, np.complex128
     ]:
       with self.subTest(t=t):
         self._compare(fn, c, x, y, use_gpu=False, dtype=t)
@@ -631,12 +635,12 @@ class SelectOpTest(test.TestCase):
     x = np.random.rand(1, 3, 2) * 100
     y = np.random.rand(2, 5, 3) * 100
     for t in [
-        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64, np.complex64,
-        np.complex128
+        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32,
+        np.int64, np.complex64, np.complex128
     ]:
       with self.subTest(t=t):
-        xt = ops.convert_to_tensor(x,dtype=t)
-        yt = ops.convert_to_tensor(y,dtype=t)
+        xt = ops.convert_to_tensor(x, dtype=t)
+        yt = ops.convert_to_tensor(y, dtype=t)
         with self.assertRaises(ValueError):
           fn(c, xt, yt)
 
@@ -751,8 +755,8 @@ class BatchSelectOpTest(test.TestCase):
     x = np.random.rand(16, 2, 8) * 100
     y = np.random.rand(16, 2, 8) * 100
     for t in [
-        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64, np.complex64,
-        np.complex128
+        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32,
+        np.int64, np.complex64, np.complex128
     ]:
       with self.subTest(t=t):
         self._compare(c, x, y, use_gpu=False, dtype=t)
@@ -784,8 +788,8 @@ class BatchSelectOpTest(test.TestCase):
     x = np.random.rand(16, 3, 2) * 100
     y = np.random.rand(16, 3, 2) * 100
     for t in [
-        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64, np.complex64,
-        np.complex128
+        dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32,
+        np.int64, np.complex64, np.complex128
     ]:
       with self.subTest(t=t):
         xt = ops.convert_to_tensor(x, dtype=t)
@@ -811,8 +815,8 @@ class MinMaxOpTest(test.TestCase):
   def testBasic(self):
     x = np.random.rand(1, 3, 2) * 100.
     y = np.random.rand(1, 3, 2) * 100.
-    for t in [dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.uint8, np.int16, np.int32,
-              np.int64]:
+    for t in [dtypes_lib.bfloat16, np.float16, np.float32, np.float64,
+              np.uint8, np.int16, np.int32, np.int64]:
       with self.subTest(t=t):
         self._compare(x, y, use_gpu=False, dtype=t)
         self._compare(x, y, use_gpu=True, dtype=t)
@@ -828,7 +832,8 @@ class MinMaxOpTest(test.TestCase):
   def testDifferentShapes(self):
     x = np.random.rand(1, 3, 2) * 100.
     y = np.random.rand(2) * 100.  # should broadcast
-    for t in [dtypes_lib.bfloat16, np.float16, np.float32, np.float64, np.int32, np.int64]:
+    for t in [dtypes_lib.bfloat16, np.float16, np.float32, np.float64,
+              np.int32, np.int64]:
       with self.subTest(t=t):
         self._compare(x, y, use_gpu=False, dtype=t)
         self._compare(x, y, use_gpu=True, dtype=t)
