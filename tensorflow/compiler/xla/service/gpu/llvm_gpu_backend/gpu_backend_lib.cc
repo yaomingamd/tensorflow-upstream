@@ -838,11 +838,11 @@ std::string MapGCNArchNameTokenToFeatureStr(const std::string& token) {
   return "";
 
 }
-OA
+
 std::pair<std::string, std::string> GetFeatureStrFromGCNArchName(
     const std::string& gcn_arch_name) {
   std::string feature_str;
-  std::string gfx;
+  std::string gfx = gcn_arch_name;
 #if TF_ROCM_VERSION < 30900
   // For ROCm versions older than 3.9, hardcode it to "+code-object-v3"
   // This is simply to preserve how things were...nohing else
