@@ -790,12 +790,12 @@ Status AMDGPUTargetModuleLinker(llvm::Module* module, GpuVersion gpu_version,
                                 const HloModuleConfig& hlo_module_config,
                                 const string& device_bitcode_dir_path) {
   // Link the input module with ROCDL.
-  auto amdgpu_version = absl::get_if<std::pair<int, std::string>>(&gpu_version);
+  auto amdgpu_version = absl::get_if<std::string>(&gpu_version);
   if (!amdgpu_version) {
     return xla::InternalError(
         "Incompatible AMD GCN ISA version was specified.");
   }
-  TF_RETURN_IF_ERROR(LinkROCDLIfNecessary(module, amdgpu_version->second,
+  TF_RETURN_IF_ERROR(LinkROCDLIfNecessary(module, *amdgpu_version,
                                           device_bitcode_dir_path));
   if (hlo_module_config.debug_options().xla_gpu_ftz()) {
     for (llvm::Function& fn : *module) {
@@ -875,9 +875,8 @@ std::pair<std::string, std::string> GetFeatureStrFromGCNArchName(
 std::unique_ptr<llvm::TargetMachine> AMDGPUGetTargetMachine(
     llvm::Triple target_triple, GpuVersion gpu_version,
     const HloModuleConfig& hlo_module_config) {
-  auto amdgpu_version = absl::get_if<std::pair<int, std::string>>(&gpu_version);
-  int gcn_arch_value = amdgpu_version->first;
-  std::string gcn_arch_name = amdgpu_version->second;
+  auto amdgpu_version = absl::get_if<std::string>(&gpu_version);
+  std::string gcn_arch_name = *amdgpu_version;
   auto arch = GetFeatureStrFromGCNArchName(gcn_arch_name);
   return GetTargetMachine(std::move(target_triple), arch.first,
                           hlo_module_config, arch.second);
@@ -940,14 +939,13 @@ StatusOr<std::vector<uint8>> CompileToHsaco(
         tensorflow::profiler::TraceMeLevel::kInfo);
     XLA_SCOPED_LOGGING_TIMER("Compile module " + module->getName().str());
 
-    auto amdgpu_version =
-        absl::get_if<std::pair<int, std::string>>(&gpu_version);
+    auto amdgpu_version = absl::get_if<std::string>(&gpu_version);
     if (!amdgpu_version) {
       return xla::InternalError(
           "Incompatible AMD GCN ISA version was specified.");
     }
     uint64_t hash;
-    if (HsacoCache::Find(str, hash, amdgpu_version->second, hsaco)) {
+    if (HsacoCache::Find(str, hash, *amdgpu_version, hsaco)) {
       VLOG(1) << "HSACO cache hit";
       return hsaco;
     }
@@ -976,7 +974,7 @@ StatusOr<std::vector<uint8>> CompileToHsaco(
 
     // Lower optimized LLVM module to HSA code object.
     TF_ASSIGN_OR_RETURN(hsaco, EmitModuleToHsaco(module, target_machine.get()));
-    HsacoCache::Add(str, hash, amdgpu_version->second, hsaco);
+    HsacoCache::Add(str, hash, *amdgpu_version, hsaco);
   }
   return hsaco;
 }
