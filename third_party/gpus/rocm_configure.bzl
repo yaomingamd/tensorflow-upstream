@@ -730,12 +730,6 @@ def _create_local_rocm_repository(repository_ctx):
             src_dir = rocm_toolkit_path + "/rccl/include",
             out_dir = "rocm/include/rccl",
         ),
-        make_copy_dir_rule(
-            repository_ctx,
-            name = "hipsparse-include",
-            src_dir = rocm_toolkit_path + "/hipsparse/include",
-            out_dir = "rocm/include/hipsparse",
-        ),
     ]
 
     # explicitly copy (into the local_config_rocm repo) the $ROCM_PATH/hiprand/include and
