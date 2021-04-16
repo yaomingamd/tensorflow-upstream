@@ -479,7 +479,7 @@ template <typename T>
 bool TestMIOpenBFloat16Support() {
   static bool kTestMIOpenBFloat16Support = [] {
     bool use_bfloat16 = false;
-    TF_CHECK_OK(ReadBoolFromEnvVar("TF_ROCM_USE_BFLOAT16_FOR_CONV", true,
+    TF_CHECK_OK(ReadBoolFromEnvVar("TF_ROCM_USE_BFLOAT16_FOR_CONV", false,
                                    &use_bfloat16));
     return use_bfloat16;
   }();

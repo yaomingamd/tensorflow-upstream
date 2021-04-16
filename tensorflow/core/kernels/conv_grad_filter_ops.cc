@@ -954,7 +954,8 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
   se::DeviceMemory<bfloat16> bfloat16_out_backprop_ptr, bfloat16_input_ptr,
       bfloat16_filter_backprop_ptr;
 
-  if (TestMIOpenBFloat16Support<T>()) {
+  const bool bf16 = TestMIOpenBFloat16Support<T>() && !std::is_same<T, Eigen::bfloat16>::value;
+  if (bf16) {
     TensorShape out_backprop_shape = ShapeFromFormat(
         FORMAT_NCHW, dims.batch_size, dims.spatial_dims[0].output_size,
         dims.spatial_dims[1].output_size, dims.out_depth);
@@ -1003,7 +1004,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
   int device_id = stream->parent()->device_ordinal();
   DataType dtype = input.dtype();
 #if TENSORFLOW_USE_ROCM
-  if (TestMIOpenBFloat16Support<T>()) {
+  if (bf16) {
     dtype = DT_BFLOAT16;
   }
 #endif
@@ -1149,7 +1150,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
                                           ctx);
 
     std::vector<ProfileResult> algorithms;
-    if (TestMIOpenBFloat16Support<T>()) {
+    if (bf16) {
       OP_REQUIRES(
           ctx,
           stream->parent()->GetMIOpenConvolveAlgorithms(
@@ -1194,7 +1195,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
         auto profile_algorithm = miopen_algorithm.algorithm();
         ProfileResult profile_result;
         Status miopen_launch_status;
-        if (TestMIOpenBFloat16Support<T>()) {
+        if (bf16) {
           miopen_launch_status = stream->ConvolveBackwardFilterWithAlgorithm(
               input_desc, bfloat16_input_ptr, output_desc,
               bfloat16_out_backprop_ptr, conv_desc, filter_desc,
@@ -1249,7 +1250,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     } else {
       VLOG(4) << "Convolution AutoTune has been turned off";
     }
-    if (TestMIOpenBFloat16Support<T>())
+    if (bf16)
       cudnn_launch_status = stream->ConvolveBackwardFilterWithExecutionPlan(
         input_desc, bfloat16_input_ptr, output_desc, bfloat16_out_backprop_ptr,
         conv_desc, filter_desc, &bfloat16_filter_backprop_ptr, 
@@ -1262,7 +1263,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
         nullptr);
   } else {
     Status cudnn_launch_status;
-    if (TestMIOpenBFloat16Support<T>())
+    if (bf16)
       cudnn_launch_status = stream->ConvolveBackwardFilterWithAlgorithm(
         input_desc, bfloat16_input_ptr, output_desc, bfloat16_out_backprop_ptr,
         conv_desc, filter_desc, &bfloat16_filter_backprop_ptr,
@@ -1279,7 +1280,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     return;
   }
 
-  if (TestMIOpenBFloat16Support<T>()) {
+  if (bf16) {
     VLOG(3)
         << "Convert the filter_backprop tensor back from bfloat16 to float.";
     functor::ConvertFromBFloat16<GPUDevice, T, 4>()(
@@ -1319,6 +1320,7 @@ namespace functor {
 
 DECLARE_GPU_SPEC(float);
 DECLARE_GPU_SPEC(Eigen::half);
+DECLARE_GPU_SPEC(Eigen::bfloat16);
 DECLARE_GPU_SPEC(double);
 #undef DECLARE_GPU_SPEC
 }  // namespace functor
@@ -1338,11 +1340,17 @@ REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropFilter")
                             .TypeConstraint<Eigen::half>("T")
                             .HostMemory("filter_sizes"),
                         Conv2DBackpropFilterOp<GPUDevice, Eigen::half>);
+REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropFilter")
+                            .Device(DEVICE_GPU)
+                            .TypeConstraint<Eigen::bfloat16>("T")
+                            .HostMemory("filter_sizes"),
+                        Conv2DBackpropFilterOp<GPUDevice, Eigen::bfloat16>);
 
 // To be used inside depthwise_conv_grad_op.cc.
 // TODO(reedwm): Move this and the definition to depthwise_conv_grad_op.cc.
 template struct LaunchConv2DBackpropFilterOp<GPUDevice, float>;
 template struct LaunchConv2DBackpropFilterOp<GPUDevice, Eigen::half>;
+template struct LaunchConv2DBackpropFilterOp<GPUDevice, Eigen::bfloat16>;
 template struct LaunchConv2DBackpropFilterOp<GPUDevice, double>;
 
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

@@ -1374,6 +1374,12 @@ class Stream {
   // See BlasSupport::DoBlasGemm.
   TF_EXPORT Stream &ThenBlasGemm(blas::Transpose transa, blas::Transpose transb,
                                  uint64 m, uint64 n, uint64 k, float alpha,
+                                 const DeviceMemory<Eigen::bfloat16> &a, int lda,
+                                 const DeviceMemory<Eigen::bfloat16> &b, int ldb,
+                                 float beta, DeviceMemory<Eigen::bfloat16> *c,
+                                 int ldc);
+  TF_EXPORT Stream &ThenBlasGemm(blas::Transpose transa, blas::Transpose transb,
+                                 uint64 m, uint64 n, uint64 k, float alpha,
                                  const DeviceMemory<Eigen::half> &a, int lda,
                                  const DeviceMemory<Eigen::half> &b, int ldb,
                                  float beta, DeviceMemory<Eigen::half> *c,
