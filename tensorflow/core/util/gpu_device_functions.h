@@ -625,9 +625,6 @@ __device__ float
 __llvm_amdgcn_global_atomic_add_f32(ADDRSP1 float* dst, float val) __asm("llvm.amdgcn.global.atomic.fadd.f32.p1f32.f32");
 
 __device__ float
-__llvm_amdgcn_shared_atomic_add_f32(float* dst, float val) { *dst += val; }
-
-__device__ float
 __llvm_amdgcn_global_atomic_max_f32(ADDRSP1 float* dst, float val) __asm("llvm.amdgcn.global.atomic.fmax.f32.p1f32.f32");
 
 __device__ float
@@ -646,6 +643,13 @@ __device__ inline Eigen::half GpuAtomicAdd(Eigen::half* ptr,
   return detail::GpuAtomicCasHelper(
       ptr, [value](Eigen::half a) { return a + value; });
 }
+
+template <typename T>
+__device__ inline T GpuAtomicAddCAS(T* ptr, T value) {
+  return detail::GpuAtomicCasHelper(ptr,
+                                    [value](T a) { return a + value; });
+}
+
 
 #if (__CUDA_ARCH__ < 600) || TENSORFLOW_USE_ROCM
 __device__ inline double GpuAtomicAdd(double* ptr, double value) {
@@ -695,7 +699,7 @@ __device__ inline T GpuAtomicAddShared(T* ptr, T value) {
 
 #if __gfx90a__
 __device__ float GpuAtomicAddShared(float* dst, float val) {
-  *dst += val;
+  atomicAdd(dst, val);
   return val;
 }
 #endif
