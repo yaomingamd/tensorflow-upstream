@@ -133,7 +133,7 @@ __global__ void BiasGradNHWC_SharedAtomics(int32 nthreads,
   for (int32 index = blockIdx.x * blockDim.x + threadIdx.x; index < nthreads;
        index += blockDim.x * gridDim.x) {
     int32 bias_offset = index % bias_size;
-    GpuAtomicAdd(s_data + bias_offset, AccT(ldg(output_backprop + index)));
+    GpuAtomicAddShared(s_data + bias_offset, AccT(ldg(output_backprop + index)));
   }
   __syncthreads();
 
@@ -174,7 +174,7 @@ __global__ void BiasGradNCHW_SharedAtomics(const T* output_backprop,
   // Write the accumulated sum in this thread to the shared memory. Each thread
   // shifts their write location to avoid bank conflict.
   int bias_offset = threadIdx.x % 32;
-  GpuAtomicAdd(s_data + bias_offset, sum);
+  GpuAtomicAddShared(s_data + bias_offset, sum);
   __syncthreads();
 
   // Accumulate the results in the shared memory into the first element.

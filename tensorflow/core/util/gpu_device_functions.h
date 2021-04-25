@@ -618,6 +618,24 @@ using ToTypeIfConvertible =
 // CUDA provides atomic ops, but not for all types.  We provide wrappers
 // for some ops and provide implementation for all reasonable types.
 
+#if __gfx90a__
+
+#define ADDRSP1 __attribute__((address_space(1)))
+__device__ float
+__llvm_amdgcn_global_atomic_add_f32(ADDRSP1 float* dst, float val) __asm("llvm.amdgcn.global.atomic.fadd.f32.p1f32.f32");
+
+__device__ float
+__llvm_amdgcn_shared_atomic_add_f32(float* dst, float val) { *dst += val; }
+
+__device__ float
+__llvm_amdgcn_global_atomic_max_f32(ADDRSP1 float* dst, float val) __asm("llvm.amdgcn.global.atomic.fmax.f32.p1f32.f32");
+
+__device__ float
+__llvm_amdgcn_global_atomic_min_f32(ADDRSP1 float* dst, float val) __asm("llvm.amdgcn.global.atomic.fmin.f32.p1f32.f32");
+#endif
+
+
+
 template <typename T, typename U>
 __device__ detail::ToTypeIfConvertible<U, T> GpuAtomicAdd(T* ptr, U value) {
   return atomicAdd(ptr, value);
@@ -659,6 +677,29 @@ __device__ inline std::complex<double> GpuAtomicAdd(
                               GpuAtomicAdd(ptr_scalar + 1, value.imag()));
 }
 #endif
+
+#if __gfx90a__
+// Low level instructions don't return. For now, assume that return value
+// is always unused.
+__device__ float GpuAtomicAdd(float* dst, float val) {
+  ADDRSP1 float* p = (ADDRSP1 float*) dst;
+  __llvm_amdgcn_global_atomic_add_f32(p, val);
+  return val;
+}
+#endif
+
+template <typename T>
+__device__ inline T GpuAtomicAddShared(T* ptr, T value) {
+  return GpuAtomicAdd(ptr, value);
+}
+
+#if __gfx90a__
+__device__ float GpuAtomicAddShared(float* dst, float val) {
+  *dst += val;
+  return val;
+}
+#endif
+
 CREATE_CUDA_DEVICE_FUNCTION_ALIAS(GpuAtomicAdd, CudaAtomicAdd);
 
 // GpuAtomicSub
