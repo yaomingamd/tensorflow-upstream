@@ -148,11 +148,12 @@ tf_cuda_library(
     name = "rocm_tracer",
     srcs = if_rocm(["rocm_tracer.cc"]),
     hdrs = if_rocm(["rocm_tracer.h"]),
-    copts = tf_copts(),
+    copts = tf_profiler_copts() + tf_copts(),
     visibility = ["//visibility:public"],
     deps = [
         "//tensorflow/core:lib",
         "//tensorflow/core/profiler/internal/cpu:annotation_stack",
+        "//tensorflow/core/profiler/utils:time_utils",
         "//tensorflow/stream_executor/rocm:roctracer_wrapper",
         "@com_google_absl//absl/container:fixed_array",
         "@com_google_absl//absl/container:flat_hash_map",

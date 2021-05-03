@@ -353,7 +353,7 @@ cc_library(
 cc_library(
         name = "rocm_helpers",
         srcs = ["rocm_helpers.cu.cc"],
-        deps = 
+        deps =
         ["@local_config_rocm//rocm:rocm_headers",
         ],
         copts = rocm_copts(),
