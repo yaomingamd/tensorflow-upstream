@@ -457,7 +457,11 @@ def _create_dummy_repository(repository_ctx):
             "%{rocblas_lib}": _lib_name("rocblas"),
             "%{miopen_lib}": _lib_name("miopen"),
             "%{rccl_lib}": _lib_name("rccl"),
+<<<<<<< HEAD
             "%{hipfft_or_rocfft}": _lib_name("hipfft"),
+=======
+            "%{hipfft_or_rocfft}": "hipfft",
+>>>>>>> google_upstream/r2.5
             "%{hipfft_or_rocfft_lib}": _lib_name("hipfft"),
             "%{hiprand_lib}": _lib_name("hiprand"),
             "%{hipsparse_lib}": _lib_name("hipsparse"),
@@ -629,7 +633,10 @@ def _create_local_rocm_repository(repository_ctx):
             )
         )
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> google_upstream/r2.5
     rocm_libs = _find_libs(repository_ctx, rocm_config, hipfft_or_rocfft, bash_bin)
     rocm_lib_srcs = []
     rocm_lib_outs = []

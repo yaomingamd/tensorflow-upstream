@@ -91,11 +91,19 @@ class ROCMFftPlan : public fft::Plan {
   port::Status UpdateScratchAllocator(Stream *stream,
                                       ScratchAllocator *scratch_allocator);
 
+<<<<<<< HEAD
   ScratchAllocator* GetScratchAllocator() const { return scratch_allocator_; }
 
  protected:
   bool IsInitialized() const { return is_initialized_; }
   ScratchAllocator* scratch_allocator_;
+=======
+  ScratchAllocator *GetScratchAllocator() const { return scratch_allocator_; }
+
+ protected:
+  bool IsInitialized() const { return is_initialized_; }
+  ScratchAllocator *scratch_allocator_;
+>>>>>>> google_upstream/r2.5
 
  private:
   GpuExecutor *parent_;

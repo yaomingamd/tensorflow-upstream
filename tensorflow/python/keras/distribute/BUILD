@@ -543,6 +543,10 @@ distribute_py_test(
     shard_count = 31,
     tags = [
         "multi_and_single_gpu",
+<<<<<<< HEAD
+=======
+        "no_rocm",  # Would require size large, but that effectively disables the test for presubmits.
+>>>>>>> google_upstream/r2.5
         "no_windows_gpu",
         "noasan",  # TODO(b/337374867) fails with -fsanitize=null
         "notpu",  # TODO(b/153672562)
@@ -899,6 +903,7 @@ distribute_py_test(
         "multi_gpu",
         "no_rocm",
         "no_oss",  # TODO(b/183640564): Reenable
+        "no_rocm",
         "no_tfrt",  # TODO(b/180537361): Reenable TFRT after the issue is resolved.
     ],
     deps = [
