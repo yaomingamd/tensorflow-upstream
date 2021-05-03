@@ -351,10 +351,9 @@ cc_library(
 )
 
 cc_library(
-<<<<<<< HEAD
         name = "rocm_helpers",
         srcs = ["rocm_helpers.cu.cc"],
-        deps = 
+        deps =
         ["@local_config_rocm//rocm:rocm_headers",
         ],
         copts = rocm_copts(),
@@ -362,8 +361,6 @@ cc_library(
     )
 
 cc_library(
-=======
->>>>>>> google_upstream/r2.5
     name = "all_runtime",
     copts = tf_copts(),
     visibility = ["//visibility:public"],

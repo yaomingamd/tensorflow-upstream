@@ -520,15 +520,6 @@ bool ROCMFft::DoFftInternal(Stream *stream, fft::Plan *plan, FuncT hipfftExec,
     return false;
   }
 
-<<<<<<< HEAD
-  DeviceMemory<InputT> input_maybe_copy = input;
-  bool isR2C = std::is_same<InputT, float>::value;
-  // && std::is_same<OutputT, std::complex<float>>::value;
-  bool isD2Z = std::is_same<InputT, double>::value;
-
-  if (input.opaque() != output->opaque() && (isR2C || isD2Z) &&
-      input.size() > 0) {
-=======
   // As per rocFFT documentation, input buffers may be overwritten during
   // execution of the C2R / D2Z transforms, even if the transform is not
   // in-place.
@@ -540,7 +531,6 @@ bool ROCMFft::DoFftInternal(Stream *stream, fft::Plan *plan, FuncT hipfftExec,
   // Hence for all those transforms, copy the input buffer
   DeviceMemory<InputT> input_maybe_copy = input;
   if (input.opaque() != output->opaque() && (input.size() > 0)) {
->>>>>>> google_upstream/r2.5
     auto *allocator = rocm_fft_plan->GetScratchAllocator();
     if (allocator) {
       auto allocated = allocator->AllocateBytes(input.size());
@@ -548,19 +538,6 @@ bool ROCMFft::DoFftInternal(Stream *stream, fft::Plan *plan, FuncT hipfftExec,
         if (stream->ThenMemcpy(&allocated.ValueOrDie(), input, input.size())
                 .ok()) {
           input_maybe_copy = DeviceMemory<InputT>(allocated.ValueOrDie());
-<<<<<<< HEAD
-        }
-      }
-      // Keep going even the workaround fails, since we don't have a good
-      // bounding box. We don't want to give up on a potentially correct
-      // execution just because the allocation for the incorrect case fails.
-    }
-  }
-
-  InputT* ip = const_cast<InputT *>(GpuMemory(input_maybe_copy));
-  auto ret = hipfftExec(parent_, rocm_fft_plan->GetPlan(),
-                        GpuComplex(ip),
-=======
         } else {
           LOG(ERROR) << "failed to copy input buffer for rocFFT.";
         }
@@ -570,7 +547,6 @@ bool ROCMFft::DoFftInternal(Stream *stream, fft::Plan *plan, FuncT hipfftExec,
 
   InputT *ip = const_cast<InputT *>(GpuMemory(input_maybe_copy));
   auto ret = hipfftExec(parent_, rocm_fft_plan->GetPlan(), GpuComplex(ip),
->>>>>>> google_upstream/r2.5
                         GpuComplex(GpuMemoryMutable(output)));
 
   if (ret != HIPFFT_SUCCESS) {
@@ -596,31 +572,8 @@ bool ROCMFft::DoFftWithDirectionInternal(Stream *stream, fft::Plan *plan,
     return false;
   }
 
-  DeviceMemory<InputT> input_maybe_copy = input;
-  bool isR2C = std::is_same<InputT, float>::value;
-  // && std::is_same<OutputT, std::complex<float>>::value;
-  bool isD2Z = std::is_same<InputT, double>::value;
-
-  if (input.opaque() != output->opaque() && (isR2C || isD2Z) &&
-      input.size() > 0) {
-    auto *allocator = rocm_fft_plan->GetScratchAllocator();
-    if (allocator) {
-      auto allocated = allocator->AllocateBytes(input.size());
-      if (allocated.ok()) {
-        if (stream->ThenMemcpy(&allocated.ValueOrDie(), input, input.size())
-                .ok()) {
-          input_maybe_copy = DeviceMemory<InputT>(allocated.ValueOrDie());
-        }
-      }
-      // Keep going even the workaround fails, since we don't have a good
-      // bounding box. We don't want to give up on a potentially correct
-      // execution just because the allocation for the incorrect case fails.
-    }
-  }
-
-  InputT* ip = const_cast<InputT *>(GpuMemory(input_maybe_copy));
   auto ret = hipfftExec(parent_, rocm_fft_plan->GetPlan(),
-                        GpuComplex(ip),
+                        GpuComplex(const_cast<InputT *>(GpuMemory(input))),
                         GpuComplex(GpuMemoryMutable(output)),
                         rocm_fft_plan->GetFftDirection());
 

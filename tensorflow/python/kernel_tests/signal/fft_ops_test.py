@@ -26,7 +26,6 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.eager import context
-from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import test_util
@@ -290,18 +289,8 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
 
   def _tf_fft(self, x, rank, fft_length=None, feed_dict=None):
     with self.cached_session() as sess:
-      verify = context.executing_eagerly()
-      if verify:
-        # Make a copy of the tensor to ensure that the FFT library does not
-        # corrupt it
-        if type(x) is np.ndarray:
-          x = constant_op.constant(x)
-        save = x[:]
-      rv = sess.run(
+      return sess.run(
           self._tf_fft_for_rank(rank)(x, fft_length), feed_dict=feed_dict)
-      if verify:
-        self.assertAllClose(save, x)
-      return rv
 
   def _tf_ifft(self, x, rank, fft_length=None, feed_dict=None):
     with self.cached_session() as sess:
@@ -348,65 +337,6 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     else:
       raise ValueError("invalid rank")
 
-<<<<<<< HEAD
-  def _restrict_input(self, c2r, sh, nd=0):
-    if not test.is_built_with_rocm():
-      return c2r
-
-    # this does not support padding/truncation yet
-    if sh[0] & 1:
-      return c2r
-
-    if nd == 0:
-      nd = len(sh)
-    h = sh[-1]//2
-    if h < c2r.shape[-1]:
-      if len(sh) > 1:
-        c2r[:, h] = 0.0
-      else:
-        c2r[h] = 0.0
-
-    # Ugly, but I don't see how to shorten this 
-
-    # dim 0
-    h = sh[0]//2
-    c2r[0] = np.real(c2r[0])
-    c2r[h] = np.real(c2r[h])
-
-    if len(sh) >= 2:
-      for x in range(1, h):
-        c2r[-x] = np.conj(c2r[x])
-
-    # dim 1
-    if len(sh) >= 2:
-      c2r[:, 0] = np.real(c2r[:, 0])
-      c2r[:, h] = np.real(c2r[:, h])
-    if len(sh) >= 3:
-      for x in range(1, h):
-        c2r[:, -x] = np.conj(c2r[:, x])
-
-    # dim 2
-    if len(sh) >= 3:
-      c2r[:, :, 0] = np.real(c2r[:, :, 0])
-      c2r[:, :, h] = np.real(c2r[:, :, h])
-    if len(sh) >= 4:
-      for x in range(1, h):
-        c2r[:, :, -x] = np.conj(c2r[:, :, x])
-
-    # dim 3
-    if len(sh) >= 4:
-      c2r[:, :, :, 0] = np.real(c2r[:, :, :, 0])
-      c2r[:, :, :, h] = np.real(c2r[:, :, :, h])
-    if len(sh) >= 5:
-      for x in range(1, h):
-        c2r[:, :, :, -x] = np.conj(c2r[:, :, :, x])
-
-    # dim 4
-    if len(sh) >= 5:
-      c2r[:, :, :, :, 0] = np.real(c2r[:, :, :, :, 0])
-      c2r[:, :, :, :, h] = np.real(c2r[:, :, :, :, h])
-    return c2r
-=======
   # rocFFT requires/assumes that the input to the irfft transform
   # is of the form that is a valid output from the rfft transform
   # (i.e. it cannot be a set of random numbers)
@@ -417,7 +347,6 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
       return self._np_fft(r2c.astype(np_rtype), rank, fft_length)
     else:
       return c2r.astype(np_ctype)
->>>>>>> google_upstream/r2.5
 
   @parameterized.parameters(itertools.product(
       VALID_FFT_RANKS, range(3), (np.float32, np.float64)))
@@ -444,16 +373,9 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
         r2c.astype(np_rtype), rank, fft_length, rtol=tol, atol=tol)
     c2r = np.mod(np.arange(np.power(size, dims - 1) * inner_dim),
                  10).reshape((size,) * (dims - 1) + (inner_dim,))
-<<<<<<< HEAD
-    c2r = self._restrict_input(c2r, (size,)*dims)
-    self._compare_backward(
-        c2r.astype(np_ctype), rank, (size,) * rank,
-        rtol=tol, atol=tol)
-=======
     c2r = self._generate_valid_irfft_input(c2r, np_ctype, r2c, np_rtype, rank,
                                            fft_length)
     self._compare_backward(c2r, rank, fft_length, rtol=tol, atol=tol)
->>>>>>> google_upstream/r2.5
 
   @parameterized.parameters(itertools.product(
       (1,), range(3), (64, 128), (np.float32, np.float64)))
@@ -494,12 +416,8 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
         atol=tol)
     c2r = np.mod(np.arange(np.power(size, dims - 1) * inner_dim),
                  10).reshape((size,) * (dims - 1) + (inner_dim,))
-<<<<<<< HEAD
-    c2r = self._restrict_input(c2r, (size,)*dims)
-=======
     c2r = self._generate_valid_irfft_input(c2r, np_ctype, r2c, np_rtype, rank,
                                            fft_length)
->>>>>>> google_upstream/r2.5
     self._compare_backward(
         c2r, rank, fft_length, use_placeholder=True, rtol=tol, atol=tol)
 
@@ -507,15 +425,10 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
       VALID_FFT_RANKS, range(3), (5, 6), (np.float32, np.float64)))
   def test_fft_lenth_truncate(self, rank, extra_dims, size, np_rtype):
     """Test truncation (FFT size < dimensions)."""
-<<<<<<< HEAD
-    if test.is_built_with_rocm() and (rank == 2 or rank == 3):
-      return
-=======
     if test.is_built_with_rocm() and (rank == 3):
       # TODO(rocm): fix me
       # rfft fails for rank == 3 on ROCm
       self.skipTest("Test fails on ROCm...fix me")
->>>>>>> google_upstream/r2.5
     np_ctype = np.complex64 if np_rtype == np.float32 else np.complex128
     tol = 1e-4 if np_rtype == np.float32 else 8e-5
     dims = rank + extra_dims
@@ -545,8 +458,6 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
       VALID_FFT_RANKS, range(3), (5, 6), (np.float32, np.float64)))
   def test_fft_lenth_pad(self, rank, extra_dims, size, np_rtype):
     """Test padding (FFT size > dimensions)."""
-    if test.is_built_with_rocm() and size == 6:
-      return
     np_ctype = np.complex64 if np_rtype == np.float32 else np.complex128
     tol = 1e-4 if np_rtype == np.float32 else 8e-5
     dims = rank + extra_dims
@@ -556,7 +467,6 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     c2r = np.mod(np.arange(np.power(size, dims - 1) * inner_dim),
                  10).reshape((size,) * (dims - 1) + (inner_dim,))
     fft_length = (size + 2,) * rank
-    c2r = self._restrict_input(c2r, (size,)*extra_dims + fft_length)
     self._compare_forward(r2c.astype(np_rtype), rank, fft_length,
                           rtol=tol, atol=tol)
     c2r = self._generate_valid_irfft_input(c2r, np_ctype, r2c, np_rtype, rank,
@@ -602,19 +512,10 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     self._compare_forward(
         r2c.astype(np_rtype), rank, fft_length, rtol=tol, atol=tol)
     complex_dims = (size,) * (dims - 1) + (inner_dim,)
-<<<<<<< HEAD
-    c2r = gen_complex(complex_dims).astype(np_ctype)
-    c2r = self._restrict_input(c2r, (size,)*dims, rank)
-    self._compare_backward(
-        c2r,
-        rank, (size,) * rank,
-        rtol=tol, atol=tol)
-=======
     c2r = gen_complex(complex_dims)
     c2r = self._generate_valid_irfft_input(c2r, np_ctype, r2c, np_rtype, rank,
                                            fft_length)
     self._compare_backward(c2r, rank, fft_length, rtol=tol, atol=tol)
->>>>>>> google_upstream/r2.5
 
   def test_error(self):
     # TODO(rjryan): Fix this test under Eager.
@@ -680,10 +581,6 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
     # rfft3d/irfft3d do not have gradients yet.
     if rank == 3:
       return
-    # rocFFT's assumptions about valid rfft inputs subtly mess with evaluated
-    # gradients; we'd need to patch jacobians to pass this test
-    if test.is_built_with_rocm():
-      return
     dims = rank + extra_dims
     tol = 1e-3 if np_rtype == np.float32 else 1e-10
     re = np.ones(shape=(size,) * dims, dtype=np_rtype)
@@ -702,8 +599,6 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
   def test_grad_random(self, rank, extra_dims, size, np_rtype):
     # rfft3d/irfft3d do not have gradients yet.
     if rank == 3:
-      return
-    if test.is_built_with_rocm():
       return
     dims = rank + extra_dims
     tol = 1e-2 if np_rtype == np.float32 else 1e-10
