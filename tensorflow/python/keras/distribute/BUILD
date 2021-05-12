@@ -226,6 +226,7 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # times out
+        "no_rocm", # broken in 4.1
     ],
     deps = [
         ":optimizer_combinations",
