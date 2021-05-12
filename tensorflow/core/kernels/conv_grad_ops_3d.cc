@@ -1346,7 +1346,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
         "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32);  // 4GB by default
 
     const int device_id = stream->parent()->device_ordinal();
-    DataType dtype = context->input(0).dtype();
+    DataType dtype = DataTypeToEnum<T>::value;
     const ConvParameters conv_parameters = {
         dims.batch_size,
         dims.in_depth,
@@ -1806,7 +1806,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
         "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32);  // 4GB by default
 
     const int device_id = stream->parent()->device_ordinal();
-    DataType dtype = input.dtype();
+    DataType dtype = DataTypeToEnum<T>::value;
     const ConvParameters conv_parameters = {
         dims.batch_size,
         dims.in_depth,
