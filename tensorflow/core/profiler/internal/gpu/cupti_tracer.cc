@@ -1634,6 +1634,7 @@ void CuptiTracer::Enable(const CuptiTracerOptions &option,
   if (option_->enable_activity_api) {
     EnableActivityTracing().IgnoreError();
   }
+  tensorflow::profiler::AnnotationStack::Enable(true);
 }
 
 void CuptiTracer::Disable() {
@@ -1648,6 +1649,7 @@ void CuptiTracer::Disable() {
   collector_ = nullptr;
   option_.reset();
   cupti_driver_api_hook_.reset();
+  tensorflow::profiler::AnnotationStack::Enable(false);
 }
 
 Status CuptiTracer::EnableApiTracing() {
@@ -1836,7 +1838,6 @@ Status CuptiTracer::HandleCallback(CUpti_CallbackDomain domain,
   return Status::OK();
 }
 
-//TODO(rocm-profiler): check unified memory counters in ROCm
 void CuptiTracer::ConfigureActivityUnifiedMemoryCounter(bool enable) {
   CUpti_ActivityUnifiedMemoryCounterConfig config[2];
   // By experiments, currently only measurements from these two activities are
