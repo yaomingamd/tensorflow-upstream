@@ -53,6 +53,7 @@ TF_CONST_INIT extern const absl::string_view kTensorFlowOpLineName;
 TF_CONST_INIT extern const absl::string_view kXlaModuleLineName;
 TF_CONST_INIT extern const absl::string_view kXlaOpLineName;
 TF_CONST_INIT extern const absl::string_view kKernelLaunchLineName;
+TF_CONST_INIT extern const absl::string_view kSourceLineName;
 
 // Interesting event types (i.e., TraceMe names).
 enum HostEventType {
@@ -194,6 +195,7 @@ enum StatType {
   kFlops,
   kBytesAccessed,
   kSelectedGroupIds,
+  kSourceInfo,
   // Performance counter related.
   kRawValue,
   kScaledValue,
@@ -209,6 +211,7 @@ enum StatType {
   kDevCapMemorySize,
   kDevCapComputeCapMajor,
   kDevCapComputeCapMinor,
+  kDevManufacturer,
   // Batching related.
   kBatchSizeAfterPadding,
   kPaddingAmount,

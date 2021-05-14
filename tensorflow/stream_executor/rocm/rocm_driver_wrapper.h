@@ -104,9 +104,12 @@ namespace wrap {
   __macro(hipMemcpyHtoD)                            \
   __macro(hipMemcpyHtoDAsync)                       \
   __macro(hipMemset)                                \
-  __macro(hipMemsetD32)                             \
-  __macro(hipMemsetD8)                              \
+  __macro(hipMemsetD8)                             \
+  __macro(hipMemsetD16)                             \
+  __macro(hipMemsetD32)                              \
   __macro(hipMemsetAsync)                           \
+  __macro(hipMemsetD8Async)                         \
+  __macro(hipMemsetD16Async)                        \
   __macro(hipMemsetD32Async)                        \
   __macro(hipModuleGetFunction)                     \
   __macro(hipModuleGetGlobal)                       \
