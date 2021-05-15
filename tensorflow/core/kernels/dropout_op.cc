@@ -15,17 +15,15 @@ limitations under the License.
 
 #define EIGEN_USE_THREADS
 
-
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/random_op.h"
-#include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/lib/random/random.h"
 #include "tensorflow/core/util/guarded_philox_random.h"
 #include "tensorflow/core/util/tensor_format.h"
-#include "tensorflow/stream_executor/temporary_device_memory.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+
 #include "dropout_op.h"
 
 namespace tensorflow {
@@ -33,37 +31,39 @@ typedef Eigen::ThreadPoolDevice CPUDevice;
 
 template <typename T>
 struct ApplyDropout<CPUDevice, T> {
-  void operator()(const CPUDevice& d, T* out, const T* in,
+  void operator()(const CPUDevice& d, T* out, uint8* mask, const T* in,
                   const float* rng_data, float rate, uint64 num_elements,
                   random::PhiloxRandom gen, bool seeded);
 };
 
 template <typename T>
 struct ApplyDropoutGrad<CPUDevice, T> {
-  void operator()(const CPUDevice& d, T* outgrads, const T* grads, const T* ins,
-                  const T* outs, float rate, uint64 num_elements);
+  void operator()(const CPUDevice& d, T* outgrads, const T* grads, const uint8* mask,
+                  float rate, uint64 num_elements);
 };
 
 template <typename T>
-void ApplyDropout<CPUDevice, T>::operator()(const CPUDevice& d, T* out,
+void ApplyDropout<CPUDevice, T>::operator()(const CPUDevice& d, T* out, uint8* mask, 
                                             const T* in, const float* rng_data,
                                             float rate, uint64 num_elements,
                                             random::PhiloxRandom gen,
                                             bool seeded) {
   T scale = T(1. / (1. - rate));
   for (uint64 i = 0; i < num_elements; i++) {
-    out[i] = (rng_data[i] > rate) ? in[i] * scale : T(0.0);
+    bool b = (rng_data[i] > rate);
+    out[i] = b ? in[i] * scale : T(0.0);
+    mask[i] = (uint8)b;
   }
 }
 
 template <typename T>
 void ApplyDropoutGrad<CPUDevice, T>::operator()(const CPUDevice& d, T* outgrads,
-                                                const T* grads, const T* ins,
-                                                const T* outs, float rate,
+                                                const T* grads, const uint8* mask,
+                                                float rate,
                                                 uint64 num_elements) {
   T scale = T(1. / (1 - rate));
   for (uint64 i = 0; i < num_elements; i++) {
-    outgrads[i] = (outs[i] == T(0)) ? T(0) : grads[i] * scale;
+    outgrads[i] = mask[i] ? (grads[i] * scale) : T(0);
   }
 };
 
@@ -102,6 +102,9 @@ class DropoutOp : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, in0.shape(), &output));
     if (output->NumElements() == 0) return;
 
+    Tensor* mask;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(1, in0.shape(), &mask));
+
     const Tensor& in3 = ctx->input(3);
     OP_REQUIRES(
         ctx, in3.dims() == 0,
@@ -112,10 +115,11 @@ class DropoutOp : public OpKernel {
     else
       seed = in3.scalar<int64>()();
     // don't reset the seed for every call unless it is explicitly non-0
-    if(seed == 0)
-      generator_.ResetSeeds(random::New64(), random::New64());
-    else
+    if (seed != 0) 
       generator_.ResetSeeds(seed, 0);
+    else
+      generator_.ResetSeeds(random::New64(), 0);
+
     typedef random::UniformDistribution<random::PhiloxRandom, float>
         Distribution;
     Distribution dist;
@@ -128,17 +132,19 @@ class DropoutOp : public OpKernel {
                      ctx->allocate_temp(DataTypeToEnum<float>::value,
                                         TensorShape(in0.shape()), &rng_data));
       auto rng_flat = rng_data.flat<float>();
-
       functor::FillPhiloxRandom<Device, Distribution>()(
-          ctx, ctx->eigen_device<Device>(), gen, rng_flat.data(),
-          rng_flat.size(), dist);
+          ctx, ctx->eigen_device<Device>(), gen, rng_flat.data(), rng_flat.size(), dist);
       ApplyDropout<Device, T>()(ctx->eigen_device<Device>(),
-                                output->flat<T>().data(), in0.flat<T>().data(),
+                                output->flat<T>().data(),
+                                mask->flat<uint8>().data(),
+                                in0.flat<T>().data(),
                                 rng_flat.data(), rate, in0.NumElements(), gen,
                                 seed != 0);
     } else {
       ApplyDropout<Device, T>()(ctx->eigen_device<Device>(),
-                                output->flat<T>().data(), in0.flat<T>().data(),
+                                output->flat<T>().data(),
+                                mask->flat<uint8>().data(),
+                                in0.flat<T>().data(),
                                 nullptr, rate, in0.NumElements(), gen,
                                 seed != 0);
     }
@@ -174,14 +180,13 @@ TF_CALL_half(REGISTER_DROPOUT_GPU);
 template <typename Device, typename T>
 class DropoutGradOp : public OpKernel {
  public:
-  explicit DropoutGradOp(OpKernelConstruction* context) : OpKernel(context) {
-  }
+  explicit DropoutGradOp(OpKernelConstruction* context) : OpKernel(context) {}
 
   ~DropoutGradOp() override {}
   void Compute(OpKernelContext* ctx) override {
-    const Tensor& in0 = ctx->input(0);
+    const Tensor& grad = ctx->input(0);
     const Tensor& in1 = ctx->input(1);
-    OP_REQUIRES(ctx, in0.dtype() == in1.dtype(),
+    OP_REQUIRES(ctx, grad.dtype() == in1.dtype(),
                 errors::InvalidArgument(
                     "Dropout rate must be same type as input tensor."));
     OP_REQUIRES(
@@ -189,28 +194,21 @@ class DropoutGradOp : public OpKernel {
         errors::InvalidArgument("Dropout rate must be a scalar tensor."));
     float rate = static_cast<float>(in1.scalar<T>()());
 
-    const Tensor& in2 = ctx->input(2);
-    OP_REQUIRES(ctx, in0.dims() == in2.shape().num_elements(),
-                errors::InvalidArgument("MIOpen only supports input dimensions "
-                                        "to match noise dimensions."));
-    const Tensor& inputs = ctx->input(3);
-    OP_REQUIRES(ctx, in0.NumElements() == inputs.NumElements(),
-                errors::InvalidArgument("ROCm DropoutGrad dim mismatch"));
-
-    const Tensor& outputs = ctx->input(4);
-    OP_REQUIRES(ctx, in0.NumElements() == outputs.NumElements(),
+    const Tensor& mask = ctx->input(2);
+    OP_REQUIRES(ctx, grad.NumElements() == mask.NumElements(),
                 errors::InvalidArgument("ROCm DropoutGrad dim mismatch"));
 
     // Allocate output, and exit early if possible
     Tensor* output;
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, in0.shape(), &output));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, grad.shape(), &output));
     if (output->NumElements() == 0) return;
 
     ApplyDropoutGrad<Device, T>()(
         ctx->eigen_device<Device>(), output->flat<T>().data(),
-        in0.flat<T>().data(),  // gradients
-        inputs.flat<T>().data(), outputs.flat<T>().data(), rate,
-        in0.NumElements());
+        grad.flat<T>().data(),
+        mask.flat<uint8>().data(),
+        rate,
+        grad.NumElements());
   }
 };
 
@@ -228,13 +226,12 @@ TF_CALL_half(REGISTER_DROPOUT_GRAD_CPU);
   REGISTER_KERNEL_BUILDER(Name("DropoutGrad")             \
                               .Device(DEVICE_GPU)         \
                               .TypeConstraint<TYPE>("T")  \
-                              .HostMemory("rate")         \
-                              .HostMemory("noise_shape"), \
+                              .HostMemory("rate"),        \
                           DropoutGradOp<GPUDevice, TYPE>);
 
 TF_CALL_double(REGISTER_DROPOUT_GRAD_GPU);
 TF_CALL_float(REGISTER_DROPOUT_GRAD_GPU);
 TF_CALL_half(REGISTER_DROPOUT_GRAD_GPU);
-#endif 
+#endif
 
 }  // namespace tensorflow

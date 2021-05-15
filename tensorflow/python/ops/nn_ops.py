@@ -4327,7 +4327,7 @@ def dropout_v2(x, rate, noise_shape=None, seed=None, name=None):
         and null_noise_shape:
       if seed is None:
         seed = 0
-      return gen_nn_ops.dropout(x,rate,noise_shape=noise_shape,seed=seed)
+      return gen_nn_ops.dropout(x,rate,noise_shape=noise_shape,seed=seed)[0]
 
     # Sample a uniform distribution on [0.0, 1.0) and select values larger
     # than rate.
