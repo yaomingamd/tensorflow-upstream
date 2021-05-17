@@ -101,7 +101,7 @@ REQUIRED_PACKAGES = [
     # They are updated during the release process
     # When updating these, please also update the nightly versions below
     'tensorboard ~= 2.5',
-    'tensorflow-estimator >= 2.5.0rc0 , < 2.6.0',
+    'tensorflow-estimator >= 2.5.0 , < 2.6.0',
     # TODO(scottzhu): OSS keras hasn't been formally released yet.
     # Use keras-nightly at the moment.
     'keras-nightly ~= 2.5.0.dev',
@@ -343,6 +343,7 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',        
         'Programming Language :: Python :: 3 :: Only',
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',
