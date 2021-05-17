@@ -360,7 +360,8 @@ tf_cuda_cc_test(
     size = "small",
     srcs = ["gpu_unary_ops_test.cc"],
     tags = tf_cuda_tests_tags() + [
-        "no_cuda_asan",  # TODO(b/171341759): re-enable.
+        "no_cuda_asan",  # TODO(b/171341759): re-enable.,
+        "no_rocm"
     ],
     deps = [
         ":base_ops_test",
