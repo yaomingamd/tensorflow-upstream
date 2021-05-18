@@ -99,7 +99,7 @@ pip3 install pycodestyle
 # tf.mock require the following for python2:
 pip2 install mock
 
-pip2 install portpicker
+# pip2 install portpicker
 pip3 install portpicker
 
 # TensorFlow Serving integration tests require the following:
