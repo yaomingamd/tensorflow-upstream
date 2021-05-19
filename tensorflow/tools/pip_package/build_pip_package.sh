@@ -361,7 +361,7 @@ function main() {
   elif [[ ${GPUDIRECT_BUILD} == "1" ]]; then
     PKG_NAME_FLAG="--project_name tensorflow_gpudirect"
   elif [[ ${ROCM_BUILD} == "1" ]]; then
-    PKG_NAME_FLAG="--project_name tensorflow_rocm"
+    PKG_NAME_FLAG="--project_name tensorflow_rocm_enhanced"
   elif [[ ${CPU_BUILD} == "1" ]]; then
     PKG_NAME_FLAG="--project_name tensorflow_cpu"
   fi
