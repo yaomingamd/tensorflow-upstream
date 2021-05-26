@@ -48,7 +48,9 @@ namespace grappler {
 bool GetFastFP16Support(const DeviceProperties &props)
 {
     bool supported = false;
-    std::set<std::string> FP16SupportedDevices = {"gfx906", "gfx908"};
+    std::set<std::string> FP16SupportedDevices = {
+        "gfx906",    "gfx908",    {"gfx90a"}, {"gfx910"},
+        {"gfx1010"}, {"gfx1012"}, {"gfx1030"}};
     std::string gcnArchName = props.environment().at("architecture");
     std::vector<std::string> gpu_arch = absl::StrSplit(gcnArchName, ":");
     supported = std::find(std::begin(FP16SupportedDevices),
