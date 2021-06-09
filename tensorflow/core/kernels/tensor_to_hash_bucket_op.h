@@ -66,13 +66,13 @@ struct LaunchTensorToHashBucket {
   }
 };
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 template <typename T>
 struct LaunchTensorToHashBucket<Eigen::GpuDevice, T> {
   void operator()(OpKernelContext* c, const int64 num_buckets, const T* input,
                   const int num_elems, int64* output);
 };
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 }  // namespace functor
 
 }  // namespace tensorflow
