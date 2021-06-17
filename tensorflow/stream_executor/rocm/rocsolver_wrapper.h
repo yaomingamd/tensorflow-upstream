@@ -1,4 +1,4 @@
-/* Copyright 2020 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2021 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ limitations under the License.
 #ifndef TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCSOLVER_WRAPPER_H_
 #define TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCSOLVER_WRAPPER_H_
 
-#include "rocm/include/rocsolver.h"
+#include "rocm/include/rocsolver/rocsolver.h"
 #include "tensorflow/stream_executor/lib/env.h"
 #include "tensorflow/stream_executor/platform/dso_loader.h"
 #include "tensorflow/stream_executor/platform/port.h"
@@ -30,43 +30,49 @@ namespace wrap {
 
 #ifdef PLATFORM_GOOGLE
 
-#define ROCSOLVER_API_WRAPPER(api_name)                        \
-  template <typename... Args>                                  \
-  auto api_name(Args... args)->decltype(::api_name(args...)) { \
-    return ::api_name(args...);                                \
-  }
+#define ROCSOLVER_API_WRAPPER(__name)               \
+  struct WrapperShim__##__name {                    \
+    template <typename... Args>                     \
+    rocsolverStatus_t operator()(Args... args) {    \
+      rocsolverStatus_t retval = ::__name(args...); \
+      return retval;                                \
+    }                                               \
+  } __name;                                         \
 
 #else
 
-#define TO_STR_(x) #x
-#define TO_STR(x) TO_STR_(x)
-
-#define ROCSOLVER_API_WRAPPER(api_name)                                       \
-  template <typename... Args>                                                 \
-  auto api_name(Args... args)->decltype(::api_name(args...)) {                \
-    using FuncPtrT = std::add_pointer<decltype(::api_name)>::type;            \
-    static FuncPtrT loaded = []() -> FuncPtrT {                               \
-      static const char* kName = TO_STR(api_name);                            \
-      void* f;                                                                \
-      auto s = stream_executor::port::Env::Default()->GetSymbolFromLibrary(   \
-          stream_executor::internal::CachedDsoLoader::GetRocsolverDsoHandle() \
-              .ValueOrDie(),                                                  \
-          kName, &f);                                                         \
-      CHECK(s.ok()) << "could not find " << kName                             \
-                    << " in rocsolver lib; dlerror: " << s.error_message();   \
-      return reinterpret_cast<FuncPtrT>(f);                                   \
-    }();                                                                      \
-    return loaded(args...);                                                   \
-  }
+#define ROSOLVER_API_WRAPPER(__name)                                           \
+  struct DynLoadSHim__##__name {                                               \
+    static const char* kName;                                                  \
+    using FuncPtrT = std::add_pointer<decltype(::__name)>::type;               \
+    static void* GetDsoHandle() {                                              \
+      auto s =                                                                 \
+          stream_executor::internal::CachedDsoLoader::GetRocsolverDsoHandle(); \
+      return s.ValueOrDie();                                                   \
+    }                                                                          \
+    static FuncPtrT LoadOrDie() {                                              \
+      void* f;                                                                 \
+      auto s =                                                                 \
+          Env::Default()->GetSymbolFromLibrary(GetDsoHandle(), kName, &f);     \
+      CHECK(s.ok()) << "could not find " << kName                              \
+                    << " in miopen DSO; dlerror: " << s.error_message();       \
+      return reinterpret_cast<FuncPtrT>(f);                                    \
+    }                                                                          \
+    static FuncPtrT DynLoad() {                                                \
+      static FuncPtrT f = LoadOrDie();                                         \
+      return f;                                                                \
+    }                                                                          \
+    template <typename... Args>                                                \
+    rocsolverStatus_t operator()(Args... args) {                               \
+      return DynLoad()(args...);                                               \
+    }                                                                          \
+  } __name;                                                                    \
+  const char* DynLoadShim__##__name::kName = #__name;                          
 
 #endif
 
 // clang-format off
 #define FOREACH_ROCSOLVER_API(__macro)		\
-  __macro(rocsolver_spotrf)			\
-  __macro(rocsolver_dpotrf)			\
-  __macro(rocsolver_cpotrf)			\
-  __macro(rocsolver_zpotrf)
 
 // clang-format on
 
@@ -74,10 +80,28 @@ FOREACH_ROCSOLVER_API(ROCSOLVER_API_WRAPPER)
 
 #undef TO_STR_
 #undef TO_STR
+#define FOREACH_ROCSOLVER_API(__macro)      \
+  __macro(rocsolver_dgetrf)                 \
+  __macro(rocsolver_sgetrf)                 \
+  __macro(rocsolver_dgetrs)                 \
+  __macro(rocsolver_sgetrs)                 \
+  __macro(rocsolver_dgetrf_batched)         \
+  __macro(rocsolver_sgetrf_batched)         \
+  __macro(rocsolver_dgetrs_batched)         \
+  __macro(rocsolver_sgetrs_batched)         \ 
+  __macro(rocsolver_spotrf)	    	        \
+  __macro(rocsolver_dpotrf)	                \
+  __macro(rocsolver_cpotrf)	                \
+  __macro(rocsolver_zpotrf)
+
+
+// clang-format on
+FOREACH_ROCSOLVER_API(ROCSOLVER_API_WRAPPER)
+
 #undef FOREACH_ROCSOLVER_API
 #undef ROCSOLVER_API_WRAPPER
 
 }  // namespace wrap
 }  // namespace tensorflow
 
-#endif  // TENSORFLOW_STREAM_EXECUTOR_ROCM_ROCSOLVER_WRAPPER_H_
+#endif  // TENSORLFOW_STREAM_EXECUTOR_ROCM_ROCSOLVER_WRAPPER_H_

@@ -18,7 +18,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_KERNELS_LINALG_ROCM_SOLVERS_H_
 
 // This header declares the class ROCmSolver, which contains wrappers of linear
-// algebra solvers in the cuBlas and cuSolverDN libraries for use in TensorFlow
+// algebra solvers in the rocBlas and rocSolverDN libraries for use in TensorFlow
 // kernels.
 
 #if TENSORFLOW_USE_ROCM
@@ -28,12 +28,14 @@ limitations under the License.
 
 #include "rocm/include/hip/hip_complex.h"
 #include "rocm/include/rocblas.h"
+#include "rocm/include/rocsolver.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_reference.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/stream_executor/blas.h"
+#include "tensorflow/stream_executor/rocm/rocsolver_wrapper.h"
 
 namespace tensorflow {
 
@@ -51,7 +53,7 @@ struct ROCmComplexT<std::complex<double>> {
   typedef hipDoubleComplex type;
 };
 // Converts pointers of std::complex<> to pointers of
-// cuComplex/cuDoubleComplex. No type conversion for non-complex types.
+// ROCmComplex/ROCmDoubleComplex. No type conversion for non-complex types.
 template <typename T>
 inline const typename ROCmComplexT<T>::type* ROCmComplex(const T* p) {
   return reinterpret_cast<const typename ROCmComplexT<T>::type*>(p);
@@ -74,11 +76,53 @@ class ROCmSolver {
   // ROCmSolver object.
   Status allocate_scoped_tensor(DataType type, const TensorShape& shape,
                                 Tensor* scoped_tensor);
+
   Status forward_input_or_allocate_scoped_tensor(
       gtl::ArraySlice<int> candidate_input_indices, DataType type,
       const TensorShape& shape, Tensor* input_alias_or_new_scoped_tensor);
 
   OpKernelContext* context() { return context_; }
+
+  template <typename Scalar>
+  ScratchSpace<Scalar> GetScratchSpace(const TensorShape& shape,
+                                       const std::string& debug_info,
+                                       bool on_host);
+  template <typename Scalar>
+  ScratchSpace<Scalar> GetScratchSpace(int64 size,
+                                       const std::string& debug_info,
+                                       bool on_host);
+  // ====================================================================
+  // Wrappers for ROCSolver start here
+  //
+  // The method names below
+  // map to those in ROCSolver, which follow the naming
+  // convention in LAPACK see
+
+  // LU factorization.
+  // Computes LU factorization with partial pivoting P * A = L * U.
+  template <typename Scalar>
+  Status 
+  getrf(int m, int n, Scalar* dev_A,
+        int lda, int* dev_pivots);
+
+  // Uses LU factorization to solve A * X = B.
+  template <typename Scalar>
+  Status
+  getrs(const rocblas_operation trans, int n, int nrhs, const Scalar* A,
+        int lda, const int* dev_pivots, Scalar* B, int ldb);
+
+  template <typename Scalar>
+  Status
+  getrf_batched(int m, int n, Scalar* dev_A, int lda, int* dev_pivots,
+                rocblas_stride stride, int* info, const int batch_count);
+
+  template <typename Scalar>
+  Status
+  getrs_batched(const rocblas_operation trans, int n,
+                int nrhs, const Scalar* A, int lda, int* dev_pivots,
+                rocblas_stride stride, Scalar* B, const int ldb,
+                const int batch_count);
+
 
   template <typename Scalar>
   Status Trsm(rocblas_side side, rocblas_fill uplo, rocblas_operation trans,
