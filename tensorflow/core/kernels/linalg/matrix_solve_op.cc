@@ -472,8 +472,6 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
       for (int batch = 0; batch < batch_size; ++batch) {
         input_copy_ptrs_base[batch] = &input_copy_reshaped(batch, 0, 0);
       }
-/*      dev_info.push_back(
-          solver->GetDeviceLapackInfo(batch_size, "getrf_batched")); */
       OP_REQUIRES_OK_ASYNC(
           context,
           solver->getrf_batched(n, n, input_copy_ptrs_base, n, pivots_mat.data(),
@@ -530,7 +528,6 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
     auto transposed_rhs_reshaped =
         transposed_rhs.template flat_inner_dims<Scalar, 3>();
     if (use_batched_solver) {
-      dev_info.push_back(solver->GetDeviceLapackInfo(batch_size, "getrs_batched"));
       const Scalar** input_copy_ptrs_base =
           reinterpret_cast<const Scalar**>(input_copy_ptr_array.mutable_data());
       const Scalar** transposed_rhs_ptrs_base =
@@ -579,27 +576,6 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
                     transposed_rhs.flat<Scalar>().data(),
                     transposed_rhs.NumElements() * sizeof(Scalar));
     }
-
-    // Callback for checking info after kernels finish. Also capture the
-    // temporary Tensors/ScratchSpace so they don't get deallocated before the
-    // kernels run. TODO(sireeves): Use move capture once C++14 becomes
-    // available. This is a carry over from the cuBlas implementation
-    // may not be necessary for ROCm.
-    auto info_checker = [context, done, dev_info](
-                            const Status& status,
-                            const std::vector<HostLapackInfo>& host_infos) {
-      if (!status.ok() && errors::IsInvalidArgument(status) &&
-          !host_infos.empty()) {
-        for (int i = 0; i < host_infos[0].size(); ++i) {
-          // Match the CPU error message for singular matrices. Otherwise
-          // just print the original error message from the status below.
-          OP_REQUIRES_ASYNC(context, host_infos[0].data()[i] <= 0,
-                            errors::InvalidArgument(kErrMsg), done);
-        }
-      }
-      OP_REQUIRES_OK_ASYNC(context, status, done);
-      done();
-    };
   }
 
  private:
