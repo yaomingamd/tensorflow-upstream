@@ -129,7 +129,7 @@ ROCmSolver::~ROCmSolver() {
   wrap::rocblas##_##type_prefix##method
 
 //Macro to construct rocsolver method names.
-#define SOLVER_FR(method, type_prefix) \
+#define SOLVER_FN(method, type_prefix) \
   wrap::rocsolver##_##type_prefix##method
 
 template <typename Scalar, typename SolverFnT>
@@ -137,7 +137,7 @@ static inline Status GetrfImpl(SolverFnT solver, OpKernelContext* context,
                                rocblas_handle rocsolver_handle, 
                                int m, int n, Scalar* A, int lda,
                                int* dev_pivots){
-//  mutex_lock lock(handle_map_mutex);
+  mutex_lock lock(handle_map_mutex);
   using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
   TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, m, n, 
                                     reinterpret_cast<ROCmScalar*> (A),
@@ -150,7 +150,7 @@ static inline Status GetrfImpl(SolverFnT solver, OpKernelContext* context,
   template <>                                                   \
   Status ROCmSolver::getrf<Scalar>(int m, int n, Scalar* dev_A, \
                                    int lda, int* dev_pivots) {  \
-    return GetrfImpl(SOLVER_FR(getrf, type_prefix), context_,   \
+    return GetrfImpl(SOLVER_FN(getrf, type_prefix), context_,   \
                      rocm_blas_handle_, m, n, dev_A, lda,       \
                      dev_pivots);                               \
   }  
@@ -179,7 +179,7 @@ static inline Status GetrsImpl(SolverFnT solver, OpKernelContext* context,
                                    int n, int nrhs, const Scalar* A,  \
                                    int lda, const int* dev_pivots,    \
                                    Scalar* B, int ldb) const {        \
-    return GetrsImpl(SOLVER_FR(getrs, type_prefix), context_,         \
+    return GetrsImpl(SOLVER_FN(getrs, type_prefix), context_,         \
                      *rocm_blas_handle_, n, nrhs, A, lda, dev_pivots, \
                      B, ldb);                                         \
   }
@@ -206,7 +206,7 @@ static inline Status GetrfBatchedImpl(SolverFnT solver, OpKernelContext* context
   Status ROCmSolver::getrf_batched(int m, int n, Scalar* A, int lda,         \
                                    int* dev_pivots, rocblas_stride stride,   \
                                    int* info, const int batch_size) {        \
-    return GetrfBatchedImpl(SOLVER_FR(getrf_batched, type_prefix), context_, \
+    return GetrfBatchedImpl(SOLVER_FN(getrf_batched, type_prefix), context_, \
                             *rocm_blas_handle_, m, n, A, lda, stride, info,  \
                             batch_size);                                     \
   }
@@ -214,7 +214,7 @@ static inline Status GetrfBatchedImpl(SolverFnT solver, OpKernelContext* context
 TF_CALL_LAPACK_TYPES(GETRF_BATCHED_INSTANCE); 
 
 template <typename Scalar, typename SolverFnT>
-static inline Status GetrsBatchedImpl(SolverFnT sover, OpKernelContext* context, 
+static inline Status GetrsBatchedImpl(SolverFnT solver, OpKernelContext* context, 
                                       rocblas_handle rocsolver_handle, 
                                       const rocblas_operation trans, int n,
                                       int nrhs, const Scalar* A, int lda,
@@ -235,7 +235,7 @@ static inline Status GetrsBatchedImpl(SolverFnT sover, OpKernelContext* context,
                                    int* dev_pivots, rocblas_stride stride,      \
                                    Scalar* B, const int ldb,                    \
                                    const int batch_size) {                      \
-  return GetrsBatchedImpl(SOLVER_FR(getrs_batched, type_prefix), context_,      \
+  return GetrsBatchedImpl(SOLVER_FN(getrs_batched, type_prefix), context_,      \
                                     *rocm_blas_handle_, trans, n, nrhs, A, lda, \
                                     dev_pivots, stride, B, ldb, batch_size);    \
   }
