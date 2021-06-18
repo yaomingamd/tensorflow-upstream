@@ -129,7 +129,7 @@ ROCmSolver::~ROCmSolver() {
   wrap::rocblas##_##type_prefix##method
 
 //Macro to construct rocsolver method names.
-#define SOLVER_FN(method, solver_prefix) wrap::rocsolver_##solver_prefix##method
+#define SOLVER_FN(method, solver_prefix) wrap::rocsolver##_##solver_prefix##method
 
 template <typename Scalar, typename SolverFnT>
 static inline Status GetrfImpl(SolverFnT solver, OpKernelContext* context,
