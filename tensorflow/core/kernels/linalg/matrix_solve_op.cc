@@ -553,7 +553,6 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
                                   "an illegal value."),
           done);
     } else {
-      dev_info.push_back(solver->GetDeviceLapackInfo(batch_size, "getrs"));
       for (int batch = 0; batch < batch_size; ++batch) {
         OP_REQUIRES_OK_ASYNC(
             context,
