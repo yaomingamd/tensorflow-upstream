@@ -150,8 +150,8 @@ static inline Status GetrfImpl(SolverFnT solver, OpKernelContext* context,
   Status ROCmSolver::getrf<Scalar>(int m, int n, Scalar* dev_A, \
                                    int lda, int* dev_pivots) {  \
     return GetrfImpl(SOLVER_FN(getrf, type_prefix), context_,   \
-                     *rocm_blas_handle_, m, n, dev_A, lda,      \
-                      dev_pivots);                              \
+                     rocm_blas_handle_, m, n, dev_A, lda,       \
+                     dev_pivots);                               \
   }  
 
 TF_CALL_LAPACK_TYPES(GETRF_INSTANCE);
