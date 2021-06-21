@@ -97,6 +97,8 @@ void AddSupportedOpsUsingDynamicPadder(
   llvm::SmallDenseSet<OperationName, 8> allowlist_ops = {
       OperationName(TF::WhereOp::getOperationName(), context),
       OperationName(TF::UniqueOp::getOperationName(), context),
+      OperationName(TF::XlaSetDynamicDimensionSizeOp::getOperationName(),
+                    context),
   };
 
   supported_ops->insert(allowlist_ops.begin(), allowlist_ops.end());
@@ -367,7 +369,7 @@ void MarkOpsForOutsideCompilation::runOnOperation() {
     getOperation().emitError() << "'tf' dialect is not registered";
     return signalPassFailure();
   }
-  OwningRewritePatternList patterns;
+  OwningRewritePatternList patterns(&getContext());
   mhlo::PopulateLegalizeTfPatterns(module.getContext(), &patterns);
   TF::PopulateLoweringTFPatterns(module.getContext(), &patterns);
   AddCanonicalizationPatterns(module.getContext(), &patterns);

@@ -33,7 +33,11 @@ load("@local_config_tensorrt//:build_defs.bzl", "if_tensorrt")
 
 package(
     default_visibility = ["//visibility:public"],
-    licenses = ["notice"],  # Apache 2.0
+    features = [
+        "-layering_check",
+        "-parse_headers",
+    ],
+    licenses = ["notice"],
 )
 
 cc_library(
@@ -171,10 +175,11 @@ tf_cuda_cc_test(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
+        "//tensorflow/core:ops",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/core:testlib",
+        "//tensorflow/core/framework:fake_input",
         "//tensorflow/core/kernels:ops_testutil",
         "//tensorflow/core/kernels:resource_variable_ops",
         "@com_google_absl//absl/container:inlined_vector",
@@ -211,10 +216,10 @@ tf_cuda_cc_test(
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/core:testlib",
         "//tensorflow/core/kernels:ops_testutil",
         "//tensorflow/core/kernels:function_ops",
         "//tensorflow/core/kernels:array",
+        "//tensorflow/core/framework:fake_input",
     ] + if_tensorrt([
         "@local_config_cuda//cuda:cuda_headers",
     ]),
@@ -422,10 +427,12 @@ tf_cuda_library(
         "//tensorflow/core/grappler:grappler_item",
         "//tensorflow/core/grappler:op_types",
         "//tensorflow/core/grappler:utils",
+        "//tensorflow/core/grappler/utils:functions",
         "//tensorflow/core:framework",
         "//tensorflow/core:framework_lite",
         "//tensorflow/core:gpu_runtime",
         "//tensorflow/core:graph",
+        "//tensorflow/core/kernels/linalg:einsum_op",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:protos_all_cc",
@@ -468,7 +475,6 @@ tf_cuda_cc_test(
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/core:testlib",
     ] + if_tensorrt([":tensorrt_lib"]),
 )
 
@@ -503,7 +509,6 @@ tf_cuda_cc_test(
         "//tensorflow/core/framework:tensor_testutil",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/core:testlib",
     ] + if_tensorrt([
         ":tensorrt_lib",
         "@local_config_cuda//cuda:cuda_headers",
@@ -572,7 +577,6 @@ tf_cuda_cc_test(
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/core:testlib",
     ],
 )
 

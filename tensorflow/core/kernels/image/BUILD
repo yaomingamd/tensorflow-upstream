@@ -37,7 +37,8 @@ package(
         "//tensorflow:__subpackages__",
         "//tensorflow:internal",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    features = ["-layering_check"],
+    licenses = ["notice"],
 )
 
 # Export a few files for use on Android.
@@ -425,6 +426,7 @@ cc_library(
     name = "android_tensorflow_image_op",
     srcs = if_android(["decode_image_op.cc"]),
     copts = tf_copts(),
+    features = ["-no_undefined"],
     linkopts = ["-ldl"],
     visibility = ["//visibility:public"],
     deps = [
@@ -443,7 +445,7 @@ build_test(
 
 # A file group which contains all operators which are known to work on mobile.
 filegroup(
-    name = "android_all_op_kernels",
+    name = "portable_all_op_kernels",
     srcs = glob(
         [
             "*.cc",
@@ -466,7 +468,7 @@ filegroup(
 )
 
 filegroup(
-    name = "android_all_ops_textual_hdrs",
+    name = "portable_all_ops_textual_hdrs",
     srcs = ["mirror_pad_op.h"],
     visibility = ["//visibility:public"],
 )

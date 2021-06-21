@@ -27,7 +27,7 @@ try:
   import wrapt
 except ImportError:
   # Fall back to the build-time dependency if the system package is not available.
-  from .....third_party import wrapt
+  from .....third_party import wrapt  # pylint: disable=relative-beyond-top-level
 
 from tensorflow.python.eager import def_function
 from tensorflow.python.eager import function as defun
@@ -73,16 +73,26 @@ class NoDependency(object):
 
 def _should_wrap_tuple(t):
   """Determine if a tuple has any trackable components."""
+  # pylint: disable=unidiomatic-typecheck
+  # Exact type checking to avoid mucking up custom logic in list/dict
+  # subclasses, e.g. collections.Counter.
   for element in t:
     if isinstance(element, NoDependency):
       return True  # We should remove the NoDependency object from the tuple.
     if isinstance(element, base.Trackable):
       return True
-    if wrap_or_unwrap(element) is not element:
+    if type(element) == dict:
+      return True
+    if type(element) == collections.OrderedDict:
+      return True
+    if type(element) == list:
+      return True
+    if isinstance(element, tuple) and _should_wrap_tuple(element):
       return True
   # There are no trackable elements or data structures. Tuples are immutable, so
   # mutation isn't a concern. Don't wrap.
   return False
+  # pylint: enable=unidiomatic-typecheck
 
 
 @tf_export("__internal__.tracking.wrap", v1=[])
@@ -123,6 +133,7 @@ def wrap_or_unwrap(value):
   # pylint: enable=unidiomatic-typecheck
 
 
+@tf_export("__internal__.tracking.sticky_attribute_assignment", v1=[])
 def sticky_attribute_assignment(trackable, name, value):
   """Adds dependencies, generally called from __setattr__.
 
@@ -169,6 +180,7 @@ class _UntrackableError(ValueError):
              "Trackable.") % (self._value,))
 
 
+@tf_export("__internal__.tracking.TrackableDataStructure", v1=[])
 class TrackableDataStructure(base.Trackable):
   """Base class for data structures which contain trackable objects."""
 
@@ -1070,6 +1082,11 @@ class _TupleWrapper(TrackableDataStructure, wrapt.ObjectProxy):
     return super(_TupleWrapper, self)._checkpoint_dependencies
 
   def __getattribute__(self, name):
+    if name != "__wrapped__" and hasattr(self.__wrapped__, name):
+      # Prefer attributes on the wrapped object when they conflict with
+      # attributes on the wrapper object.
+      return getattr(self.__wrapped__, name)
+
     if (hasattr(type(self), name)
         and isinstance(getattr(type(self), name), property)):
       # Bypass ObjectProxy for properties. Whether this workaround is necessary

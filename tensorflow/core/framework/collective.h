@@ -71,9 +71,6 @@ struct CollGroupParams {
   bool same_num_devices_per_task = false;
   // Task -> number of devices on that task.
   std::unordered_map<string, int32> num_devices_per_task;
-  // If passed in to GPUOptions in ConfigProto, defines a good ring order for
-  // GPUs.  Assumes same GPU configuration at each worker.
-  string gpu_ring_order = "";
   int32 num_tasks;  // number of distinct tasks in group
   CollGroupRuntimeDetails runtime_details;
   string ToString() const;
@@ -91,6 +88,13 @@ struct CollGroupParams {
 struct CollImplDetails {
   string collective_name;
   std::vector<std::vector<int>> subdiv_permutations;
+  // subdiv_offsets and max_subdivs_per_device are used together as follows:
+  // When subdiv_offsets is provided (non-empty) it is used as is. When
+  // subdiv_offsets is not provided subdivisons are generated dynamically
+  // constrained by max_subdivs_per_device. When subdiv_offsets is empty AND
+  // max_subdivs_per_device = 0 an internal default kMaxSubdivsPerDeviceDefault
+  // is used. When max_subdivs_per_device = -1, no subivision is done.
+  int max_subdivs_per_device = -1;  // Upper bound on subdivisions per device.
   std::vector<int> subdiv_offsets;
   std::vector<int> subdiv_source_rank;  // rank of source in each subdiv
   std::vector<int32>

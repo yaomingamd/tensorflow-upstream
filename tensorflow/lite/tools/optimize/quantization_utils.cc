@@ -515,7 +515,7 @@ TfLiteStatus QuantizeTensorFloat16(ModelT* model, TensorT* tensor) {
                  quantized_buffer.begin(), [=](float a) {
                    float clamped = std::min(std::max(a, kMinFloat16Value),
                                             kMaxFloat16Value);
-                   return Eigen::half_impl::float_to_half_rtne(clamped);
+                   return static_cast<Eigen::half>(clamped);
                  });
 
   char* half_buffer = reinterpret_cast<char*>(quantized_buffer.data());
@@ -702,8 +702,9 @@ TfLiteStatus QuantizeWeight(ModelT* model, TensorT* tensor, bool per_channel,
   if (per_channel) {
     return SymmetricQuantizeTensorPerChannel(model, tensor, per_axis_index,
                                              error_reporter);
-  } else if (HasMinMax(tensor)) {
-    // Quantize using recorded min/max values.
+  } else if (HasMinMax(tensor) && (tensor->quantization->min.size() == 1) &&
+             (tensor->quantization->max.size() == 1)) {
+    // Quantize using recorded min/max values if per-tensor.
     return SymmetricQuantizeTensorFromMinMax(model, tensor, error_reporter);
   } else {
     // Quantize using min/max from buffer.

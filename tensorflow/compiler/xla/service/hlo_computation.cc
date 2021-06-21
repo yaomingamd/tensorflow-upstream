@@ -71,7 +71,8 @@ HloComputation::HloComputation(
     : name_(NameUniquer::GetSanitizedName(name)),
       unique_id_(-1),
       root_instruction_(root_instruction),
-      fusion_instruction_(fusion_instruction) {
+      fusion_instruction_(fusion_instruction),
+      is_fusion_computation_(fusion_instruction != nullptr) {
   param_instructions_.resize(parameter_count, nullptr);
   bool root_found = false;
   for (auto& instruction : *instructions) {
@@ -90,6 +91,14 @@ HloComputation::HloComputation(
   }
   CHECK(root_found)
       << "\nERROR: root instruction is not present in computation.";
+}
+
+HloComputation::~HloComputation() {
+  if (fusion_instruction_ != nullptr) {
+    CHECK(fusion_instruction_->fused_instructions_computation() == this);
+    fusion_instruction_->ClearCalledComputations();
+    fusion_instruction_ = nullptr;
+  }
 }
 
 HloInstruction* HloComputation::AddInstruction(
@@ -410,8 +419,10 @@ void HloComputation::ComputeInstructionPostOrder(
         [](HloInstruction* inst) -> absl::optional<int64> {
       switch (inst->opcode()) {
         case HloOpcode::kRecvDone:
-          return inst->channel_id();
         case HloOpcode::kAllReduce:
+        case HloOpcode::kAllReduceScatter:
+        case HloOpcode::kAllGather:
+        case HloOpcode::kAllToAll:
           return inst->channel_id();
         default:
           return absl::nullopt;
@@ -467,7 +478,10 @@ HloComputation::ComputeChannelDependencies() const {
     switch (instruction->opcode()) {
       case HloOpcode::kSend:
       case HloOpcode::kRecvDone:
-      case HloOpcode::kAllReduce: {
+      case HloOpcode::kAllReduce:
+      case HloOpcode::kAllReduceScatter:
+      case HloOpcode::kAllGather:
+      case HloOpcode::kAllToAll: {
         auto channel_id = instruction->channel_id();
         if (channel_id) {
           channel_dependency_group[channel_id.value()].push_back(

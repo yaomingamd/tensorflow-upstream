@@ -116,30 +116,33 @@ class ShardedVariableTest(test.TestCase):
     v1 = variables_lib.Variable([[1, 1], [2, 2]])
     v2 = variables_lib.Variable([[3, 3]])
     s = sharded_variable.ShardedVariable([v0, v1, v2])
-    s.assign([[4, 4], [5, 5], [6, 6], [7, 7]])
+    ret = s.assign([[4, 4], [5, 5], [6, 6], [7, 7]])
     self.assertAllEqual(self.evaluate(s.variables[0]), [[4, 4]])
     self.assertAllEqual(self.evaluate(s.variables[1]), [[5, 5], [6, 6]])
     self.assertAllEqual(self.evaluate(s.variables[2]), [[7, 7]])
+    self.assertIs(ret, s)
 
   def test_assign_add(self):
     v0 = variables_lib.Variable([[0, 0]])
     v1 = variables_lib.Variable([[1, 1], [2, 2]])
     v2 = variables_lib.Variable([[3, 3]])
     s = sharded_variable.ShardedVariable([v0, v1, v2])
-    s.assign_add([[1, 1], [1, 1], [2, 2], [2, 2]])
+    ret = s.assign_add([[1, 1], [1, 1], [2, 2], [2, 2]])
     self.assertAllEqual(self.evaluate(s.variables[0]), [[1, 1]])
     self.assertAllEqual(self.evaluate(s.variables[1]), [[2, 2], [4, 4]])
     self.assertAllEqual(self.evaluate(s.variables[2]), [[5, 5]])
+    self.assertIs(ret, s)
 
   def test_assign_sub(self):
     v0 = variables_lib.Variable([[0, 0]])
     v1 = variables_lib.Variable([[1, 1], [2, 2]])
     v2 = variables_lib.Variable([[3, 3]])
     s = sharded_variable.ShardedVariable([v0, v1, v2])
-    s.assign_sub([[0, 0], [1, 1], [1, 1], [3, 3]])
+    ret = s.assign_sub([[0, 0], [1, 1], [1, 1], [3, 3]])
     self.assertAllEqual(self.evaluate(s.variables[0]), [[0, 0]])
     self.assertAllEqual(self.evaluate(s.variables[1]), [[0, 0], [1, 1]])
     self.assertAllEqual(self.evaluate(s.variables[2]), [[0, 0]])
+    self.assertIs(ret, s)
 
   def test_convert_to_tensor(self):
     v0 = variables_lib.Variable([[0, 0]])
@@ -310,8 +313,8 @@ class ShardedVariableTest(test.TestCase):
     save_dir = os.path.join(self.get_temp_dir(), 'saved_model')
     save.save(root, save_dir)
 
-    with self.assertRaisesWithLiteralMatch(
-        ValueError, 'Loading `ShardedVariable` is not supported'):
+    with self.assertRaisesRegex(
+        ValueError, 'Loading a saved_model containing ShardedVariable'):
       load.load(save_dir)
 
   def test_validation_errors(self):
@@ -372,7 +375,7 @@ class ShardedVariableTest(test.TestCase):
     s = sharded_variable.ShardedVariable(variables)
 
     got = nest.flatten(s)
-    self.assertEqual(s, got[0])
+    self.assertIs(s, got[0])
 
     got = nest.flatten(s, expand_composites=True)
     self.assertAllEqual(variables, got)
@@ -397,7 +400,7 @@ class ShardedVariableTest(test.TestCase):
     self.assertAllEqual(model.variables, model.trainable_variables)
 
     self.assertLen(model._checkpoint_dependencies, 1)
-    self.assertEqual(model._checkpoint_dependencies[0].ref, model.w)
+    self.assertIs(model._checkpoint_dependencies[0].ref, model.w)
 
   def test_embedding_lookup(self):
     v = [
@@ -541,6 +544,23 @@ class ShardedVariableTest(test.TestCase):
       return a
 
     self.assertAllEqual(func(), [1, 3, 5, 7, 9, 11, 13, 15])
+
+  def test_operator_overload(self):
+    v1 = [
+        variables_lib.Variable([1.]),
+        variables_lib.Variable([2.]),
+    ]
+    sv1 = sharded_variable.ShardedVariable(v1)
+
+    v2 = [
+        variables_lib.Variable([1.]),
+        variables_lib.Variable([2.]),
+    ]
+    sv2 = sharded_variable.ShardedVariable(v2)
+
+    equal = sv1 == sv2
+    self.assertAllEqual(equal, [True, True])
+    self.assertAllEqual(sv1 + sv2, [2.0, 4.0])
 
 
 if __name__ == '__main__':

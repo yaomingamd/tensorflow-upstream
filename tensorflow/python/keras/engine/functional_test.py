@@ -14,14 +14,9 @@
 #,============================================================================
 """Tests for layer graphs construction & handling."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import warnings
 
 import numpy as np
-
 
 from tensorflow.python.eager import context
 from tensorflow.python.eager import def_function
@@ -2451,6 +2446,7 @@ class InputsOutputsErrorTest(keras_parameterized.TestCase):
 class FunctionalSubclassModel(training_lib.Model):
 
   def __init__(self, *args, **kwargs):
+    self.foo = {'foo': 'bar'}  # Make sure users can assign dict attributes
     my_input = input_layer_lib.Input(shape=(16,))
     dense = layers.Dense(32, activation='relu')
     output = dense(my_input)

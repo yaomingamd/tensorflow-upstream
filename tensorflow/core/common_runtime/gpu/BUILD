@@ -31,7 +31,8 @@ package(
         "//tensorflow:internal",
         "//tensorflow_models:__subpackages__",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    features = ["-layering_check"],
+    licenses = ["notice"],
 )
 
 # -----------------------------------------------------------------------------
@@ -317,6 +318,7 @@ tf_cuda_cc_test(
     tags = tf_cuda_tests_tags(),
     deps = [
         ":gpu_id",
+        ":gpu_runtime",
         "//tensorflow/cc:cc_ops",
         "//tensorflow/core:framework",
         "//tensorflow/core:framework_internal",

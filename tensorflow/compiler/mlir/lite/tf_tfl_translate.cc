@@ -159,6 +159,8 @@ int main(int argc, char **argv) {
     return kTrFailure;
   }
 
+  std::unique_ptr<tensorflow::SavedModelBundle> bundle;
+
   // TODO(b/147435528): We need to test the e2e behavior once the graph freezing
   // inside mlir is done.
   if (import_saved_model_object_graph || import_saved_model_signature_defs) {
@@ -185,12 +187,12 @@ int main(int argc, char **argv) {
                                           custom_opdefs.end());
     module = tensorflow::ImportSavedModel(input_file_name, saved_model_version,
                                           tags, extra_opdefs, exported_names,
-                                          specs, &context);
+                                          specs, &context, &bundle);
   } else {
     module = tensorflow::LoadFromGraphdefOrMlirSource(
         input_file_name, input_mlir, use_splatted_constant, custom_opdefs,
         specs, debug_info_file, input_arrays, input_dtypes, input_shapes,
-        output_arrays, &source_mgr, &context);
+        output_arrays, control_output_arrays, &source_mgr, &context);
   }
 
   // If errors occur, the library call in the above already logged the error
@@ -237,6 +239,7 @@ int main(int argc, char **argv) {
   pass_config.emit_builtin_tflite_ops = emit_builtin_tflite_ops;
   pass_config.lower_tensor_list_ops = lower_tensor_list_ops;
   pass_config.legalize_tf_while = convert_tf_while_to_tfl_while;
+  pass_config.unfold_batch_matmul = unfold_batchmatmul;
 
   // TODO(b/153507667): Pass the session object when importing logic is removed.
   tensorflow::AddTFToTFLConversionPasses(pass_config, &pm,
@@ -261,8 +264,8 @@ int main(int argc, char **argv) {
   std::string result;
   auto status = tensorflow::ConvertTFExecutorToTFLOrFlatbuffer(
       module.ValueOrDie().get(), output_mlir, emit_builtin_tflite_ops,
-      emit_select_tf_ops, emit_custom_ops, select_user_ops_set, quant_specs,
-      tags, &result, &pm);
+      emit_select_tf_ops, emit_custom_ops, allow_all_select_tf_ops,
+      select_user_ops_set, quant_specs, tags, &result, &pm);
   if (!status.ok()) return kTrFailure;
 
   std::string error_msg;

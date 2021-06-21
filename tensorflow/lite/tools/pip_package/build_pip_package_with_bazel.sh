@@ -48,6 +48,8 @@ cp -r "${TENSORFLOW_LITE_DIR}/tools/pip_package/debian" \
       "${TENSORFLOW_LITE_DIR}/python/interpreter_wrapper" \
       "${BUILD_DIR}"
 cp "${TENSORFLOW_LITE_DIR}/python/interpreter.py" \
+   "${TENSORFLOW_LITE_DIR}/python/metrics_interface.py" \
+   "${TENSORFLOW_LITE_DIR}/python/metrics_portable.py" \
    "${BUILD_DIR}/tflite_runtime"
 echo "__version__ = '${PACKAGE_VERSION}'" >> "${BUILD_DIR}/tflite_runtime/__init__.py"
 echo "__git_version__ = '$(git -C "${TENSORFLOW_DIR}" describe)'" >> "${BUILD_DIR}/tflite_runtime/__init__.py"
@@ -88,7 +90,7 @@ case "${TENSORFLOW_TARGET}" in
     ;;
 esac
 
-bazel build -c opt -s --config=monolithic --config=noaws --config=nogcp --config=nohdfs --config=nonccl \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=noaws --config=nogcp --config=nohdfs --config=nonccl \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tensorflow/lite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper
 cp "${TENSORFLOW_DIR}/bazel-bin/tensorflow/lite/python/interpreter_wrapper/_pywrap_tensorflow_interpreter_wrapper${LIBRARY_EXTENSION}" \
    "${BUILD_DIR}/tflite_runtime"
@@ -158,4 +160,3 @@ case "${TENSORFLOW_TARGET}" in
 esac
 
 cat "${BUILD_DIR}/debian/changelog"
-

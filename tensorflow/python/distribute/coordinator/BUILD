@@ -1,11 +1,10 @@
 load("//tensorflow:tensorflow.bzl", "tf_py_test")
+load("//tensorflow/core/platform/default:distribute.bzl", "distribute_py_test")
 
 package(
     default_visibility = ["//tensorflow:internal"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
-
-exports_files(["LICENSE"])
 
 py_library(
     name = "cluster_coordinator",
@@ -14,6 +13,7 @@ py_library(
     deps = [
         ":metric_utils",
         ":utils",
+        ":values",
         "//tensorflow/python:errors",
         "//tensorflow/python:framework_ops",
         "//tensorflow/python:func_graph",
@@ -33,18 +33,39 @@ py_library(
     ],
 )
 
-tf_py_test(
+py_library(
+    name = "values",
+    srcs = ["values.py"],
+    srcs_version = "PY3",
+    deps = [
+        "//tensorflow/python:framework",
+        "//tensorflow/python:framework_ops",
+        "//tensorflow/python:util",
+        "//tensorflow/python/distribute:input_lib",
+        "//tensorflow/python/eager:context",
+        "//tensorflow/python/eager:def_function",
+        "//tensorflow/python/eager:function",
+    ],
+)
+
+distribute_py_test(
     name = "cluster_coordinator_test",
     size = "small",
     srcs = ["cluster_coordinator_test.py"],
     python_version = "PY3",
     shard_count = 50,
     tags = [
+        "multi_gpu",
         "no_pip",
+        "notpu",
         "notsan",  # TODO(b/171040359): Flaky timeout, even if maximum shards
+    ],
+    xla_tags = [
+        "no_cuda_asan",  # Race condition on async test
     ],
     deps = [
         ":cluster_coordinator",
+        ":values",
         "//tensorflow/python:check_ops",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:constant_op",

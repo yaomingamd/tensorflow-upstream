@@ -112,6 +112,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/operand_upcaster.h"
 #include "tensorflow/compiler/xla/service/qr_expander.h"
 #include "tensorflow/compiler/xla/service/reshape_mover.h"
+#include "tensorflow/compiler/xla/service/result_caster.h"
 #include "tensorflow/compiler/xla/service/rng_bit_generator_expander.h"
 #include "tensorflow/compiler/xla/service/rng_expander.h"
 #include "tensorflow/compiler/xla/service/scatter_expander.h"
@@ -253,6 +254,22 @@ class CollectProfileCandidates : public DfsHloVisitorWithDefault {
     TF_RETURN_IF_ERROR(call->to_apply()->Accept(&candidates_for_call));
     return Status::OK();
   }
+  // Recurse into "conditional" so we can profile inside of it.
+  Status HandleConditional(HloInstruction* conditional) override {
+    TF_RETURN_IF_ERROR(DefaultAction(conditional));
+
+    CollectProfileCandidates candidates_for_true(hlo_to_profile_idx_,
+                                                 assigned_indices_);
+    TF_RETURN_IF_ERROR(
+        conditional->true_computation()->Accept(&candidates_for_true));
+
+    CollectProfileCandidates candidates_for_false(hlo_to_profile_idx_,
+                                                  assigned_indices_);
+    TF_RETURN_IF_ERROR(
+        conditional->false_computation()->Accept(&candidates_for_false));
+
+    return Status::OK();
+  }
 
   // Skip constants, there is nothing to profile.
   Status HandleConstant(HloInstruction*) override { return Status::OK(); }
@@ -289,6 +306,7 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
                                             /*allow_mixed_precision=*/false);
 
   pipeline.AddPass<OperandUpcaster>();
+  pipeline.AddPass<ResultCaster>();
 
   // Expand random number generation.
   pipeline.AddPass<RngExpander>();
@@ -663,7 +681,6 @@ StatusOr<std::unique_ptr<Executable>> CpuCompiler::RunBackend(
       absl::StrCat("Compiling module ", module->name());
   auto slow_compile_alarm = SlowCompilationAlarm(slow_compilation_msg);
 
-  TF_RET_CHECK(stream_exec != nullptr);
   absl::call_once(llvm_command_line_options_initialized,
                   &llvm_ir::InitializeLLVMCommandLineOptions, module->config());
 
@@ -728,7 +745,7 @@ StatusOr<std::unique_ptr<Executable>> CpuCompiler::RunBackend(
                           absl::make_unique<SequentialHloOrdering>(schedule),
                           BufferSizeBytesFunction(), memory_alignment,
                           /*allocate_buffers_for_constants=*/true));
-  DumpHloModuleIfEnabled(*module, *assignment, "after_optimizations");
+  DumpHloModuleIfEnabled(*module, *assignment, "cpu_after_optimizations");
 
   // Each computation is a single function.  Emit all embedded computations
   // before the entry computation. The order of computations returned from
@@ -930,7 +947,7 @@ CpuCompiler::CompileAheadOfTime(std::unique_ptr<HloModuleGroup> module_group,
       DumpToFileInDirOrStdout(*module, "", "buffer_assignment",
                               assignment->ToString());
     }
-    DumpHloModuleIfEnabled(*module, *assignment, "after_optimizations");
+    DumpHloModuleIfEnabled(*module, *assignment, "cpu_after_optimizations");
 
     std::unordered_map<const HloInstruction*, int64> instruction_to_profile_idx;
     std::unordered_map<const HloComputation*, int64> computation_to_profile_idx;

@@ -8,6 +8,10 @@ load(
 load("//tensorflow:tensorflow.bzl", "if_libtpu", "tf_copts")
 load("//tensorflow:tensorflow.bzl", "tf_grpc_cc_dependency")  # buildifier: disable=same-origin-load
 load("//tensorflow:tensorflow.bzl", "tf_kernel_library")  # buildifier: disable=same-origin-load
+load(
+    "//tensorflow/core/platform:build_config_root.bzl",
+    "if_static",
+)
 
 # Config setting to enable go/libtpu support.
 
@@ -17,7 +21,7 @@ package(
         "//tensorflow/core/tpu:__subpackages__",
         "//tensorflow/stream_executor/tpu:__subpackages__",
     ],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 tf_kernel_library(
@@ -60,6 +64,7 @@ cc_library(
         ":tpu_op_util",
         ":tpu_program_group_interface",
         ":tpu_util",
+        "@com_google_absl//absl/types:optional",
         "//tensorflow/core/tpu:tpu_compile_interface",
         "//tensorflow/core/tpu:tpu_ops_c_api_hdrs",
         ":tpu_util_hdrs",
@@ -988,6 +993,7 @@ cc_library(
     hdrs = ["tpu_fingerprint_lookup.h"],
     deps = [
         "//tensorflow/core:framework",
+        "//tensorflow/core/platform:stringpiece",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:node_hash_map",
@@ -1005,6 +1011,12 @@ cc_library(
         ":tpu_op_util",
         ":tpu_ordinal_selector",
         ":tpu_util_hdrs",
+        "@com_google_absl//absl/base",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        "//third_party/eigen3",
         "//tensorflow/compiler/jit:shape_inference",
         "//tensorflow/compiler/tf2xla:sharding_util",
         "//tensorflow/compiler/tf2xla:side_effect_util",
@@ -1017,21 +1029,17 @@ cc_library(
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/common_runtime:optimization_registry",
         "//tensorflow/core/common_runtime:placer",
-        "//tensorflow/core/common_runtime:rendezvous_mgr",
         "//tensorflow/core/platform:blocking_counter",
         "//tensorflow/core/platform:fingerprint",
         "//tensorflow/core/platform:refcount",
         "//tensorflow/core/profiler/lib:traceme",
         "//tensorflow/core/protobuf/tpu:topology_proto_cc",
         "//tensorflow/core/tpu:tpu_api",
+        "//tensorflow/core/tpu:tpu_configuration",
         "//tensorflow/core/tpu:tpu_defs",
         "//tensorflow/core/tpu:tpu_ops_c_api_hdrs",
-        "//third_party/eigen3",
-        "@com_google_absl//absl/base",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/synchronization",
-    ],
+        "//tensorflow/core/tpu/kernels:tpu_fingerprint_lookup",
+        "//tensorflow/core/tpu/kernels:tpu_op_consts",
+    ] + if_static(["//tensorflow/core/common_runtime:rendezvous_mgr"]),
     alwayslink = 1,
 )

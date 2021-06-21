@@ -69,8 +69,6 @@ namespace TFL {
 // The actual LegalizeTF Pass.
 namespace {
 
-using xla::StatusOr;
-
 constexpr char kUnidirectionalSequenceLstm[] = "tf.UnidirectionalSequenceLstm";
 constexpr char kUnidirectionalSequenceRnn[] = "tf.UnidirectionalSequenceRnn";
 constexpr char kTfLiteInputIndices[] = "_tflite_input_indices";
@@ -152,6 +150,7 @@ DECL_CONVERT_OP(SplitV);
 DECL_CONVERT_OP(Unpack);
 DECL_CONVERT_OP(RandomUniform);
 DECL_CONVERT_OP(Conv3D);
+DECL_CONVERT_OP(Conv3DBackpropInputV2);
 
 #undef DECL_CONVERT_OP
 
@@ -372,6 +371,49 @@ LogicalResult ConvertTFConv3DOp::matchAndRewrite(
 
   rewriter.replaceOpWithNewOp<TFL::Conv3DOp>(
       op, tf_op.getType(), tf_op.input(), tf_op.filter(),
+      /*bias=*/none, dilation_depth_factor, dilation_height_factor,
+      dilation_width_factor,
+      /*fused_activation_function=*/rewriter.getStringAttr("NONE"), padding,
+      stride_depth, stride_height, stride_width);
+
+  return success();
+}
+
+LogicalResult ConvertTFConv3DBackpropInputV2Op::matchAndRewrite(
+    Operation* op, PatternRewriter& rewriter) const {
+  if (!TFDataFormatIsNDHWC(op)) return failure();
+
+  auto tf_op = cast<TF::Conv3DBackpropInputV2Op>(op);
+
+  IntegerAttr stride_depth, stride_height, stride_width;
+  if (!TFIntListIs1XYZ1(op, "strides", &stride_depth, &stride_height,
+                        &stride_width))
+    return failure();
+
+  IntegerAttr dilation_depth_factor, dilation_height_factor,
+      dilation_width_factor;
+  if (!TFIntListIs1XYZ1(op, "dilations", &dilation_depth_factor,
+                        &dilation_height_factor, &dilation_width_factor)) {
+    // If the 'dilations' attribute is missing, we use the default value (1)
+    // for all dilation depth, height and width factor.
+    dilation_depth_factor = rewriter.getI32IntegerAttr(1);
+    dilation_height_factor = rewriter.getI32IntegerAttr(1);
+    dilation_width_factor = rewriter.getI32IntegerAttr(1);
+  }
+
+  StringAttr padding;
+  if (!TFPaddingIsSameOrValid(op, &padding)) return failure();
+
+  // TensorFlow Conv3D has no bias, optimization patterns will fuse Conv3D
+  // with other ops can fill the bias.
+  Value none = rewriter.create<mlir::ConstantOp>(
+      op->getLoc(), rewriter.getNoneType(), rewriter.getUnitAttr());
+
+  Value output_shape =
+      CreateCastToInt32(tf_op.input_sizes(), op->getLoc(), rewriter);
+
+  rewriter.replaceOpWithNewOp<TFL::Conv3DTransposeOp>(
+      op, tf_op.getType(), output_shape, tf_op.filter(), tf_op.out_backprop(),
       /*bias=*/none, dilation_depth_factor, dilation_height_factor,
       dilation_width_factor,
       /*fused_activation_function=*/rewriter.getStringAttr("NONE"), padding,
@@ -729,12 +771,13 @@ void addPatterns(MLIRContext* context, OwningRewritePatternList& patterns) {
   TF::PopulateLoweringTFPatterns(context, &patterns);
 
   // Add the generated patterns to the list.
-  populateWithGenerated(context, patterns);
+  populateWithGenerated(patterns);
   patterns
       .insert<ConvertTFConcatV2Op, ConvertTFMatMulOp, ConvertTFMatrixDiagV2Op,
               ConvertTFMatrixDiagV3Op, ConvertTFPackOp, ConvertTFSplitOp,
               ConvertTFSplitVOp, ConvertTFUnpackOp, ConvertTFAssertOp,
-              ConvertTFRandomUniformOp, ConvertTFConv3DOp>(context);
+              ConvertTFRandomUniformOp, ConvertTFConv3DOp,
+              ConvertTFConv3DBackpropInputV2Op>(context);
 
   // Ophint python converter converted tf node pattern.
   patterns.insert<LegalizeUnidirectionalSequenceLstm,
@@ -742,7 +785,7 @@ void addPatterns(MLIRContext* context, OwningRewritePatternList& patterns) {
 }
 
 void applyPatterns(FuncOp func, ConversionTarget& target,
-                   FrozenRewritePatternList& frozenPatterns) {
+                   FrozenRewritePatternSet& frozenPatterns) {
   // Keep trying to convert.
   // TODO(karimnosseir): This is similar to what apply greedy patterns does.
   // Look if there is a function that tries until it converge.
@@ -791,17 +834,17 @@ void LegalizeTF::runOnFunction() {
         return success(current_thread_id == llvm::get_threadid());
       });
 
-  OwningRewritePatternList stage1Patterns;
+  OwningRewritePatternList stage1Patterns(&getContext());
 
   addPatterns(context, stage1Patterns);
 
-  FrozenRewritePatternList stage1FrozenPatterns(std::move(stage1Patterns));
+  FrozenRewritePatternSet stage1FrozenPatterns(std::move(stage1Patterns));
   applyPatterns(func, target, stage1FrozenPatterns);
 
   // Explict BroadcastTo addition for left-over broadcast-able ops.
   // The following pattern matchings should be done after the other legalization
   // rules in order not to add unnecessary BroadcastTo ops.
-  OwningRewritePatternList stage2Patterns;
+  OwningRewritePatternList stage2Patterns(&getContext());
 
   addPatterns(context, stage2Patterns);
 
@@ -825,7 +868,7 @@ void LegalizeTF::runOnFunction() {
                         ApplyExplicitBroadcasting<TF::SquaredDifferenceOp>,
                         ApplyExplicitBroadcasting<TF::SelectV2Op>>(context);
 
-  FrozenRewritePatternList stage2FrozenPatterns(std::move(stage2Patterns));
+  FrozenRewritePatternSet stage2FrozenPatterns(std::move(stage2Patterns));
   applyPatterns(func, target, stage2FrozenPatterns);
 }
 

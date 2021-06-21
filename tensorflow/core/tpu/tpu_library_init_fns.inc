@@ -39,6 +39,7 @@ tensorflow::Status SetTpuOpsStructFns(void* library_handle) {
   TFTPU_SET_FN(ops_api_fn, HardwareLayout_ShapeSize);
   TFTPU_SET_FN(ops_api_fn, HardwareLayout_ShapeSizeCompact);
   TFTPU_SET_FN(ops_api_fn, HardwareLayout_ShapeSizeCompactRaw);
+
   TFTPU_SET_FN(ops_api_fn, TpuExecute_RuntimeInputToPaddedData);
 
   TFTPU_SET_FN(ops_api_fn, TpuProgram_New);
@@ -58,6 +59,8 @@ tensorflow::Status SetTpuOpsStructFns(void* library_handle) {
   TFTPU_SET_FN(ops_api_fn, TpuProgram_SerializeCompilerMetadata);
   TFTPU_SET_FN(ops_api_fn,
                TpuProgram_DeserializeFromGetTpuProgramResponseProto);
+  TFTPU_SET_FN(ops_api_fn, TpuProgram_GetFingerprint);
+  TFTPU_SET_FN(ops_api_fn, TpuProgram_DestroyFingerprint);
 
   TFTPU_SET_FN(ops_api_fn, TpuNodeContext_Create);
   TFTPU_SET_FN(ops_api_fn, TpuNodeContext_Free);

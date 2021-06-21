@@ -115,9 +115,7 @@ using se::rocm::ScopedActivateExecutorContext;
 class EigenGpuStreamDevice : public ::Eigen::StreamInterface {
  public:
   EigenGpuStreamDevice()
-      : scratch_(nullptr), semaphore_(nullptr), context_(nullptr) {
-    Eigen::initializeDeviceProp();
-  }
+      : scratch_(nullptr), semaphore_(nullptr), context_(nullptr) {}
   ~EigenGpuStreamDevice() override {}
   void Reinitialize(OpKernelContext* context, const gpuStream_t* gpu_stream,
                     TfDeviceId tf_device_id, ::tensorflow::Allocator* alloc,
@@ -135,7 +133,7 @@ class EigenGpuStreamDevice : public ::Eigen::StreamInterface {
     PlatformDeviceId platform_device_id;
     TF_CHECK_OK(
         GpuIdManager::TfToPlatformDeviceId(tf_device_id, &platform_device_id));
-    device_prop_ = &Eigen::m_deviceProperties[platform_device_id.value()];
+    device_prop_ = &Eigen::GetGpuDeviceProperties(platform_device_id.value());
   }
 
   const gpuStream_t& stream() const override { return *stream_; }
@@ -201,10 +199,11 @@ class EigenGpuStreamDevice : public ::Eigen::StreamInterface {
 
 #if GOOGLE_CUDA
   static void CUDART_CB asyncFree(gpuStream_t stream, cudaError_t status,
-                                  void* userData) {
+                                  void* userData)
 #elif TENSORFLOW_USE_ROCM
-  static void asyncFree(gpuStream_t stream, hipError_t status, void* userData) {
+  static void asyncFree(gpuStream_t stream, hipError_t status, void* userData)
 #endif
+  {
     AsyncFreeData* data = static_cast<AsyncFreeData*>(userData);
     if (LogMemory::IsEnabled()) {
       LogMemory::RecordRawDeallocation(data->operation_, data->step_id_,
@@ -778,54 +777,6 @@ class ConcretePerOpGpuDevice : public PerOpGpuDevice {
   Eigen::GpuDevice device_;
 };
 
-// Parse 'visible_device_list' into a list of platform GPU ids.
-Status ParseVisibleDeviceList(
-    const string& visible_device_list,
-    std::vector<PlatformDeviceId>* visible_gpu_order) {
-  visible_gpu_order->clear();
-  se::Platform* gpu_manager = GPUMachineManager();
-
-  // If the user wants to remap the visible to virtual GPU mapping,
-  // check for that here.
-  if (visible_device_list.empty()) {
-    visible_gpu_order->resize(gpu_manager->VisibleDeviceCount());
-    // By default, visible to virtual mapping is unchanged.
-    int deviceNo = 0;
-    std::generate(visible_gpu_order->begin(), visible_gpu_order->end(),
-                  [&deviceNo] { return deviceNo++; });
-  } else {
-    const std::vector<string> order_str =
-        str_util::Split(visible_device_list, ',');
-    for (const string& platform_device_id_str : order_str) {
-      int32 platform_device_id;
-      if (!strings::safe_strto32(platform_device_id_str, &platform_device_id)) {
-        return errors::InvalidArgument(
-            "Could not parse entry in 'visible_device_list': '",
-            platform_device_id_str,
-            "'. visible_device_list = ", visible_device_list);
-      }
-      if (platform_device_id < 0 ||
-          platform_device_id >= gpu_manager->VisibleDeviceCount()) {
-        return errors::InvalidArgument(
-            "'visible_device_list' listed an invalid GPU id '",
-            platform_device_id, "' but visible device count is ",
-            gpu_manager->VisibleDeviceCount());
-      }
-      visible_gpu_order->push_back(PlatformDeviceId(platform_device_id));
-    }
-  }
-
-  // Validate no repeats.
-  std::set<PlatformDeviceId> visible_device_set(visible_gpu_order->begin(),
-                                                visible_gpu_order->end());
-  if (visible_device_set.size() != visible_gpu_order->size()) {
-    return errors::InvalidArgument(
-        "visible_device_list contained a duplicate entry: ",
-        visible_device_list);
-  }
-  return Status::OK();
-}
-
 Status VerifyVirtualDeviceSettings(
     const size_t num_gpus_to_use, const GPUOptions& gpu_options,
     const std::vector<PlatformDeviceId>& visible_gpu_order,
@@ -971,23 +922,19 @@ Status SingleVirtualDeviceMemoryLimit(const GPUOptions& gpu_options,
   int64 allocated_memory = 0;
   const double per_process_gpu_memory_fraction =
       gpu_options.per_process_gpu_memory_fraction();
-  int cc_major = 0, cc_minor = 0;
-  if (!se->GetDeviceDescription().cuda_compute_capability(&cc_major,
-                                                          &cc_minor)) {
-    return errors::Internal("Failed to get compute capability for device.");
-  }
-  if (per_process_gpu_memory_fraction > 1.0 ||
-      gpu_options.experimental().use_unified_memory()) {
-    if (cc_major < 6) {
-      return errors::Internal(
-          "Unified memory on GPUs with compute capability lower than 6.0 "
-          "(pre-Pascal class GPUs) does not support oversubscription.");
-    }
+  se::CudaComputeCapability cc =
+      se->GetDeviceDescription().cuda_compute_capability();
+  if ((per_process_gpu_memory_fraction > 1.0 ||
+       gpu_options.experimental().use_unified_memory()) &&
+      !cc.IsAtLeast(se::CudaComputeCapability::PASCAL)) {
+    return errors::Internal(
+        "Unified memory on GPUs with compute capability lower than 6.0 "
+        "(pre-Pascal class GPUs) does not support oversubscription.");
   }
 
   if (per_process_gpu_memory_fraction == 0) {
     allocated_memory = available_memory;
-    const int64 min_system_memory = MinSystemMemory(available_memory, cc_major);
+    const int64 min_system_memory = MinSystemMemory(available_memory, cc.major);
     if (min_system_memory < allocated_memory) {
       allocated_memory -= min_system_memory;
     }
@@ -1136,10 +1083,7 @@ Status BaseGPUDeviceFactory::GetDeviceDetails(
   auto desc = desc_status.ConsumeValueOrDie();
   (*details)["device_name"] = desc->name();
 #if GOOGLE_CUDA
-  int cc_major, cc_minor;
-  if (desc->cuda_compute_capability(&cc_major, &cc_minor)) {
-    (*details)["compute_capability"] = strings::StrCat(cc_major, ".", cc_minor);
-  }
+  (*details)["compute_capability"] = desc->cuda_compute_capability().ToString();
 #endif  // GOOGLE_CUDA
   return Status::OK();
 }
@@ -1170,8 +1114,9 @@ Status BaseGPUDeviceFactory::CreateDevices(
   // because it treats an empty gpu_options.visible_device_list as 'all GPUs
   // are visible'.
   if (num_gpus_to_use > 0) {
-    TF_RETURN_IF_ERROR(ParseVisibleDeviceList(gpu_options.visible_device_list(),
-                                              &visible_gpu_order));
+    TF_RETURN_IF_ERROR(DeviceIdUtil::ParseVisibleDeviceList(
+        gpu_options.visible_device_list(), gpu_manager->VisibleDeviceCount(),
+        &visible_gpu_order));
     bool new_gpu_found = false;
     for (int i = 0; i < visible_gpu_order.size(); ++i) {
       int visible_gpu_id = visible_gpu_order[i].value();
@@ -1301,13 +1246,13 @@ Status BaseGPUDeviceFactory::CreateDevices(
 
   // Print each interconnect map to the log.
   for (const InterconnectMap& im : interconnect_maps) {
-    LOG(INFO) << "Device interconnect " << im.name << " with strength "
-              << im.strength << " edge matrix:";
+    VLOG(1) << "Device interconnect " << im.name << " with strength "
+            << im.strength << " edge matrix:";
     string line_buf = "     ";
     for (int i = 0; i < visible_gpu_order.size(); ++i) {
       strings::StrAppend(&line_buf, visible_gpu_order[i].value(), " ");
     }
-    LOG(INFO) << line_buf;
+    VLOG(1) << line_buf;
     for (int i = 0; i < visible_gpu_order.size(); ++i) {
       line_buf = strings::StrCat(visible_gpu_order[i].value(), ":   ");
       PlatformDeviceId gpu_id_i = visible_gpu_order[i];
@@ -1320,7 +1265,7 @@ Status BaseGPUDeviceFactory::CreateDevices(
           line_buf.append("N ");
         }
       }
-      LOG(INFO) << line_buf;
+      VLOG(1) << line_buf;
     }
   }
 
@@ -1385,17 +1330,11 @@ Status BaseGPUDeviceFactory::CreateDevices(
 static string GetShortDeviceDescription(PlatformDeviceId platform_device_id,
                                         const se::DeviceDescription& desc) {
 #if GOOGLE_CUDA
-  int cc_major;
-  int cc_minor;
-  if (!desc.cuda_compute_capability(&cc_major, &cc_minor)) {
-    cc_major = 0;
-    cc_minor = 0;
-  }
   // LINT.IfChange
-  return strings::StrCat("device: ", platform_device_id.value(),
-                         ", name: ", desc.name(),
-                         ", pci bus id: ", desc.pci_bus_id(),
-                         ", compute capability: ", cc_major, ".", cc_minor);
+  return strings::StrCat(
+      "device: ", platform_device_id.value(), ", name: ", desc.name(),
+      ", pci bus id: ", desc.pci_bus_id(),
+      ", compute capability: ", desc.cuda_compute_capability().ToString());
   // LINT.ThenChange(//tensorflow/python/framework/gpu_util.py)
 #elif TENSORFLOW_USE_ROCM
   return strings::StrCat("device: ", platform_device_id.value(),
@@ -1461,10 +1400,11 @@ Status BaseGPUDeviceFactory::CreateGPUDevice(
       options, device_name, static_cast<Bytes>(bytes_limit), dev_locality,
       tf_device_id, GetShortDeviceDescription(platform_device_id, *desc),
       gpu_allocator, ProcessState::singleton()->GetCPUAllocator(numa_node));
-  LOG(INFO) << "Created TensorFlow device (" << device_name << " with "
-            << (bytes_limit >> 20) << " MB memory) -> physical GPU ("
-            << GetShortDeviceDescription(platform_device_id, *desc) << ")";
+  LOG(INFO) << "Created device " << device_name << " with "
+            << (bytes_limit >> 20) << " MB memory: "
+            << " -> " << GetShortDeviceDescription(platform_device_id, *desc);
   TF_RETURN_IF_ERROR(gpu_device->Init(options));
+  gpu_allocator->SetStream(gpu_device->GetStream());
   devices->push_back(std::move(gpu_device));
 
   return Status::OK();
@@ -1649,40 +1589,25 @@ static int GetMinGPUMultiprocessorCount(
 namespace {
 
 #if GOOGLE_CUDA
-struct CudaVersion {
-  // Initialize from version_name in the form of "3.5"
-  explicit CudaVersion(const std::string& version_name) {
-    size_t dot_pos = version_name.find('.');
-    CHECK(dot_pos != string::npos)
-        << "Illegal version name: [" << version_name << "]";
-    string major_str = version_name.substr(0, dot_pos);
-    CHECK(strings::safe_strto32(major_str, &major_part))
-        << "Illegal version name: [" << version_name << "]";
-    string minor_str = version_name.substr(dot_pos + 1);
-    CHECK(strings::safe_strto32(minor_str, &minor_part))
-        << "Illegal version name: [" << version_name << "]";
-  }
-  CudaVersion() {}
-  bool operator<(const CudaVersion& other) const {
-    if (this->major_part != other.major_part) {
-      return this->major_part < other.major_part;
-    }
-    return this->minor_part < other.minor_part;
-  }
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const CudaVersion& version) {
-    os << version.major_part << "." << version.minor_part;
-    return os;
-  }
-  int major_part = -1;
-  int minor_part = -1;
-};
 
-std::vector<CudaVersion> supported_cuda_compute_capabilities = {
-    CudaVersion("3.5"), CudaVersion("5.2")};
+se::CudaComputeCapability ComputeCapabilityFromString(
+    const std::string& version_name) {
+  int major_part, minor_part;
+  size_t dot_pos = version_name.find('.');
+  CHECK(dot_pos != string::npos)
+      << "Illegal version name: [" << version_name << "]";
+  string major_str = version_name.substr(0, dot_pos);
+  CHECK(strings::safe_strto32(major_str, &major_part))
+      << "Illegal version name: [" << version_name << "]";
+  string minor_str = version_name.substr(dot_pos + 1);
+  CHECK(strings::safe_strto32(minor_str, &minor_part))
+      << "Illegal version name: [" << version_name << "]";
+  return se::CudaComputeCapability{major_part, minor_part};
+}
 
-std::vector<CudaVersion> GetSupportedCudaComputeCapabilities() {
-  auto cuda_caps = supported_cuda_compute_capabilities;
+std::vector<se::CudaComputeCapability> GetSupportedCudaComputeCapabilities() {
+  std::vector<se::CudaComputeCapability> cuda_caps = {
+      ComputeCapabilityFromString("3.5"), ComputeCapabilityFromString("5.2")};
 #ifdef TF_EXTRA_CUDA_CAPABILITIES
 // TF_EXTRA_CUDA_CAPABILITIES should be defined a sequence separated by commas,
 // for example:
@@ -1695,7 +1620,7 @@ std::vector<CudaVersion> GetSupportedCudaComputeCapabilities() {
 #undef TF_XSTRING
   auto extra_capabilities = str_util::Split(extra_cuda_caps, ',');
   for (const auto& capability : extra_capabilities) {
-    cuda_caps.push_back(CudaVersion(capability));
+    cuda_caps.push_back(ComputeCapabilityFromString(capability));
   }
 #endif
   return cuda_caps;
@@ -1769,39 +1694,30 @@ Status BaseGPUDeviceFactory::GetValidDeviceIds(
 
     auto description = description_status.ConsumeValueOrDie();
 #if GOOGLE_CUDA
-    int cc_major;
-    int cc_minor;
-    if (!description->cuda_compute_capability(&cc_major, &cc_minor)) {
-      // Logs internally on failure.
-      cc_major = 0;
-      cc_minor = 0;
-    }
-    LOG(INFO) << "Found device " << i << " with properties: "
-              << "\npciBusID: " << description->pci_bus_id()
-              << " name: " << description->name()
-              << " computeCapability: " << cc_major << "." << cc_minor
-              << "\ncoreClock: " << description->clock_rate_ghz() << "GHz"
-              << " coreCount: " << description->core_count()
-              << " deviceMemorySize: "
-              << strings::HumanReadableNumBytes(
-                     description->device_memory_size())
-              << " deviceMemoryBandwidth: "
-              << strings::HumanReadableNumBytes(description->memory_bandwidth())
-              << "/s";
+    VLOG(1) << "Found device " << i << " with properties: "
+            << "\npciBusID: " << description->pci_bus_id()
+            << " name: " << description->name() << " computeCapability: "
+            << description->cuda_compute_capability().ToString()
+            << "\ncoreClock: " << description->clock_rate_ghz() << "GHz"
+            << " coreCount: " << description->core_count()
+            << " deviceMemorySize: "
+            << strings::HumanReadableNumBytes(description->device_memory_size())
+            << " deviceMemoryBandwidth: "
+            << strings::HumanReadableNumBytes(description->memory_bandwidth())
+            << "/s";
 #elif TENSORFLOW_USE_ROCM
     std::string gcn_arch_name = description->rocm_amdgpu_gcn_arch_name();
-    LOG(INFO) << "Found device " << i << " with properties: "
-              << "\npciBusID: " << description->pci_bus_id()
-              << " name: " << description->name()
-              << "     ROCm AMDGPU Arch: " << gcn_arch_name
-              << "\ncoreClock: " << description->clock_rate_ghz() << "GHz"
-              << " coreCount: " << description->core_count()
-              << " deviceMemorySize: "
-              << strings::HumanReadableNumBytes(
-                     description->device_memory_size())
-              << " deviceMemoryBandwidth: "
-              << strings::HumanReadableNumBytes(description->memory_bandwidth())
-              << "/s";
+    VLOG(1) << "Found device " << i << " with properties: "
+            << "\npciBusID: " << description->pci_bus_id()
+            << " name: " << description->name()
+            << "     ROCm AMDGPU Arch: " << gcn_arch_name
+            << "\ncoreClock: " << description->clock_rate_ghz() << "GHz"
+            << " coreCount: " << description->core_count()
+            << " deviceMemorySize: "
+            << strings::HumanReadableNumBytes(description->device_memory_size())
+            << " deviceMemoryBandwidth: "
+            << strings::HumanReadableNumBytes(description->memory_bandwidth())
+            << "/s";
 #endif
   }
 
@@ -1826,7 +1742,7 @@ Status BaseGPUDeviceFactory::GetValidDeviceIds(
     return errors::FailedPrecondition(
         "No supported cuda capabilities in binary.");
   }
-  CudaVersion min_supported_capability = *std::min_element(
+  se::CudaComputeCapability min_supported_capability = *std::min_element(
       cuda_supported_capabilities.begin(), cuda_supported_capabilities.end());
 #elif TENSORFLOW_USE_ROCM
   auto rocm_supported_isas = GetSupportedAMDGPUISAVersions();
@@ -1856,24 +1772,16 @@ Status BaseGPUDeviceFactory::GetValidDeviceIds(
     auto desc = description_status.ConsumeValueOrDie();
 
 #if GOOGLE_CUDA
-    CudaVersion device_capability;
-    if (!desc->cuda_compute_capability(&device_capability.major_part,
-                                       &device_capability.minor_part)) {
-      LOG(INFO) << "Ignoring visible gpu device "
-                << "(" << GetShortDeviceDescription(visible_gpu_id, *desc)
-                << ") "
-                << "whose CUDA compute capability is not available.";
-      continue;
-    }
     // Only GPUs with no less than the minimum supported compute capability is
     // accepted.
-    if (device_capability < min_supported_capability) {
+    if (desc->cuda_compute_capability() < min_supported_capability) {
       LOG(INFO) << "Ignoring visible gpu device "
                 << "(" << GetShortDeviceDescription(visible_gpu_id, *desc)
                 << ") "
-                << "with Cuda compute capability " << device_capability
+                << "with Cuda compute capability "
+                << desc->cuda_compute_capability().ToString()
                 << ". The minimum required Cuda capability is "
-                << min_supported_capability << ".";
+                << min_supported_capability.ToString() << ".";
       continue;
     }
 #elif TENSORFLOW_USE_ROCM
@@ -1908,13 +1816,33 @@ Status BaseGPUDeviceFactory::GetValidDeviceIds(
                    "TF_MIN_GPU_MULTIPROCESSOR_COUNT.";
       continue;
     }
+
+#if defined(GOOGLE_CUDA) && !defined(PLATFORM_GOOGLE)
+    // Compare compute capability of device with list in cuda_config.h and
+    // warn about long loading time when we need to JIT kernels from PTX.
+    auto compute_capabilities = {TF_CUDA_COMPUTE_CAPABILITIES};
+    auto device_capability = desc->cuda_compute_capability();
+    if (std::count_if(std::cbegin(compute_capabilities),
+                      std::cend(compute_capabilities), [&](int cc) {
+                        // CUBINs are backwards compatible within major version.
+                        return cc / 10 == device_capability.major &&
+                               cc % 10 <= device_capability.minor;
+                      }) == 0) {
+      LOG(WARNING)
+          << "TensorFlow was not built with CUDA kernel binaries "
+             "compatible with compute capability "
+          << device_capability.ToString() << ". CUDA kernels will be "
+          << "jit-compiled from PTX, which could take 30 minutes or longer.";
+    }
+#endif  // defined(GOOGLE_CUDA) && !defined(PLATFORM_GOOGLE)
+
     ids->push_back(visible_gpu_id);
   }
   if (!ids->empty()) {
     std::vector<int> raw_ids(ids->size());
     std::transform(ids->begin(), ids->end(), raw_ids.begin(),
                    [](PlatformDeviceId id) -> int { return id.value(); });
-    LOG(INFO) << "Adding visible gpu devices: " << absl::StrJoin(raw_ids, ", ");
+    VLOG(1) << "Adding visible gpu devices: " << absl::StrJoin(raw_ids, ", ");
   }
 
   return Status::OK();

@@ -37,7 +37,7 @@ from tensorflow.core.framework import node_def_pb2
 from tensorflow.core.framework import op_def_pb2
 from tensorflow.core.framework import versions_pb2
 from tensorflow.core.protobuf import config_pb2
-# pywrap_tensorflow must be imported first to avoid profobuf issues.
+# pywrap_tensorflow must be imported first to avoid protobuf issues.
 # (b/143110113)
 # pylint: disable=invalid-import-order,g-bad-import-order,unused-import
 from tensorflow.python import pywrap_tensorflow
@@ -233,6 +233,7 @@ def numpy_text(tensor, is_repr=False):
     text = "\n" + text
   return text
 
+
 @tf_export(v1=["enable_tensor_equality"])
 def enable_tensor_equality():
   """Compare Tensors with element-wise comparison and thus be unhashable.
@@ -242,6 +243,7 @@ def enable_tensor_equality():
   unhashable. Thus tensors can no longer be directly used in sets or as a key in
   a dictionary.
   """
+  logging.vlog(1, "Enabling tensor equality")
   _tensor_equality_api_usage_gauge.get_cell().set(True)
   Tensor._USE_EQUALITY = True  # pylint: disable=protected-access
 
@@ -252,6 +254,7 @@ def disable_tensor_equality():
 
   This is a legacy behaviour of TensorFlow and is highly discouraged.
   """
+  logging.vlog(1, "Disabling tensor equality")
   _tensor_equality_api_usage_gauge.get_cell().set(False)
   Tensor._USE_EQUALITY = False  # pylint: disable=protected-access
 
@@ -393,7 +396,7 @@ class Tensor(internal.NativeObject, core_tf_types.Tensor):
       raise AttributeError("""
         '{}' object has no attribute '{}'.
         If you are looking for numpy-related methods, please run the following:
-        import tensorflow.python.ops.numpy_ops.np_config
+        from tensorflow.python.ops.numpy_ops import np_config
         np_config.enable_numpy_behavior()""".format(type(self).__name__, name))
     self.__getattribute__(name)
 
@@ -1539,7 +1542,7 @@ def convert_to_tensor(value,
   # https://docs.python.org/3.8/reference/datamodel.html#special-lookup
   overload = getattr(type(value), "__tf_tensor__", None)
   if overload is not None:
-    return overload(value, dtype, name)
+    return overload(value, dtype, name)  #  pylint: disable=not-callable
 
   for base_type, conversion_func in tensor_conversion_registry.get(type(value)):
     # If dtype is None but preferred_dtype is not None, we try to
@@ -2621,7 +2624,8 @@ class Operation(object):
     """
     _run_using_default_session(self, feed_dict, self.graph, session)
 
-_gradient_registry = registry.Registry("gradient")
+# TODO(b/185395742): Clean up usages of _gradient_registry
+gradient_registry = _gradient_registry = registry.Registry("gradient")
 
 
 @tf_export("RegisterGradient")
@@ -2668,7 +2672,7 @@ class RegisterGradient(object):
 
   def __call__(self, f):
     """Registers the function `f` as gradient function for `op_type`."""
-    _gradient_registry.register(f, self._op_type)
+    gradient_registry.register(f, self._op_type)
     return f
 
 
@@ -2704,7 +2708,7 @@ def no_gradient(op_type):
   """
   if not isinstance(op_type, six.string_types):
     raise TypeError("op_type must be a string")
-  _gradient_registry.register(None, op_type)
+  gradient_registry.register(None, op_type)
 
 
 # Aliases for the old names, will be eventually removed.
@@ -2725,7 +2729,7 @@ def get_gradient_function(op):
     op_type = op.get_attr("_gradient_op_type")
   except ValueError:
     op_type = op.type
-  return _gradient_registry.lookup(op_type)
+  return gradient_registry.lookup(op_type)
 
 
 def set_shape_and_handle_data_for_outputs(_):
@@ -3312,12 +3316,15 @@ class Graph(object):
             continue
           # TODO(b/141471245): Fix the inconsistency when inputs of func graph
           # are appended during gradient computation of while/cond.
-          for input_tensor, arg_def in zip(func_graph_inputs,
-                                           function_def.signature.input_arg):
-            input_shapes.list.shape.add().CopyFrom(
-                input_tensor.get_shape().as_proto())
-            if input_tensor.dtype == dtypes.resource:
-              _copy_handle_data_to_arg_def(input_tensor, arg_def)
+          assert len(input_shapes.list.shape) in [0, len(func_graph_inputs)]
+          # If the function_def has inputs already filled out, skip this step.
+          if not input_shapes.list.shape:
+            for input_tensor, arg_def in zip(func_graph_inputs,
+                                             function_def.signature.input_arg):
+              input_shapes.list.shape.add().CopyFrom(
+                  input_tensor.get_shape().as_proto())
+              if input_tensor.dtype == dtypes.resource:
+                _copy_handle_data_to_arg_def(input_tensor, arg_def)
 
           for output_tensor, arg_def in zip(func_graph.outputs,
                                             function_def.signature.output_arg):
@@ -5851,6 +5858,11 @@ def enable_eager_execution(config=None, device_policy=None,
   at program startup and not in a library (as most libraries should be usable
   both with and without eager execution).
 
+  @compatibility(TF2)
+  This function is not necessary if you are using TF2. Eager execution is
+  enabled by default.
+  @end_compatibility
+
   Args:
     config: (Optional.) A `tf.compat.v1.ConfigProto` to use to configure the
       environment in which operations are executed. Note that
@@ -5887,6 +5899,7 @@ def enable_eager_execution(config=None, device_policy=None,
      to this function.
   """
   _api_usage_gauge.get_cell().set(True)
+  logging.vlog(1, "Enabling eager execution")
   if context.default_execution_mode != context.EAGER_MODE:
     return enable_eager_execution_internal(
         config=config,
@@ -5904,6 +5917,7 @@ def disable_eager_execution():
   projects from TensorFlow 1.x to 2.x.
   """
   _api_usage_gauge.get_cell().set(False)
+  logging.vlog(1, "Disabling eager execution")
   context.default_execution_mode = context.GRAPH_MODE
   c = context.context_safe()
   if c is not None:
@@ -6598,6 +6612,41 @@ class name_scope_v1(object):  # pylint: disable=invalid-name
 
   def __exit__(self, *exc_info):
     return self._name_scope.__exit__(*exc_info)
+
+
+@tf_export("get_current_name_scope", v1=[])
+def get_current_name_scope():
+  """Returns current full name scope specified by `tf.name_scope(...)`s.
+
+  For example,
+  ```python
+  with tf.name_scope("outer"):
+    tf.get_current_name_scope()  # "outer"
+
+    with tf.name_scope("inner"):
+      tf.get_current_name_scope()  # "outer/inner"
+  ```
+
+  In other words, `tf.get_current_name_scope()` returns the op name prefix that
+  will be prepended to, if an op is created at that place.
+
+  Note that `@tf.function` resets the name scope stack as shown below.
+
+  ```
+  with tf.name_scope("outer"):
+
+    @tf.function
+    def foo(x):
+      with tf.name_scope("inner"):
+        return tf.add(x * x)  # Op name is "inner/Add", not "outer/inner/Add"
+  ```
+  """
+
+  ctx = context.context()
+  if ctx.executing_eagerly():
+    return ctx.scope_name.rstrip("/")
+  else:
+    return get_default_graph().get_name_scope()
 
 
 @tf_export("name_scope", v1=[])

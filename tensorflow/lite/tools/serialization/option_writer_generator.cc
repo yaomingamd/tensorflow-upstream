@@ -87,6 +87,7 @@ static const char* param_structs[] = {"TfLiteAddParams",
                                       "TfLiteHashtableFindParams",
                                       "TfLiteHashtableImportParams",
                                       "TfLiteHashtableSizeParams",
+                                      "TfLiteConv3DTransposeParams",
                                       nullptr};
 }  // namespace
 
@@ -159,6 +160,7 @@ class OpOptionData {
     op_to_option_["REDUCE_MAX"] = "ReducerOptions";
     op_to_option_["REDUCE_MIN"] = "ReducerOptions";
     op_to_option_["REDUCE_ANY"] = "ReducerOptions";
+    op_to_option_["REDUCE_ALL"] = "ReducerOptions";
     op_to_option_["SUM"] = "ReducerOptions";
     op_to_option_["REDUCE_MAX"] = "ReducerOptions";
     op_to_option_["REDUCE_PROD"] = "ReducerOptions";
@@ -170,6 +172,7 @@ class OpOptionData {
     op_to_option_["UNIDIRECTIONAL_SEQUENCE_RNN"] = "SequenceRNNOptions";
     op_to_option_["MAXIMUM"] = "MaximumMinimumOptions";
     op_to_option_["MINIMUM"] = "MaximumMinimumOptions";
+    op_to_option_["CONV_3D_TRANSPOSE"] = "Conv3DOptions";
 
     // These operators are not real ones.
     op_to_option_["CUSTOM"] = "";    // TODO(aselle): maybe something else.
@@ -211,7 +214,6 @@ class OpOptionData {
     // Now for every op, try to find an option.
     bool fatal = false;
     for (const auto& op_name : ops_) {
-      bool found_option = false;
       auto d = tflite::BuiltinOptionsTypeTable();
       std::string collapsed_option_name_guess =
           ToCollapsed(op_name) + "options";
@@ -221,7 +223,6 @@ class OpOptionData {
         std::string collapsed_option_name = ToCollapsed(option_name);
         if (collapsed_option_name_guess == collapsed_option_name) {
           op_to_option_.insert(std::make_pair(op_name, option_name));
-          found_option = true;
           break;
         }
       }

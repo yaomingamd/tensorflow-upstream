@@ -37,7 +37,6 @@ from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_spec
-from tensorflow.python.framework import test_util
 from tensorflow.python.lib.io import tf_record
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
@@ -515,6 +514,20 @@ class TpuOutsideCompilationTest(test.TestCase, parameterized.TestCase):
         strategy.experimental_local_results(train_step()),
         constant_op.constant(.1, shape=(strategy.num_replicas_in_sync)))
 
+  def testStringOpWithoutOutsideCompilationFail(self):
+    strategy = get_tpu_strategy()
+
+    @def_function.function
+    def train_step(x):
+
+      def computation(x):
+        return computation_with_string_ops(x)
+
+      return strategy.run(computation, args=(x,))
+
+    with self.assertRaisesRegex(Exception, "soft_device_placement"):
+      strategy.experimental_local_results(train_step(0))
+
 
 class OutsideCompilationOnUnsupportedOpTest(test.TestCase,
                                             parameterized.TestCase):
@@ -679,9 +692,6 @@ class OutsideCompilationOnUnsupportedOpTest(test.TestCase,
       self.assertLen(events, 2)
       self.assertEqual(events[1].summary.value[0].tag, "cond/x")
 
-  @test_util.disable_mlir_bridge(
-      "TODO(b/168493455): Reenable this test once deadlock resolved."
-  )
   def testAutoOutsideCompilationWithFunctionalNodes(self):
     strategy = get_tpu_strategy()
 
@@ -717,10 +727,6 @@ class OutsideCompilationOnUnsupportedOpTest(test.TestCase,
     self.assertAllEqual(
         strategy.experimental_local_results(train_step())[0].shape, [1, 2, 3])
 
-  @test_util.disable_mlir_bridge(
-      "TODO(b/167235391): Reenable this test once function calls are handled "
-      "by MLIR bridge."
-  )
   def testOutsideCompilationWithTPUPartitionedCallOp(self):
     """Tests that control flow with TPUPartitionedCall including outside_compilation works."""
     get_tpu_strategy()
