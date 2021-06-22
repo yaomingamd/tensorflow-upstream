@@ -132,83 +132,47 @@ ROCmSolver::~ROCmSolver() {
 #define SOLVER_FN(method, type_prefix) \
   wrap::rocsolver##_##type_prefix##method
 
-template <typename Scalar, typename SolverFnT>
-static inline Status GetrfImpl(SolverFnT solver, OpKernelContext* context,
-                               rocblas_handle rocsolver_handle, 
-                               int m, int n, Scalar* A, int lda,
-                               int* dev_pivots){
-  mutex_lock lock(handle_map_mutex);
-  using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
-  TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, m, n, 
-                                    reinterpret_cast<ROCmScalar*> (A),
-                                    lda, dev_pivots));
-  return Status::OK(); 
-    
-} 
-
-#define GETRF_INSTANCE(Scalar, type_prefix)                     \
-  template <>                                                   \
-  Status ROCmSolver::getrf<Scalar>(int m, int n, Scalar* dev_A, \
-                                   int lda, int* dev_pivots) {  \
-    return GetrfImpl(SOLVER_FN(getrf, type_prefix), context_,   \
-                     rocm_blas_handle_, m, n, dev_A, lda,       \
-                     dev_pivots);                               \
-  }  
+#define GETRF_INSTANCE(Scalar, type_prefix)                                 \
+  template <>                                                               \
+  Status ROCmSolver::getrf<Scalar>(int m, int n, Scalar* dev_A, int lda,    \
+                                   int* dev_pivots) {                       \
+    mutex_lock lock(handle_map_mutex);                                      \
+    int info = 0;                                                           \
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                 \
+    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrf, type_prefix)(               \
+        rocm_blas_handle_, m, n, reinterpret_cast<ROCmScalar*>(dev_A), lda, \
+        dev_pivots, &info));                                                \
+    return Status::OK();                                                    \
+  }
 
 TF_CALL_LAPACK_TYPES(GETRF_INSTANCE);
 
-template <typename Scalar, typename SolverFnT>
-static inline Status GetrsImpl(SolverFnT solver, OpKernelContext* context, 
-                               rocblas_handle rocsolver_handle, 
-                               const rocblas_operation trans, int n, 
-                               int nrhs, const Scalar* A, int lda, 
-                               const int* dev_pivots, Scalar* B, int ldb)
-{
-  mutex_lock lock(handle_map_mutex);
-  using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
-  TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, trans, n, nrhs,
-                                    reinterpret_cast<ROCmScalar*> (A), lda, 
-                                    dev_pivots, reinterpret_cast<ROCmScalar*> (B),
-                                    ldb));
-  return Status::OK(); 
-}
-
-#define GETRS_INSTANCE(Scalar, type_prefix)                           \
-  template <>                                                         \
-  Status ROCmSolver::getrs<Scalar>(rocblas_operation trans,           \
-                                   int n, int nrhs, const Scalar* A,  \
-                                   int lda, const int* dev_pivots,    \
-                                   Scalar* B, int ldb) const {        \
-    return GetrsImpl(SOLVER_FN(getrs, type_prefix), context_,         \
-                     *rocm_blas_handle_, n, nrhs, A, lda, dev_pivots, \
-                     B, ldb);                                         \
+#define GETRS_INSTANCE(Scalar, type_prefix)                                   \
+  template <>                                                                 \
+  Status ROCmSolver::getrs<Scalar>(rocblas_operation trans, int n, int nrhs,  \
+                                   Scalar* A, int lda, const int* dev_pivots, \
+                                   Scalar* B, int ldb) {                      \
+    mutex_lock lock(handle_map_mutex);                                        \
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                   \
+    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrs, type_prefix)(                 \
+        rocm_blas_handle_, trans, n, nrhs, reinterpret_cast<ROCmScalar*>(A),  \
+        lda, dev_pivots, reinterpret_cast<ROCmScalar*>(B), ldb));             \
+    return Status::OK();                                                      \
   }
 
-TF_CALL_LAPACK_TYPES(GETRS_INSTANCE); 
+TF_CALL_LAPACK_TYPES(GETRS_INSTANCE);
 
-
-template <typename Scalar, typename SolverFnT>
-static inline Status GetrfBatchedImpl(SolverFnT solver, OpKernelContext* context,
-                                      rocblas_handle rocsolver_handle,
-                                      int m, int n, Scalar* A, int lda, 
-                                      int* dev_pivots, rocblas_stride stride, 
-                                      int* info, const int batch_size)
-{
-  mutex_lock lock(handle_map_mutex);
-  using ROCmScalar = typename ROCmComplexT<Scalar>::type; 
-  TF_RETURN_IF_ROCBLAS_ERROR(solver(rocsolver_handle, m, n, A, lda, 
-                                    dev_pivots, stride, info, batch_size));
-  return Status::OK();
-} 
-
-#define GETRF_BATCHED_INSTANCE(Scalar, type_prefix)                          \
-  template<>                                                                 \
-  Status ROCmSolver::getrf_batched(int m, int n, Scalar* A, int lda,         \
-                                   int* dev_pivots, rocblas_stride stride,   \
-                                   int* info, const int batch_size) {        \
-    return GetrfBatchedImpl(SOLVER_FN(getrf_batched, type_prefix), context_, \
-                            *rocm_blas_handle_, m, n, A, lda, stride, info,  \
-                            batch_size);                                     \
+#define GETRF_BATCHED_INSTANCE(Scalar, type_prefix)                        \
+  template <>                                                              \
+  Status ROCmSolver::getrf_batched(int m, int n, Scalar* A, int lda,       \
+                                   int* dev_pivots, rocblas_stride stride, \
+                                   int* info, const int batch_size) {      \
+    mutex_lock lock(handle_map_mutex);                                     \
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                \
+    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrf_batched, type_prefix)(      \
+        rocm_blas_handle_, m, n, reinterpret_cast<ROCmScalar**>(A), lda,   \
+        dev_pivots, stride, info, batch_size));                            \
+    return Status::OK();                                                   \
   }
 
 TF_CALL_LAPACK_TYPES(GETRF_BATCHED_INSTANCE); 
@@ -228,16 +192,19 @@ static inline Status GetrsBatchedImpl(SolverFnT solver, OpKernelContext* context
   return Status::OK(); 
 }
 
-#define GETRS_BATCHED_INSTANCE(Scalar, type_prefix)                             \
-  template <>                                                                   \
-  Status ROCmSolver::getrs_batched(const rocblas_operation trans, int n,        \
-                                   int nrhs, const Scalar* A, int lda,          \
-                                   int* dev_pivots, rocblas_stride stride,      \
-                                   Scalar* B, const int ldb,                    \
-                                   const int batch_size) {                      \
-  return GetrsBatchedImpl(SOLVER_FN(getrs_batched, type_prefix), context_,      \
-                                    *rocm_blas_handle_, trans, n, nrhs, A, lda, \
-                                    dev_pivots, stride, B, ldb, batch_size);    \
+#define GETRS_BATCHED_INSTANCE(Scalar, type_prefix)                           \
+  template <>                                                                 \
+  Status ROCmSolver::getrs_batched(                                           \
+      const rocblas_operation trans, int n, int nrhs, Scalar* A, int lda,     \
+      int* dev_pivots, rocblas_stride stride, Scalar* B, const int ldb,       \
+      const int batch_size) {                                                 \
+    mutex_lock lock(handle_map_mutex);                                        \
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                   \
+    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrs_batched, type_prefix)(         \
+        rocm_blas_handle_, trans, n, nrhs, reinterpret_cast<ROCmScalar**>(A), \
+        lda, dev_pivots, stride, reinterpret_cast<ROCmScalar**>(B), ldb,      \
+        batch_size));                                                         \
+    return Status::OK();                                                      \
   }
 
 TF_CALL_LAPACK_TYPES(GETRS_BATCHED_INSTANCE);

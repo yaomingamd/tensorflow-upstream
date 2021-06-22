@@ -28,7 +28,6 @@ limitations under the License.
 
 #include "rocm/include/hip/hip_complex.h"
 #include "rocm/include/rocblas.h"
-#include "rocm/include/rocsolver.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_reference.h"
@@ -46,11 +45,11 @@ struct ROCmComplexT {
 };
 template <>
 struct ROCmComplexT<std::complex<float>> {
-  typedef hipComplex type;
+  typedef rocblas_float_complex type;
 };
 template <>
 struct ROCmComplexT<std::complex<double>> {
-  typedef hipDoubleComplex type;
+  typedef rocblas_double_complex type;
 };
 // Converts pointers of std::complex<> to pointers of
 // ROCmComplex/ROCmDoubleComplex. No type conversion for non-complex types.
@@ -101,15 +100,12 @@ class ROCmSolver {
   // LU factorization.
   // Computes LU factorization with partial pivoting P * A = L * U.
   template <typename Scalar>
-  Status 
-  getrf(int m, int n, Scalar* dev_A,
-        int lda, int* dev_pivots);
+  Status getrf(int m, int n, Scalar* dev_A, int lda, int* dev_pivots);
 
   // Uses LU factorization to solve A * X = B.
   template <typename Scalar>
-  Status
-  getrs(const rocblas_operation trans, int n, int nrhs, const Scalar* A,
-        int lda, const int* dev_pivots, Scalar* B, int ldb);
+  Status getrs(const rocblas_operation trans, int n, int nrhs, Scalar* A,
+               int lda, const int* dev_pivots, Scalar* B, int ldb);
 
   template <typename Scalar>
   Status
@@ -117,12 +113,10 @@ class ROCmSolver {
                 rocblas_stride stride, int* info, const int batch_count);
 
   template <typename Scalar>
-  Status
-  getrs_batched(const rocblas_operation trans, int n,
-                int nrhs, const Scalar* A, int lda, int* dev_pivots,
-                rocblas_stride stride, Scalar* B, const int ldb,
-                const int batch_count);
-
+  Status getrs_batched(const rocblas_operation trans, int n, int nrhs,
+                       Scalar* A, int lda, int* dev_pivots,
+                       rocblas_stride stride, Scalar* B, const int ldb,
+                       const int batch_count);
 
   template <typename Scalar>
   Status Trsm(rocblas_side side, rocblas_fill uplo, rocblas_operation trans,
