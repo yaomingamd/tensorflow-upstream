@@ -72,6 +72,23 @@ cc_library(
     ],
 )
 
+tf_cc_test(
+    name = "op_signature_test",
+    srcs = [
+        "op_signature_test.cc",
+    ],
+    data = [
+        "//tensorflow/lite:testdata/add.bin",
+    ],
+    deps = [
+        ":op_signature",
+        "//tensorflow/core/platform:resource_loader",
+        "//tensorflow/lite:model_builder",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "gpu_compatibility",
     srcs = [
@@ -87,6 +104,7 @@ cc_library(
         "//tensorflow/lite:builtin_op_data",
         "//tensorflow/lite:builtin_ops",
         "//tensorflow/lite:minimal_logging",
+        "//tensorflow/lite/c:common",
         "//tensorflow/lite/schema:schema_fbs",
         "//tensorflow/lite/schema:schema_fbs_with_mutable",
         "//tensorflow/lite/schema:schema_utils",

@@ -286,6 +286,23 @@ GENERATE_DEFAULT_TEST_WITH_SPECIFIC_INPUT_VALUES_2(
     test::InputAsVector<Eigen::half>(kDigammaValues), baseline_digamma,
     test::OpsTestConfig())
 
+/// Test `tf.Elu`.
+
+template <typename T>
+T baseline_elu(T x) {
+  if (x < 0) return std::exp(x) - 1;
+  return x;
+}
+
+GENERATE_DEFAULT_TEST(Elu, DT_FLOAT, DT_FLOAT, baseline_elu,
+                      test::OpsTestConfig())
+
+GENERATE_DEFAULT_TEST(Elu, DT_DOUBLE, DT_DOUBLE, baseline_elu,
+                      test::OpsTestConfig())
+
+GENERATE_DEFAULT_TEST_2(Elu, DT_HALF, DT_FLOAT, DT_HALF, DT_FLOAT, baseline_elu,
+                        test::OpsTestConfig())
+
 /// Test `tf.Erf` and `tf.Erfc`.
 
 // Use specific values to cover the different intervals in the f64 erf and f64
@@ -799,6 +816,26 @@ GENERATE_DEFAULT_TEST(Rsqrt, DT_DOUBLE, DT_DOUBLE, baseline_rsqrt,
 
 GENERATE_DEFAULT_TEST_2(Rsqrt, DT_HALF, DT_FLOAT, DT_HALF, DT_FLOAT,
                         baseline_rsqrt, test::OpsTestConfig())
+
+/// Test `tf.Selu`.
+
+template <typename T>
+T baseline_selu(T x) {
+  const double scale = 1.0507009873554804934193349852946;
+  if (x > 0) return scale * x;
+
+  const double scaled_alpha = 1.7580993408473768599402175208123;
+  return scaled_alpha * (std::exp(x) - 1);
+}
+
+GENERATE_DEFAULT_TEST(Selu, DT_FLOAT, DT_FLOAT, baseline_selu,
+                      test::OpsTestConfig())
+
+GENERATE_DEFAULT_TEST(Selu, DT_DOUBLE, DT_DOUBLE, baseline_selu,
+                      test::OpsTestConfig())
+
+GENERATE_DEFAULT_TEST_2(Selu, DT_HALF, DT_FLOAT, DT_HALF, DT_FLOAT,
+                        baseline_selu, test::OpsTestConfig())
 
 /// Test `tf.Sign`.
 

@@ -60,7 +60,7 @@ limitations under the License.
 #include "mlir/Translation.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/lite/flatbuffer_operator.h"
 #include "tensorflow/compiler/mlir/lite/ir/tfl_ops.h"
-#include "tensorflow/compiler/mlir/lite/metrics/error_collector.h"
+#include "tensorflow/compiler/mlir/lite/metrics/error_collector_inst.h"
 #include "tensorflow/compiler/mlir/lite/utils/convert_type.h"
 #include "tensorflow/compiler/mlir/lite/utils/stateful_ops_utils.h"
 #include "tensorflow/compiler/mlir/op_or_arg_name_mapper.h"
@@ -470,6 +470,8 @@ struct SignatureDefData {
   std::string method_name;
   // SignatureDef key.
   std::string signature_def_key;
+  // Subgraph index.
+  uint32_t subgraph_index;
 };
 
 // Translates an MLIR module in TFLite dialect to TFLite FlatBuffer.
@@ -560,18 +562,6 @@ class Translator {
 
   BufferOffset<tflite::Operator> BuildNumericVerifyOperator(
       mlir::TFL::NumericVerifyOp op, const std::vector<int32_t>& operands,
-      const std::vector<int32_t>& results);
-
-  // Builds Assign/Read Variable ops.
-  template <typename T>
-  BufferOffset<tflite::Operator> BuildVariableOperator(
-      T op, const std::string& op_name, const std::vector<int32_t>& operands,
-      const std::vector<int32_t>& results);
-
-  // Builds VarHandle op.
-  BufferOffset<tflite::Operator> BuildVarHandleOp(
-      mlir::TFL::VarHandleOp op, const std::string& op_name,
-      const std::vector<int32_t>& operands,
       const std::vector<int32_t>& results);
 
   BufferOffset<tflite::Operator> BuildCustomOperator(
@@ -990,36 +980,6 @@ BufferOffset<tflite::Operator> Translator::BuildNumericVerifyOperator(
       tflite::CustomOptionsFormat_FLEXBUFFERS);
 }
 
-BufferOffset<tflite::Operator> Translator::BuildVarHandleOp(
-    mlir::TFL::VarHandleOp op, const std::string& op_name,
-    const std::vector<int32_t>& operands, const std::vector<int32_t>& results) {
-  auto opcode_index = GetOpcodeIndex(op_name, tflite::BuiltinOperator_CUSTOM);
-  auto fbb = absl::make_unique<flexbuffers::Builder>();
-  fbb->Map([&]() {
-    fbb->String("shared_name", op.shared_name().str());
-    fbb->String("container", op.container().str());
-  });
-  fbb->Finish();
-  auto f = std::unique_ptr<flexbuffers::Builder>(fbb.release());
-  auto custom_option = f->GetBuffer();
-  return tflite::CreateOperator(
-      builder_, opcode_index, builder_.CreateVector(operands),
-      builder_.CreateVector(results), tflite::BuiltinOptions_NONE,
-      /*builtin_options=*/0, builder_.CreateVector<uint8_t>(custom_option),
-      tflite::CustomOptionsFormat_FLEXBUFFERS);
-}
-
-// Builds Assign/Read Variable ops.
-template <typename T>
-BufferOffset<tflite::Operator> Translator::BuildVariableOperator(
-    T op, const std::string& op_name, const std::vector<int32_t>& operands,
-    const std::vector<int32_t>& results) {
-  auto opcode_index = GetOpcodeIndex(op_name, tflite::BuiltinOperator_CUSTOM);
-  return tflite::CreateOperator(
-      builder_, opcode_index, builder_.CreateVector(operands),
-      builder_.CreateVector(results), tflite::BuiltinOptions_NONE);
-}
-
 BufferOffset<tflite::Operator> Translator::BuildCustomOperator(
     Operation* inst, mlir::TFL::CustomOp op,
     const std::vector<int32_t>& operands, const std::vector<int32_t>& results) {
@@ -1159,21 +1119,6 @@ Optional<BufferOffset<tflite::Operator>> Translator::BuildOperator(
   if (!dialect) {
     inst->emitOpError("dialect is not registered");
     return llvm::None;
-  }
-
-  // TODO(b/149099381): Remove this once the kernels are promoted as
-  // builtin TFLite kernels.
-  // We export the VarHandle, Assign, and Read variable ops as custom ops.
-  if (auto read_op = llvm::dyn_cast<mlir::TFL::ReadVariableOp>(inst)) {
-    return BuildVariableOperator<mlir::TFL::ReadVariableOp>(
-        read_op, "ReadVariable", operands, results);
-  } else if (auto assign_op =
-                 llvm::dyn_cast<mlir::TFL::AssignVariableOp>(inst)) {
-    return BuildVariableOperator<mlir::TFL::AssignVariableOp>(
-        assign_op, "AssignVariable", operands, results);
-  } else if (auto var_handle_op =
-                 llvm::dyn_cast<mlir::TFL::VarHandleOp>(inst)) {
-    return BuildVarHandleOp(var_handle_op, "VarHandle", operands, results);
   }
 
   // If TFLite built in op, create operator as a builtin op.
@@ -1656,7 +1601,7 @@ std::vector<std::string> GetStringsFromDictionaryAttr(
 
 std::vector<SignatureDefData> BuildSignaturedef(
     FuncOp main_op, const std::string& saved_model_tag,
-    tensorflow::OpOrArgNameMapper& name_mapper) {
+    const uint32_t subgraph_index, tensorflow::OpOrArgNameMapper& name_mapper) {
   static const char kSignatureDefIndexPath[] = "tf_saved_model.index_path";
   static const char kEntryFunctionAttributes[] = "tf.entry_function";
 
@@ -1729,6 +1674,7 @@ std::vector<SignatureDefData> BuildSignaturedef(
   if (auto name_attr = exported_name[0].dyn_cast_or_null<StringAttr>())
     result[0].method_name = name_attr.getValue().str();
   result[0].signature_def_key = saved_model_tag;
+  result[0].subgraph_index = subgraph_index;
   return result;
 }
 
@@ -1763,6 +1709,7 @@ Translator::CreateSignatureDefs(
     sig_def_builder.add_outputs(outputs_buf);
     sig_def_builder.add_method_name(method_name_buf);
     sig_def_builder.add_key(signature_def_key_buf);
+    sig_def_builder.add_subgraph_index(signature_def_data.subgraph_index);
     signature_defs_buffer.push_back(sig_def_builder.Finish());
   }
 
@@ -1971,14 +1918,20 @@ Optional<std::string> Translator::TranslateInternal() {
   if (!metadata) return llvm::None;
 
   std::vector<SignatureDefData> signature_defs_vec;
+  int subgraph_index = 0;
   // Build SignatureDefs for the tf.entry_function based func ops.
   for (auto fn : entry_functions) {
     auto signature_defs = BuildSignaturedef(
         fn, saved_model_tags_.empty() ? "" : *saved_model_tags_.begin(),
-        name_mapper_);
+        subgraph_index, name_mapper_);
     for (const auto& signature_def : signature_defs) {
       signature_defs_vec.push_back(signature_def);
     }
+    // When we export each function in the module op, intentionally, we export
+    // the entry functions at the beginning of the subgraph list and the
+    // subgraph_index is the index in entry functions and at the same, is the
+    // index in the subgraph list.
+    ++subgraph_index;
   }
   auto signature_defs = CreateSignatureDefs(signature_defs_vec);
 

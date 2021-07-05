@@ -1823,7 +1823,6 @@ tf_cuda_cc_test(
     srcs = ["depthwise_conv_ops_test.cc"],
     tags = tf_cuda_tests_tags() + [
         "no_cuda_asan",  # TODO(b/171342266): re-enable.
-        "no_gpu",  # flaky, TODO(b/191214648)
     ],
     deps = [
         ":conv_ops",
@@ -3024,7 +3023,6 @@ cc_library(
     deps = [
         ":fixed_length_record_reader_op",
         ":identity_reader_op",
-        ":lmdb_reader_op",
         ":matching_files_op",
         ":reader_ops",
         ":restore_op",
@@ -3033,7 +3031,10 @@ cc_library(
         ":text_line_reader_op",
         ":tf_record_reader_op",
         ":whole_file_read_ops",
-    ],
+    ] + select({
+        "//tensorflow:fuchsia": [],
+        "//conditions:default": [":lmdb_reader_op"],
+    }),
 )
 
 IO_DEPS = [
@@ -6049,6 +6050,8 @@ filegroup(
         "stateless_random_ops_v2.h",
         "sparse_xent_op.h",
         "sparse_fill_empty_rows_op.h",
+        "sparse_reorder_op.h",
+        "sparse_tensor_dense_matmul_op.h",
         "string_util.h",
         "string_to_hash_bucket_op.h",
         "string_to_hash_bucket_fast_op.h",
@@ -6069,8 +6072,9 @@ filegroup(
         "//tensorflow/core/data:dataset_utils.h",
         "//tensorflow/core/data:name_utils.h",
         "//tensorflow/core/data:rewrite_utils.h",
-        "//tensorflow/core/data:root_dataset.h",
         "//tensorflow/core/data:split_utils.h",
+        "//tensorflow/core/data:root_dataset.h",
+        "//tensorflow/core/data:serialization_utils.h",
         "//tensorflow/core/data:stats_utils.h",
         "//tensorflow/core/data:unbounded_thread_pool.h",
         "//tensorflow/core/kernels/boosted_trees/quantiles:weighted_quantiles_hdrs",
@@ -6349,8 +6353,10 @@ filegroup(
         "sparse_reduce_op.cc",
         "sparse_xent_op.cc",
         "sparse_fill_empty_rows_op.cc",
+        "sparse_reorder_op.cc",
         "sparse_reshape_op.cc",
         "sparse_slice_op.cc",
+        "sparse_tensor_dense_matmul_op.cc",
         "sparse_to_dense_op.cc",
         "spectrogram.cc",
         "spectrogram_op.cc",
@@ -6416,6 +6422,7 @@ filegroup(
         "//tensorflow/core/data:name_utils.cc",
         "//tensorflow/core/data:rewrite_utils.cc",
         "//tensorflow/core/data:root_dataset.cc",
+        "//tensorflow/core/data:serialization_utils.cc",
         "//tensorflow/core/data:split_utils.cc",
         "//tensorflow/core/data:stats_utils.cc",
         "//tensorflow/core/data:unbounded_thread_pool.cc",
@@ -6604,7 +6611,6 @@ cc_library(
         "//tensorflow/core/kernels:portable_extended_ops",
     ]),
     copts = tf_copts() + tf_opts_nortti_if_lite_protos(),
-    features = ["-no_undefined"],
     linkopts = if_android(["-ldl"]),
     tags = [
         "manual",
