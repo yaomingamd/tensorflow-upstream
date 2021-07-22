@@ -8,11 +8,16 @@ MEMORY="--ipc=host --shm-size 16G"
 
 VOLUMES="-v $HOME/dockerx:/dockerx -v /data:/data"
 
-WORK_DIR='/dockerx/tensorflow-upstream'
+# WORK_DIR='/dockerx/tensorflow-upstream'
+# WORK_DIR='/root/tensorflow-upstream'
+# WORK_DIR='/dockerx'
+WORK_DIR='/tensorflow-upstream'
 
-IMAGE_NAME=rocm/tensorflow
+# IMAGE_NAME=rocm/tensorflow
+IMAGE_NAME=rocm/tensorflow-autobuilds:dev-latest
 
 CONTAINER_ID=$(drun -d -w $WORK_DIR $MEMORY $VOLUMES $DEVICES $IMAGE_NAME)
+# CONTAINER_ID=$(drun -d $MEMORY $VOLUMES $DEVICES $IMAGE_NAME)
 echo "CONTAINER_ID: $CONTAINER_ID"
 docker cp . $CONTAINER_ID:$WORK_DIR
 docker attach $CONTAINER_ID
