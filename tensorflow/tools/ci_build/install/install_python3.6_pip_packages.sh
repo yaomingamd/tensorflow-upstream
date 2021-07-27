@@ -49,7 +49,7 @@ cd Python-3.6.1
 make altinstall
 ln -s /usr/local/bin/pip3.6 /usr/local/bin/pip3
 
-pip3 install --upgrade pip
+pip3 install --upgrade pip==21.1.3
 
 # Install last working version of setuptools. This must happen before we install
 # absl-py, which uses install_requires notation introduced in setuptools 20.5.
