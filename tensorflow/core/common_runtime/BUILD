@@ -2062,7 +2062,10 @@ tf_cuda_cc_test(
         "ring_reducer_test.cc",
     ],
     linkstatic = tf_kernel_tests_linkstatic(),
-    tags = ["no_cuda_on_cpu_tap"],
+    tags = [
+        "no_cuda_on_cpu_tap",
+        "no_rocm"
+    ],
     deps = [
         ":collective_test_util",
         ":core",
