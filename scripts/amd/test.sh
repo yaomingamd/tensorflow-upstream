@@ -1,0 +1,1 @@
+sh tensorflow/tools/ci_build/linux/rocm/run_gpu_multi.sh

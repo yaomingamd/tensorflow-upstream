@@ -14,7 +14,7 @@ VOLUMES="-v $HOME/dockerx:/dockerx -v /data:/data"
 WORK_DIR='/tensorflow-upstream'
 
 # IMAGE_NAME=rocm/tensorflow
-IMAGE_NAME=rocm/tensorflow-autobuilds:dev-latest
+IMAGE_NAME=rocm/tensorflow-autobuilds:latest
 
 CONTAINER_ID=$(drun -d -w $WORK_DIR $MEMORY $VOLUMES $DEVICES $IMAGE_NAME)
 # CONTAINER_ID=$(drun -d $MEMORY $VOLUMES $DEVICES $IMAGE_NAME)
