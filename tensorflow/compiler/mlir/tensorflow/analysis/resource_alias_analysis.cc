@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <cstdint>
 #include <initializer_list>
+#include <utility>
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -237,6 +238,22 @@ namespace {
 
 constexpr char kResourceArgUniqueIdAttr[] = "tf._resource_arg_unique_id";
 
+bool IsResourceAllocatingOp(Operation* op) {
+  auto mem_interface = dyn_cast<MemoryEffectOpInterface>(op);
+  if (!mem_interface) return false;
+
+  for (Value value : filter_resources(op->getResults())) {
+    llvm::SmallVector<MemoryEffects::EffectInstance, 4> effects;
+    mem_interface.getEffectsOnValue(value, effects);
+    for (auto& effect_instance : effects) {
+      if (isa<MemoryEffects::Allocate>(effect_instance.getEffect())) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 constexpr int64_t ResourceAliasAnalysisInfo::kUnknownResourceId;
@@ -264,16 +281,18 @@ ResourceAliasAnalysisInfo::ResourceAliasAnalysisInfo(
     }
   };
 
-  // If the "tf.resource_arg_unique_id" argument attributes are present for
-  // resource-type arguments, respect them when choosing IDs; otherwise, they
-  // must not alias.
+  // If `tf.resource_arg_unique_id` argument attributes are present for
+  // resource-type arguments, use those to decide which arguments correspond to
+  // the same resource (and thus need the same ID). Otherwise, they must not
+  // alias.
   const bool has_arg_unique_id_attrs =
       llvm::any_of(func_op.getArguments(), [&](const BlockArgument& arg) {
         return func_op.getArgAttr(arg.getArgNumber(), kResourceArgUniqueIdAttr);
       });
-  // Maps the kResourceArgUniqueIdAttr attribute value to the internal integer
-  // ID used by this pass.
   if (has_arg_unique_id_attrs) {
+    // Resource arguments have ID's attached (via `kResourceArgUniqueIdAttr`)
+    // that represent different resources. Map those ID's to the internal ID's
+    // used by this pass.
     llvm::SmallDenseMap<int64_t, int64_t> attr_id_to_internal_id;
     for (auto arg : filter_resources(func_op.getArguments())) {
       auto id_attr = func_op.getArgAttrOfType<IntegerAttr>(
@@ -286,6 +305,9 @@ ResourceAliasAnalysisInfo::ResourceAliasAnalysisInfo(
       AddValueUniqueIDMapping(arg, emplace_res.first->getSecond());
     }
   } else {
+    // No `kResourceArgUniqueIdAttr` attribute is present, so all resource
+    // arguments must correspond to different resources and we can assign unique
+    // ID's.
     assign_unique_id_to_all(func_op.getArguments());
   }
 
@@ -307,10 +329,12 @@ ResourceAliasAnalysisInfo::ResourceAliasAnalysisInfo(
   llvm::SmallDenseMap<ResourceHandle, int64_t> resource_handle_id_map;
   func_op.walk([&](Operation* op) {
     if (auto resource_alloc = dyn_cast<ResourceHandleAllocatorInterface>(op)) {
-      ResourceHandleValueAndId resource =
-          resource_alloc.GetResourceHandleValueAndId(resource_handle_id_map,
-                                                     next_unique_id);
-      AddValueUniqueIDMapping(resource.value, resource.id);
+      llvm::SmallVector<ResourceHandleValueAndId, 4> resources =
+          resource_alloc.GetResourceHandleValueAndIdList(resource_handle_id_map,
+                                                         next_unique_id);
+      for (auto& resource_handle : resources) {
+        AddValueUniqueIDMapping(resource_handle.value, resource_handle.id);
+      }
     } else if (llvm::isa<IdentityNOp, IdentityOp>(op)) {
       for (auto result : filter_resources(op->getResults()))
         PropagateInputToOutput(op->getOperand(result.getResultNumber()),
@@ -355,6 +379,17 @@ ResourceAliasAnalysisInfo::ResourceAliasAnalysisInfo(
         PropagateInputToOutput(body_result, result);
       }
     } else {
+      if (IsResourceAllocatingOp(op)) {
+        // Don't log this by default to avoid logfile noise, it is currently
+        // expected that we have some such cases.
+        VLOG(1) << "Warning: resource-allocating op "
+                << op->getName().getStringRef().str()
+                << " is treated conservatively in resource alias analysis "
+                   "because it doesn't use `ResourceHandleAllocatorInterface` "
+                   "or any derived trait";
+      }
+      // Assign unknown ID for all results since we don't know if a new resource
+      // is allocated here.
       assign_unknown_id_to_all(op->getResults());
     }
     return WalkResult::advance();

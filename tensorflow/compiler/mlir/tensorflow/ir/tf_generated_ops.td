@@ -357,7 +357,7 @@ Equivalent to np.angle.
   TF_DerivedResultTypeAttr Tout = TF_DerivedResultTypeAttr<0>;
 }
 
-def TF_AnonymousIteratorOp : TF_Op<"AnonymousIterator", []> {
+def TF_AnonymousIteratorOp : TF_Op<"AnonymousIterator", [TF_UniqueResourceAllocation]> {
   let summary = "A container for an iterator resource.";
 
   let arguments = (ins
@@ -373,7 +373,7 @@ container.}], [TF_DatasetIteratorAlloc]>:$handle
   );
 }
 
-def TF_AnonymousIteratorV2Op : TF_Op<"AnonymousIteratorV2", []> {
+def TF_AnonymousIteratorV2Op : TF_Op<"AnonymousIteratorV2", [TF_UniqueResourceAllocation]> {
   let summary = "A container for an iterator resource.";
 
   let arguments = (ins
@@ -390,7 +390,7 @@ container.}], [TF_DatasetIteratorAlloc]>:$handle,
   );
 }
 
-def TF_AnonymousMemoryCacheOp : TF_Op<"AnonymousMemoryCache", []> {
+def TF_AnonymousMemoryCacheOp : TF_Op<"AnonymousMemoryCache", [TF_UniqueResourceAllocation]> {
   let summary = "";
 
   let arguments = (ins);
@@ -401,7 +401,7 @@ def TF_AnonymousMemoryCacheOp : TF_Op<"AnonymousMemoryCache", []> {
   );
 }
 
-def TF_AnonymousMultiDeviceIteratorOp : TF_Op<"AnonymousMultiDeviceIterator", []> {
+def TF_AnonymousMultiDeviceIteratorOp : TF_Op<"AnonymousMultiDeviceIterator", [TF_UniqueResourceAllocation]> {
   let summary = "A container for a multi device iterator resource.";
 
   let arguments = (ins
@@ -419,7 +419,7 @@ reference to the resource container.}], [TF_DatasetIteratorAlloc]>:$handle,
   );
 }
 
-def TF_AnonymousRandomSeedGeneratorOp : TF_Op<"AnonymousRandomSeedGenerator", []> {
+def TF_AnonymousRandomSeedGeneratorOp : TF_Op<"AnonymousRandomSeedGenerator", [TF_UniqueResourceAllocation]> {
   let summary = "";
 
   let arguments = (ins
@@ -433,7 +433,7 @@ def TF_AnonymousRandomSeedGeneratorOp : TF_Op<"AnonymousRandomSeedGenerator", []
   );
 }
 
-def TF_AnonymousSeedGeneratorOp : TF_Op<"AnonymousSeedGenerator", []> {
+def TF_AnonymousSeedGeneratorOp : TF_Op<"AnonymousSeedGenerator", [TF_UniqueResourceAllocation]> {
   let summary = "";
 
   let arguments = (ins
@@ -3762,6 +3762,8 @@ def TF_DivNoNanOp : TF_Op<"DivNoNan", [NoSideEffect, ResultsBroadcastableShape, 
   );
 
   TF_DerivedOperandTypeAttr T = TF_DerivedOperandTypeAttr<0>;
+
+  let hasCanonicalizer = 1;
 }
 
 def TF_DummyMemoryCacheOp : TF_Op<"DummyMemoryCache", []> {
@@ -9324,6 +9326,8 @@ Returns x * y element-wise. Returns zero if y is zero, even if x if infinite or 
   );
 
   TF_DerivedOperandTypeAttr T = TF_DerivedOperandTypeAttr<0>;
+
+  let hasCanonicalizer = 1;
 }
 
 def TF_MultiDeviceIteratorOp : TF_Op<"MultiDeviceIterator", []> {
@@ -14736,7 +14740,11 @@ size(t) ==> 12
   let hasFolder = 1;
 }
 
-def TF_SliceOp : TF_Op<"Slice", [NoSideEffect]> {
+def TF_SliceOp : TF_Op<"Slice", [
+    NoSideEffect,
+    PredOpTrait<"input and output must have same element type",
+                TCresVTEtIsSameAsOp<0, 0>>
+    ]> {
   let summary = "Return a slice from 'input'.";
 
   let description = [{
@@ -15967,7 +15975,7 @@ def TF_StackPushV2Op : TF_Op<"StackPushV2", []> {
   TF_DerivedOperandTypeAttr T = TF_DerivedOperandTypeAttr<1>;
 }
 
-def TF_StackV2Op : TF_Op<"StackV2", []> {
+def TF_StackV2Op : TF_Op<"StackV2", [TF_UniqueResourceAllocation]> {
   let summary = "A stack that produces elements in first-in last-out order.";
 
   let arguments = (ins
@@ -19438,6 +19446,26 @@ https://www.tensorflow.org/performance/xla/operation_semantics#reducewindow .
 
   TF_DerivedOperandTypeAttr T = TF_DerivedOperandTypeAttr<0>;
   TF_DerivedOperandTypeAttr Tindices = TF_DerivedOperandTypeAttr<2>;
+}
+
+def TF_XlaRemoveDynamicDimensionSizeOp : TF_Op<"XlaRemoveDynamicDimensionSize", [NoSideEffect]> {
+  let summary = "Inverse of XlaSetDynamicDimensionSize.";
+
+  let description = [{
+Make an xla bounded dynamic dimension into a static dimension. The bound of the
+size of dimension `dim_index` becomes the static dimension size.
+  }];
+
+  let arguments = (ins
+    TF_Tensor:$input,
+    TF_Int32Tensor:$dim_index
+  );
+
+  let results = (outs
+    TF_Tensor:$output
+  );
+
+  TF_DerivedOperandTypeAttr T = TF_DerivedOperandTypeAttr<0>;
 }
 
 def TF_XlaReplicaIdOp : TF_Op<"XlaReplicaId", [NoSideEffect, TF_NoConstantFold]> {

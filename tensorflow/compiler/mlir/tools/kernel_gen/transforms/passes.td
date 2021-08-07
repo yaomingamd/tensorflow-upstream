@@ -38,6 +38,24 @@ def RewriteTFFrameworkAssert : Pass<"rewrite-tf-framework-assert", "ModuleOp"> {
   let constructor = "tf_framework::CreateRewriteTFFrameworkAssert()";
 }
 
+def TFToJITInvocationPass : FunctionPass<"tf-to-jit-invocation"> {
+  let summary = "Pass to rewrite all TF operations to JIT invocations";
+  let constructor = "transforms::CreateTFToJITInvocationPass()";
+  let options = [
+      ListOption<"tile_sizes_", "tile-sizes", "int64_t", "Tiling sizes",
+                 "llvm::cl::ZeroOrMore, llvm::cl::MiscFlags::CommaSeparated">,
+      ListOption<"unroll_factors_", "unroll-factors", "int64_t",
+                 "Unrolling in each tile dimension", "llvm::cl::ZeroOrMore, "
+                 "llvm::cl::MiscFlags::CommaSeparated">,
+      Option<"max_supported_rank_", "max-supported-rank", "int64_t",
+             /*default=*/"", "Max rank that this kernel supports">,
+      Option<"enable_ftz_", "enable-ftz", "bool", /*default=*/"",
+             "Enable the denormal flush to zero mode when generating code">,
+      Option<"cpu_codegen_", "cpu-codegen", "bool", /*default=*/"",
+             "CPU codegen (false implies GPU)">,
+  ];
+}
+
 def BufferReusePass : FunctionPass<"buffer-reuse"> {
   let summary = "Pass to find and annotate candidates for buffer reuse.";
   let constructor = "transforms::CreateBufferReusePass()";
@@ -86,6 +104,8 @@ def GpuKernelToBlobPass : Pass<"gpu-kernel-to-blob", "gpu::GPUModuleOp"> {
            "fatbin.">,
     Option<"print_ptx_", "print-ptx", "bool", /*default=*/"false",
            "Print generated PTX code per target architecture.">,
+    Option<"print_llvmir_", "print-llvmir", "bool", /*default=*/"false",
+           "Print llvm ir when lowering code per target architecture.">,
   ];
   let constructor = "transforms::CreateGpuKernelToBlobPass()";
 }
