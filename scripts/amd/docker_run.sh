@@ -12,7 +12,7 @@ VOLUMES="-v $HOME/dockerx:/dockerx -v /data:/data"
 # WORK_DIR='/dockerx/tensorflow-upstream'
 # WORK_DIR='/root/tensorflow-upstream'
 # WORK_DIR='/dockerx'
-WORK_DIR='/tensorflow-upstream'
+WORK_DIR='/dockerx/tensorflow-upstream'
 
 # IMAGE_NAME=rocm/tensorflow
 IMAGE_NAME=rocm/tensorflow-autobuilds:latest
