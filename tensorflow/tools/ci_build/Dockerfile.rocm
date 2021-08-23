@@ -5,7 +5,7 @@ MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
 ARG ROCM_DEB_REPO=http://compute-artifactory.amd.com/artifactory/list/rocm-release-archive-deb/
 ARG ROCM_BUILD_NAME=4.3.1
-ARG ROCM_BUILD_NUM=rel-58
+ARG ROCM_BUILD_NUM=rel-59
 ARG ROCM_PATH=/opt/rocm-4.3.1
 
 ENV DEBIAN_FRONTEND noninteractive
