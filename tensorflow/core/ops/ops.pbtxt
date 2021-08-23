@@ -3664,64 +3664,6 @@ op {
   is_distributed_communication: true
 }
 op {
-  name: "BatchGemm"
-  input_arg {
-    name: "x"
-    type_attr: "T"
-  }
-  input_arg {
-    name: "y"
-    type_attr: "T"
-  }
-  input_arg {
-    name: "z"
-    type_attr: "T"
-  }
-  output_arg {
-    name: "output"
-    type_attr: "T"
-  }
-  attr {
-    name: "T"
-    type: "type"
-    allowed_values {
-      list {
-        type: DT_HALF
-        type: DT_FLOAT
-        type: DT_DOUBLE
-      }
-    }
-  }
-  attr {
-    name: "transpose_a"
-    type: "bool"
-    default_value {
-      b: false
-    }
-  }
-  attr {
-    name: "transpose_b"
-    type: "bool"
-    default_value {
-      b: false
-    }
-  }
-  attr {
-    name: "alpha"
-    type: "float"
-    default_value {
-      f: 1
-    }
-  }
-  attr {
-    name: "beta"
-    type: "float"
-    default_value {
-      f: 0
-    }
-  }
-}
-op {
   name: "BatchIFFT"
   input_arg {
     name: "input"
@@ -21792,6 +21734,51 @@ op {
   }
   input_arg {
     name: "updates"
+    type: DT_FLOAT
+  }
+  attr {
+    name: "table_id"
+    type: "int"
+    default_value {
+      i: -1
+    }
+  }
+  attr {
+    name: "table_name"
+    type: "string"
+    default_value {
+      s: ""
+    }
+  }
+  attr {
+    name: "num_shards"
+    type: "int"
+  }
+  attr {
+    name: "shard_id"
+    type: "int"
+  }
+  attr {
+    name: "config"
+    type: "string"
+    default_value {
+      s: ""
+    }
+  }
+  is_stateful: true
+}
+op {
+  name: "LoadTPUEmbeddingAdagradMomentumParameters"
+  input_arg {
+    name: "parameters"
+    type: DT_FLOAT
+  }
+  input_arg {
+    name: "accumulators"
+    type: DT_FLOAT
+  }
+  input_arg {
+    name: "momenta"
     type: DT_FLOAT
   }
   attr {
@@ -40582,6 +40569,51 @@ op {
   }
   output_arg {
     name: "updates"
+    type: DT_FLOAT
+  }
+  attr {
+    name: "table_id"
+    type: "int"
+    default_value {
+      i: -1
+    }
+  }
+  attr {
+    name: "table_name"
+    type: "string"
+    default_value {
+      s: ""
+    }
+  }
+  attr {
+    name: "num_shards"
+    type: "int"
+  }
+  attr {
+    name: "shard_id"
+    type: "int"
+  }
+  attr {
+    name: "config"
+    type: "string"
+    default_value {
+      s: ""
+    }
+  }
+  is_stateful: true
+}
+op {
+  name: "RetrieveTPUEmbeddingAdagradMomentumParameters"
+  output_arg {
+    name: "parameters"
+    type: DT_FLOAT
+  }
+  output_arg {
+    name: "accumulators"
+    type: DT_FLOAT
+  }
+  output_arg {
+    name: "momenta"
     type: DT_FLOAT
   }
   attr {

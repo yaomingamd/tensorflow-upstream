@@ -137,19 +137,6 @@ REGISTER_OP("BatchMatMulV2")
     .Attr("adj_y: bool = false")
     .SetShapeFn(shape_inference::BatchMatMulV2Shape);
 
-// Note: Reusing the BatchMatMulV2Shape inference function
-REGISTER_OP("BatchGemm")
-    .Input("a: T")
-    .Input("b: T")
-    .Input("c: T")
-    .Output("output: T")
-    .Attr("T: {half, float, double}")
-    .Attr("adj_x: bool = false")
-    .Attr("adj_y: bool = false")
-    .Attr("alpha: float = 1.0")
-    .Attr("beta: float = 0.0")
-    .SetShapeFn(shape_inference::BatchMatMulV2Shape);
-
 REGISTER_OP("BatchMatMulV3")
     .Input("x: Ta")
     .Input("y: Tb")
@@ -1236,7 +1223,7 @@ Status ArgOpShape(shape_inference::InferenceContext* c) {
   if (dim_t->dtype() == DT_INT32) {
     dimension_val = dim_t->scalar<int32>()();
   } else {
-    dimension_val = dim_t->scalar<int64>()();
+    dimension_val = dim_t->scalar<int64_t>()();
   }
 
   int64_t axis = dimension_val < 0 ? dimension_val + input_rank : dimension_val;
@@ -1621,7 +1608,7 @@ Status RangeSize(const Tensor* start_t, const Tensor* limit_t,
                       Eigen::numext::abs(delta))
                    : (Eigen::numext::ceil(
                          Eigen::numext::abs((limit - start) / delta))));
-  c->set_output(0, c->Vector(static_cast<int64>(size)));
+  c->set_output(0, c->Vector(static_cast<int64_t>(size)));
   return Status::OK();
 }
 
