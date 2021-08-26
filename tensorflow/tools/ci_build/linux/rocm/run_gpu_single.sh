@@ -61,5 +61,4 @@ bazel test \
       -//tensorflow/core/tpu/... \
       -//tensorflow/lite/... \
       -//tensorflow/compiler/tf2tensorrt/... \
-      -//tensorflow/python/kernel_tests:lu_op_test \
 
