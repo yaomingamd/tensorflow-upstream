@@ -76,6 +76,7 @@ tf_py_test(
 tf_py_test(
     name = "checkpoint_input_pipeline_hook_test",
     size = "small",
+    tags = ["no_rocm"],
     srcs = ["checkpoint_input_pipeline_hook_test.py"],
     deps = [
         "//tensorflow/python:client_testlib",
