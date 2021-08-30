@@ -421,6 +421,7 @@ cc_library(
 
 py_test(
     name = "ram_file_system_test",
+    tags = ["no_rocm"],
     srcs = ["ram_file_system_test.py"],
     python_version = "PY3",
     deps = [
