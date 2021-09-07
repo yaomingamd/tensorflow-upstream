@@ -45,7 +45,7 @@ __global__ void ReluGradHalfKernel(const Eigen::half* __restrict__ gradient,
                                    const Eigen::half* __restrict__ feature,
                                    Eigen::half* __restrict__ backprop,
                                    int32 count) {
-  int32 half2_count = count >> 1;
+  int32 half2_count = count >> 3;
   int32 index = blockIdx.x * blockDim.x + threadIdx.x;
   const int32 total_device_threads = gridDim.x * blockDim.x;
 
