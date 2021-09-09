@@ -45,6 +45,7 @@ load(
     "tf_cc_tests",
     "tf_copts",  # @unused
     "tf_cuda_library",
+    "tf_native_cc_binary",
 )
 load(
     "@local_config_rocm//rocm:build_defs.bzl",
@@ -210,6 +211,15 @@ cc_library(
     ],
 )
 
+# Used by //tensorflow/python/platform:platform.
+tf_native_cc_binary(
+    name = "_cpu_feature_guard.so",
+    linkshared = True,
+    deps = [
+        "//tensorflow/core/platform:cpu_feature_guard",
+    ],
+)
+
 cc_library(
     name = "casts",
     hdrs = ["casts.h"],
@@ -307,7 +317,9 @@ cc_library(
         ":status",
         ":str_util",
         ":strcat",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:cord",
     ],
 )
 
@@ -702,7 +714,11 @@ cc_library(
         ":types",
         "//tensorflow/core/protobuf:error_codes_proto_impl_cc",
         "@com_google_absl//absl/base",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -1325,6 +1341,8 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//third_party/eigen3",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:cord",
     ],
 )
 

@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "absl/strings/cord.h"
 #include "pybind11/pybind11.h"
-#include "tensorflow/core/platform/status.h"
 #include "tensorflow/python/lib/core/pybind11_status.h"
 
 namespace tensorflow {
@@ -22,9 +22,19 @@ PYBIND11_MODULE(_errors_test_helper, m) {
   m.def("TestRaiseFromStatus", [](int code) {
     tensorflow::Status status(static_cast<tensorflow::error::Code>(code),
                               "test message");
-    status.SetPayload("key1", "value1");
-    status.SetPayload("key2", "value2");
+    status.SetPayload("key1", absl::Cord("value1"));
+    status.SetPayload("key2", absl::Cord("value2"));
     MaybeRaiseRegisteredFromStatus(status);
+    return 0;
+  });
+
+  m.def("TestRaiseFromTFStatus", [](int code) {
+    TF_Status *tf_status = TF_NewStatus();
+    TF_SetStatus(tf_status, static_cast<TF_Code>(code), "test_message");
+    TF_SetPayload(tf_status, "key1", "value1");
+    TF_SetPayload(tf_status, "key2", "value2");
+    MaybeRaiseRegisteredFromTFStatus(tf_status);
+    TF_DeleteStatus(tf_status);
     return 0;
   });
 }

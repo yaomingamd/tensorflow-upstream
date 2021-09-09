@@ -54,6 +54,7 @@ limitations under the License.
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/platform_strings.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/profiler/lib/scoped_memory_debug_annotation.h"
 #include "tensorflow/core/profiler/lib/traceme.h"
 #include "tensorflow/core/util/ptr_util.h"
 
@@ -738,8 +739,9 @@ Status OpKernelContext::allocate_output(int index, const TensorShape& shape,
           " more than once.  Try turning off the ScopedAllocator optimizer.");
     }
   }
-  ScopedMemoryDebugAnnotation op_annotation(op_kernel().name_view().data(),
-                                            step_id(), "output", type, &shape);
+  profiler::ScopedMemoryDebugAnnotation op_annotation(
+      op_kernel().name_view().data(), step_id(), "output", type,
+      [&shape]() { return shape.DebugString(); });
   auto output_tensor = MakeUnique<Tensor>();
   Status s = allocate_tensor(type, shape, output_tensor.get(), attr);
   if (s.ok()) {
@@ -768,8 +770,9 @@ Status OpKernelContext::allocate_temp(
             << ".  Switch to allocate_output to avoid performance penalty.";
     allocator_attr.scope_id = -1;
   }
-  ScopedMemoryDebugAnnotation op_annotation(op_kernel().name_view().data(),
-                                            step_id(), "temp", type, &shape);
+  profiler::ScopedMemoryDebugAnnotation op_annotation(
+      op_kernel().name_view().data(), step_id(), "temp", type,
+      [&shape]() { return shape.DebugString(); });
   Status s =
       allocate_tensor(type, shape, out_temp, allocator_attr, allocation_attr);
   if (track_allocations() && s.ok() && out_temp->TotalBytes() > 0) {
@@ -860,9 +863,9 @@ bool OpKernelContext::maybe_set_output_by_allocate_and_copy(
             << " params_->forward_from_array[index] "
             << params_->forward_from_array[index] << " alloc_attr.scope_id "
             << output_alloc_attr(index).scope_id;
-    ScopedMemoryDebugAnnotation op_annotation(op_kernel().name_view().data(),
-                                              step_id(), "output",
-                                              tensor.dtype(), &tensor.shape());
+    profiler::ScopedMemoryDebugAnnotation op_annotation(
+        op_kernel().name_view().data(), step_id(), "output", tensor.dtype(),
+        [&tensor]() { return tensor.shape().DebugString(); });
     auto new_tensor = MakeUnique<Tensor>();
     Status s = allocate_tensor(tensor.dtype(), tensor.shape(), new_tensor.get(),
                                output_alloc_attr(index));

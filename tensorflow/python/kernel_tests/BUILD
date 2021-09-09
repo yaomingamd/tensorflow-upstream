@@ -703,6 +703,7 @@ tf_py_test(
     size = "small",
     srcs = ["logging_ops_logging_level_test.py"],
     tags = [
+        "no_oss",  # b/198486357
         "no_windows",
     ],
     deps = [
@@ -1008,7 +1009,10 @@ cuda_py_test(
     name = "segment_reduction_ops_deterministic_test",
     size = "small",
     srcs = ["segment_reduction_ops_deterministic_test.py"],
-    tags = ["no_cuda_asan"],  # b/195247538
+    tags = [
+        "no_cuda_asan",  # b/195247538
+        "no_windows",  # TODO(reedwm): Fix this
+    ],
     xla_enable_strict_auto_jit = False,
     deps = [
         "//tensorflow/python:array_ops",
@@ -1937,6 +1941,25 @@ tf_py_test(
         "//tensorflow/python:control_flow_util_v2",
         "//tensorflow/python:while_v2",
     ],
+)
+
+CONV_TEST_BASENAMES = [
+    ":atrous_conv2d_test",
+    ":conv1d_test",
+    ":conv1d_transpose_test",
+    ":conv2d_backprop_filter_grad_test",
+    ":conv3d_transpose_test",
+    ":conv3d_backprop_filter_v2_grad_test",
+    ":conv_ops_3d_test",
+    ":conv_ops_test",
+    ":depthwise_conv_op_test",
+    ":conv2d_transpose_test",
+]
+
+test_suite(
+    name = "conv_tests",
+    tests = [basename for basename in CONV_TEST_BASENAMES] +
+            [basename + "_gpu" for basename in CONV_TEST_BASENAMES],
 )
 
 cuda_py_test(
@@ -3335,7 +3358,6 @@ cuda_py_test(
     srcs = ["extract_image_patches_grad_test.py"],
     shard_count = 15,
     tags = [
-        "no_rocm",
         "nomac",  # b/181799478
         "notap",  # b/31080670
     ],

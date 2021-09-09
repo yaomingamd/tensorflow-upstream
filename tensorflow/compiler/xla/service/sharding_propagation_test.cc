@@ -2351,6 +2351,42 @@ ENTRY %conv {
   }
 }
 
+TEST_P(ParameterizedMetadataTest, BackwardDotFromContractingWithManual) {
+  const char* const hlo_string = R"(
+HloModule module
+ENTRY %dot {
+  %p0 = f32[8,512] parameter(0),
+    sharding={devices=[1,2,2]0,1,2,3 last_tile_dims={manual} metadata={op_name="a"}}
+  %p1 = f32[512,128] parameter(1)
+  %copy1 = f32[512,128] copy(%p1)
+  %dot = f32[8,128] dot(%p0, %copy1),
+    lhs_batch_dims={}, rhs_batch_dims={},
+    lhs_contracting_dims={1}, rhs_contracting_dims={0},
+    sharding={devices=[1,1,2,2]0,1,2,3 last_tile_dims={replicated, manual} metadata={op_name="b"}}
+  ROOT %copy = f32[8,128] copy(%dot)
+})";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(hlo_string));
+  if (GetParam().clear_metadata) {
+    ClearMetadata(module.get());
+  }
+  TF_ASSERT_OK_AND_ASSIGN(
+      bool changed,
+      ShardingPropagation(/*is_spmd=*/true, GetParam().propagate_metadata)
+          .Run(module.get()));
+  EXPECT_TRUE(changed);
+  auto* instruction = FindInstruction(module.get(), "copy1");
+  ASSERT_NE(instruction, nullptr);
+  EXPECT_THAT(instruction,
+              op::Sharding("{devices=[2,1,2]0,1,2,3 last_tile_dims={manual}}"));
+  if (GetParam().propagate_metadata && !GetParam().clear_metadata) {
+    EXPECT_THAT(instruction->sharding(),
+                ShardingMetadata({CreateMetadata("a")}));
+  } else {
+    EXPECT_THAT(instruction->sharding(), ShardingMetadata({}));
+  }
+}
+
 TEST_P(ParameterizedMetadataTest, ConvAsDotOnTrivialDims) {
   const char* const hlo_string = R"(
 HloModule module
@@ -5194,6 +5230,116 @@ ENTRY %entry {
   } else {
     EXPECT_THAT(instruction->sharding(), ShardingMetadata({}));
   }
+}
+
+TEST_F(ShardingPropagationTest, SimpleManual) {
+  const char* const hlo_string = R"(
+HloModule module
+
+%add {
+  %lhs = f32[] parameter(0)
+  %rhs = f32[] parameter(1)
+  ROOT %add = f32[] add(%lhs, %rhs)
+}
+
+ENTRY %entry {
+  %param0 = f32[6,3] parameter(0)
+  %copy = f32[6,3] copy(%param0), sharding={devices=[2,1]0,1}
+  %annotate = f32[6,3] custom-call(%copy), custom_call_target="Sharding",
+    sharding={devices=[2,1]0,1}
+  %to_manual = f32[3,3] custom-call(%annotate),
+    custom_call_target="SPMDFullToShardShape", sharding={manual}
+  %zero = f32[] constant(0)
+  %reduce = f32[3] reduce(%to_manual, %zero), dimensions={1}, to_apply=%add
+  %annotate2 = f32[3] custom-call(%reduce), custom_call_target="Sharding",
+    sharding={manual}
+  %to_auto = f32[6] custom-call(%annotate2),
+    custom_call_target="SPMDShardToFullShape", sharding={devices=[2,1]0,1}
+  ROOT %copy.2 = f32[6] copy(%to_auto)
+})";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(hlo_string));
+  TF_ASSERT_OK_AND_ASSIGN(
+      bool changed,
+      ShardingPropagation(/*is_spmd=*/true, /*propagate_metadata=*/true)
+          .Run(module.get()));
+  EXPECT_TRUE(changed);
+  auto* instruction = FindInstruction(module.get(), "reduce");
+  ASSERT_NE(instruction, nullptr);
+  EXPECT_THAT(instruction, op::Sharding("{manual}"));
+}
+
+TEST_F(ShardingPropagationTest, RefineUnspecifiedDims) {
+  const char* const hlo_string = R"(
+HloModule module
+
+ENTRY %entry {
+  %param0 = f32[6,3] parameter(0)
+  %copy = f32[6,3] copy(%param0),
+    sharding={devices=[1,2,2]0,1,2,3 last_tile_dim_replicate}
+  %annotate = f32[6,3] custom-call(%copy), custom_call_target="Sharding",
+    backend_config="unspecified_dims=[1]",
+    sharding={devices=[2,1,2]0,2,1,3 last_tile_dim_replicate}
+  %copy.2 = f32[6,3] copy(%annotate)
+  ROOT %copy.3 = f32[6,3] copy(%copy.2)
+})";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(hlo_string));
+  TF_ASSERT_OK_AND_ASSIGN(
+      bool changed,
+      ShardingPropagation(/*is_spmd=*/true, /*propagate_metadata=*/true)
+          .Run(module.get()));
+  EXPECT_TRUE(changed);
+  auto* instruction = FindInstruction(module.get(), "copy.2");
+  ASSERT_NE(instruction, nullptr);
+  EXPECT_THAT(instruction, op::Sharding("{devices=[2,2]0,2,1,3}"));
+}
+
+TEST_F(ShardingPropagationTest, RefineUnspecifiedDimsWithManualConversion) {
+  const char* const hlo_string = R"(
+HloModule module
+
+ENTRY %entry {
+  %param0 = f32[6,3,8] parameter(0)
+  %copy = f32[6,3,8] copy(%param0),
+    sharding={devices=[1,2,1,4]0,1,2,3,4,5,6,7 last_tile_dim_replicate}
+  %annotate = f32[6,3,8] custom-call(%copy), custom_call_target="Sharding",
+    backend_config="unspecified_dims=[1,2]",
+    sharding={devices=[2,1,1,4]0,1,4,5,2,3,6,7 last_tile_dim_replicate}
+  %to_manual = f32[3,3,8] custom-call(%annotate),
+    custom_call_target="SPMDFullToShardShape",
+    backend_config="unspecified_dims=[1,2]",
+    sharding={devices=[1,1,1,4,2]0,2,1,3,4,6,5,7 last_tile_dims={replicated,manual}}
+  %annotate2 = f32[3,3,8] custom-call(%to_manual), custom_call_target="Sharding",
+    backend_config="unspecified_dims=[1,2]",
+    sharding={devices=[1,1,1,4,2]0,2,1,3,4,6,5,7 last_tile_dims={replicated,manual}}
+  %to_auto = f32[6,3,8] custom-call(%annotate2),
+    custom_call_target="SPMDShardToFullShape",
+    backend_config="unspecified_dims=[1,2]",
+    sharding={devices=[2,1,1,4]0,1,4,5,2,3,6,7 last_tile_dim_replicate}
+  %copy.2 = f32[6,3,8] copy(%to_auto)
+  ROOT %copy.3 = f32[6,3,8] copy(%copy.2),
+    sharding={devices=[1,1,2,4]0,2,4,6,1,3,5,7 last_tile_dim_replicate}
+})";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(hlo_string));
+  TF_ASSERT_OK_AND_ASSIGN(
+      bool changed,
+      ShardingPropagation(/*is_spmd=*/true, /*propagate_metadata=*/true)
+          .Run(module.get()));
+  EXPECT_TRUE(changed);
+  auto* copy2 = FindInstruction(module.get(), "copy.2");
+  ASSERT_NE(copy2, nullptr);
+  EXPECT_THAT(copy2, op::Sharding("{devices=[2,2,2]0,1,4,5,2,3,6,7}"));
+  auto* to_manual = FindInstruction(module.get(), "to_manual");
+  ASSERT_NE(to_manual, nullptr);
+  EXPECT_THAT(
+      to_manual,
+      op::Sharding(
+          "{devices=[1,2,2,2]0,2,1,3,4,6,5,7 last_tile_dims={manual}}"));
+  auto* to_auto = FindInstruction(module.get(), "to_auto");
+  ASSERT_NE(to_auto, nullptr);
+  EXPECT_THAT(to_auto, op::Sharding("{devices=[2,2,2]0,1,4,5,2,3,6,7}"));
 }
 
 }  // namespace

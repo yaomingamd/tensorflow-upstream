@@ -119,6 +119,7 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
         protocol_(protocol),
         data_transfer_protocol_(data_transfer_protocol),
         job_name_(job_name),
+        is_coordinated_read_(consumer_index.has_value()),
         consumer_index_(consumer_index),
         num_consumers_(num_consumers),
         max_outstanding_requests_(max_outstanding_requests),
@@ -159,6 +160,14 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
 
   string DebugString() const override {
     return name_utils::DatasetDebugString(kDatasetType);
+  }
+
+  int64_t Cardinality() const override {
+    if (is_coordinated_read_) {
+      // Coordinated reads require the dataset to be infinite.
+      return kInfiniteCardinality;
+    }
+    return kUnknownCardinality;
   }
 
   Status CheckExternalState() const override {
@@ -266,7 +275,7 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
       for (auto& worker_thread : worker_threads_) {
         worker_thread.reset();
       }
-
+      DeleteLocalWorkerTasks();
       VLOG(1) << "Destroyed data service dataset iterator for job id "
               << job_client_id_;
     }
@@ -291,8 +300,8 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
           [&]() {
             return dispatcher_->GetOrCreateJob(
                 dataset()->dataset_id_, dataset()->processing_mode_, key,
-                dataset()->num_consumers_, job_client_id_,
-                dataset()->target_workers_);
+                dataset()->num_consumers_, dataset()->target_workers_,
+                job_client_id_);
           },
           /*description=*/
           strings::StrCat("get or create job with dispatcher at ",
@@ -432,21 +441,36 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
     Status ValidateDataset() const {
       if (dataset()->target_workers_ == TARGET_WORKERS_LOCAL &&
           LocalWorkers::Empty()) {
+        if (IsStaticShard(dataset()->processing_mode_)) {
+          return errors::InvalidArgument(
+              "Static sharding policy <",
+              ProcessingModeDef::ShardingPolicy_Name(
+                  dataset()->processing_mode_.sharding_policy()),
+              "> requires local tf.data workers, but no local worker is found. "
+              "You need to run local tf.data service workers in your training "
+              "workers. Static sharding also requires a fixed worker pool and "
+              "a list of worker addresses in the DispatcherConfig. See the "
+              "\"Processing Modes\" section in the module doc for details.");
+        }
         return errors::InvalidArgument(
-            "`target_workers` is `local`, but no local worker is found.");
+            "Local reads require local tf.data workers, but no local worker "
+            "is found. You need to run local tf.data service workers in your "
+            "training workers.");
       }
       if (dataset()->target_workers_ == TARGET_WORKERS_LOCAL &&
           StrictRoundRobin()) {
         return errors::InvalidArgument(
             "Coordinated reads require non-local workers, but `target_workers` "
-            "is `local`.");
+            "is \"LOCAL\".");
       }
       if (IsStaticShard(dataset()->processing_mode_) &&
           dataset()->target_workers_ != TARGET_WORKERS_LOCAL) {
         return errors::InvalidArgument(
-            "Static sharding requires reading from local workers, but "
-            "`target_workers` is ",
-            TargetWorkersToString(dataset()->target_workers_));
+            "Static sharding policy <",
+            ProcessingModeDef::ShardingPolicy_Name(
+                dataset()->processing_mode_.sharding_policy()),
+            "> requires reading from local workers, but `target_workers` is ",
+            TargetWorkersToString(dataset()->target_workers_), ".");
       }
       return Status::OK();
     }
@@ -488,6 +512,25 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
       worker_thread_cv_.notify_all();
       manager_thread_cv_.notify_all();
       get_next_cv_.notify_all();
+    }
+
+    void DeleteLocalWorkerTasks() {
+      if (dataset()->target_workers_ != TARGET_WORKERS_LOCAL) {
+        return;
+      }
+      std::vector<std::shared_ptr<Task>> tasks;
+      {
+        mutex_lock l(mu_);
+        tasks = tasks_;
+      }
+
+      for (const std::shared_ptr<Task>& task : tasks) {
+        std::shared_ptr<DataServiceWorkerImpl> worker =
+            LocalWorkers::Get(task->info.worker_address());
+        if (worker) {
+          worker->DeleteLocalTask(task->info);
+        }
+      }
     }
 
     // Periodically refresh the task list.
@@ -785,10 +828,10 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
           VLOG(1) << "Failed to get element from worker "
                   << task_to_process->info.worker_address() << ": " << s;
           task_to_process->in_use = false;
-          status_ = Status(s.code(),
-                           absl::StrCat("Failed to get element from worker ",
-                                        task_to_process->info.worker_address(),
-                                        ": ", s.error_message()));
+          status_ = errors::CreateWithUpdatedMessage(
+              s, absl::StrCat("Failed to get element from worker ",
+                              task_to_process->info.worker_address(), ": ",
+                              s.error_message()));
           get_next_cv_.notify_all();
           return;
         }
@@ -1017,6 +1060,7 @@ class DataServiceDatasetOp::Dataset : public DatasetBase {
   const tstring protocol_;
   const tstring data_transfer_protocol_;
   const tstring job_name_;
+  const bool is_coordinated_read_;
   const absl::optional<int64_t> consumer_index_;
   const absl::optional<int64_t> num_consumers_;
   const int64_t max_outstanding_requests_;
@@ -1055,9 +1099,6 @@ DataServiceDatasetOp::DataServiceDatasetOp(OpKernelConstruction* ctx)
       ParseTargetWorkers(target_workers_str);
   OP_REQUIRES_OK(ctx, status_or_target_workers.status());
   target_workers_ = *status_or_target_workers;
-  if (target_workers_ == TARGET_WORKERS_LOCAL) {
-    data_transfer_protocol_ = kLocalTransferProtocol;
-  }
 
   auto& op_name = ctx->def().op();
   if (op_name == kDataServiceDatasetV1) {
@@ -1089,6 +1130,15 @@ void DataServiceDatasetOp::MakeDataset(OpKernelContext* ctx,
                 errors::InvalidArgument(absl::Substitute(
                     "Failed to parse ProcessingModeDef from string: $0",
                     std::string(processing_mode_str))));
+  }
+  if (IsStaticShard(processing_mode) &&
+      target_workers_ == TARGET_WORKERS_AUTO) {
+    VLOG(1) << "Using LOCAL target workers for static sharding mode: "
+            << processing_mode.ShortDebugString();
+    target_workers_ = TARGET_WORKERS_LOCAL;
+  }
+  if (target_workers_ == TARGET_WORKERS_LOCAL) {
+    data_transfer_protocol_ = kLocalTransferProtocol;
   }
 
   tstring address;

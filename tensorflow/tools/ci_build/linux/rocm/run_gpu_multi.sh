@@ -25,7 +25,7 @@ echo "Bazel will use ${N_BUILD_JOBS} concurrent build job(s) and ${N_TEST_JOBS} 
 echo ""
 
 # First positional argument (if any) specifies the ROCM_INSTALL_DIR
-ROCM_INSTALL_DIR=/opt/rocm-4.2.0
+ROCM_INSTALL_DIR=/opt/rocm-4.3.1
 if [[ -n $1 ]]; then
     ROCM_INSTALL_DIR=$1
 fi
@@ -54,7 +54,6 @@ bazel test \
       --test_env=TF_PER_DEVICE_MEMORY_LIMIT_MB=2048 \
       -- \
 //tensorflow/core/common_runtime/gpu:gpu_device_unified_memory_test_2gpu \
-//tensorflow/core/kernels:collective_nccl_test_2gpu \
 //tensorflow/core/nccl:nccl_manager_test_2gpu \
 //tensorflow/python/distribute/integration_test:mwms_peer_failure_test_2gpu \
 //tensorflow/python/distribute:checkpoint_utils_test_2gpu \
@@ -74,17 +73,6 @@ bazel test \
 //tensorflow/python/distribute:tf_function_test_2gpu \
 //tensorflow/python/distribute:vars_test_2gpu \
 //tensorflow/python/distribute:warm_starting_util_test_2gpu \
-//tensorflow/python/keras/distribute:collective_all_reduce_strategy_test_2gpu \
-//tensorflow/python/keras/distribute:collective_all_reduce_strategy_test_xla_2gpu \
-//tensorflow/python/keras/distribute:ctl_correctness_test_2gpu \
-//tensorflow/python/keras/distribute:custom_training_loop_optimizer_test_2gpu \
-//tensorflow/python/keras/distribute:keras_metrics_test_2gpu \
-//tensorflow/python/keras/distribute:keras_models_test_2gpu \
-//tensorflow/python/keras/distribute:keras_optimizer_v2_test_2gpu \
-//tensorflow/python/keras/distribute:keras_stateful_lstm_model_correctness_test_2gpu \
-//tensorflow/python/keras/distribute:mirrored_strategy_test_2gpu \
-//tensorflow/python/keras/distribute:mirrored_variable_test_2gpu \
-//tensorflow/python/keras/distribute:multi_worker_test_2gpu \
 //tensorflow/python/keras/layers/preprocessing:category_crossing_distribution_test_2gpu \
 //tensorflow/python/keras/layers/preprocessing:category_encoding_distribution_test_2gpu \
 //tensorflow/python/keras/layers/preprocessing:discretization_distribution_test_2gpu \
@@ -99,6 +87,8 @@ bazel test \
 
 
 
+#  Started failing with 210906 sync
+# FAILED : //tensorflow/core/kernels:collective_nccl_test_2gpu \
 
 # no_rocm : //tensorflow/python/keras/distribute:keras_dnn_correctness_test_2gpu \
 # no_rocm : //tensorflow/python/keras/distribute:keras_embedding_model_correctness_test_2gpu \
