@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/c/tf_status.h"
 
+#include "absl/strings/cord.h"
 #include "tensorflow/c/tf_status_internal.h"
 #include "tensorflow/core/platform/error.h"
 #include "tensorflow/core/platform/status.h"
@@ -33,6 +34,10 @@ void TF_SetStatus(TF_Status* s, TF_Code code, const char* msg) {
     return;
   }
   s->status = Status(static_cast<Code>(code), tensorflow::StringPiece(msg));
+}
+
+void TF_SetPayload(TF_Status* s, const char* key, const char* value) {
+  s->status.SetPayload(key, absl::Cord(value));
 }
 
 void TF_SetStatusFromIOError(TF_Status* s, int error_code,

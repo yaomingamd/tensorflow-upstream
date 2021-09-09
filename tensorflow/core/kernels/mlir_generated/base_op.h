@@ -42,11 +42,27 @@ UnrankedMemRefType<ElemType> ConvertToTyped(UntypedUnrankedMemRefType desc) {
 TensorBuffer* GetMlirTensorBuffer(const void* ptr, size_t size,
                                   Allocator* allocator);
 
+// Used to allocate descriptors on stack when they are small.
+constexpr int kMaxRankForOnStackDescriptors = 10;
+static constexpr size_t GetSizeOfDescriptor(int rank) {
+  return sizeof(void*) * (2 * rank + 3);
+}
+
+using DescriptorBuffer =
+    llvm::SmallVector<unsigned char,
+                      GetSizeOfDescriptor(kMaxRankForOnStackDescriptors)>;
+
 template <typename ElemType>
-::UnrankedMemRefType<ElemType> ConvertTensorToDescriptor(const Tensor& tensor) {
+::UnrankedMemRefType<ElemType> ConvertTensorToDescriptor(
+    const Tensor& tensor, DescriptorBuffer& buffer) {
   ::UnrankedMemRefType<ElemType> result;
   result.rank = tensor.dims();
-  result.descriptor = malloc(sizeof(void*) * (2 * result.rank + 3));
+
+  // Resize the descriptor buffer to the needed size to make sure the pointer
+  // does not move afterwards.
+  size_t descriptor_size_in_bytes = GetSizeOfDescriptor(tensor.dims());
+  buffer.resize_for_overwrite(descriptor_size_in_bytes);
+  result.descriptor = buffer.data();
 
   // Fill the descriptor.
   void** pointers = static_cast<void**>(result.descriptor);
@@ -96,7 +112,8 @@ Tensor ConvertDescriptorToTensor(
 }
 
 template <DataType TfDataType, typename OutputDataType, typename Kernel,
-          typename InputDataType = OutputDataType>
+          typename InputDataType = OutputDataType,
+          DataType CastedTfDataType = TfDataType>
 class MlirOp : public OpKernel {
  public:
   explicit MlirOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
@@ -117,8 +134,8 @@ class MlirOp : public OpKernel {
         // Run a bitcast in case the output type is different.
         Tensor output;
         TensorShape result_shape = ExtractShapeFromDescriptor(result_desc);
-        OP_REQUIRES_OK(ctx,
-                       output.BitcastFrom(input, TfDataType, result_shape));
+        OP_REQUIRES_OK(
+            ctx, output.BitcastFrom(input, CastedTfDataType, result_shape));
 
         ctx->set_output(0, output);
         free(result_desc.descriptor);
@@ -130,6 +147,13 @@ class MlirOp : public OpKernel {
     auto* allocator = ctx->get_allocator(attrs);
     Tensor result_tensor = ConvertDescriptorToTensor<OutputDataType>(
         result_desc, TfDataType, allocator);
+    if (TfDataType != CastedTfDataType) {
+      Tensor casted_result_tensor;
+      OP_REQUIRES_OK(
+          ctx, casted_result_tensor.BitcastFrom(result_tensor, CastedTfDataType,
+                                                result_tensor.shape()));
+      result_tensor = casted_result_tensor;
+    }
     free(result_desc.descriptor);
     ctx->set_output(0, result_tensor);
   }
@@ -177,10 +201,22 @@ class MlirOp : public OpKernel {
   GENERATE_BINARY_KERNEL2(tf_op, platform, input_type, output_type)       \
   REGISTER_KERNEL(tf_op, platform, input_type, output_type)
 
+#define GENERATE_AND_REGISTER_BINARY_KERNEL3(tf_op, platform, input_type,    \
+                                             output_type, casted_input_type, \
+                                             casted_output_type)             \
+  GENERATE_BINARY_KERNEL3(tf_op, platform, input_type, output_type,          \
+                          casted_input_type, casted_output_type)             \
+  REGISTER_KERNEL(tf_op, platform, casted_input_type, casted_output_type)
+
 #define GENERATE_BINARY_KERNEL(tf_op, platform, input_type) \
   GENERATE_BINARY_KERNEL2(tf_op, platform, input_type, input_type)
 
-#define GENERATE_BINARY_KERNEL2(tf_op, platform, input_type, output_type)      \
+#define GENERATE_BINARY_KERNEL2(tf_op, platform, input_type, output_type) \
+  GENERATE_BINARY_KERNEL3(tf_op, platform, input_type, output_type,       \
+                          input_type, output_type)
+
+#define GENERATE_BINARY_KERNEL3(tf_op, platform, input_type, output_type,      \
+                                casted_input_type, casted_output_type)         \
   extern "C" void MLIR_FUNCTION(tf_op, platform, input_type, output_type)(     \
       UntypedUnrankedMemRefType * result, tensorflow::OpKernelContext * ctx,   \
       const ::UnrankedMemRefType<typename EnumToDataType<input_type>::Type>*   \
@@ -189,23 +225,24 @@ class MlirOp : public OpKernel {
           arg2);                                                               \
                                                                                \
   namespace {                                                                  \
-  class MLIR_OP(tf_op, platform, input_type, output_type)                      \
-      : public MlirOp<output_type, typename EnumToDataType<output_type>::Type, \
-                      MLIR_OP(tf_op, platform, input_type, output_type),       \
-                      typename EnumToDataType<input_type>::Type> {             \
+  class MLIR_OP(tf_op, platform, casted_input_type, casted_output_type)        \
+      : public MlirOp<                                                         \
+            output_type, typename EnumToDataType<output_type>::Type,           \
+            MLIR_OP(tf_op, platform, casted_input_type, casted_output_type),   \
+            typename EnumToDataType<input_type>::Type, casted_output_type> {   \
    public:                                                                     \
     using MlirOp::MlirOp;                                                      \
     using InputDataType = EnumToDataType<input_type>::Type;                    \
     using ResultDataType = EnumToDataType<output_type>::Type;                  \
                                                                                \
     static ::UnrankedMemRefType<ResultDataType> Invoke(OpKernelContext* ctx) { \
-      auto arg0 = ConvertTensorToDescriptor<InputDataType>(ctx->input(0));     \
-      auto arg1 = ConvertTensorToDescriptor<InputDataType>(ctx->input(1));     \
+      DescriptorBuffer b0;                                                     \
+      auto arg0 = ConvertTensorToDescriptor<InputDataType>(ctx->input(0), b0); \
+      DescriptorBuffer b1;                                                     \
+      auto arg1 = ConvertTensorToDescriptor<InputDataType>(ctx->input(1), b1); \
       UntypedUnrankedMemRefType result;                                        \
       MLIR_FUNCTION(tf_op, platform, input_type, output_type)                  \
       (&result, ctx, &arg0, &arg1);                                            \
-      free(arg0.descriptor);                                                   \
-      free(arg1.descriptor);                                                   \
       return ConvertToTyped<ResultDataType>(result);                           \
     }                                                                          \
   };                                                                           \
@@ -235,15 +272,15 @@ class MlirOp : public OpKernel {
     using ResultDataType = EnumToDataType<input_type>::Type;                   \
                                                                                \
     static ::UnrankedMemRefType<ResultDataType> Invoke(OpKernelContext* ctx) { \
-      auto arg0 = ConvertTensorToDescriptor<bool>(ctx->input(0));              \
-      auto arg1 = ConvertTensorToDescriptor<InputDataType>(ctx->input(1));     \
-      auto arg2 = ConvertTensorToDescriptor<InputDataType>(ctx->input(2));     \
+      DescriptorBuffer b0;                                                     \
+      auto arg0 = ConvertTensorToDescriptor<bool>(ctx->input(0), b0);          \
+      DescriptorBuffer b1;                                                     \
+      auto arg1 = ConvertTensorToDescriptor<InputDataType>(ctx->input(1), b1); \
+      DescriptorBuffer b2;                                                     \
+      auto arg2 = ConvertTensorToDescriptor<InputDataType>(ctx->input(2), b2); \
       UntypedUnrankedMemRefType result;                                        \
       MLIR_FUNCTION(tf_op, platform, input_type, input_type)                   \
       (&result, ctx, &arg0, &arg1, &arg2);                                     \
-      free(arg0.descriptor);                                                   \
-      free(arg1.descriptor);                                                   \
-      free(arg2.descriptor);                                                   \
       return ConvertToTyped<ResultDataType>(result);                           \
     }                                                                          \
   };                                                                           \
@@ -253,31 +290,44 @@ class MlirOp : public OpKernel {
   GENERATE_UNARY_KERNEL(tf_op, platform, input_type)                    \
   REGISTER_KERNEL(tf_op, platform, input_type, input_type)
 
+#define GENERATE_AND_REGISTER_UNARY_KERNEL3(tf_op, platform, input_type,    \
+                                            output_type, casted_input_type, \
+                                            casted_output_type)             \
+  GENERATE_UNARY_KERNEL3(tf_op, platform, input_type, output_type,          \
+                         casted_input_type, casted_output_type)             \
+  REGISTER_KERNEL(tf_op, platform, casted_input_type, casted_output_type)
+
 #define GENERATE_UNARY_KERNEL(tf_op, platform, input_type) \
   GENERATE_UNARY_KERNEL2(tf_op, platform, input_type, input_type)
 
 #define GENERATE_UNARY_KERNEL2(tf_op, platform, input_type, output_type)       \
+  GENERATE_UNARY_KERNEL3(tf_op, platform, input_type, output_type, input_type, \
+                         output_type)
+
+#define GENERATE_UNARY_KERNEL3(tf_op, platform, input_type, output_type,       \
+                               casted_input_type, casted_output_type)          \
   extern "C" void MLIR_FUNCTION(tf_op, platform, input_type, output_type)(     \
       UntypedUnrankedMemRefType * result, tensorflow::OpKernelContext * ctx,   \
       const ::UnrankedMemRefType<typename EnumToDataType<input_type>::Type>*   \
           arg);                                                                \
                                                                                \
   namespace {                                                                  \
-  class MLIR_OP(tf_op, platform, input_type, output_type)                      \
-      : public MlirOp<output_type, typename EnumToDataType<output_type>::Type, \
-                      MLIR_OP(tf_op, platform, input_type, output_type),       \
-                      typename EnumToDataType<input_type>::Type> {             \
+  class MLIR_OP(tf_op, platform, casted_input_type, casted_output_type)        \
+      : public MlirOp<                                                         \
+            output_type, typename EnumToDataType<output_type>::Type,           \
+            MLIR_OP(tf_op, platform, casted_input_type, casted_output_type),   \
+            typename EnumToDataType<input_type>::Type, casted_output_type> {   \
    public:                                                                     \
     using MlirOp::MlirOp;                                                      \
     using InputDataType = EnumToDataType<input_type>::Type;                    \
     using ResultDataType = EnumToDataType<output_type>::Type;                  \
                                                                                \
     static ::UnrankedMemRefType<ResultDataType> Invoke(OpKernelContext* ctx) { \
-      auto arg0 = ConvertTensorToDescriptor<InputDataType>(ctx->input(0));     \
+      DescriptorBuffer b0;                                                     \
+      auto arg0 = ConvertTensorToDescriptor<InputDataType>(ctx->input(0), b0); \
       UntypedUnrankedMemRefType result;                                        \
       MLIR_FUNCTION(tf_op, platform, input_type, output_type)                  \
       (&result, ctx, &arg0);                                                   \
-      free(arg0.descriptor);                                                   \
       return ConvertToTyped<ResultDataType>(result);                           \
     }                                                                          \
   };                                                                           \

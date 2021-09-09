@@ -485,6 +485,9 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+        "noasan",
+        "nomsan",
+        "notsan",
     ],
     deps = [
         ":xla_test",
@@ -1759,7 +1762,8 @@ cc_library(
 
 tf_cuda_cc_test(
     name = "randomized_tests",
-    size = "large",
+    size = "medium",
+    shard_count = 20,
     # This test is randomized, so only run it if explicitly requested.
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
@@ -2068,5 +2072,32 @@ tpu_py_test(
         "//tensorflow/python/eager:remote",
         "//tensorflow/python/eager:test",
         "//tensorflow/python/tpu:tpu_lib",
+    ],
+)
+
+tf_xla_py_test(
+    name = "sharding_util_ops_test",
+    srcs = ["sharding_util_ops_test.py"],
+    disabled_backends = [
+        "cpu",
+        "cpu_ondemand",
+        "gpu",
+    ],
+    enable_mlir_bridge = False,
+    python_version = "PY3",
+    shard_count = 10,
+    tags = [
+        "notap",
+    ],
+    deps = [
+        ":xla_test",
+        "//tensorflow/python:constant_op",
+        "//tensorflow/python:framework_ops",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:resource_variable_ops",
+        "//tensorflow/python:session",
+        "//tensorflow/python:variables",
+        "//tensorflow/python/tpu:tpu_lib",
+        "@absl_py//absl/testing:parameterized",
     ],
 )

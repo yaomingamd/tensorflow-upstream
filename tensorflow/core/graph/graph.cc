@@ -182,11 +182,11 @@ const OpDef& Node::op_def() const { return *props_->op_def; }
 NodeDef* Node::mutable_def() { return &props_->node_def; }
 
 int32 Node::num_inputs() const { return props_->input_types.size(); }
-DataType Node::input_type(int32 i) const { return props_->input_types[i]; }
+DataType Node::input_type(int32_t i) const { return props_->input_types[i]; }
 const DataTypeVector& Node::input_types() const { return props_->input_types; }
 
 int32 Node::num_outputs() const { return props_->output_types.size(); }
-DataType Node::output_type(int32 o) const { return props_->output_types[o]; }
+DataType Node::output_type(int32_t o) const { return props_->output_types[o]; }
 const DataTypeVector& Node::output_types() const {
   return props_->output_types;
 }
@@ -243,6 +243,16 @@ void Node::set_original_node_names(const std::vector<std::string>& names) {
   if (!names.empty()) {
     *props_->node_def.mutable_experimental_debug_info()
          ->mutable_original_node_names() = {names.begin(), names.end()};
+  }
+}
+
+void Node::set_original_func_names(const std::vector<std::string>& names) {
+  MaybeCopyOnWrite();
+  props_->node_def.mutable_experimental_debug_info()
+      ->clear_original_func_names();
+  if (!names.empty()) {
+    *props_->node_def.mutable_experimental_debug_info()
+         ->mutable_original_func_names() = {names.begin(), names.end()};
   }
 }
 
@@ -334,11 +344,12 @@ NodeDebugInfo::NodeDebugInfo(
     const NodeDef_ExperimentalDebugInfo& experimental_debug_info)
     : name(node_name) {
   if (has_experimental_debug_info) {
-    const auto& names = experimental_debug_info.original_node_names();
-    original_node_names.assign(names.begin(), names.end());
+    const auto& node_names = experimental_debug_info.original_node_names();
+    original_node_names.assign(node_names.begin(), node_names.end());
+    const auto& func_names = experimental_debug_info.original_func_names();
+    original_func_names.assign(func_names.begin(), func_names.end());
   }
 }
-
 // InputTensor
 
 bool InputTensor::operator==(const InputTensor& other) const {

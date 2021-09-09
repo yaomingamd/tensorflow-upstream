@@ -3405,6 +3405,7 @@ op {
     has_minimum: true
     minimum: 1
   }
+  is_distributed_communication: true
 }
 op {
   name: "BatchCholesky"
@@ -3660,64 +3661,7 @@ op {
       b: false
     }
   }
-}
-op {
-  name: "BatchGemm"
-  input_arg {
-    name: "x"
-    type_attr: "T"
-  }
-  input_arg {
-    name: "y"
-    type_attr: "T"
-  }
-  input_arg {
-    name: "z"
-    type_attr: "T"
-  }
-  output_arg {
-    name: "output"
-    type_attr: "T"
-  }
-  attr {
-    name: "T"
-    type: "type"
-    allowed_values {
-      list {
-        type: DT_HALF
-        type: DT_FLOAT
-        type: DT_DOUBLE
-      }
-    }
-  }
-  attr {
-    name: "transpose_a"
-    type: "bool"
-    default_value {
-      b: false
-    }
-  }
-  attr {
-    name: "transpose_b"
-    type: "bool"
-    default_value {
-      b: false
-    }
-  }
-  attr {
-    name: "alpha"
-    type: "float"
-    default_value {
-      f: 1
-    }
-  }
-  attr {
-    name: "beta"
-    type: "float"
-    default_value {
-      f: 0
-    }
-  }
+  is_distributed_communication: true
 }
 op {
   name: "BatchIFFT"
@@ -8616,6 +8560,13 @@ op {
     type: "bool"
     default_value {
       b: true
+    }
+  }
+  attr {
+    name: "tpu_cancellation_closes_chips"
+    type: "int"
+    default_value {
+      i: 0
     }
   }
   is_stateful: true
@@ -18712,6 +18663,33 @@ op {
   is_stateful: true
 }
 op {
+  name: "GetElementAtIndex"
+  input_arg {
+    name: "dataset"
+    type: DT_VARIANT
+  }
+  input_arg {
+    name: "index"
+    type: DT_INT64
+  }
+  output_arg {
+    name: "components"
+    type_list_attr: "output_types"
+  }
+  attr {
+    name: "output_types"
+    type: "list(type)"
+    has_minimum: true
+    minimum: 1
+  }
+  attr {
+    name: "output_shapes"
+    type: "list(shape)"
+    has_minimum: true
+    minimum: 1
+  }
+}
+op {
   name: "GetOptions"
   input_arg {
     name: "input_dataset"
@@ -21752,55 +21730,6 @@ op {
   is_stateful: true
 }
 op {
-  name: "LoadTPUEmbeddingADAMParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "momenta"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "velocities"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "LoadTPUEmbeddingAdadeltaParameters"
   input_arg {
     name: "parameters"
@@ -21846,7 +21775,7 @@ op {
   is_stateful: true
 }
 op {
-  name: "LoadTPUEmbeddingAdadeltaParametersGradAccumDebug"
+  name: "LoadTPUEmbeddingAdagradMomentumParameters"
   input_arg {
     name: "parameters"
     type: DT_FLOAT
@@ -21856,11 +21785,7 @@ op {
     type: DT_FLOAT
   }
   input_arg {
-    name: "updates"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
+    name: "momenta"
     type: DT_FLOAT
   }
   attr {
@@ -21902,51 +21827,6 @@ op {
   }
   input_arg {
     name: "accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
-  name: "LoadTPUEmbeddingAdagradParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "accumulators"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
     type: DT_FLOAT
   }
   attr {
@@ -22075,55 +21955,6 @@ op {
   is_stateful: true
 }
 op {
-  name: "LoadTPUEmbeddingFTRLParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "accumulators"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "linears"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "LoadTPUEmbeddingFrequencyEstimatorParameters"
   input_arg {
     name: "parameters"
@@ -22131,51 +21962,6 @@ op {
   }
   input_arg {
     name: "last_hit_step"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
-  name: "LoadTPUEmbeddingFrequencyEstimatorParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "last_hit_step"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
     type: DT_FLOAT
   }
   attr {
@@ -22300,51 +22086,6 @@ op {
   is_stateful: true
 }
 op {
-  name: "LoadTPUEmbeddingMomentumParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "momenta"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "LoadTPUEmbeddingProximalAdagradParameters"
   input_arg {
     name: "parameters"
@@ -22352,51 +22093,6 @@ op {
   }
   input_arg {
     name: "accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
-  name: "LoadTPUEmbeddingProximalAdagradParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "accumulators"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
     type: DT_FLOAT
   }
   attr {
@@ -22476,55 +22172,6 @@ op {
   is_stateful: true
 }
 op {
-  name: "LoadTPUEmbeddingProximalYogiParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "v"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "m"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "LoadTPUEmbeddingRMSPropParameters"
   input_arg {
     name: "parameters"
@@ -22570,99 +22217,9 @@ op {
   is_stateful: true
 }
 op {
-  name: "LoadTPUEmbeddingRMSPropParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "ms"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "mom"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "LoadTPUEmbeddingStochasticGradientDescentParameters"
   input_arg {
     name: "parameters"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
-  name: "LoadTPUEmbeddingStochasticGradientDescentParametersGradAccumDebug"
-  input_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  input_arg {
-    name: "gradient_accumulators"
     type: DT_FLOAT
   }
   attr {
@@ -41008,55 +40565,6 @@ op {
   is_stateful: true
 }
 op {
-  name: "RetrieveTPUEmbeddingADAMParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "momenta"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "velocities"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "RetrieveTPUEmbeddingAdadeltaParameters"
   output_arg {
     name: "parameters"
@@ -41102,7 +40610,7 @@ op {
   is_stateful: true
 }
 op {
-  name: "RetrieveTPUEmbeddingAdadeltaParametersGradAccumDebug"
+  name: "RetrieveTPUEmbeddingAdagradMomentumParameters"
   output_arg {
     name: "parameters"
     type: DT_FLOAT
@@ -41112,11 +40620,7 @@ op {
     type: DT_FLOAT
   }
   output_arg {
-    name: "updates"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
+    name: "momenta"
     type: DT_FLOAT
   }
   attr {
@@ -41158,51 +40662,6 @@ op {
   }
   output_arg {
     name: "accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
-  name: "RetrieveTPUEmbeddingAdagradParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "accumulators"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
     type: DT_FLOAT
   }
   attr {
@@ -41331,55 +40790,6 @@ op {
   is_stateful: true
 }
 op {
-  name: "RetrieveTPUEmbeddingFTRLParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "accumulators"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "linears"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "RetrieveTPUEmbeddingFrequencyEstimatorParameters"
   output_arg {
     name: "parameters"
@@ -41387,51 +40797,6 @@ op {
   }
   output_arg {
     name: "last_hit_step"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
-  name: "RetrieveTPUEmbeddingFrequencyEstimatorParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "last_hit_step"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
     type: DT_FLOAT
   }
   attr {
@@ -41556,51 +40921,6 @@ op {
   is_stateful: true
 }
 op {
-  name: "RetrieveTPUEmbeddingMomentumParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "momenta"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "RetrieveTPUEmbeddingProximalAdagradParameters"
   output_arg {
     name: "parameters"
@@ -41608,51 +40928,6 @@ op {
   }
   output_arg {
     name: "accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
-  name: "RetrieveTPUEmbeddingProximalAdagradParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "accumulators"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
     type: DT_FLOAT
   }
   attr {
@@ -41732,55 +41007,6 @@ op {
   is_stateful: true
 }
 op {
-  name: "RetrieveTPUEmbeddingProximalYogiParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "v"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "m"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "RetrieveTPUEmbeddingRMSPropParameters"
   output_arg {
     name: "parameters"
@@ -41826,99 +41052,9 @@ op {
   is_stateful: true
 }
 op {
-  name: "RetrieveTPUEmbeddingRMSPropParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "ms"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "mom"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
   name: "RetrieveTPUEmbeddingStochasticGradientDescentParameters"
   output_arg {
     name: "parameters"
-    type: DT_FLOAT
-  }
-  attr {
-    name: "table_id"
-    type: "int"
-    default_value {
-      i: -1
-    }
-  }
-  attr {
-    name: "table_name"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  attr {
-    name: "num_shards"
-    type: "int"
-  }
-  attr {
-    name: "shard_id"
-    type: "int"
-  }
-  attr {
-    name: "config"
-    type: "string"
-    default_value {
-      s: ""
-    }
-  }
-  is_stateful: true
-}
-op {
-  name: "RetrieveTPUEmbeddingStochasticGradientDescentParametersGradAccumDebug"
-  output_arg {
-    name: "parameters"
-    type: DT_FLOAT
-  }
-  output_arg {
-    name: "gradient_accumulators"
     type: DT_FLOAT
   }
   attr {
@@ -51819,6 +50955,7 @@ op {
     }
   }
   is_stateful: true
+  is_distributed_communication: true
 }
 op {
   name: "StatefulRandomBinomial"
@@ -52482,7 +51619,6 @@ op {
       }
     }
   }
-  is_stateful: true
 }
 op {
   name: "StatelessRandomGetKeyCounterAlg"
@@ -56740,6 +55876,13 @@ op {
     type: "list(shape)"
     has_minimum: true
     minimum: 1
+  }
+  attr {
+    name: "is_files"
+    type: "bool"
+    default_value {
+      b: false
+    }
   }
   is_stateful: true
 }

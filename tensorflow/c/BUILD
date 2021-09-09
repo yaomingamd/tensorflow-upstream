@@ -274,6 +274,14 @@ tf_cuda_library(
     }),
 )
 
+filegroup(
+    name = "tf_status_internal_headers",
+    srcs = ["tf_status_internal.h"],
+    visibility = [
+        "//tensorflow/python:__subpackages__",
+    ],
+)
+
 cc_library(
     name = "tf_shape",
     srcs = ["tf_shape.cc"],
@@ -305,6 +313,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":tf_status_internal",
+        "@com_google_absl//absl/strings:cord",
     ] + select({
         "//tensorflow:android": [
             "//tensorflow/core:portable_tensorflow_lib_lite",  # TODO(annarev): exclude runtime srcs
@@ -313,6 +322,18 @@ cc_library(
             "//tensorflow/core:lib",
         ],
     }),
+)
+
+tf_cc_test(
+    name = "tf_status_test",
+    srcs = ["tf_status_test.cc"],
+    deps = [
+        ":tf_status",
+        ":tf_status_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+    ],
 )
 
 cc_library(
@@ -506,6 +527,7 @@ tf_cc_test(
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
+        "@com_google_absl//absl/strings:cord",
     ],
 )
 

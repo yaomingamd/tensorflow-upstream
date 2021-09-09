@@ -336,7 +336,9 @@ BuiltinRefOpResolver::BuiltinRefOpResolver() {
   AddBuiltin(BuiltinOperator_LOG_SOFTMAX, Register_LOG_SOFTMAX_REF(),
              /* min_version = */ 1,
              /* max_version = */ 2);
-  AddBuiltin(BuiltinOperator_CAST, Register_CAST());
+  AddBuiltin(BuiltinOperator_CAST, Register_CAST(),
+             /* min_version = */ 1,
+             /* max_version = */ 2);
   AddBuiltin(BuiltinOperator_DEQUANTIZE, Register_DEQUANTIZE_REF(),
              /* min_version = */ 1,
              /* max_version = */ 4);
@@ -385,7 +387,9 @@ BuiltinRefOpResolver::BuiltinRefOpResolver() {
   AddBuiltin(BuiltinOperator_SUM, Register_SUM_REF(),
              /* min_version = */ 1,
              /* max_version = */ 2);
-  AddBuiltin(BuiltinOperator_REDUCE_PROD, Register_REDUCE_PROD_REF());
+  AddBuiltin(BuiltinOperator_REDUCE_PROD, Register_REDUCE_PROD_REF(),
+             /* min_version = */ 1,
+             /* max_version = */ 2);
   AddBuiltin(BuiltinOperator_REDUCE_MAX, Register_REDUCE_MAX_REF(),
              /* min_version = */ 1,
              /* max_version = */ 3);

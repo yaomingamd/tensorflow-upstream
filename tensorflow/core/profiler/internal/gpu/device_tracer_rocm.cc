@@ -24,7 +24,6 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
-#include "tensorflow/core/framework/step_stats.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/platform/abi.h"
 #include "tensorflow/core/platform/env_time.h"
@@ -168,13 +167,6 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
     }
   }
 
-  void Export(StepStats* step_stats) {
-    for (int i = 0; i < options_.num_gpus; ++i) {
-      per_device_collector_[i].Export(i, start_walltime_ns_, start_gputime_ns_,
-                                      step_stats);
-    }
-  }
-
   void Export(XSpace* space) {
     uint64_t end_gputime_ns = RocmTracer::GetTimestamp();
     XPlaneBuilder host_plane(
@@ -223,7 +215,7 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
       TF event. For most of the activities, we need to enable the corresponding
       API callsbacks (we call them auxiliary API callbacks) to capture the
       necessary fields from them using the correlation id. The purpose of this
-      function is to let APIs and activities exchange informaion to reach a
+      function is to let APIs and activities exchange information to reach a
       state very similar to TF CUDA and getting ready to dump the event.
     */
 
@@ -262,7 +254,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
                            kernel_activity_op.end_time_ns);
             }
           }
-        } break;
+          break;
+        }
         case RocmTracerEventType::MemcpyD2D:
         case RocmTracerEventType::MemcpyH2D:
         case RocmTracerEventType::MemcpyD2H:
@@ -296,7 +289,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
               }
             }
           }
-        } break;
+          break;
+        }
         default:
           // nothing to do for the rest
           result = true;
@@ -325,7 +319,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
         /*KERNEL API*/
         case RocmTracerEventType::Kernel: {
           aggregated_events.push_back(api_event);
-        } break;
+          break;
+        }
         /*MEMCPY API*/
         case RocmTracerEventType::MemcpyD2H:
         case RocmTracerEventType::MemcpyH2D:
@@ -343,8 +338,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
                 api_event.correlation_id);
             DumpRocmTracerEvent(api_event, 0, 0, ". Dropped!");
           }
-
-        } break;
+          break;
+        }
         /*MEMSET API*/
         case RocmTracerEventType::Memset: {
           if (iter != activity_api_events_map_.end()) {
@@ -358,19 +353,21 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
                 api_event.correlation_id);
             DumpRocmTracerEvent(api_event, 0, 0, ". Dropped!");
           }
-
-        } break;
+          break;
+        }
         /*MALLOC API, FREE API*/
         case RocmTracerEventType::MemoryAlloc:
         case RocmTracerEventType::MemoryFree: {
           // no missing info
           aggregated_events.push_back(api_event);
-        } break;
+          break;
+        }
         /*SYNCHRONIZATION API*/
         case RocmTracerEventType::Synchronization: {
           // no missing info
           aggregated_events.push_back(api_event);
-        } break;
+          break;
+        }
         default:
           OnEventsDropped("Missing API-Activity information exchange. Dropped!",
                           api_event.correlation_id);
@@ -409,7 +406,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
                 activity_event.correlation_id);
             DumpRocmTracerEvent(activity_event, 0, 0, ". Dropped!");
           }
-        } break;
+          break;
+        }
         /*MEMCPY ACTIVITY*/
         case RocmTracerEventType::MemcpyD2H:
         case RocmTracerEventType::MemcpyH2D:
@@ -426,8 +424,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
                 activity_event.correlation_id);
             DumpRocmTracerEvent(activity_event, 0, 0, ". Dropped!");
           }
-
-        } break;
+          break;
+        }
         /*MEMSET ACTIVITY*/
         case RocmTracerEventType::Memset: {
           if (iter != api_events_map_.end() ||
@@ -442,8 +440,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
                 activity_event.correlation_id);
             DumpRocmTracerEvent(activity_event, 0, 0, ". Dropped!");
           }
-
-        } break;
+          break;
+        }
         /*MALLOC ACTIVITY, FREE ACTIVITY*/
         case RocmTracerEventType::MemoryAlloc:
         case RocmTracerEventType::MemoryFree: {
@@ -458,7 +456,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
                 activity_event.correlation_id);
             DumpRocmTracerEvent(activity_event, 0, 0, ". Dropped!");
           }
-        } break;
+          break;
+        }
         /*SYNCHRONIZATION ACTIVITY*/
         case RocmTracerEventType::Synchronization: {
           if (iter != api_events_map_.end() ||
@@ -468,7 +467,7 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
             // CuptiTracerEvent.
             // RocmTracerEvent type, set device by default to an unvalid
             // device-id value. To be consistent with CUDA (in terms of having a
-            // logically valid value for device id) we update the devce-id to
+            // logically valid value for device id) we update the device-id to
             // its correct value
             activity_event.device_id = iter->second.device_id;
             aggregated_events.push_back(activity_event);
@@ -479,8 +478,8 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
                 activity_event.correlation_id);
             DumpRocmTracerEvent(activity_event, 0, 0, ". Dropped!");
           }
-
-        } break;
+          break;
+        }
         default:
           OnEventsDropped("Missing API-Activity information exchange. Dropped!",
                           activity_event.correlation_id);
@@ -532,11 +531,9 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
   struct PerDeviceCollector {
     void GetDeviceCapabilities(int32_t device_ordinal,
                                XPlaneBuilder* device_plane) {
-      std::string device_manfacturer = "AMD";
-      device_plane->AddStatValue(
-          *device_plane->GetOrCreateStatMetadata(
-              GetStatTypeStr(StatType::kDevManufacturer)),
-          device_manfacturer);
+      device_plane->AddStatValue(*device_plane->GetOrCreateStatMetadata(
+                                     GetStatTypeStr(StatType::kDevVendor)),
+                                 kDeviceVendorAMD);
 
       if (hipGetDeviceProperties(&device_properties_, device_ordinal) !=
           hipSuccess)
@@ -610,7 +607,7 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
     }
     OccupancyStats GetOccupancy(const RocmDeviceOccupancyParams& params) const {
       // TODO(rocm-profiler): hipOccupancyMaxActiveBlocksPerMultiprocessor only
-      // return hipSucess for HIP_API_ID_hipLaunchKernel
+      // return hipSuccess for HIP_API_ID_hipLaunchKernel
 
       OccupancyStats stats;
       int number_of_active_blocks;
@@ -658,137 +655,6 @@ class RocmTraceCollectorImpl : public profiler::RocmTraceCollector {
           [](const RocmTracerEvent& event1, const RocmTracerEvent& event2) {
             return event1.start_time_ns < event2.start_time_ns;
           });
-    }
-
-    void Export(int32_t device_ordinal, uint64_t start_walltime_ns,
-                uint64_t start_gputime_ns, StepStats* step_stats) {
-      mutex_lock l(events_mutex);
-      absl::flat_hash_map<std::pair<int64_t /*stream_id*/, RocmTracerEventType>,
-                          DeviceStepStats*>
-          stream_dev_stats_map;
-      DeviceStepStats* unknown_stream_dev_stats = nullptr;
-      DeviceStepStats* all_streams_dev_stats = nullptr;
-      DeviceStepStats* memcpy_dev_stats = nullptr;
-      DeviceStepStats* sync_dev_stats = nullptr;
-      for (const RocmTracerEvent& event : events) {
-        DumpRocmTracerEvent(event, start_walltime_ns, start_gputime_ns, "");
-        NodeExecStats* ns = new NodeExecStats;
-        ns->set_all_start_micros(
-            (start_walltime_ns + (event.start_time_ns - start_gputime_ns)) /
-            1000);
-        ns->set_op_start_rel_micros(0);
-        uint64_t elapsed_ns = event.end_time_ns - event.start_time_ns;
-        ns->set_op_end_rel_micros(
-            tensorflow::profiler::NanosToMicros(elapsed_ns));
-        ns->set_all_end_rel_micros(
-            tensorflow::profiler::NanosToMicros(elapsed_ns));
-
-        if (event.source == RocmTracerEventSource::ApiCallback) {
-          // Legacy code ignore all other launch events except
-          // cuStreamSynchronize.
-          if (event.type == RocmTracerEventType::Synchronization &&
-              event.synchronization_info.sync_type ==
-                  RocmTracerSyncTypes::StreamSynchronize) {
-            ns->set_node_name(event.name);
-            ns->set_timeline_label(absl::StrCat("ThreadId ", event.thread_id));
-            ns->set_thread_id(event.thread_id);
-            if (sync_dev_stats == nullptr) {
-              sync_dev_stats = step_stats->add_dev_stats();
-              sync_dev_stats->set_device(
-                  absl::StrCat("/device:GPU:", device_ordinal, "/sync"));
-            }
-            sync_dev_stats->add_node_stats()->Swap(ns);
-          }
-        } else {  // CuptiTracerEventSource::Activity
-          // Get launch information if available.
-          if (event.correlation_id != RocmTracerEvent::kInvalidCorrelationId) {
-            auto it = correlation_info_.find(event.correlation_id);
-            if (it != correlation_info_.end()) {
-              ns->set_scheduled_micros(it->second.enqueue_time_ns / 1000);
-              ns->set_thread_id(it->second.thread_id);
-            }
-          }
-
-          auto annotation_stack = ParseAnnotationStack(event.annotation);
-          std::string kernel_name = port::MaybeAbiDemangle(event.name.c_str());
-          std::string activity_name =
-              !annotation_stack.empty()
-                  ? std::string(annotation_stack.back().name)
-                  : kernel_name;
-          ns->set_node_name(activity_name);
-          switch (event.type) {
-            case RocmTracerEventType::Kernel: {
-              ns->set_timeline_label(absl::StrCat(
-                  kernel_name, " regs:", event.kernel_info.registers_per_thread,
-                  " shm:", event.kernel_info.static_shared_memory_usage,
-                  " grid: ", event.kernel_info.grid_x, ",",
-                  event.kernel_info.grid_y, ",", event.kernel_info.grid_z,
-                  " block:", event.kernel_info.block_x, ",",
-                  event.kernel_info.block_y, ",", event.kernel_info.block_z,
-                  "@@", event.annotation));
-              DeviceStepStats*& stream_dev_stats =
-                  stream_dev_stats_map[std::make_pair(event.stream_id,
-                                                      event.type)];
-              if (stream_dev_stats == nullptr) {
-                stream_dev_stats = step_stats->add_dev_stats();
-                stream_dev_stats->set_device(
-                    absl::StrCat("/device:GPU:", device_ordinal,
-                                 "/stream:", event.stream_id));
-              }
-              *stream_dev_stats->add_node_stats() = *ns;
-              if (all_streams_dev_stats == nullptr) {
-                all_streams_dev_stats = step_stats->add_dev_stats();
-                all_streams_dev_stats->set_device(absl::StrCat(
-                    "/device:GPU:", device_ordinal, "/stream:all"));
-              }
-              all_streams_dev_stats->add_node_stats()->Swap(ns);
-              break;
-            }
-            case RocmTracerEventType::MemcpyH2D:
-            case RocmTracerEventType::MemcpyD2H:
-            case RocmTracerEventType::MemcpyD2D:
-            case RocmTracerEventType::MemcpyP2P: {
-              std::string details = absl::StrCat(
-                  activity_name, " bytes:", event.memcpy_info.num_bytes);
-              if (event.memcpy_info.async) {
-                absl::StrAppend(&details, " async");
-              }
-              if (event.memcpy_info.destination != event.device_id) {
-                absl::StrAppend(&details,
-                                " to device:", event.memcpy_info.destination);
-              }
-              ns->set_timeline_label(std::move(details));
-              DeviceStepStats*& stream_dev_stats =
-                  stream_dev_stats_map[std::make_pair(event.stream_id,
-                                                      event.type)];
-              if (stream_dev_stats == nullptr) {
-                stream_dev_stats = step_stats->add_dev_stats();
-                stream_dev_stats->set_device(absl::StrCat(
-                    "/device:GPU:", device_ordinal, "/stream:", event.stream_id,
-                    "<", GetRocmTracerEventTypeName(event.type), ">"));
-              }
-              *stream_dev_stats->add_node_stats() = *ns;
-              if (memcpy_dev_stats == nullptr) {
-                memcpy_dev_stats = step_stats->add_dev_stats();
-                memcpy_dev_stats->set_device(
-                    absl::StrCat("/device:GPU:", device_ordinal, "/memcpy"));
-              }
-              memcpy_dev_stats->add_node_stats()->Swap(ns);
-              break;
-            }
-            default:
-              ns->set_timeline_label(activity_name);
-              if (unknown_stream_dev_stats == nullptr) {
-                unknown_stream_dev_stats = step_stats->add_dev_stats();
-                unknown_stream_dev_stats->set_device(
-                    absl::StrCat("/device:GPU:", device_ordinal, "/stream:"));
-              }
-              unknown_stream_dev_stats->add_node_stats()->Swap(ns);
-              break;
-          }
-        }
-      }
-      events.clear();
     }
 
     void CreateXEvent(const RocmTracerEvent& event, XPlaneBuilder* plane,
@@ -1060,13 +926,11 @@ class GpuTracer : public profiler::ProfilerInterface {
   // GpuTracer interface:
   Status Start() override;
   Status Stop() override;
-  Status CollectData(RunMetadata* run_metadata) override;
   Status CollectData(XSpace* space) override;
 
  private:
   Status DoStart();
   Status DoStop();
-  Status DoCollectData(StepStats* step_stats);
   Status DoCollectData(XSpace* space);
 
   RocmTracerOptions GetRocmTracerOptions();
@@ -1110,7 +974,7 @@ RocmTracerOptions GpuTracer::GetRocmTracerOptions() {
       HIP_API_ID_hipMemcpyHtoDAsync,
       HIP_API_ID_hipMemcpyPeer,
       HIP_API_ID_hipMemcpyPeerAsync,
-      
+
       // MEMSet
       HIP_API_ID_hipMemsetD32,
       HIP_API_ID_hipMemsetD32Async,
@@ -1129,27 +993,30 @@ RocmTracerOptions GpuTracer::GetRocmTracerOptions() {
       // GENERIC
       HIP_API_ID_hipStreamSynchronize,
   };
+  // clang-format on
 
-  options.api_tracking_set = std::set<uint32_t>(hip_api_domain_ops.begin(), hip_api_domain_ops.end());
+  options.api_tracking_set =
+      std::set<uint32_t>(hip_api_domain_ops.begin(), hip_api_domain_ops.end());
 
   // These are the list of APIs we track since roctracer activity
-  // does not provide all the information necessary to fully populate the 
+  // does not provide all the information necessary to fully populate the
   // TF events. We need to track the APIs for those activities in API domain but
   // we only use them for filling the missing items in their corresponding
   // activity (using correlation id).
+  // clang-format off
   std::vector<uint32_t> hip_api_aux_ops{
     HIP_API_ID_hipStreamWaitEvent,
-    //TODO(rocm-profiler): finding device ID from hipEventSynchronize need some extra work
-    //we ignore it for now 
-    //HIP_API_ID_hipEventSynchronize,
-    HIP_API_ID_hipHostFree, 
-    HIP_API_ID_hipHostMalloc, 
+    // TODO(rocm-profiler): finding device ID from hipEventSynchronize need some
+    // extra work, we ignore it for now.
+    // HIP_API_ID_hipEventSynchronize,
+    HIP_API_ID_hipHostFree,
+    HIP_API_ID_hipHostMalloc,
     HIP_API_ID_hipSetDevice  //  added to track default device
   };
-
-  hip_api_domain_ops.insert(hip_api_domain_ops.end(), hip_api_aux_ops.begin(), hip_api_aux_ops.end());
-
   // clang-format on
+
+  hip_api_domain_ops.insert(hip_api_domain_ops.end(), hip_api_aux_ops.begin(),
+                            hip_api_aux_ops.end());
 
   options.api_callbacks.emplace(ACTIVITY_DOMAIN_HIP_API, hip_api_domain_ops);
   // options.api_callbacks.emplace(ACTIVITY_DOMAIN_ROCTX, empty_vec);
@@ -1216,37 +1083,6 @@ Status GpuTracer::Stop() {
     profiling_state_ = status.ok() ? State::kStoppedOk : State::kStoppedError;
   }
   return Status::OK();
-}
-
-Status GpuTracer::DoCollectData(StepStats* step_stats) {
-  if (rocm_trace_collector_) rocm_trace_collector_->Export(step_stats);
-  return Status::OK();
-}
-
-Status GpuTracer::CollectData(RunMetadata* run_metadata) {
-  switch (profiling_state_) {
-    case State::kNotStarted:
-      VLOG(3) << "No trace data collected, session wasn't started";
-      return Status::OK();
-    case State::kStartedOk:
-      return errors::FailedPrecondition("Cannot collect trace before stopping");
-    case State::kStartedError:
-      LOG(ERROR) << "Cannot collect, roctracer failed to start";
-      return Status::OK();
-    case State::kStoppedError:
-      VLOG(3) << "No trace data collected";
-      return Status::OK();
-    case State::kStoppedOk: {
-      // Input run_metadata is shared by profiler interfaces, we need append.
-      StepStats step_stats;
-      DoCollectData(&step_stats);
-      for (auto& dev_stats : *step_stats.mutable_dev_stats()) {
-        run_metadata->mutable_step_stats()->add_dev_stats()->Swap(&dev_stats);
-      }
-      return Status::OK();
-    }
-  }
-  return errors::Internal("Invalid profiling state: ", profiling_state_);
 }
 
 Status GpuTracer::DoCollectData(XSpace* space) {

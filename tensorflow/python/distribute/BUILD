@@ -623,11 +623,14 @@ distribute_py_test(
     shard_count = 10,
     tags = [
         "multi_and_single_gpu",
+        "no_cuda_asan",  #TODO(b/195770530)
         "no_rocm",
+        "noasan",  #TODO(b/195770530)
     ],
     tpu_tags = [
         "no_oss",
     ],
+    xla_enable_strict_auto_jit = False,  # PSStrategy doesn't work on _xla tests
     deps = [
         "//tensorflow/python:stateful_random_ops",
         "//tensorflow/python/compat:v2_compat",
@@ -640,7 +643,6 @@ tpu_py_test(
     name = "tpu_strategy_test",
     srcs = ["tpu_strategy_test.py"],
     disable_experimental = True,
-    disable_tfrt = False,
     python_version = "PY3",
     tags = ["no_oss"],
     deps = [
@@ -658,7 +660,6 @@ tpu_py_test(
     srcs = ["tpu_strategy_compilation_test.py"],
     disable_experimental = True,
     disable_mlir_bridge = False,
-    disable_tfrt = False,
     python_version = "PY3",
     tags = ["no_oss"],
     deps = [
@@ -834,6 +835,7 @@ py_library(
         "//tensorflow/python:framework_ops",
         "//tensorflow/python:variable_scope",
         "//tensorflow/python:variables",
+        "//tensorflow/python/distribute/coordinator:coordinator_context",
         "//tensorflow/python/training/tracking:base",
         "//tensorflow/python/types",
     ],
@@ -954,6 +956,10 @@ distribute_py_test(
     srcs = ["strategy_combinations_test.py"],
     disable_mlir_bridge = False,
     python_version = "PY3",
+    tags = [
+        "no_cuda_asan",
+        "noasan",
+    ],  # TODO(b/195246941) b/196591124
     deps = [
         ":central_storage_strategy",
         ":collective_all_reduce_strategy",
@@ -1017,7 +1023,6 @@ cuda_py_test(
     python_version = "PY3",
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",
     ],
     deps = [
         ":combinations",
@@ -1189,9 +1194,11 @@ py_library(
         "//tensorflow/python:array_ops",
         "//tensorflow/python:composite_tensor",
         "//tensorflow/python:constant_op",
+        "//tensorflow/python:data_flow_ops",
         "//tensorflow/python:dtypes",
         "//tensorflow/python:embedding_ops",
         "//tensorflow/python:framework_ops",
+        "//tensorflow/python:math_ops",
         "//tensorflow/python:partitioned_variables",
         "//tensorflow/python:resource_variable_ops",
         "//tensorflow/python:tensor_shape",
@@ -1312,10 +1319,8 @@ distribute_py_test(
         "//tensorflow/python:sparse_ops",
         "//tensorflow/python:sparse_tensor",
         "//tensorflow/python:tensor_shape",
-        "//tensorflow/python:tensor_spec",
         "//tensorflow/python:tf2",
         "//tensorflow/python:training",
-        "//tensorflow/python:util",
         "//tensorflow/python:variable_scope",
         "//tensorflow/python:variables",
         "//tensorflow/python/eager:context",
@@ -1324,6 +1329,51 @@ distribute_py_test(
         "//tensorflow/python/saved_model:save",
         "//tensorflow/python/saved_model:save_context",
         "//tensorflow/python/saved_model:save_options",
+        "//tensorflow/python/types",
+        "@absl_py//absl/testing:parameterized",
+    ],
+)
+
+distribute_py_test(
+    name = "per_replica_test",
+    size = "medium",
+    srcs = ["per_replica_test.py"],
+    main = "per_replica_test.py",
+    tags = [
+        "multi_and_single_gpu",
+        "no_cuda_asan",  # times out
+        "noasan",  # b/175816710
+        "notsan",  # b/168645872
+    ],
+    tpu_tags = [
+        "noasan",  # TODO(b/337374867) fails with -fsanitize=null
+    ],
+    deps = [
+        ":collective_all_reduce_strategy",
+        ":combinations",
+        ":distribute_lib",
+        ":distribute_utils",
+        ":packed_distributed_variable",
+        ":parameter_server_strategy",
+        ":ps_values",
+        ":strategy_combinations",
+        ":test_util",
+        ":tpu_strategy",
+        ":tpu_values",
+        ":values",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:constant_op",
+        "//tensorflow/python:control_flow_ops",
+        "//tensorflow/python:dtypes",
+        "//tensorflow/python:framework_ops",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:tensor_spec",
+        "//tensorflow/python:tf2",
+        "//tensorflow/python:training",
+        "//tensorflow/python:util",
+        "//tensorflow/python/eager:context",
+        "//tensorflow/python/eager:def_function",
+        "//tensorflow/python/eager:test",
         "//tensorflow/python/types",
         "@absl_py//absl/testing:parameterized",
     ],
@@ -1462,7 +1512,6 @@ distribute_py_test(
     shard_count = 5,
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",
     ],
     tpu_tags = [
         "no_oss",  # Target too big to run serially reliably.
@@ -1619,7 +1668,6 @@ distribute_py_test(
     main = "metrics_v1_test.py",
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",
     ],
     deps = [
         ":combinations",
@@ -1653,9 +1701,7 @@ cuda_py_test(
     python_version = "PY3",
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",  #Re-enable when fixed
         "nomsan",  # b/154224457: Re-enable when fixed.
-	"no_rocm", # TODO Steven I Reeves fails xla_2gpu
     ],
     # b/155301154 broken with XLA:GPU
     xla_enable_strict_auto_jit = True,
@@ -1699,7 +1745,6 @@ cuda_py_test(
     python_version = "PY3",
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",  #Re-enable when fixed.
     ],
     # b/141096229: Non-atomic AssignAdd
     xla_enable_strict_auto_jit = False,
@@ -1889,7 +1934,6 @@ distribute_py_test(
     main = "tf_function_test.py",
     tags = [
         "multi_and_single_gpu",
-        "no_rocm",
     ],
     deps = [
         ":combinations",
@@ -1978,6 +2022,7 @@ distribute_py_test(
         "notsan",  # Tsan failure doesn't seem to be caused by TF.
     ],
     deps = [
+        ":combinations",
         ":multi_worker_test_base",
         ":parameter_server_strategy_v2",
         ":sharded_variable",

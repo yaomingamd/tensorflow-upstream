@@ -88,6 +88,7 @@ from tensorflow.python.util import deprecation
 from tensorflow.python.util import nest
 from tensorflow.python.util import tf_decorator
 from tensorflow.python.util import tf_inspect
+from tensorflow.python.util import traceback_utils
 from tensorflow.python.util.compat import collections_abc
 from tensorflow.python.util.protobuf import compare
 from tensorflow.python.util.tf_export import tf_export
@@ -1709,6 +1710,16 @@ def force_cpu():
     yield
 
 
+@contextlib.contextmanager
+def deterministic_ops():
+  """Enables deterministic ops."""
+  try:
+    config.enable_deterministic_ops(True)
+    yield
+  finally:
+    config.enable_deterministic_ops(False)
+
+
 class CapturedWrites(object):
   """A utility class to load the captured writes made to a stream."""
 
@@ -2129,6 +2140,8 @@ class TensorFlowTestCase(googletest.TestCase):
 
   def __init__(self, methodName="runTest"):  # pylint: disable=invalid-name
     super(TensorFlowTestCase, self).__init__(methodName)
+    # Make sure we get unfiltered stack traces during the test
+    traceback_utils.disable_traceback_filtering()
     if is_xla_enabled():
       pywrap_tf_session.TF_SetXlaAutoJitMode("2")
       pywrap_tf_session.TF_SetXlaMinClusterSize(1)

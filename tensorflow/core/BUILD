@@ -407,6 +407,7 @@ cc_library(
         ":protos_all_cc",
         "//tensorflow/core/platform/default/build_config:gtest",
         "//tensorflow/core/kernels:required",
+        "@com_google_benchmark//:benchmark",
         "@com_google_googletest//:gtest",
     ] + tf_additional_test_deps(),
 )
@@ -463,6 +464,7 @@ tf_cuda_library(
         "//tensorflow/core/framework:register_types_traits.h",
         "//tensorflow/core/framework/registration:options.h",
         "//tensorflow/core/framework:resource_mgr.h",
+        "//tensorflow/core/framework:resource_handle.h",
         "//tensorflow/core/framework:resource_op_kernel.h",
         "//tensorflow/core/framework:rng_alg.h",
         "//tensorflow/core/framework/registration:registration.h",
@@ -488,6 +490,7 @@ tf_cuda_library(
         "//tensorflow/core/util/sparse:framework_group",
         "//tensorflow/core/util:framework_srcs",
         "//tensorflow/core/util:memmapped_file_system_hdrs",
+        "//tensorflow/core/util:determinism_hdr",
         "//tensorflow/core/public:version.h",
         "//tensorflow/lite/kernels/shim:tf_headers",
     ] + if_mkl([
@@ -766,6 +769,7 @@ cc_library(
     deps = [
         "//tensorflow/core/distributed_runtime/rpc:grpc_session",
         "//tensorflow/core/kernels:data_service_ops",
+        "//tensorflow/distribute/experimental/rpc/kernels:rpc_ops",
     ],
 )
 
@@ -1054,6 +1058,8 @@ cc_library(
                   "//conditions:default": [],
               }) +
               tf_defines_nortti_if_lite_protos(),
+    # Using private headers from other libraries violates layering check.
+    features = ["-layering_check"],
     linkopts = if_android(["-lz"]) + if_ios(["-lz"]),
     tags = [
         "manual",
@@ -1076,13 +1082,22 @@ cc_library(
 #         "//tensorflow:chromiumos": ["IS_MOBILE_PLATFORM"],
 #         "//tensorflow:fuchsia": ["IS_MOBILE_PLATFORM"],
 #         "//conditions:default": [],
-#     }) + tf_defines_nortti_if_lite_protos(),
+#     }) + tf_defines_nortti_if_lite_protos() + select({
+#         "//tensorflow:android": ["TF_USE_SNAPPY"],
+#         "//conditions:default": [],
+#     }),
+#     features = ["-layering_check"],
 #     tags = [
 #         "manual",
 #         "notap",
 #     ],
 #     visibility = ["//visibility:public"],
 #     deps = [
+#         "@com_google_absl//absl/algorithm:container",
+#         "@com_google_absl//absl/base",
+#         "@com_google_absl//absl/meta:type_traits",
+#         "@com_google_absl//absl/strings",
+#         "@com_google_absl//absl/types:optional",
 #         "//tensorflow/core/util:managed_stack_trace",
 #         "//tensorflow/core/util:stats_calculator_portable",
 #         "//tensorflow/core:mobile_additional_lib_deps",
@@ -1106,7 +1121,8 @@ cc_library(
     name = "portable_tensorflow_lib",
     srcs = if_mobile([":portable_op_registrations_and_gradients"]),
     copts = tf_copts() + tf_opts_nortti_if_lite_protos() + if_ios(["-Os"]),
-    features = tf_features_nomodules_if_mobile(),
+    # Using private headers from other libraries violates layering check.
+    features = tf_features_nomodules_if_mobile() + ["-layering_check"],
     tags = [
         "manual",
         "notap",
@@ -1211,7 +1227,6 @@ alias(
 filegroup(
     name = "lib_internal_private_headers",
     srcs = [
-        "//tensorflow/core/framework:resource_handle.h",
         "//tensorflow/core/platform:legacy_lib_internal_headers",
         "//tensorflow/core/platform:lib_internal_private_hdrs",
         "//tensorflow/core/lib/core:legacy_lib_core_all_headers",
@@ -1677,7 +1692,9 @@ tf_cuda_library(
         "//tensorflow/core/platform:env_impl",
         "//tensorflow/core/platform/default/build_config:platformlib",
         "//tensorflow/core/profiler/lib:annotated_traceme",
+        "//tensorflow/core/profiler/lib:scoped_memory_debug_annotation",
         "//tensorflow/core/profiler/lib:traceme",
+        "//tensorflow/core/util:determinism",
         "//tensorflow/core/util:managed_stack_trace",
         "//tensorflow/core/util:einsum_op_util",
         "//tensorflow/core/util:padding",
@@ -1685,6 +1702,7 @@ tf_cuda_library(
         "//tensorflow/core/util:stats_calculator_portable",
         "//tensorflow/core/util:tensor_format",
         "//tensorflow/compiler/jit:common",
+        "@com_google_absl//absl/container:btree",
     ] + if_cuda([
         "@local_config_cuda//cuda:cudnn_header",
     ]) + if_static(
@@ -1867,7 +1885,9 @@ tf_cc_tests(
         "//tensorflow/core/platform:stringpiece",
         "//tensorflow/core/platform:stringprintf",
         "//third_party/eigen3",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:cord",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:optional",
         "@zlib",

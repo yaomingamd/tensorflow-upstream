@@ -280,7 +280,32 @@ class MatMulTest(test_util.TensorFlowTestCase, parameterized.TestCase):
                             (dtypes.int8, dtypes.uint8),
                             (dtypes.uint8, dtypes.int8))
   # TODO(shivaniagrawal): matmul (dtypes.uint8, dtypes.uint8) fails in xla_gpu.
-  def testInt8Matmul(self, a_dtype, b_dtype):
+  def testInt8MatMul2D(self, a_dtype, b_dtype):
+    a = constant_op.constant([1, 2, 3, 4, 5, 6], shape=[2, 3], dtype=a_dtype)
+    b = constant_op.constant([7, 8, 9, 10, 11, 12], shape=[3, 2], dtype=b_dtype)
+    c = math_ops.matmul(a, b, output_type=dtypes.int32)
+    c_np = constant_op.constant([[58, 64], [139, 154]],
+                                shape=(2, 2),
+                                dtype=dtypes.int32)
+    self.assertAllClose(c, c_np)
+
+  @parameterized.parameters((dtypes.int8), (dtypes.uint8))
+  def testMixPrecMatMul2D(self, b_dtype):
+    a = constant_op.constant([1, 2, 3, 4, 5, 6],
+                             shape=[2, 3],
+                             dtype=dtypes.bfloat16)
+    b = constant_op.constant([7, 8, 9, 10, 11, 12], shape=[3, 2], dtype=b_dtype)
+    c = math_ops.matmul(a, b, output_type=dtypes.bfloat16)
+    c_np = constant_op.constant([[58, 64], [139, 154]],
+                                shape=(2, 2),
+                                dtype=dtypes.bfloat16)
+    self.assertAllClose(c, c_np, atol=1e-2)
+
+  @parameterized.parameters((dtypes.int8, dtypes.int8),
+                            (dtypes.int8, dtypes.uint8),
+                            (dtypes.uint8, dtypes.int8))
+  # TODO(shivaniagrawal): matmul (dtypes.uint8, dtypes.uint8) fails in xla_gpu.
+  def testInt8BatchMatmul(self, a_dtype, b_dtype):
     a = constant_op.constant(np.arange(1, 13), shape=[2, 2, 3], dtype=a_dtype)
     b = constant_op.constant(np.arange(13, 25), shape=[2, 3, 2], dtype=b_dtype)
     c_np = constant_op.constant(
@@ -291,7 +316,7 @@ class MatMulTest(test_util.TensorFlowTestCase, parameterized.TestCase):
     self.assertAllEqual(c, c_np)
 
   @parameterized.parameters((dtypes.int8), (dtypes.uint8))
-  def testMixPrecMatmul(self, b_dtype):
+  def testMixPrecBatchMatmul(self, b_dtype):
     a = constant_op.constant(
         np.arange(1, 13), shape=[2, 2, 3], dtype=dtypes.bfloat16)
     b = constant_op.constant(np.arange(13, 25), shape=[2, 3, 2], dtype=b_dtype)
@@ -403,7 +428,7 @@ class ApproximateEqualTest(test_util.TensorFlowTestCase):
     for dtype in [np.float32, np.double]:
       x = np.array([[[[-1, 2.00009999], [-3, 4.01]]]], dtype=dtype)
       y = np.array([[[[-1.001, 2], [-3.00009, 4]]]], dtype=dtype)
-      z = np.array([[[[False, True], [True, False]]]], dtype=np.bool)
+      z = np.array([[[[False, True], [True, False]]]], dtype=np.bool_)
       with test_util.device(use_gpu=True):
         z_tf = self.evaluate(math_ops.approximate_equal(x, y, tolerance=0.0001))
         self.assertAllEqual(z, z_tf)

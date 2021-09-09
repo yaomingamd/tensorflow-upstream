@@ -91,9 +91,6 @@ class PjRtDevice {
   // process_index as the client.
   virtual int process_index() const = 0;
 
-  // Deprecated; please switch to process_index().
-  int task_id() const { return process_index(); }
-
   // Opaque hardware ID, e.g., the CUDA device number, useful for identifying
   // which GPU when interacting with non-JAX code. In general, not guaranteed to
   // be dense, and -1 if undefined.
@@ -163,9 +160,6 @@ class PjRtClient {
   // settings.
   virtual int process_index() const = 0;
 
-  // Deprecated; please switch to process_index().
-  int task_id() const { return process_index(); }
-
   // Return the number of devices in the entire computation. In multi-headed
   // client setting, some are addressable by this client, some are not. In a
   // single-client setting, this is equal to the number of addressable devices.
@@ -230,8 +224,7 @@ class PjRtClient {
   // SerializeExecutable(). `serialized` must have been produced by a client of
   // the same platform and version as this one.
   virtual StatusOr<std::unique_ptr<PjRtExecutable>> DeserializeExecutable(
-      absl::string_view serialized, std::unique_ptr<HloModule> hlo_module,
-      CompileOptions options) = 0;
+      absl::string_view serialized, CompileOptions options) = 0;
 
   // Creates a buffer on the device without initializing or copying any data.
   virtual StatusOr<std::unique_ptr<PjRtBuffer>> CreateUninitializedBuffer(
@@ -264,6 +257,9 @@ class PjRtClient {
 
     // Returns the number of buffers managed by this object.
     virtual size_t buffer_count() const = 0;
+
+    // Returns the destination device of the transfers.
+    virtual PjRtDevice* device() const = 0;
 
     // Returns buffer_index, which can be passed to downstream consumers
     // immediately and will become available once transfers complete. May not
@@ -307,8 +303,9 @@ class PjRtClient {
     // but before the buffers are made available to their consumers. 'data' must
     // remain in scope until on_done is called.
     virtual Status TransferRawDataToSubBuffer(
-        int buffer_index, const void* data, int64 offset, int64 transfer_size,
-        bool is_last_transfer, std::function<void()> on_done) = 0;
+        int buffer_index, const void* data, int64_t offset,
+        int64_t transfer_size, bool is_last_transfer,
+        std::function<void()> on_done) = 0;
 
     // Indicates that a client error occurred and the transfers will never
     // complete. Puts all buffers in an error state. For the stream executor
@@ -353,10 +350,19 @@ class PjRtClient {
     // kImmutableUntilTransferCompletes.
     kZeroCopy,
   };
+
   // on_done_with_host_buffer is optional and may be null.
   // on_done_with_host_buffer will be called iff an OK status is returned.
+  //
+  // `data` points to the backing array of the host buffer. Caution:
+  // `byte_strides` are allowed to be negative, in which case `data` may need
+  // to point to the interior of the buffer, not necessarily its start.
+  //
+  // If byte_strides is omitted, the array is assumed to have a dense layout
+  // with dimensions in major-to-minor order.
   virtual StatusOr<std::unique_ptr<PjRtBuffer>> BufferFromHostBuffer(
-      const void* data, const Shape& shape,
+      const void* data, PrimitiveType type, absl::Span<int64_t const> dims,
+      absl::optional<absl::Span<int64_t const>> byte_strides,
       HostBufferSemantics host_buffer_semantics,
       std::function<void()> on_done_with_host_buffer, PjRtDevice* device) = 0;
 
@@ -422,7 +428,7 @@ class PjRtClient {
     // entry in slice_boundaries is less than the size of the combined gather
     // dimension, the trailing data in the buffer is undefined after the receive
     // completes.
-    std::vector<int64> slice_boundaries;
+    std::vector<int64_t> slice_boundaries;
   };
   virtual void MakeCrossHostReceiveBuffersForGather(
       absl::Span<const Shape> shapes, std::vector<GatherDetails> gather_details,
@@ -516,7 +522,7 @@ class PjRtBuffer {
   // is called if and only if CopyRawToHost returns OK. on_ready will be called
   // with a non-OK status if the buffer asynchronously transitions to an error
   // state.
-  virtual Status CopyRawToHost(void* dst, int64 offset, int64 transfer_size,
+  virtual Status CopyRawToHost(void* dst, int64_t offset, int64_t transfer_size,
                                std::function<void(Status)> on_ready) = 0;
 
   // Drops the buffer's reference to its associated device memory, leaving the
@@ -585,7 +591,7 @@ class PjRtBuffer {
     // range in [0, 12].
     absl::InlinedVector<int, 3> dimensions;
     // The start and end indices of the slices.
-    std::vector<std::pair<int64, int64>> slices;
+    std::vector<std::pair<int64_t, int64_t>> slices;
   };
   virtual Status CopyToRemoteDeviceScattered(
       absl::Span<const std::string> serialized_descriptors,
@@ -643,7 +649,7 @@ class PjRtExecutable {
 
   virtual int num_partitions() const = 0;
 
-  virtual int64 SizeOfGeneratedCodeInBytes() const = 0;
+  virtual int64_t SizeOfGeneratedCodeInBytes() const = 0;
 
   virtual const DeviceAssignment& device_assignment() const = 0;
 
