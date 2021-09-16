@@ -98,6 +98,12 @@ template <typename T>
 inline typename ROCmComplexT<T>::type* ROCmComplex(T* p) {
   return reinterpret_cast<typename ROCmComplexT<T>::type*>(p);
 }
+
+// Template to give the Rocblas adjoint operation for real and complex types.
+template <typename T>
+rocblas_operation RocblasAdjointOp() {
+  return Eigen::NumTraits<T>::IsComplex ? rocblas_operation_conjugate_transpose : rocblas_operation_transpose;
+}
 #endif
 
 // Container of LAPACK info data (an array of int) generated on-device by
@@ -251,6 +257,11 @@ class GpuSolver {
                       Scalar** B, const int ldb, int* lapack_info,
                       const int batch_count);
 
+  template <typename Scalar>
+  Status Trsm(rocblas_side side, rocblas_fill uplo, rocblas_operation trans,
+              rocblas_diagonal diag, int m, int n, const Scalar* alpha,
+              const Scalar* A, int lda, Scalar* B, int ldb);
+  
   // Cholesky factorization
   // Computes the Cholesky factorization A = L * L^H for a single matrix.
   template <typename Scalar>
@@ -264,12 +275,52 @@ class GpuSolver {
                       DeviceLapackInfo* dev_lapack_info,
                       int batch_size);
 
-
+  // QR factorization.
+  // Computes QR factorization A = Q * R.
+  // Returns Status::OK() if the kernel was launched successfully.
+  // See: http://docs.nvidia.com/cuda/cusolver/#cuds-lt-t-gt-geqrf
   template <typename Scalar>
-  Status Trsm(rocblas_side side, rocblas_fill uplo, rocblas_operation trans,
-              rocblas_diagonal diag, int m, int n, const Scalar* alpha,
-              const Scalar* A, int lda, Scalar* B, int ldb);
-  
+  Status Geqrf(int m, int n, Scalar* dev_A, int lda, Scalar* dev_tau,
+               int* dev_lapack_info);
+
+
+  // This function performs the matrix-matrix addition/transposition
+  //   C = alpha * op(A) + beta * op(B).
+  // Returns Status::OK() if the kernel was launched successfully.  See:
+  // http://docs.nvidia.com/cuda/cublas/index.html#cublas-lt-t-gt-geam
+  // NOTE(ebrevdo): Does not support in-place transpose of non-square
+  // matrices.
+  template <typename Scalar>
+  Status Geam(rocblas_operation transa, rocblas_operation transb, int m, int n,
+              const Scalar* alpha, /* host or device pointer */
+              const Scalar* A, int lda,
+              const Scalar* beta, /* host or device pointer */
+              const Scalar* B, int ldb, Scalar* C,
+              int ldc);
+
+  // Overwrite matrix C by product of C and the unitary Householder matrix Q.
+  // The Householder matrix Q is represented by the output from Geqrf in dev_a
+  // and dev_tau.
+  // Notice: If Scalar is real, only trans=CUBLAS_OP_N or trans=CUBLAS_OP_T is
+  // supported. If Scalar is complex, trans=CUBLAS_OP_N or trans=CUBLAS_OP_C is
+  // supported.
+  // Returns Status::OK() if the kernel was launched successfully.
+  // See: http://docs.nvidia.com/cuda/cusolver/#cuds-lt-t-gt-ormqr
+  template <typename Scalar>
+  Status Unmqr(rocblas_side side, rocblas_operation trans, int m, int n,
+               int k, const Scalar* dev_a, int lda, const Scalar* dev_tau,
+               Scalar* dev_c, int ldc, int* dev_lapack_info);
+
+  // Overwrites QR factorization produced by Geqrf by the unitary Householder
+  // matrix Q. On input, the Householder matrix Q is represented by the output
+  // from Geqrf in dev_a and dev_tau. On output, dev_a is overwritten with the
+  // first n columns of Q. Requires m >= n >= 0.
+  // Returns Status::OK() if the kernel was launched successfully.
+  // See: http://docs.nvidia.com/cuda/cusolver/#cuds-lt-t-gt-orgqr
+  template <typename Scalar>
+  Status Ungqr(int m, int n, int k, Scalar* dev_a, int lda,
+               const Scalar* dev_tau, int* dev_lapack_info);
+
 #else //GOOGLE_CUDA
   // ====================================================================
   // Wrappers for cuSolverDN and cuBlas solvers start here.
