@@ -236,7 +236,8 @@ StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
     absl::Span<const int64_t> rhs_batch_dims,
     absl::Span<const int64_t> rhs_contracting_dims, const Shape& output_shape,
     double alpha_real, double alpha_imag, double beta,
-    std::optional<int64_t> algorithm, int64_t compute_precision) {
+    std::optional<int64_t> algorithm, int64_t compute_precision,
+    bool gx, bool gy) {
   absl::Span<const int64_t> lhs_col_dims = lhs_contracting_dims;
   TF_ASSIGN_OR_RETURN(
       std::vector<int64_t> lhs_row_dims,
@@ -314,7 +315,7 @@ StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
 
   return GemmConfig{
       lhs_layout, rhs_layout, output_layout,     {alpha_real, alpha_imag},
-      beta,       algorithm,  compute_precision,
+      beta,       algorithm,  compute_precision, gx, gy,
   };
 }
 
@@ -330,13 +331,17 @@ StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
   const Shape& lhs_shape = gemm->operand(0)->shape();
   const Shape& rhs_shape = gemm->operand(1)->shape();
   const DotDimensionNumbers& dot_dims = config.dot_dimension_numbers();
+  auto attributes = gemm->frontend_attributes().map();
+  bool gx = (attributes["grad_x"] == "true");
+  bool gy = (attributes["grad_y"] == "true");
 
   return GemmConfig::For(
       lhs_shape, dot_dims.lhs_batch_dimensions(),
       dot_dims.lhs_contracting_dimensions(), rhs_shape,
       dot_dims.rhs_batch_dimensions(), dot_dims.rhs_contracting_dimensions(),
       /*output_shape=*/gemm->shape(), config.alpha_real(), config.alpha_imag(),
-      config.beta(), algorithm, se::blas::kDefaultComputePrecision);
+      config.beta(), algorithm, se::blas::kDefaultComputePrecision,
+      gx, gy););
 }
 
 /*static*/ StatusOr<GemmConfig> GemmConfig::For(mlir::lmhlo_gpu::GEMMOp op) {
@@ -344,6 +349,13 @@ StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
 
   std::optional<int64_t> algorithm;
   if (op.getAlgorithm()) algorithm = *op.getAlgorithm();
+  bool gx=false, gy=false;
+  auto attr_grad_x = op.getGradX();
+  if (attr_grad_x)
+    gx=attr_grad_x.getValue();
+  auto attr_grad_y = op.getGradY();
+  if (attr_grad_y)
+    gx=attr_grad_y.getValue();
 
   int64_t compute_precision = 0;  // Default
   if (op.getPrecisionConfig().has_value()) {
@@ -363,7 +375,8 @@ StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
       dot_dims.getRhsBatchingDimensions(),
       dot_dims.getRhsContractingDimensions(), GetShape(op.getC()),
       op.getAlphaReal().convertToDouble(), op.getAlphaImag().convertToDouble(),
-      op.getBeta().convertToDouble(), algorithm, compute_precision);
+      op.getBeta().convertToDouble(), algorithm, compute_precision,
+      gx, gy);
 }
 
 namespace {
@@ -427,7 +440,8 @@ Status DoGemmWithAlgorithm(int64_t batch_size, int64_t m, int64_t n, int64_t k,
                            Output alpha, Output beta, se::Stream* stream,
                            se::blas::AlgorithmType algorithm,
                            se::blas::ComputePrecision compute_precision,
-                           se::blas::ProfileResult* profile_result) {
+                           se::blas::ProfileResult* profile_result,
+                           se::blas::CallContext context) {
   CHECK(output.transpose == se::blas::Transpose::kNoTranspose);
   PrimitiveType output_type = primitive_util::NativeToPrimitiveType<Output>();
   TF_ASSIGN_OR_RETURN(se::blas::ComputationType computation_type,
@@ -440,13 +454,14 @@ Status DoGemmWithAlgorithm(int64_t batch_size, int64_t m, int64_t n, int64_t k,
         lhs.leading_dim_stride, lhs.batch_stride, rhs.cast<Input>(),
         rhs.leading_dim_stride, rhs.batch_stride, beta, &output_data,
         output.leading_dim_stride, output.batch_stride, batch_size,
-        computation_type, algorithm, compute_precision, profile_result);
+        computation_type, algorithm, compute_precision, profile_result,
+        context);
   } else {
     return stream->ThenBlasGemmWithAlgorithm(
         lhs.transpose, rhs.transpose, m, n, k, alpha, lhs.cast<Input>(),
         lhs.leading_dim_stride, rhs.cast<Input>(), rhs.leading_dim_stride, beta,
         &output_data, output.leading_dim_stride, computation_type, algorithm,
-        compute_precision, profile_result);
+        compute_precision, profile_result, context);
   }
 }
 
@@ -458,14 +473,15 @@ Status DoGemm(int64_t batch_size, int64_t m, int64_t n, int64_t k,
               se::Stream* stream,
               std::optional<se::blas::AlgorithmType> algorithm,
               se::blas::ComputePrecision compute_precision,
-              se::blas::ProfileResult* profile_result) {
+              se::blas::ProfileResult* profile_result,
+              se::blas::CallContext context) {
   CHECK(output.transpose == se::blas::Transpose::kNoTranspose);
   se::DeviceMemory<Input> output_data(output.data);
 
   if (algorithm) {
     return DoGemmWithAlgorithm<Input, Input>(
         batch_size, m, n, k, lhs, rhs, output, alpha, beta, stream, *algorithm,
-        compute_precision, profile_result);
+        compute_precision, profile_result, context);
   }
 
   if (batch_size != 1) {
@@ -474,13 +490,14 @@ Status DoGemm(int64_t batch_size, int64_t m, int64_t n, int64_t k,
         lhs.leading_dim_stride, lhs.batch_stride, rhs.cast<Input>(),
         rhs.leading_dim_stride, rhs.batch_stride, beta, &output_data,
         output.leading_dim_stride, output.batch_stride, batch_size,
-        compute_precision);
+        compute_precision, context);
   }
 
   return stream->ThenBlasGemm(
       lhs.transpose, rhs.transpose, m, n, k, alpha, lhs.cast<Input>(),
       lhs.leading_dim_stride, rhs.cast<Input>(), rhs.leading_dim_stride, beta,
-      &output_data, output.leading_dim_stride, compute_precision);
+      &output_data, output.leading_dim_stride, compute_precision,
+      context);
 }
 
 }  // namespace
@@ -512,6 +529,18 @@ Status RunGemm(const GemmConfig& config, se::DeviceMemoryBase lhs_buffer,
 
   if (!algorithm) algorithm = config.algorithm;
 
+  se::blas::CallContext context = se::blas::CallContext::kNone;
+  if (config.grad_x) {
+    context = must_swap_operands
+      ? se::blas::CallContext::kBackpropInput2
+      : se::blas::CallContext::kBackpropInput1;
+  }
+  if (config.grad_y) {
+    context = must_swap_operands
+      ? se::blas::CallContext::kBackpropInput1
+      : se::blas::CallContext::kBackpropInput2;
+  }
+
   switch (output_layout.dtype) {
     case S32:
       if (!algorithm) algorithm = se::blas::kDefaultGemmAlgo;
@@ -519,38 +548,39 @@ Status RunGemm(const GemmConfig& config, se::DeviceMemoryBase lhs_buffer,
           batch_size, m, n, k, lhs, rhs, output,
           static_cast<int32_t>(config.alpha.real()),
           static_cast<int32_t>(config.beta), stream, *algorithm,
-          se::blas::kDefaultComputePrecision, profile_result);
+          se::blas::kDefaultComputePrecision, profile_result,
+	  context);
     case F16:
       return DoGemm<Eigen::half>(batch_size, m, n, k, lhs, rhs, output,
                                  static_cast<Eigen::half>(config.alpha.real()),
                                  static_cast<Eigen::half>(config.beta), stream,
                                  algorithm, config.compute_precision,
-                                 profile_result);
+                                 profile_result, context);
     case BF16:
       return DoGemm<Eigen::bfloat16>(
           batch_size, m, n, k, lhs, rhs, output,
           static_cast<Eigen::bfloat16>(config.alpha.real()),
           static_cast<Eigen::bfloat16>(config.beta), stream, algorithm,
-          config.compute_precision, profile_result);
+          config.compute_precision, profile_result, context);
     case F32:
       return DoGemm<float>(batch_size, m, n, k, lhs, rhs, output,
                            config.alpha.real(), config.beta, stream, algorithm,
-                           config.compute_precision, profile_result);
+                           config.compute_precision, profile_result, context);
     case F64:
       return DoGemm<double>(batch_size, m, n, k, lhs, rhs, output,
                             config.alpha.real(), config.beta, stream, algorithm,
-                            config.compute_precision, profile_result);
+                            config.compute_precision, profile_result, context);
     case C64:
       return DoGemm<complex64>(batch_size, m, n, k, lhs, rhs, output,
                                static_cast<complex64>(config.alpha),
                                static_cast<complex64>(config.beta), stream,
                                algorithm, config.compute_precision,
-                               profile_result);
+                               profile_result, context);
     case C128:
       return DoGemm<complex128>(
           batch_size, m, n, k, lhs, rhs, output, config.alpha,
           static_cast<complex128>(config.beta), stream, algorithm,
-          config.compute_precision, profile_result);
+          config.compute_precision, profile_result, context);
     default:
       return InternalError(
           "Unexpected GEMM dtype: %s",
