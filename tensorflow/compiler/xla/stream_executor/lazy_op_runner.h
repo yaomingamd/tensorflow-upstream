@@ -145,6 +145,7 @@ struct ConvOp {
     const FilterDescriptor& filter_descriptor;
     const BatchDescriptor& output_descriptor;
     const ConvolutionDescriptor& convolution_descriptor;
+    dnn::CallContext call_context;
   };
 
   static tsl::StatusOr<std::unique_ptr<const OpRunner<ConvSignature>>>
@@ -153,7 +154,8 @@ struct ConvOp {
     return stream->ConvolveRunnerFromDesc(
         desc, config.kind, config.input_type, config.output_type,
         config.input_descriptor, config.filter_descriptor,
-        config.output_descriptor, config.convolution_descriptor);
+        config.output_descriptor, config.convolution_descriptor,
+        config.call_context);
   }
 };
 
