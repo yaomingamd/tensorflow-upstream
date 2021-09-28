@@ -1251,6 +1251,20 @@ Status IrEmitterUnnested::EmitGemmThunk(mlir::Operation* op) {
       backend.set_beta(gemm_bias_beta.value());
     }
 
+    auto attr_grad_x = op->template getAttrOfType<mlir::BoolAttr>("grad_x");
+    if (attr_grad_x) {
+      backend.set_grad_x(attr_grad_x.getValue());
+    } else {
+      backend.set_grad_x(false);
+    }
+
+    auto attr_grad_y = op->template getAttrOfType<mlir::BoolAttr>("grad_y");
+    if (attr_grad_y) {
+      backend.set_grad_y(attr_grad_y.getValue());
+    } else {
+      backend.set_grad_y(false);
+    }
+
     auto& dims = *backend.mutable_dot_dimension_numbers();
     auto mlir_dims = op.dot_dimension_numbers();
 

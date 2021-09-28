@@ -59,6 +59,9 @@ message GemmBackendConfig {
   xla.DotDimensionNumbers dot_dimension_numbers = 7;
 
   int64 batch_size = 8;
+
+  bool grad_x = 10;
+  bool grad_y = 11;
 }
 
 // Backend config for bitcast operation generated from MLIR MHLO dialect.
