@@ -86,7 +86,11 @@ namespace wrap {
   __macro(rocsolver_cpotrf_batched)         \
   __macro(rocsolver_dpotrf_batched)         \
   __macro(rocsolver_spotrf_batched)         \
-  __macro(rocsolver_zpotrf_batched)               
+  __macro(rocsolver_zpotrf_batched)         \
+  __macro(rocsolver_cgeqrf)                 \
+  __macro(rocsolver_dgeqrf)                 \
+  __macro(rocsolver_sgeqrf)                 \
+  __macro(rocsolver_zgeqrf)                  
 // clang-format on
 
 FOREACH_ROCSOLVER_API(ROCSOLVER_API_WRAPPER)
