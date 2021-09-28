@@ -285,7 +285,8 @@ struct LaunchConvOp<GPUDevice, T> {
       OP_REQUIRES_OK(
           ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m, k, b_ptr,
                                     n, a_ptr, k, &c_ptr, n,
-                                    se::blas::kDefaultComputePrecision));
+                                    se::blas::kDefaultComputePrecision,
+                                    se::blas::CallContext::kForward));
       return;
     } else if (!is_grouped_convolution && filter_planes == in_planes &&
                filter_rows == in_rows && filter_cols == in_cols &&
@@ -307,7 +308,8 @@ struct LaunchConvOp<GPUDevice, T> {
       OP_REQUIRES_OK(
           ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m, k, b_ptr,
                                     n, a_ptr, k, &c_ptr, n,
-                                    se::blas::kDefaultComputePrecision));
+                                    se::blas::kDefaultComputePrecision,
+                                    se::blas::CallContext::kForward));
       return;
     }
 
