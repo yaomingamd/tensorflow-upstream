@@ -343,6 +343,7 @@ class Stream {
       const dnn::ConvolutionDescriptor &convolution_descriptor,
       ScratchAllocator *scratch_allocator,
       const dnn::AlgorithmConfig &algorithm_config,
+      dnn::CallContext call_context,
       dnn::ProfileResult *output_profile_result) {
     DeviceMemory<uint8> scratch_memory;
     dnn::AlgorithmDesc algorithm_desc;
@@ -357,7 +358,8 @@ class Stream {
                              input_descriptor, input_data, filter_descriptor,
                              filter_data, output_descriptor, output_data,
                              convolution_descriptor, algorithm_desc,
-                             scratch_memory, output_profile_result);
+                             scratch_memory, call_context, 
+                             output_profile_result);
     }
     return port::UnimplementedError("DNN library is not found.");
   }
@@ -396,14 +398,16 @@ class Stream {
       const dnn::BatchDescriptor &input_descriptor,
       const dnn::FilterDescriptor &filter_descriptor,
       const dnn::BatchDescriptor &output_descriptor,
-      const dnn::ConvolutionDescriptor &convolution_descriptor) {
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      dnn::CallContext call_context) {
     dnn::DnnSupport *dnn_support = parent_->AsDnn();
     if (!dnn_support) {
       return port::UnimplementedError("DNN library is not found.");
     }
     return dnn_support->ConvolveRunnerFromDesc(
         this, algorithm_desc, kind, element_type, output_type, input_descriptor,
-        filter_descriptor, output_descriptor, convolution_descriptor);
+        filter_descriptor, output_descriptor, convolution_descriptor,
+	call_context);
   }
 
   port::StatusOr<std::unique_ptr<const dnn::FusedConvRunner>>
@@ -756,11 +760,12 @@ class Stream {
                             const DeviceMemory<InputType> &a, int lda,
                             const DeviceMemory<InputType> &b, int ldb,
                             DeviceMemory<InputType> *c, int ldc,
-                            blas::ComputePrecision precision) {
+                            blas::ComputePrecision precision,
+                            blas::CallContext context) {
     InputType alpha{1.0};
     InputType beta{0.0};
     return ThenBlasGemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c,
-                        ldc, precision);
+                        ldc, precision, context);
   }
 
   // TODO(parkers): Update all callers to pass kDefaultComputePrecision.
@@ -769,9 +774,11 @@ class Stream {
                             uint64_t m, uint64 n, uint64 k,
                             const DeviceMemory<InputType> &a, int lda,
                             const DeviceMemory<InputType> &b, int ldb,
-                            DeviceMemory<InputType> *c, int ldc) {
+                            DeviceMemory<InputType> *c, int ldc,
+                            blas::CallContext context) {
     return ThenBlasGemm(transa, transb, m, n, k, a, lda, b, ldb, c, ldc,
-                        blas::kDefaultComputePrecision);
+                        blas::kDefaultComputePrecision,
+			context);
   }
 
   template <typename InputType, typename ConstantType>
@@ -780,7 +787,8 @@ class Stream {
                             const DeviceMemory<InputType> &a, int lda,
                             const DeviceMemory<InputType> &b, int ldb,
                             ConstantType beta, DeviceMemory<InputType> *c,
-                            int ldc, blas::ComputePrecision precision) {
+                            int ldc, blas::ComputePrecision precision,
+			     blas::CallContext contex) {
     static_assert(
         detail::is_any_of<InputType, Eigen::half, Eigen::bfloat16, float,
                           double, std::complex<float>, std::complex<double>>(),
@@ -808,7 +816,8 @@ class Stream {
 
     return blas->DoBlasGemm(this, transa, transb, m, n, k,
                             blas::ToDataType<InputType>::value, alpha_ptr, a,
-                            lda, b, ldb, beta_ptr, c, ldc, precision);
+                            lda, b, ldb, beta_ptr, c, ldc, precision,
+                            context);
   }
 
   // TODO(parkers): Update all callers to pass kDefaultComputePrecision.
@@ -818,9 +827,9 @@ class Stream {
                             const DeviceMemory<InputType> &a, int lda,
                             const DeviceMemory<InputType> &b, int ldb,
                             ConstantType beta, DeviceMemory<InputType> *c,
-                            int ldc) {
+                            int ldc, blas::CallContext context) {
     return ThenBlasGemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c,
-                        ldc, blas::kDefaultComputePrecision);
+                        ldc, blas::kDefaultComputePrecision, context);
   }
 
   Stream &ThenBlasGemmWithProfiling(blas::Transpose transa,
@@ -829,7 +838,7 @@ class Stream {
                                     const DeviceMemory<Eigen::half> &a, int lda,
                                     const DeviceMemory<Eigen::half> &b, int ldb,
                                     float beta, DeviceMemory<Eigen::half> *c,
-                                    int ldc,
+                                    int ldc, blas::CallContext context,
                                     blas::ProfileResult *output_profile_result);
   Stream &ThenBlasGemmWithProfiling(blas::Transpose transa,
                                     blas::Transpose transb, uint64_t m,
@@ -837,6 +846,7 @@ class Stream {
                                     const DeviceMemory<float> &a, int lda,
                                     const DeviceMemory<float> &b, int ldb,
                                     float beta, DeviceMemory<float> *c, int ldc,
+                                    blas::CallContext context,
                                     blas::ProfileResult *output_profile_result);
   Stream &ThenBlasGemmWithProfiling(blas::Transpose transa,
                                     blas::Transpose transb, uint64_t m,
@@ -844,7 +854,7 @@ class Stream {
                                     const DeviceMemory<double> &a, int lda,
                                     const DeviceMemory<double> &b, int ldb,
                                     double beta, DeviceMemory<double> *c,
-                                    int ldc,
+                                    int ldc, blas::CallContext context,
                                     blas::ProfileResult *output_profile_result);
   Stream &ThenBlasGemmWithProfiling(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
@@ -852,14 +862,14 @@ class Stream {
       const DeviceMemory<std::complex<float>> &a, int lda,
       const DeviceMemory<std::complex<float>> &b, int ldb,
       std::complex<float> beta, DeviceMemory<std::complex<float>> *c, int ldc,
-      blas::ProfileResult *output_profile_result);
+      blas::CallContext context, blas::ProfileResult *output_profile_result);
   Stream &ThenBlasGemmWithProfiling(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, std::complex<double> alpha,
       const DeviceMemory<std::complex<double>> &a, int lda,
       const DeviceMemory<std::complex<double>> &b, int ldb,
       std::complex<double> beta, DeviceMemory<std::complex<double>> *c, int ldc,
-      blas::ProfileResult *output_profile_result);
+      blas::CallContext context, blas::ProfileResult *output_profile_result);
 
   template <typename InputType, typename OutputType>
   port::Status ThenBlasGemmWithAlgorithm(
@@ -868,12 +878,13 @@ class Stream {
       const DeviceMemory<InputType> &b, int ldb, DeviceMemory<OutputType> *c,
       int ldc, blas::ComputationType computation_type,
       blas::AlgorithmType algorithm,
-      blas::ProfileResult *output_profile_result) {
+      blas::ProfileResult *output_profile_result,
+      blas::CallContext context) {
     OutputType alpha{1};
     OutputType beta{0};
     return ThenBlasGemmWithAlgorithm(transa, transb, m, n, k, alpha, a, lda, b,
                                      ldb, beta, c, ldc, computation_type,
-                                     algorithm, output_profile_result);
+                                     algorithm, output_profile_result, context);
   }
 
   template <typename InputType, typename OutputType, typename ConstantType>
@@ -883,7 +894,7 @@ class Stream {
       const DeviceMemory<InputType> &b, int ldb, ConstantType beta,
       DeviceMemory<OutputType> *c, int ldc,
       blas::ComputationType computation_type, blas::AlgorithmType algorithm,
-      blas::ProfileResult *output_profile_result) {
+      blas::ProfileResult *output_profile_result, blas::CallContext context) {
     TF_RETURN_IF_ERROR(
         CheckTypesForExtendedBlas<InputType, OutputType, ConstantType>(
             computation_type));
@@ -906,7 +917,7 @@ class Stream {
         blas::ToDataType<InputType>::value, lda, b,
         blas::ToDataType<InputType>::value, ldb, beta_ptr, c,
         blas::ToDataType<OutputType>::value, ldc, computation_type, algorithm,
-        output_profile_result);
+        output_profile_result, context);
     if (output_profile_result) {
       // The error is recorded in the profile.
       return ::tensorflow::OkStatus();
@@ -922,7 +933,7 @@ class Stream {
       int64_t stride_b, ConstantType beta, DeviceMemory<OutputType> *c, int ldc,
       int64_t stride_c, int batch_count, blas::ComputationType computation_type,
       blas::AlgorithmType algorithm,
-      blas::ProfileResult *output_profile_result) {
+      blas::ProfileResult *output_profile_result, blas::CallContext context) {
     TF_RETURN_IF_ERROR(
         CheckTypesForExtendedBlas<InputType, OutputType, ConstantType>(
             computation_type));
@@ -943,7 +954,7 @@ class Stream {
         blas::ToDataType<InputType>::value, lda, stride_a, b,
         blas::ToDataType<InputType>::value, ldb, stride_b, beta_ptr, c,
         blas::ToDataType<OutputType>::value, ldc, stride_c, batch_count,
-        computation_type, algorithm, output_profile_result);
+        computation_type, algorithm, output_profile_result, context);
     if (output_profile_result) {
       // The error is recorded in the profile.
       return ::tensorflow::OkStatus();
@@ -961,13 +972,13 @@ class Stream {
                               const DeviceMemorySlice<Eigen::half> &b, int ldb,
                               float beta,
                               const DeviceMemorySlice<Eigen::half> &c, int ldc,
-                              int batch_count);
+                              int batch_count, blas::CallContext context);
   Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
                               uint64_t m, uint64 n, uint64 k, float alpha,
                               const DeviceMemorySlice<float> &a, int lda,
                               const DeviceMemorySlice<float> &b, int ldb,
                               float beta, const DeviceMemorySlice<float> &c,
-                              int ldc, int batch_count);
+                              int ldc, int batch_count, blas::CallContext context);
   Stream &ThenBlasGemmBatched(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64 k, double alpha,
@@ -985,7 +996,7 @@ class Stream {
                               const DeviceMemorySlice<std::complex<float>> &b,
                               int ldb, std::complex<float> beta,
                               const DeviceMemorySlice<std::complex<float>> &c,
-                              int ldc, int batch_count);
+                              int ldc, int batch_count, blas::CallContext context);
   Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
                               uint64_t m, uint64 n, uint64_t k,
                               std::complex<double> alpha,
@@ -994,32 +1005,36 @@ class Stream {
                               const DeviceMemorySlice<std::complex<double>> &b,
                               int ldb, std::complex<double> beta,
                               const DeviceMemorySlice<std::complex<double>> &c,
-                              int ldc, int batch_count);
+                              int ldc, int batch_count, blas::CallContext context);
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, float alpha, const DeviceMemorySlice<Eigen::half> &a, int lda,
       const DeviceMemorySlice<Eigen::half> &b, int ldb, float beta,
       const DeviceMemorySlice<Eigen::half> &c, int ldc, int batch_count,
-      ScratchAllocator *scratch_allocator);
+      ScratchAllocator *scratch_allocator,
+      blas::CallContext context);
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, float alpha, const DeviceMemorySlice<float> &a, int lda,
       const DeviceMemorySlice<float> &b, int ldb, float beta,
       const DeviceMemorySlice<float> &c, int ldc, int batch_count,
-      ScratchAllocator *scratch_allocator);
+      ScratchAllocator *scratch_allocator,
+      blas::CallContext context);
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, double alpha, const DeviceMemorySlice<double> &a, int lda,
       const DeviceMemorySlice<double> &b, int ldb, double beta,
       const DeviceMemorySlice<double> &c, int ldc, int batch_count,
-      ScratchAllocator *scratch_allocator);
+      ScratchAllocator *scratch_allocator,
+      blas::CallContext context);
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, std::complex<float> alpha,
       const DeviceMemorySlice<std::complex<float>> &a, int lda,
       const DeviceMemorySlice<std::complex<float>> &b, int ldb,
       std::complex<float> beta, const DeviceMemorySlice<std::complex<float>> &c,
-      int ldc, int batch_count, ScratchAllocator *scratch_allocator);
+      int ldc, int batch_count, ScratchAllocator *scratch_allocator,
+      blas::CallContext context);
   Stream &ThenBlasGemmBatchedWithScratch(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
       uint64_t k, std::complex<double> alpha,
@@ -1027,7 +1042,8 @@ class Stream {
       const DeviceMemorySlice<std::complex<double>> &b, int ldb,
       std::complex<double> beta,
       const DeviceMemorySlice<std::complex<double>> &c, int ldc,
-      int batch_count, ScratchAllocator *scratch_allocator);
+      int batch_count, ScratchAllocator *scratch_allocator,
+      blas::CallContext context);
 
   template <typename InputType, typename ConstantType>
   port::Status ThenBlasGemmStridedBatched(
@@ -1035,7 +1051,7 @@ class Stream {
       uint64_t k, ConstantType alpha, const DeviceMemory<InputType> &a, int lda,
       int64_t stride_a, const DeviceMemory<InputType> &b, int ldb,
       int64_t stride_b, ConstantType beta, DeviceMemory<InputType> *c, int ldc,
-      int64_t stride_c, int batch_count) {
+      int64_t stride_c, int batch_count, blas::CallContext context) {
     static_assert(
         detail::is_any_of<InputType, float, Eigen::half, Eigen::bfloat16,
                           double, std::complex<float>, std::complex<double>>(),
@@ -1061,7 +1077,7 @@ class Stream {
     return blas->DoBlasGemmStridedBatched(
         this, transa, transb, m, n, k, blas::ToDataType<InputType>::value,
         alpha_ptr, a, lda, stride_a, b, ldb, stride_b, beta_ptr, c, ldc,
-        stride_c, batch_count);
+        stride_c, batch_count, context);
   }
 
   // See BlasSupport::DoBlasTrsm.

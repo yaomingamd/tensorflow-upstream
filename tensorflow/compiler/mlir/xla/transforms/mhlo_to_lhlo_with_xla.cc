@@ -835,6 +835,31 @@ StatusOr<Operation*> LhloDialectEmitter::EmitGemm(
       auto const config,
       custom_call->backend_config<xla::gpu::GemmBackendConfig>());
 
+  auto set_common_attributes = [&](auto op) -> Operation* {
+    auto arrayref = [](absl::Span<const int64_t> array) {
+      return llvm::ArrayRef<int64_t>{array.data(), array.size()};
+    };
+    auto hlo_dims = config.dot_dimension_numbers();
+    auto mlir_dims = mhlo::DotDimensionNumbersAttr::get(
+        builder_.getContext(), arrayref(hlo_dims.lhs_batch_dimensions()),
+        arrayref(hlo_dims.rhs_batch_dimensions()),
+        arrayref(hlo_dims.lhs_contracting_dimensions()),
+        arrayref(hlo_dims.rhs_contracting_dimensions()));
+    op.dot_dimension_numbersAttr(mlir_dims);
+    op.alpha_realAttr(builder_.getF64FloatAttr(config.alpha_real()));
+    op.alpha_imagAttr(builder_.getF64FloatAttr(config.alpha_imag()));
+    op.batch_sizeAttr(builder_.getI64IntegerAttr(config.batch_size()));
+    op.lhs_strideAttr(builder_.getI64IntegerAttr(config.lhs_stride()));
+    op.rhs_strideAttr(builder_.getI64IntegerAttr(config.rhs_stride()));
+    if (config.algorithm_case() ==
+        xla::gpu::GemmBackendConfig::kSelectedAlgorithm) {
+      op.algorithmAttr(builder_.getI64IntegerAttr(config.selected_algorithm()));
+    }
+    op->setAttr("grad_x", builder_.getBoolAttr(config.grad_x()));
+    op->setAttr("grad_y", builder_.getBoolAttr(config.grad_y()));
+    return op.getOperation();
+  };
+
   if (custom_call->operand_count() == 2) {
     TF_RET_CHECK(config.beta() == 0.);
   } else if (custom_call->operand_count() != 3) {
@@ -1000,6 +1025,8 @@ StatusOr<Operation*> LhloDialectEmitter::EmitDnnConvolution(
     attrs.set(op.getBackendConfigAttrName(), config);
     op->setAttrs(attrs.getDictionary(op->getContext()));
 
+    op->setAttr("call_context",
+                builder_.getStringAttr(backend_config.call_context()));
     return op.getOperation();
   };
 

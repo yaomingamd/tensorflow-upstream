@@ -1057,6 +1057,28 @@ Status IrEmitterUnnested::EmitConvolutionThunk(mlir::Operation* op) {
     }
     descriptor.backend_config.set_conv_result_scale(
         op.getResultScale().convertToDouble());
+    auto attr_call_context =
+        op->template getAttrOfType<mlir::StringAttr>("call_context");
+    if (attr_call_context) {
+      descriptor.backend_config.set_call_context(
+          attr_call_context.getValue().str());
+    } else {
+      std::string call_context = "kNone";
+      switch (descriptor.kind) {
+        case CudnnConvKind::kForward:
+          call_context = "kForward";
+          break;
+        case CudnnConvKind::kBackwardInput:
+          call_context = "kBackpropData";
+          break;
+        case CudnnConvKind::kBackwardFilter:
+          call_context = "kBackpropFilter";
+          break;
+        default:
+          break;
+      }
+      descriptor.backend_config.set_call_context(call_context);
+    }
   };
 
   auto set_activation_mode = [&](auto op) -> Status {
@@ -1103,6 +1125,19 @@ Status IrEmitterUnnested::EmitGemmThunk(mlir::Operation* op) {
   TF_ASSIGN_OR_RETURN(auto a, GetAllocationSlice(gemm.getA()));
   TF_ASSIGN_OR_RETURN(auto b, GetAllocationSlice(gemm.getB()));
   TF_ASSIGN_OR_RETURN(auto c, GetAllocationSlice(gemm.getC()));
+  auto attr_grad_x = op->template getAttrOfType<mlir::BoolAttr>("grad_x");
+  if (attr_grad_x) {
+    backend.set_grad_x(attr_grad_x.getValue());
+  } else {
+    backend.set_grad_x(false);
+  }
+
+  auto attr_grad_y = op->template getAttrOfType<mlir::BoolAttr>("grad_y");
+  if (attr_grad_y) {
+    backend.set_grad_y(attr_grad_y.getValue());
+  } else {
+    backend.set_grad_y(false);
+  }
 
   TF_ASSIGN_OR_RETURN(GemmConfig config, GemmConfig::For(gemm));
   auto thunk =
