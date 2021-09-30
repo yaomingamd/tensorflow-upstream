@@ -225,6 +225,7 @@ void GpuSolver::CheckLapackInfoAndDeleteSolverAsync(
 #define TF_CALL_LAPACK_TYPES(m) \
   m(float, s) m(double, d) m(std::complex<float>, c) m(std::complex<double>, z)
 #define TF_CALL_LAPACK_TYPES_NO_COMPLEX(m) m(float, s) m(double, d)
+#define TF_CALL_LAPACK_TYPES_NO_REAL(m) m(std::complex<float>, c) m(std::complex<double>, z)
 
 #define BLAS_SOLVER_FN(method, type_prefix) \
   wrap::rocblas##_##type_prefix##method
@@ -260,6 +261,36 @@ TF_CALL_LAPACK_TYPES(GETRF_INSTANCE);
   }
 
 TF_CALL_LAPACK_TYPES(GEQRF_INSTANCE);
+
+#define UMMQR_INSTANCE(Scalar, type_prefix)                                          \
+  template <>                                                                        \
+  Status GpuSolver::Unmqr(rocblas_side side, rocblas_operation trans, int m, int n,  \
+               int k, const Scalar* dev_a, int lda, const Scalar* dev_tau,           \
+               Scalar* dev_c, int ldc, int* dev_lapack_info){                         \
+      mutex_lock lock(handle_map_mutex);                                              \
+      using ROCmScalar = typename ROCmComplexT<Scalar>::type;                          \
+      ScratchSpace<uint8> dev_a_copy =                                                 \
+        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) * m*k, "",                    \
+        /*on host */ false);                                                           \
+      if (!CopyHostToDevice(context_, dev_a_copy.mutable_data(), dev_a,                \
+                          dev_a_copy.bytes())) {                                        \
+      return errors::Internal("Unmqr: Failed to copy ptrs to device");                  \
+      }                                                                                 \
+      ScratchSpace<uint8> dev_tau_copy =                                                \
+        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) *k*n, "",                     \
+        /*on host */ false);                                                            \
+      if (!CopyHostToDevice(context_, dev_tau_copy.mutable_data(), dev_tau,             \
+                          dev_tau_copy.bytes())) {                                      \
+      return errors::Internal("Unmqr: Failed to copy ptrs to device");                  \
+      }                                                                                   \
+      TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(unmqr, type_prefix)(                               \
+          rocm_blas_handle_,side,trans, m, n, k, reinterpret_cast<ROCmScalar*>(dev_a_copy.mutable_data()), lda,    \
+          reinterpret_cast<ROCmScalar*>(dev_tau_copy.mutable_data()),reinterpret_cast<ROCmScalar*>(dev_c), ldc));             \
+      return Status::OK();    \
+}
+
+TF_CALL_LAPACK_TYPES_NO_REAL(UMMQR_INSTANCE);
+
 
 #define POTRF_INSTANCE(Scalar, type_prefix)                                   \
   template <>                                                                 \

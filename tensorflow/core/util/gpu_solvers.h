@@ -301,11 +301,7 @@ class GpuSolver {
   // Overwrite matrix C by product of C and the unitary Householder matrix Q.
   // The Householder matrix Q is represented by the output from Geqrf in dev_a
   // and dev_tau.
-  // Notice: If Scalar is real, only trans=CUBLAS_OP_N or trans=CUBLAS_OP_T is
-  // supported. If Scalar is complex, trans=CUBLAS_OP_N or trans=CUBLAS_OP_C is
-  // supported.
   // Returns Status::OK() if the kernel was launched successfully.
-  // See: http://docs.nvidia.com/cuda/cusolver/#cuds-lt-t-gt-ormqr
   template <typename Scalar>
   Status Unmqr(rocblas_side side, rocblas_operation trans, int m, int n,
                int k, const Scalar* dev_a, int lda, const Scalar* dev_tau,
@@ -316,7 +312,6 @@ class GpuSolver {
   // from Geqrf in dev_a and dev_tau. On output, dev_a is overwritten with the
   // first n columns of Q. Requires m >= n >= 0.
   // Returns Status::OK() if the kernel was launched successfully.
-  // See: http://docs.nvidia.com/cuda/cusolver/#cuds-lt-t-gt-orgqr
   template <typename Scalar>
   Status Ungqr(int m, int n, int k, Scalar* dev_a, int lda,
                const Scalar* dev_tau, int* dev_lapack_info);
