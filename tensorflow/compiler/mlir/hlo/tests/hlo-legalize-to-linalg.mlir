@@ -3079,8 +3079,8 @@ func @torch_index_select_dynamic(%input: tensor<?x?x?x?xf32>,
 // CHECK-SAME:   %[[VAL_0:[a-zA-Z0-9_]*]]
 // CHECK-SAME:   %[[VAL_1:[a-zA-Z0-9_]*]]
 // CHECK-SAME:   %[[VAL_2:[a-zA-Z0-9_]*]]
-// CHECK:           %[[VAL_3:.*]] = constant 0 : index
-// CHECK:           %[[VAL_4:.*]] = constant 0 : index
+// CHECK-DAG:       %[[VAL_3:.*]] = constant 0 : index
+// CHECK-DAG:       %[[VAL_4:.*]] = constant 0 : index
 // CHECK:           %[[VAL_5:.*]] = tensor.dim %[[VAL_0]], %[[VAL_4]] : tensor<?x?xi32>
 // CHECK:           %[[VAL_6:.*]] = constant 1 : index
 // CHECK:           %[[VAL_7:.*]] = tensor.dim %[[VAL_0]], %[[VAL_6]] : tensor<?x?xi32>
@@ -3140,8 +3140,8 @@ func @concatenate(%a: tensor<?x?xi32>, %b: tensor<?x?xi32>, %c: tensor<?x?xi32>)
 // CHECK-DAG:      %[[A_SIGNLESS:.*]] = builtin.unrealized_conversion_cast %[[A_UNSIGNED]] : tensor<?x?xui32> to tensor<?x?xi32>
 // CHECK-DAG:      %[[B_SIGNLESS:.*]] = builtin.unrealized_conversion_cast %[[B_UNSIGNED]] : tensor<?x?xui32> to tensor<?x?xi32>
 // CHECK-DAG:      %[[C_SIGNLESS:.*]] = builtin.unrealized_conversion_cast %[[C_UNSIGNED]] : tensor<?x?xui32> to tensor<?x?xi32>
-// CHECK:          %[[VAL_3:.*]] = constant 0 : index
-// CHECK:          %[[VAL_4:.*]] = constant 0 : index
+// CHECK-DAG:      %[[VAL_3:.*]] = constant 0 : index
+// CHECK-DAG:      %[[VAL_4:.*]] = constant 0 : index
 // CHECK:          %[[VAL_5:.*]] = tensor.dim %[[A_SIGNLESS]], %[[VAL_4]] : tensor<?x?xi32>
 // CHECK:          %[[VAL_6:.*]] = constant 1 : index
 // CHECK:          %[[VAL_7:.*]] = tensor.dim %[[A_SIGNLESS]], %[[VAL_6]] : tensor<?x?xi32>
@@ -3253,12 +3253,12 @@ func @scatter_update_scalar(%arg0: tensor<3xi32>, %arg1: tensor<1x1xi32>,
     "mhlo.return"(%arg4) : (tensor<i32>) -> ()
   }) {
     indices_are_sorted = false,
-    scatter_dimension_numbers = {
-      index_vector_dim = 1 : i64,
-      inserted_window_dims = dense<0> : tensor<1xi64>,
-      scatter_dims_to_operand_dims = dense<0> : tensor<1xi64>,
-      update_window_dims = dense<> : tensor<0xi64>
-    },
+    scatter_dimension_numbers = #mhlo.scatter<
+      update_window_dims = [],
+      inserted_window_dims = [0],
+      scatter_dims_to_operand_dims = [0],
+      index_vector_dim = 1,
+    >,
     unique_indices = false
   } : (tensor<3xi32>, tensor<1x1xi32>, tensor<1xi32>) -> tensor<3xi32>
   return %0 : tensor<3xi32>
@@ -3293,12 +3293,12 @@ func @scatter_update_slice(%arg0: tensor<6x3xi32>, %arg1: tensor<2x1xi32>,
     "mhlo.return"(%arg4) : (tensor<i32>) -> ()
   }) {
     indices_are_sorted = false,
-    scatter_dimension_numbers = {
-      index_vector_dim = 1 : i64,
-      inserted_window_dims = dense<0> : tensor<1xi64>,
-      scatter_dims_to_operand_dims = dense<0> : tensor<1xi64>,
-      update_window_dims = dense<1> : tensor<1xi64>
-    },
+    scatter_dimension_numbers = #mhlo.scatter<
+      update_window_dims = [1]
+      inserted_window_dims = [0],
+      scatter_dims_to_operand_dims = [0],
+      index_vector_dim = 1,
+    >,
     unique_indices = false
   } : (tensor<6x3xi32>, tensor<2x1xi32>, tensor<2x3xi32>) -> tensor<6x3xi32>
   return %0 : tensor<6x3xi32>

@@ -34,6 +34,7 @@ from tensorflow.python.eager import lift_to_graph
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
+from tensorflow.python.framework import extension_type
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_spec
 from tensorflow.python.framework import test_util
@@ -325,6 +326,29 @@ class DefFunctionTest(test.TestCase, parameterized.TestCase):
       foo(False)
     self.assertEqual(foo.trace_count, 3)
 
+  def testMethodExtensionType(self):
+
+    class MaskedTensor(extension_type.ExtensionType):
+      values: ops.Tensor
+      mask: ops.Tensor
+
+      @def_function.function
+      def with_default(self, default_value):
+        return array_ops.where_v2(self.mask, self.values, default_value)
+
+      @def_function.function
+      def sum(self):
+        # Use a loop & conditional to test that autograph works correctly.
+        result = 0
+        for i in range(array_ops.size(self.values)):
+          if self.mask[i]:
+            result += self.values[i]
+        return result
+
+    mt = MaskedTensor([1, 2, 3], [True, False, True])
+    self.assertAllEqual(mt.with_default(-1), [1, -1, 3])
+    self.assertAllEqual(mt.sum(), 4)
+
   def test_functools_partial(self):
     self.assertAllClose(
         3.,
@@ -607,7 +631,7 @@ class DefFunctionTest(test.TestCase, parameterized.TestCase):
       return outputs
 
     with self.assertRaisesRegex(errors.InaccessibleTensorError,
-                                'defined in another function or code block'):
+                                'captured an external symbolic tensor'):
       f(array_ops.zeros(shape=(8, 42, 3)))
 
   def testRuntimeErrorNotSticky(self):
@@ -686,8 +710,29 @@ class DefFunctionTest(test.TestCase, parameterized.TestCase):
 
     with self.assertRaisesRegex(
         TypeError,
-        re.compile('An op outside of the function.*passed.*Const', re.DOTALL)):
+        re.compile('captured an external symbolic tensor.*Const', re.DOTALL)):
       failing_function()
+
+  def testSymbolicTensorCapturedInput(self):
+
+    x = None
+
+    @def_function.function
+    def f1(a):
+      nonlocal x
+      x = a
+      return a
+
+    @def_function.function
+    def f2(b):
+      return b + x
+
+    f1(constant_op.constant(1))
+    with self.assertRaisesRegex(
+        TypeError,
+        re.compile('def_function_test.*captured an external symbolic tensor',
+                   re.DOTALL)):
+      f2(constant_op.constant(2))
 
   def testNonUniqueNamesGetConcreteFunction(self):
     @def_function.function

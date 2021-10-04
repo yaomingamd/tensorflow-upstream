@@ -851,7 +851,8 @@ def TFL_ConcatenationOp : TFL_Op<"concatenation",
 }
 
 def TFL_ConstOp : Op<TFL_Dialect, "pseudo_const", [ConstantLike, NoSideEffect,
-    FirstAttrDerivedResultType]> {
+    FirstAttrDerivedResultType,
+    DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = "Constant pseudo op.";
 
   let description = [{
@@ -880,7 +881,8 @@ def TFL_ConstOp : Op<TFL_Dialect, "pseudo_const", [ConstantLike, NoSideEffect,
 
 def TFL_SparseConstOp : Op<TFL_Dialect, "pseudo_sparse_const", [
     NoSideEffect,
-    FirstAttrDerivedResultType]> {
+    FirstAttrDerivedResultType,
+    DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = "Sparse constant pseudo op.";
 
   let description = [{
@@ -906,7 +908,8 @@ def TFL_SparseConstOp : Op<TFL_Dialect, "pseudo_sparse_const", [
   ];
 }
 
-def TFL_ExternalConstOp : Op<TFL_Dialect, "external_const", [NoSideEffect]> {
+def TFL_ExternalConstOp : Op<TFL_Dialect, "external_const",
+  [NoSideEffect, DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = "External const op.";
 
   let description = [{
@@ -3197,6 +3200,11 @@ def TFL_TransposeOp : TFL_Op<"transpose", [
     OpBuilder<(ins "Value":$input, "Value":$perm),
     [{ BuildTransposeOp(&$_builder, $_state, input, perm); }]>
   ];
+
+  let extraClassDeclaration = [{
+    // Quantized axes are verified in the Verify function.
+    bool RequiredSameQuantizedAxes() { return false; }
+  }];
 }
 
 def TFL_UnpackOp : TFL_Op<"unpack", [
@@ -3590,6 +3598,7 @@ def TFL_CastOp : TFL_Op<"cast", [
 // LINT.ThenChange(//tensorflow/compiler/mlir/lite/transforms/while_loop_outline.cc)
 
 def TFL_MirrorPadOp: TFL_Op<"mirror_pad", [
+                     SameOperandsAndResultsScale,
                      NoSideEffect, TFL_OperandHasRank<1, 2>]> {
   let summary = "MirrorPad Operator. Pads a tensor with mirrored values.";
 
@@ -3698,8 +3707,11 @@ def TFL_FakeQuantOp : TFL_Op<"fake_quant", [NoSideEffect]> {
   let hasOptions = 1;
 }
 
+// TODO(b/200841823): consider adding TFL_RuntimeVerification trait.
 def TFL_QConstOp : Op<TFL_Dialect, "pseudo_qconst", [
-    NoSideEffect, FirstAttrDerivedResultType, NoQuantizableResult]> {
+    NoSideEffect,
+    FirstAttrDerivedResultType,
+    NoQuantizableResult]> {
   let summary = "Quantized constant pseudo op";
 
   let description = [{
@@ -3726,7 +3738,10 @@ def TFL_QConstOp : Op<TFL_Dialect, "pseudo_qconst", [
 }
 
 def TFL_SparseQConstOp : Op<TFL_Dialect, "pseudo_sparse_qconst", [
-    NoSideEffect, FirstAttrDerivedResultType, NoQuantizableResult]> {
+    NoSideEffect,
+    FirstAttrDerivedResultType,
+    NoQuantizableResult,
+    DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = "Sparse quantized constant pseudo op";
 
   let description = [{
@@ -4403,7 +4418,7 @@ the output tensor can vary depending on how many true values there are in
 }
 
 def TFL_NumericVerifyOp : Op<TFL_Dialect, "NumericVerify", [
-    SameOperandsShape]> {
+    SameOperandsShape, DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
 
   let summary = "Verifies the numericals of the two operands";
 
@@ -4496,7 +4511,10 @@ def TFL_SegmentSumOp: TFL_Op<"segment_sum", [
   let results = (outs TFL_TensorOf<[F32, I32]>:$output);
 }
 
-def TFL_YieldOp : Op<TFL_Dialect, "yield", [NoSideEffect, Terminator]> {
+def TFL_YieldOp : Op<TFL_Dialect, "yield",
+  [NoSideEffect,
+   Terminator,
+   DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = "Yield operation";
   let description = [{
     The "yield" operation represents a return operation within the conditional
@@ -4511,7 +4529,7 @@ def TFL_YieldOp : Op<TFL_Dialect, "yield", [NoSideEffect, Terminator]> {
 def TFL_IfOp : Op<TFL_Dialect, "if", [
     DeclareOpInterfaceMethods<RegionBranchOpInterface>,
     SingleBlockImplicitTerminator<"YieldOp">, RecursiveSideEffects,
-    NoRegionArguments]> {
+    NoRegionArguments, DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = [{if-then-else operation}];
 
   let description = [{
@@ -4583,7 +4601,8 @@ def TFL_IfOp : Op<TFL_Dialect, "if", [
 
 def TFL_WhileOp : Op<TFL_Dialect, "while", [
     DeclareOpInterfaceMethods<LoopLikeOpInterface>,
-    SingleBlockImplicitTerminator<"YieldOp">]> {
+    SingleBlockImplicitTerminator<"YieldOp">,
+    DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = [{While loop}];
 
   let description = [{
@@ -4631,7 +4650,9 @@ initializer in tf saved model dialect.
 }
 
 def TFL_CustomOp : Op<TFL_Dialect, "custom", [
-  NoSideEffect, NoQuantizableResult]> {
+  NoSideEffect,
+  NoQuantizableResult,
+  DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = "Custom op";
 
   let description = [{
@@ -4659,7 +4680,8 @@ def TFL_CustomTfOp : Op<TFL_Dialect, "custom_tf", [
   NoQuantizableResult,
   IsolatedFromAbove,
   SingleBlockImplicitTerminator<"YieldOp">,
-  DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  DeclareOpInterfaceMethods<InferTypeOpInterface>,
+  DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = "Wrapper Op for TF custom ops.";
 
   let description = [{

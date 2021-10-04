@@ -83,7 +83,10 @@ cc_library(
 cc_library(
     name = "base_gpu_op",
     hdrs = ["base_gpu_op.h"],
-    deps = [":base_op"],
+    deps = [
+        ":base_op",
+        "//tensorflow/core:framework",
+    ],
 )
 
 cc_library(
@@ -136,6 +139,8 @@ tf_kernel_library(
         "gpu_op_square.cc",
         "gpu_op_tan.cc",
         "gpu_op_tanh.cc",
+    ]) + if_mlir_generated_experimental_kernels_enabled([
+        "gpu_op_sigmoid.cc",
     ]),
     copts = if_mlir_generated_experimental_kernels_enabled([
         "-DMLIR_GENERATED_EXPERIMENTAL_KERNELS_ENABLED",
@@ -185,6 +190,8 @@ tf_kernel_library(
         ":gpu_tan_kernels",
         ":gpu_tanh_kernels",
         "//third_party/eigen3",
+    ]) + if_mlir_generated_experimental_kernels_enabled([
+        ":gpu_sigmoid_kernels",
     ]),
 )
 
@@ -643,6 +650,17 @@ gpu_kernel_library(
 gpu_kernel_library(
     name = "gpu_selu_kernels",
     op = "selu",
+    tile_size = "256",
+    types = [
+        "f16",
+        "f32",
+        "f64",
+    ],
+)
+
+gpu_kernel_library(
+    name = "gpu_sigmoid_kernels",
+    op = "sigmoid",
     tile_size = "256",
     types = [
         "f16",

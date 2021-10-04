@@ -647,6 +647,12 @@ alias(
     visibility = ["//tensorflow:__subpackages__"],
 )
 
+cc_library(
+    name = "determinism_test_util",
+    hdrs = [":determinism_test_util.h"],
+    deps = [":determinism"],
+)
+
 tf_kernel_library(
     name = "cuda_solvers",
     srcs = ["cuda_solvers.cc"],
@@ -695,7 +701,10 @@ tf_kernel_library(
 tf_kernel_library(
     name = "cuda_sparse",
     srcs = if_cuda(["cuda_sparse.cc"]) + if_rocm(["rocm_sparse.cc"]),
-    hdrs = ["cuda_sparse.h", "gpu_solvers.h"],
+    hdrs = [
+        "cuda_sparse.h",
+        "gpu_solvers.h",
+    ],
     compatible_with = [],
     deps = [
         ":cuda_solvers",

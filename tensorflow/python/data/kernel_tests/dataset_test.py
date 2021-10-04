@@ -249,6 +249,15 @@ class DatasetTest(test_base.DatasetTestBase, parameterized.TestCase):
     self._testInputsWithInterleaveFn(lambda: dataset_ops.range(0), None)
 
   @combinations.generate(test_base.default_test_combinations())
+  def testDebugString(self):
+    dataset = dataset_ops.Dataset.range(10)
+    dataset = dataset.map(lambda x: x**2)
+    dataset = dataset.filter(lambda x: x > 10)
+    debug_string = dataset.__debug_string__()
+    for transformation in ["Range", "Map", "Filter"]:
+      self.assertContainsSubsequence(debug_string, transformation)
+
+  @combinations.generate(test_base.default_test_combinations())
   def testNoWarnings(self):
     with test.mock.patch.object(warnings, "warn") as mock_log:
       dataset_ops.Dataset.range(0).interleave(
@@ -395,9 +404,9 @@ class DatasetTest(test_base.DatasetTestBase, parameterized.TestCase):
   def testSameGraphErrorOneShot(self):
     dataset = dataset_ops.Dataset.range(10)
     with ops.Graph().as_default():
-      with self.assertRaisesRegex(
-          ValueError, "Please ensure that all datasets in the pipeline are "
-          "created in the same graph as the iterator."):
+      with self.assertRaisesRegex(ValueError,
+                                  "make sure that the dataset is created in "
+                                  "the same graph as the iterator"):
         _ = dataset_ops.make_one_shot_iterator(dataset)
 
   @combinations.generate(
@@ -405,9 +414,9 @@ class DatasetTest(test_base.DatasetTestBase, parameterized.TestCase):
   def testSameGraphErrorInitializable(self):
     dataset = dataset_ops.Dataset.range(10)
     with ops.Graph().as_default():
-      with self.assertRaisesRegex(
-          ValueError, "Please ensure that all datasets in the pipeline are "
-          "created in the same graph as the iterator."):
+      with self.assertRaisesRegex(ValueError,
+                                  "make sure that the dataset is created in "
+                                  "the same graph as the iterator"):
         _ = dataset_ops.make_initializable_iterator(dataset)
 
   @combinations.generate(

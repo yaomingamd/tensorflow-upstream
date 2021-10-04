@@ -500,6 +500,13 @@ Status ProcessFunctionLibraryRuntime::PinArgsAndRets(
           std::vector<string> colo_slice = {colocation_group};
           node->AddAttr(kColocationAttrName, colo_slice);
         } else if (!src_device->empty() && can_use_src_node_device) {
+          // Do not copy device from src node for variants, unless it is a no-op
+          // forward from input to output. This gets handled in
+          // colocation_graph.cc which has special logic for correctly placing
+          // _Retvals for various variant types.
+          if (dtype == DT_VARIANT && !src_node->IsArg()) {
+            continue;
+          }
           // src_device can be a partially specified device. Find the
           // matching device in the device_set.
           DeviceNameUtils::ParsedName parsed;
@@ -1184,7 +1191,8 @@ void ProcessFunctionLibraryRuntime::RunMultiDevice(
         const string function_and_msg = strings::StrCat(
             errors::FormatFunctionForError(data->function_name_), " ",
             status.error_message());
-        refcounted_done->UpdateStatus(Status(status.code(), function_and_msg));
+        refcounted_done->UpdateStatus(
+            errors::CreateWithUpdatedMessage(status, function_and_msg));
         // Cancel the execution of other component functions.
         cm->StartCancel();
       } else {

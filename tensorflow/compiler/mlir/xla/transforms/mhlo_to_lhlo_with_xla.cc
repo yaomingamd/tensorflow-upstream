@@ -130,16 +130,23 @@ Status OptimizeAndConvertHloToLmhlo(std::unique_ptr<HloModule> hlo_module,
                                   "failed to create XLA Backend ");
   auto backend = std::move(backend_or_err.ValueOrDie());
 
-  // Run all HLO passes to produce an optimized module.
-  auto result_or = backend->compiler()->RunHloPassesAndBufferAssignement(
-      std::move(hlo_module), backend->default_stream_executor(),
-      optimize_xla_hlo, {backend->memory_allocator()});
-  TF_RETURN_WITH_CONTEXT_IF_ERROR(result_or.status(),
-                                  "running XLA pass pipeline");
-  std::unique_ptr<HloModule> optimized_hlo_module =
-      std::move(std::get<0>(result_or.ValueOrDie()));
-  std::unique_ptr<BufferAssignment> assignment =
-      std::move(std::get<1>(result_or.ValueOrDie()));
+  StatusOr<std::unique_ptr<HloModule>> optimized_hlo_module;
+
+  if (optimize_xla_hlo) {
+    // Run all HLO passes to produce an optimized module.
+    optimized_hlo_module = backend->compiler()->RunHloPasses(
+        std::move(hlo_module), backend->default_stream_executor(),
+        backend->memory_allocator());
+    TF_RETURN_WITH_CONTEXT_IF_ERROR(optimized_hlo_module.status(),
+                                    "running XLA pass pipeline");
+  } else {
+    optimized_hlo_module = std::move(hlo_module);
+  }
+
+  StatusOr<std::unique_ptr<BufferAssignment>> assignment =
+      backend->compiler()->AssignBuffers(optimized_hlo_module->get());
+  TF_RETURN_WITH_CONTEXT_IF_ERROR(assignment.status(),
+                                  "running XLA buffer assigment");
 
   // Clear the module before populating it back with the result of the
   // conversion.
@@ -147,7 +154,7 @@ Status OptimizeAndConvertHloToLmhlo(std::unique_ptr<HloModule> hlo_module,
   OpBuilder builder(module);
 
   TF_RETURN_WITH_CONTEXT_IF_ERROR(
-      HloToLhloModule(*assignment, *optimized_hlo_module, module),
+      HloToLhloModule(**assignment, **optimized_hlo_module, module),
       "converting HLO to LHLO");
 
   return Status::OK();
@@ -585,7 +592,7 @@ StatusOr<lmhlo::FusionOp> LhloDialectEmitter::EmitFusionOp(
   return fusion;
 }
 
-StatusOr<mhlo::ScatterDimensionNumbers>
+StatusOr<mhlo::ScatterDimensionNumbersAttr>
 LhloDialectEmitter::GetScatterDimensionNumbers(const HloInstruction* instr,
                                                mlir::MLIRContext* context) {
   auto* scatter_instr = xla::Cast<xla::HloScatterInstruction>(instr);
@@ -593,17 +600,15 @@ LhloDialectEmitter::GetScatterDimensionNumbers(const HloInstruction* instr,
   const xla::ScatterDimensionNumbers& xla_scatter_dim =
       scatter_instr->scatter_dimension_numbers();
 
-  mlir::Builder builder(context);
-  auto get_i64_array_attr =
-      [builder](absl::Span<const int64_t> container) mutable {
-        return builder.getI64TensorAttr(
-            {container.data(), static_cast<size_t>(container.size())});
-      };
-  auto scatter_dimension_numbers = mhlo::ScatterDimensionNumbers::get(
-      get_i64_array_attr(xla_scatter_dim.update_window_dims()),
-      get_i64_array_attr(xla_scatter_dim.inserted_window_dims()),
-      get_i64_array_attr(xla_scatter_dim.scatter_dims_to_operand_dims()),
-      builder.getI64IntegerAttr(xla_scatter_dim.index_vector_dim()), context);
+  auto get_i64_array = [](absl::Span<const int64_t> container) {
+    return ArrayRef<int64_t>{container.data(),
+                             static_cast<size_t>(container.size())};
+  };
+  auto scatter_dimension_numbers = mhlo::ScatterDimensionNumbersAttr::get(
+      context, get_i64_array(xla_scatter_dim.update_window_dims()),
+      get_i64_array(xla_scatter_dim.inserted_window_dims()),
+      get_i64_array(xla_scatter_dim.scatter_dims_to_operand_dims()),
+      xla_scatter_dim.index_vector_dim());
   return scatter_dimension_numbers;
 }
 
@@ -1570,6 +1575,16 @@ Status LhloDialectEmitter::Initialize() {
     NamedAttrList arg_attr_list;
     mlir::Type arg_type = MemRefType::get({alloc->size()}, i8_type_);
 
+    // Propagate source location information for every HLOInstruction that
+    // uses this allocation.
+    std::vector<mlir::Location> buf_locs;
+    buf_locs.reserve(alloc->assigned_buffers().size());
+    for (const auto& entry : alloc->assigned_buffers()) {
+      const xla::HloValue* hlo_value = entry.first;
+      buf_locs.push_back(getLocation(hlo_value->instruction()));
+    }
+    mlir::Location loc = builder_.getFusedLoc(buf_locs);
+
     if (alloc->is_entry_computation_parameter()) {
       arg_attr_list.set("lmhlo.params",
                         builder_.getIndexAttr(alloc->parameter_number()));
@@ -1608,7 +1623,7 @@ Status LhloDialectEmitter::Initialize() {
         }
       }
     }
-    block->addArgument(arg_type);
+    block->addArgument(arg_type, loc);
     allocations_[alloc] = block->getArguments().back();
     args_attrs.push_back(arg_attr_list.getDictionary(builder_.getContext()));
   }

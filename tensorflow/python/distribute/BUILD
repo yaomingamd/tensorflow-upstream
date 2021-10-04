@@ -836,6 +836,7 @@ py_library(
         "//tensorflow/python:variable_scope",
         "//tensorflow/python:variables",
         "//tensorflow/python/distribute/coordinator:coordinator_context",
+        "//tensorflow/python/keras/saving/saved_model:load_context",
         "//tensorflow/python/training/tracking:base",
         "//tensorflow/python/types",
     ],
@@ -1281,7 +1282,6 @@ distribute_py_test(
     size = "medium",
     srcs = ["values_test.py"],
     main = "values_test.py",
-    shard_count = 5,
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # times out
@@ -1290,7 +1290,49 @@ distribute_py_test(
         "notsan",  # b/168645872
     ],
     tpu_tags = [
-        "no_oss",  # TODO(b/150954621) Target too big to run serially reliably.
+        "noasan",  # TODO(b/337374867) fails with -fsanitize=null
+    ],
+    deps = [
+        ":combinations",
+        ":strategy_combinations",
+        ":test_util",
+        ":tpu_strategy",
+        ":tpu_values",
+        ":values",
+        "//tensorflow/core:protos_all_py",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:constant_op",
+        "//tensorflow/python:framework_ops",
+        "//tensorflow/python:framework_test_lib",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:saver",
+        "//tensorflow/python:sparse_ops",
+        "//tensorflow/python:sparse_tensor",
+        "//tensorflow/python:tf2",
+        "//tensorflow/python:variable_scope",
+        "//tensorflow/python:variables",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "//tensorflow/python/eager:context",
+        "//tensorflow/python/eager:def_function",
+        "//tensorflow/python/eager:test",
+        "@absl_py//absl/testing:parameterized",
+    ],
+)
+
+distribute_py_test(
+    name = "distributed_variable_test",
+    size = "medium",
+    srcs = ["distributed_variable_test.py"],
+    main = "distributed_variable_test.py",
+    shard_count = 3,
+    tags = [
+        "multi_and_single_gpu",
+        "no_cuda_asan",  # times out
+        "no_oss",  # b/178656226
+        "noasan",  # b/175816710
+        "notsan",  # b/168645872
+    ],
+    tpu_tags = [
         "noasan",  # TODO(b/337374867) fails with -fsanitize=null
     ],
     deps = [
@@ -1304,7 +1346,6 @@ distribute_py_test(
         ":strategy_combinations",
         ":test_util",
         ":tpu_strategy",
-        ":tpu_values",
         ":values",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:check_ops",
@@ -1312,14 +1353,9 @@ distribute_py_test(
         "//tensorflow/python:control_flow_ops",
         "//tensorflow/python:dtypes",
         "//tensorflow/python:framework_ops",
-        "//tensorflow/python:framework_test_lib",
         "//tensorflow/python:indexed_slices",
         "//tensorflow/python:math_ops",
-        "//tensorflow/python:saver",
-        "//tensorflow/python:sparse_ops",
-        "//tensorflow/python:sparse_tensor",
         "//tensorflow/python:tensor_shape",
-        "//tensorflow/python:tf2",
         "//tensorflow/python:training",
         "//tensorflow/python:variable_scope",
         "//tensorflow/python:variables",
@@ -1329,6 +1365,42 @@ distribute_py_test(
         "//tensorflow/python/saved_model:save",
         "//tensorflow/python/saved_model:save_context",
         "//tensorflow/python/saved_model:save_options",
+        "//tensorflow/python/types",
+        "@absl_py//absl/testing:parameterized",
+    ],
+)
+
+distribute_py_test(
+    name = "mirrored_values_test",
+    size = "medium",
+    srcs = ["mirrored_values_test.py"],
+    main = "mirrored_values_test.py",
+    tags = [
+        "multi_and_single_gpu",
+        "no_cuda_asan",  # times out
+        "noasan",  # b/175816710
+        "notsan",  # b/168645872
+    ],
+    tpu_tags = [
+        "noasan",  # TODO(b/337374867) fails with -fsanitize=null
+    ],
+    deps = [
+        ":combinations",
+        ":distribute_lib",
+        ":distribute_utils",
+        ":packed_distributed_variable",
+        ":strategy_combinations",
+        ":test_util",
+        ":tpu_strategy",
+        ":tpu_values",
+        ":values",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:saver",
+        "//tensorflow/python:training",
+        "//tensorflow/python:variable_scope",
+        "//tensorflow/python/eager:context",
+        "//tensorflow/python/eager:def_function",
+        "//tensorflow/python/eager:test",
         "//tensorflow/python/types",
         "@absl_py//absl/testing:parameterized",
     ],
@@ -1413,9 +1485,6 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # times out
-    ],
-    tpu_tags = [
-        "no_oss",  # b/150954621 Target too big to run serially reliably.
     ],
     deps = [
         ":combinations",
@@ -1576,6 +1645,9 @@ cuda_py_test(
     name = "remote_mirrored_strategy_eager_test",
     srcs = ["remote_mirrored_strategy_eager_test.py"],
     python_version = "PY3",
+    tags = [
+        "no_windows",  # TODO(b/197981388): Re-enable this.
+    ],
     deps = [
         ":combinations",
         ":distribute_lib",
@@ -1734,6 +1806,47 @@ cuda_py_test(
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/distribute/cluster_resolver:cluster_resolver_lib",
         "//tensorflow/python/eager:context",
+        "//tensorflow/python/tpu:tpu_lib",
+        "//third_party/py/numpy",
+        "@absl_py//absl/testing:parameterized",
+    ],
+)
+
+tpu_py_test(
+    name = "collective_all_reduce_strategy_test_tpu",
+    srcs = ["collective_all_reduce_strategy_test.py"],
+    main = "collective_all_reduce_strategy_test.py",
+    python_version = "PY3",
+    deps = [
+        ":collective_all_reduce_strategy",
+        ":combinations",
+        ":cross_device_utils",
+        ":distribute_lib",
+        ":distribute_utils",
+        ":input_lib",
+        ":multi_worker_test_base",
+        ":multi_worker_util",
+        ":reduce_util",
+        ":strategy_combinations",
+        ":strategy_test_lib",
+        ":test_util",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:constant_op",
+        "//tensorflow/python:device",
+        "//tensorflow/python:dtypes",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:framework_ops",
+        "//tensorflow/python:gradients",
+        "//tensorflow/python:init_ops",
+        "//tensorflow/python:init_ops_v2",
+        "//tensorflow/python:training_server_lib",
+        "//tensorflow/python:variable_scope",
+        "//tensorflow/python:variables",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "//tensorflow/python/distribute/cluster_resolver:cluster_resolver_lib",
+        "//tensorflow/python/eager:context",
+        "//tensorflow/python/tpu:tpu_lib",
         "//third_party/py/numpy",
         "@absl_py//absl/testing:parameterized",
     ],
