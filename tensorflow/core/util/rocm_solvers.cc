@@ -291,6 +291,27 @@ TF_CALL_LAPACK_TYPES(GEQRF_INSTANCE);
 
 TF_CALL_LAPACK_TYPES_NO_REAL(UMMQR_INSTANCE);
 
+#define UNGQR_INSTANCE(Scalar, type_prefix)                                          \
+  template <>                                                                        \
+  Status GpuSolver::Ungqr(int m, int n, int k, Scalar* dev_a, int lda,               \
+               const Scalar* dev_tau, int* dev_lapack_info){                         \
+      mutex_lock lock(handle_map_mutex);                                              \
+      using ROCmScalar = typename ROCmComplexT<Scalar>::type;                          \
+      ScratchSpace<uint8> dev_tau_copy =                                                \
+        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) *k*n, "",                     \
+        /*on host */ false);                                                            \
+      if (!CopyHostToDevice(context_, dev_tau_copy.mutable_data(), dev_tau,             \
+                          dev_tau_copy.bytes())) {                                      \
+      return errors::Internal("Ungqr: Failed to copy ptrs to device");                  \
+      }                                                                                   \
+      TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(ungqr, type_prefix)(                               \
+          rocm_blas_handle_, m, n, k, reinterpret_cast<ROCmScalar*>(dev_a), lda,    \
+          reinterpret_cast<ROCmScalar*>(dev_tau_copy.mutable_data())));             \
+      return Status::OK();    \
+}
+
+TF_CALL_LAPACK_TYPES_NO_REAL(UNGQR_INSTANCE);
+
 
 #define POTRF_INSTANCE(Scalar, type_prefix)                                   \
   template <>                                                                 \

@@ -90,9 +90,11 @@ namespace wrap {
   __macro(rocsolver_cgeqrf)                 \
   __macro(rocsolver_dgeqrf)                 \
   __macro(rocsolver_sgeqrf)                 \
-  __macro(rocsolver_zgeqrf)                  \
-  __macro(rocsolver_cunmqr)                  \
-  __macro(rocsolver_zunmqr)                  
+  __macro(rocsolver_zgeqrf)                 \
+  __macro(rocsolver_cunmqr)                 \
+  __macro(rocsolver_zunmqr)                \
+  __macro(rocsolver_cungqr)                \
+  __macro(rocsolver_zungqr)                
 // clang-format on
 
 FOREACH_ROCSOLVER_API(ROCSOLVER_API_WRAPPER)
