@@ -113,7 +113,7 @@ struct LaunchConv2DBackpropFilterOp<CPUDevice, T> {
                   int row_dilation, int col_dilation, int row_stride,
                   int col_stride, const Padding& padding,
                   const std::vector<int64>& explicit_paddings,
-                  Tensor* filter_backprop, TensorFormat data_format) {
+                  Tensor* filter_backprop, TensorFormat data_format, bool f8_enable) {
     std::vector<int32> dilations(4, 1);
     dilations[GetTensorDimIndex(data_format, 'H')] = row_dilation;
     dilations[GetTensorDimIndex(data_format, 'W')] = col_dilation;
@@ -317,6 +317,7 @@ class Conv2DBackpropFilterOp : public OpKernel {
           errors::InvalidArgument("Conv2DBackpropFilterOp [CPU] not yet "
                                   "support dilation rates larger than 1."));
     }
+    f8_enable_ = context->AllowF8();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -363,7 +364,7 @@ class Conv2DBackpropFilterOp : public OpKernel {
 
     launcher_(context, use_cudnn_, cudnn_use_autotune_, out_backprop, input,
               dilation_rows, dilation_cols, stride_rows, stride_cols, padding_,
-              explicit_paddings_, filter_backprop, data_format_);
+              explicit_paddings_, filter_backprop, data_format_, f8_enable_);
   }
 
  private:
@@ -372,6 +373,7 @@ class Conv2DBackpropFilterOp : public OpKernel {
   Padding padding_;
   std::vector<int64_t> explicit_paddings_;
   bool use_cudnn_;
+  bool f8_enable_ = false;
   TensorFormat data_format_;
   LaunchConv2DBackpropFilterOp<Device, T> launcher_;
   bool cudnn_use_autotune_;
@@ -669,7 +671,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     const Tensor& out_backprop, const Tensor& input, int row_dilation,
     int col_dilation, int row_stride, int col_stride, const Padding& padding,
     const std::vector<int64_t>& explicit_paddings, Tensor* filter_backprop,
-    TensorFormat data_format) {
+    TensorFormat data_format, bool f8_enable) {
   using se::dnn::AlgorithmConfig;
   using se::dnn::AlgorithmDesc;
   using se::dnn::ProfileResult;
@@ -759,7 +761,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     OP_REQUIRES_OK(
         ctx, stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                   se::blas::Transpose::kTranspose, n, m, k,
-                                  a_ptr, n, b_ptr, m, &c_ptr, n));
+                                  a_ptr, n, b_ptr, m, &c_ptr, n, 1+(f8_enable ? 4 : 0)));
     return;
   } else if (dims.spatial_dims[0].filter_size ==
                  dims.spatial_dims[0].input_size &&
@@ -784,7 +786,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     OP_REQUIRES_OK(
         ctx, stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                   se::blas::Transpose::kTranspose, n, m, k,
-                                  b_ptr, n, a_ptr, m, &c_ptr, n));
+                                  b_ptr, n, a_ptr, m, &c_ptr, n, 1+(f8_enable ? 4 : 0)));
     return;
   }
 

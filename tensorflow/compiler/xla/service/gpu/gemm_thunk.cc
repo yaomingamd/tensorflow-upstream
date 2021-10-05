@@ -132,7 +132,7 @@ static Status DoGemmWithAlgorithm(
         /*leading dim of RHS=*/rhs.num_rows, rhs.stride,
         /*beta=*/beta, &output_data,
         /*leading dim of output=*/output_matrix.num_rows, output_matrix.stride,
-        batch_size, computation_type, algorithm, output_profile_result);
+        batch_size, computation_type, algorithm, 0, output_profile_result);
   } else {
     return stream->ThenBlasGemmWithAlgorithm(
         lhs.transpose, rhs.transpose, output_matrix.num_rows,
@@ -142,7 +142,7 @@ static Status DoGemmWithAlgorithm(
         /*lda=*/lhs.num_rows, rhs.cast<Input>(),
         /*ldb=*/rhs.num_rows,
         /*beta=*/beta, &output_data,
-        /*ldc=*/output_matrix.num_rows, computation_type, algorithm,
+        /*ldc=*/output_matrix.num_rows, computation_type, algorithm, 0,
         output_profile_result);
   }
 }
@@ -172,7 +172,7 @@ static Status DoGemm(int64_t batch_size, const MatrixDescriptor &lhs,
         /*leading dim of RHS=*/rhs.num_rows, rhs.stride,
         /*beta=*/beta, &output_data,
         /*leading dim of output=*/output_matrix.num_rows, output_matrix.stride,
-        batch_size);
+        batch_size, 0);
   }
   return stream->ThenBlasGemm(
       lhs.transpose, rhs.transpose, output_matrix.num_rows,
@@ -181,7 +181,7 @@ static Status DoGemm(int64_t batch_size, const MatrixDescriptor &lhs,
       /*leading dim of LHS=*/lhs.num_rows, rhs.cast<Input>(),
       /*leading dim of RHS=*/rhs.num_rows,
       /*beta=*/beta, &output_data,
-      /*leading dim of output=*/output_matrix.num_rows);
+      /*leading dim of output=*/output_matrix.num_rows, 0);
 }
 
 Status RunGemm(const GpuGemmConfig &gemm_config,

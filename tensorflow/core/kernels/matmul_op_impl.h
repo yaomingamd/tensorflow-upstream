@@ -227,7 +227,7 @@ template <typename Scalar>
 struct LaunchBatchMatMul<CPUDevice, Scalar> {
   static void Launch(OpKernelContext* context, const Tensor& in_x,
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
-                     bool trans_y, const MatMulBCast& bcast, Tensor* out) {
+                     bool trans_y, const MatMulBCast& bcast, Tensor* out, int grad_flags) {
     typedef ParallelMatMulKernel<Scalar, Eigen::NumTraits<Scalar>::IsComplex>
         ParallelMatMulKernel;
     bool conjugate_result = false;
@@ -323,7 +323,8 @@ template <typename Scalar>
 struct LaunchBatchMatMul<GPUDevice, Scalar> {
   static void Launch(OpKernelContext* context, const Tensor& in_x,
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
-                     bool trans_y, const MatMulBCast& bcast, Tensor* out) {
+                     bool trans_y, const MatMulBCast& bcast, Tensor* out, 
+                     int grad_flags) {
     se::blas::Transpose trans[] = {se::blas::Transpose::kNoTranspose,
                                    se::blas::Transpose::kTranspose,
                                    se::blas::Transpose::kConjugateTranspose};
@@ -426,7 +427,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                                adj_x || trans_x ? k : m,
                                static_cast<Coefficient>(1.0), *(a_ptrs[0]),
                                adj_x || trans_x ? m : k, *(b_ptrs[0]), 1,
-                               static_cast<Coefficient>(0.0), c_ptrs[0], 1)
+                               static_cast<Coefficient>(0.0), c_ptrs[0], 1, grad_flags)
                 .ok();
         if (!blas_launch_status) {
           context->SetStatus(errors::Internal(
@@ -439,7 +440,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                        stream->ThenBlasGemm(
                            blas_transpose_b, blas_transpose_a, n, m, k,
                            *(b_ptrs[0]), adj_y || trans_y ? k : n, *(a_ptrs[0]),
-                           adj_x || trans_x ? m : k, c_ptrs[0], n));
+                           adj_x || trans_x ? m : k, c_ptrs[0], n, grad_flags));
       }
     } else if (use_strided_batched) {
       OP_REQUIRES_OK(context, stream->ThenBlasGemmStridedBatched(
@@ -448,7 +449,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                                   adj_y || trans_y ? k : n, b_stride,
                                   *a_ptrs[0], adj_x || trans_x ? m : k,
                                   a_stride, static_cast<Coefficient>(0.0),
-                                  c_ptrs[0], n, c_stride, batch_size));
+                                  c_ptrs[0], n, c_stride, batch_size, grad_flags));
     } else {
       BlasScratchAllocator scratch_allocator(context);
       bool blas_launch_status =
@@ -458,7 +459,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                   static_cast<Coefficient>(1.0), b_ptrs,
                   adj_y || trans_y ? k : n, a_ptrs, adj_x || trans_x ? m : k,
                   static_cast<Coefficient>(0.0), c_ptrs, n, batch_size,
-                  &scratch_allocator)
+                  &scratch_allocator, grad_flags)
               .ok();
       if (!blas_launch_status) {
         context->SetStatus(errors::Internal(
@@ -475,7 +476,7 @@ template <>
 struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
   static void Launch(OpKernelContext* context, const Tensor& in_x,
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
-                     bool trans_y, const MatMulBCast& bcast, Tensor* out) {
+                     bool trans_y, const MatMulBCast& bcast, Tensor* out, int grad_flags = 0) {
     typedef Eigen::half Scalar;
     se::blas::Transpose trans[] = {se::blas::Transpose::kNoTranspose,
                                    se::blas::Transpose::kTranspose,
@@ -568,7 +569,7 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
                      stream->ThenBlasGemm(
                          blas_transpose_b, blas_transpose_a, n, m, k,
                          *(b_ptrs[0]), adj_y || trans_y ? k : n, *(a_ptrs[0]),
-                         adj_x || trans_x ? m : k, c_ptrs[0], n));
+                         adj_x || trans_x ? m : k, c_ptrs[0], n, grad_flags));
     } else if (use_strided_batched) {
       bool blas_launch_status =
           stream
@@ -578,7 +579,7 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
                   adj_y || trans_y ? k : n, b_stride, *a_ptrs[0],
                   adj_x || trans_x ? m : k, a_stride,
                   static_cast<Coefficient>(0.0), c_ptrs[0], n, c_stride,
-                  batch_size)
+                  batch_size, grad_flags)
               .ok();
       if (!blas_launch_status) {
         context->SetStatus(errors::Internal(
@@ -596,7 +597,7 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
                   static_cast<Coefficient>(1.0), b_ptrs,
                   adj_y || trans_y ? k : n, a_ptrs, adj_x || trans_x ? m : k,
                   static_cast<Coefficient>(0.0), c_ptrs, n, batch_size,
-                  &scratch_allocator)
+                  &scratch_allocator, grad_flags)
               .ok();
       if (!blas_launch_status) {
         context->SetStatus(errors::Internal(
@@ -629,6 +630,10 @@ class BaseBatchMatMulOp : public OpKernel {
       trans_x_ = false;
       trans_y_ = false;
     }
+    bool grad_a = false, grad_b = false;
+    OP_REQUIRES_OK(context, context->GetAttr("grad_a", &grad_a));
+    OP_REQUIRES_OK(context, context->GetAttr("grad_b", &grad_b));
+    grad_flags_ = (grad_a?1:0) + (grad_b?2:0) + (context->AllowF8()?4:0);
   }
 
   ~BaseBatchMatMulOp() override {}
@@ -715,7 +720,7 @@ class BaseBatchMatMulOp : public OpKernel {
 
       LaunchBatchMatMul<Device, float>::Launch(
           ctx, in0_reshaped_float, in1_reshaped_float, adj_x_, adj_y_, trans_x_,
-          trans_y_, bcast, &out_reshaped_float);
+          trans_y_, bcast, &out_reshaped_float, grad_flags_);
       FloatToBFloat16(out_reshaped_float.flat<float>().data(),
                       out_reshaped.flat<bfloat16>().data(), out->NumElements());
     } else {
@@ -729,7 +734,7 @@ class BaseBatchMatMulOp : public OpKernel {
       }
       LaunchBatchMatMul<Device, Tout>::Launch(ctx, in0_reshaped, in1_reshaped,
                                               adj_x_, adj_y_, trans_x_,
-                                              trans_y_, bcast, &out_reshaped);
+                                              trans_y_, bcast, &out_reshaped, grad_flags_);
     }
   }
 
@@ -743,7 +748,7 @@ class BaseBatchMatMulOp : public OpKernel {
   bool adj_y_ = false;
   bool trans_x_ = false;
   bool trans_y_ = false;
-
+  int grad_flags_ = 0;
   // Cast `t` from `SrcT` to `DstT`.
   template <typename SrcT, typename DstT>
   Tensor CastTensor(const Tensor& t) {

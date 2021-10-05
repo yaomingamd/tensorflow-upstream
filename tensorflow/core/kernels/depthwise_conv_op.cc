@@ -162,7 +162,7 @@ struct LaunchDepthwiseConvOp<CPUDevice, T> {
 
   void operator()(OpKernelContext* ctx, const DepthwiseArgs& args,
                   const T* input, const T* depthwise_filter, T* output,
-                  TensorFormat data_format) {
+                  TensorFormat data_format, bool f8_enable) {
     OP_REQUIRES(
         ctx, data_format == FORMAT_NHWC,
         errors::Unimplemented(
@@ -321,6 +321,7 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
 #else
     use_cudnn_grouped_conv_ = false;
 #endif
+    context->GetAttr("_f8", &f8_enable_); // OK to fail
   }
 
   void Compute(OpKernelContext* context) override {
@@ -445,7 +446,7 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
       launcher_(context, /*use_cudnn=*/true, cudnn_use_autotune_, input,
                 reshaped_filter, /*row_dilation=*/1, /*col_dilation=*/1,
                 stride_, stride_, padding_, explicit_paddings_, output,
-                data_format_);
+                data_format_, f8_enable_);
       return;
     }
 
@@ -468,7 +469,7 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
     auto filter_ptr = filter.template flat<T>().data();
     auto output_ptr = output->template flat<T>().data();
     LaunchDepthwiseConvOp<Device, T>()(context, args, input_ptr, filter_ptr,
-                                       output_ptr, data_format_);
+                                       output_ptr, data_format_, f8_enable_);
   }
 
  protected:
@@ -486,6 +487,7 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
   LaunchConv2DOp<Device, T> launcher_;
   bool cudnn_use_autotune_;
   DataType dtype_;
+  bool f8_enable_ = false;
 
   TF_DISALLOW_COPY_AND_ASSIGN(DepthwiseConv2dNativeOp);
 };
