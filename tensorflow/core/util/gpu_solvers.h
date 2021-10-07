@@ -261,11 +261,6 @@ class GpuSolver {
               rocblas_diagonal diag, int m, int n, const Scalar* alpha,
               const Scalar* A, int lda, Scalar* B, int ldb);
 
-  template <typename Scalar>
-  Status Trsm(rocblas_side side, rocblas_fill uplo, rocblas_operation trans,
-              rocblas_diagonal diag, int m, int n, const Scalar* alpha,
-              const Scalar* A, int lda, Scalar* B, int ldb);
-  
   // Cholesky factorization
   // Computes the Cholesky factorization A = L * L^H for a single matrix.
   template <typename Scalar>
