@@ -372,15 +372,16 @@ class StreamExecutor {
   // Returns the supported algorithms / execution plans for a convolution.
   port::Status GetConvolveRunners(
       bool use_cudnn_frontend, dnn::ConvolutionKind kind,
-      dnn::DataType input_type, dnn::DataType output_type, Stream *stream,
-      const dnn::BatchDescriptor &input_descriptor, DeviceMemoryBase input_data,
-      const dnn::FilterDescriptor &filter_descriptor,
+      dnn::DataType input_type, dnn::DataType output_type, Stream* stream,
+      const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data,
+      const dnn::FilterDescriptor& filter_descriptor,
       DeviceMemoryBase filter_data,
-      const dnn::BatchDescriptor &output_descriptor,
+      const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data,
-      const dnn::ConvolutionDescriptor &convolution_descriptor,
-      bool use_fallback, ScratchAllocator *scratch_allocator,
-      std::vector<std::unique_ptr<const dnn::ConvRunner>> *out_exec_plans);
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      dnn::CallContext call_context, bool use_fallback,
+      ScratchAllocator* scratch_allocator,
+      std::vector<std::unique_ptr<const dnn::ConvRunner>>* out_exec_plans);
 
   port::Status GetFusedConvolveRunners(
       bool use_cudnn_frontend, dnn::ConvolutionKind kind,
@@ -398,15 +399,15 @@ class StreamExecutor {
   // Returns the list of supported algorithms for the forward convolution
   // operation.
   bool GetMIOpenConvolveAlgorithms(
-      dnn::ConvolutionKind kind, dnn::DataType element_type, Stream *stream,
-      const dnn::BatchDescriptor &input_descriptor, DeviceMemoryBase input_data,
-      const dnn::FilterDescriptor &filter_descriptor,
+      dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
+      const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data,
+      const dnn::FilterDescriptor& filter_descriptor,
       DeviceMemoryBase filter_data,
-      const dnn::BatchDescriptor &output_descriptor,
+      const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data,
-      const dnn::ConvolutionDescriptor &convolution_descriptor,
-      ScratchAllocator *scratch_allocator,
-      std::vector<dnn::ProfileResult> *out_algorithms);
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
+      std::vector<dnn::ProfileResult>* out_algorithms);
 
   // Returns the list of supported algorithms for rnn operation.
   bool GetRnnAlgorithms(std::vector<dnn::AlgorithmDesc> *out_algorithms);
