@@ -901,6 +901,8 @@ StatusOr<Operation*> LhloDialectEmitter::EmitDnnConvolution(
         builder_.getContext());
     op.backend_configAttr(config);
 
+    op->setAttr("call_context",
+                builder_.getStringAttr(backend_config.call_context()));
     return op.getOperation();
   };
 

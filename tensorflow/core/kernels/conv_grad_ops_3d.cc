@@ -1586,7 +1586,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
           cudnn_launch_status = stream->ConvolveBackwardDataWithAlgorithm(
               filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
               input_desc, &in_backprop_ptr_rz, allocator_used, profile_config,
-              &profile_result);
+              se::dnn::CallContext::kBackpropData, &profile_result);
         }
 
         if (cudnn_launch_status.ok() && profile_result.is_valid()) {
@@ -1632,7 +1632,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
           se::dnn::ConvolutionKind::BACKWARD_DATA,
           se::dnn::ToDataType<T>::value, stream, input_desc, in_backprop_ptr,
           filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-          &scratch_allocator, &algorithms));
+          &scratch_allocator, se::dnn::CallContext::kBackpropData, &algorithms));
       std::vector<tensorflow::AutotuneResult> results;
       for (auto miopen_algorithm : algorithms) {
         auto profile_algorithm = miopen_algorithm.algorithm();
@@ -1641,7 +1641,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
             filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
             input_desc, &in_backprop_ptr, &scratch_allocator,
             AlgorithmConfig(profile_algorithm, miopen_algorithm.scratch_size()),
-            &profile_result);
+            se::dnn::CallContext::kBackpropData, &profile_result);
         if (miopen_launch_status.ok()) {
           if (profile_result.is_valid()) {
             results.emplace_back();
@@ -1690,7 +1690,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       cudnn_launch_status = stream->ConvolveBackwardDataWithAlgorithm(
           filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
           input_desc, &in_backprop_ptr, &scratch_allocator, algorithm_config,
-          nullptr);
+          se::dnn::CallContext::kBackpropData, nullptr);
     }
 
     if (!cudnn_launch_status.ok()) {
@@ -2137,7 +2137,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
           cudnn_launch_status = stream->ConvolveBackwardFilterWithAlgorithm(
               input_desc, input_ptr, output_desc, out_backprop_ptr, conv_desc,
               filter_desc, &filter_backprop_ptr, &scratch_allocator,
-              profile_config, &profile_result);
+              profile_config, se::dnn::CallContext::kBackpropFilter, &profile_result);
         }
 
         if (cudnn_launch_status.ok() && profile_result.is_valid()) {
@@ -2177,7 +2177,8 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
           se::dnn::ConvolutionKind::BACKWARD_FILTER,
           se::dnn::ToDataType<T>::value, stream, input_desc, input_ptr,
           filter_desc, filter_backprop_ptr, output_desc, out_backprop_ptr,
-          conv_desc, &scratch_allocator, &algorithms));
+          conv_desc, &scratch_allocator,
+	  se::dnn::CallContext::kBackpropFilter, &algorithms));
 
       std::vector<tensorflow::AutotuneResult> results;
       for (auto miopen_algorithm : algorithms) {
@@ -2187,7 +2188,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
             input_desc, input_ptr, output_desc, out_backprop_ptr, conv_desc,
             filter_desc, &filter_backprop_ptr, &scratch_allocator,
             AlgorithmConfig(profile_algorithm, miopen_algorithm.scratch_size()),
-            &profile_result);
+            se::dnn::CallContext::kBackpropFilter, &profile_result);
         if (cudnn_launch_status.ok()) {
           if (profile_result.is_valid()) {
             results.emplace_back();
@@ -2252,7 +2253,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       cudnn_launch_status = stream->ConvolveBackwardFilterWithAlgorithm(
           input_desc, input_ptr, output_desc, out_backprop_ptr, conv_desc,
           filter_desc, &filter_backprop_ptr, &scratch_allocator,
-          algorithm_config, nullptr);
+          algorithm_config, se::dnn::CallContext::kBackpropFilter, nullptr);
     }
 
     if (!cudnn_launch_status.ok()) {

@@ -1066,7 +1066,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
         cudnn_launch_status = stream->ConvolveBackwardFilterWithAlgorithm(
             input_desc, input_ptr, output_desc, out_backprop_ptr, conv_desc,
             filter_desc, &filter_backprop_ptr_rz, allocator_used,
-            profile_config, &profile_result);
+            profile_config, se::dnn::CallContext::kBackpropFilter, &profile_result);
       }
       if (cudnn_launch_status.ok() && profile_result.is_valid()) {
         results.emplace_back();
@@ -1113,7 +1113,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
             se::dnn::ConvolutionKind::BACKWARD_FILTER,
             se::dnn::ToDataType<T>::value, stream, input_desc, input_ptr,
             filter_desc, filter_backprop_ptr, output_desc, out_backprop_ptr,
-            conv_desc, &scratch_allocator, &algorithms),
+            conv_desc, &scratch_allocator, se::dnn::CallContext::kBackpropFilter, &algorithms),
         errors::Unknown(
             "Failed to get convolution algorithm. This is probably "
             "because MIOpen failed to initialize, so try looking to "
@@ -1140,7 +1140,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
             input_desc, input_ptr, output_desc, out_backprop_ptr, conv_desc,
             filter_desc, &filter_backprop_ptr, &scratch_allocator,
             AlgorithmConfig(profile_algorithm, miopen_algorithm.scratch_size()),
-            &profile_result);
+            se::dnn::CallContext::kBackpropFilter, &profile_result);
 
         if (miopen_launch_status.ok() && profile_result.is_valid()) {
           results.emplace_back();
@@ -1188,7 +1188,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveBackwardFilterWithAlgorithm(
         input_desc, input_ptr, output_desc, out_backprop_ptr, conv_desc,
         filter_desc, &filter_backprop_ptr, &scratch_allocator, algorithm_config,
-        nullptr);
+        se::dnn::CallContext::kBackpropFilter, nullptr);
   }
 
   if (!cudnn_launch_status.ok()) {

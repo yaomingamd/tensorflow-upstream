@@ -246,7 +246,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data,
       const dnn::ConvolutionDescriptor& convolution_descriptor,
-      ScratchAllocator* scratch_allocator,
+      ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
       std::vector<dnn::ProfileResult>* out_algorithms) override;
 
   bool GetRnnAlgorithms(
@@ -323,6 +323,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       DeviceMemoryBase output_data,
       const dnn::ConvolutionDescriptor& convolution_descriptor,
       dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
+      dnn::CallContext call_context,
       dnn::ProfileResult* output_profile_result) override;
 
   port::Status DoFusedConvolve(
@@ -840,7 +841,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data,
       const dnn::ConvolutionDescriptor& convolution_descriptor,
-      ScratchAllocator* scratch_allocator,
+      ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
       std::vector<dnn::ProfileResult>* out_algorithms);
 
   bool GetMIOpenConvolveAlgorithmsFindMode(
@@ -851,7 +852,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data,
       const dnn::ConvolutionDescriptor& convolution_descriptor,
-      ScratchAllocator* scratch_allocator,
+      ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
       std::vector<dnn::ProfileResult>* out_algorithms);
 
   template <class T>

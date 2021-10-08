@@ -455,6 +455,7 @@ Stream &Stream::ThenConvolve(
                    input_descriptor, input_data, filter_descriptor, filter_data,
                    convolution_descriptor, output_descriptor, output,
                    /*scratch_allocator=*/nullptr, dnn::AlgorithmConfig(),
+                   dnn::CallContext::kForward,
                    /*output_profile_result=*/nullptr)
                    .ok());
   }

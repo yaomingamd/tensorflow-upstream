@@ -337,6 +337,7 @@ class Stream {
       const dnn::BatchDescriptor &output_descriptor,
       DeviceMemory<OutputType> *output, ScratchAllocator *scratch_allocator,
       const dnn::AlgorithmConfig &algorithm_config,
+      dnn::CallContext call_context,
       dnn::ProfileResult *output_profile_result) {
     DeviceMemory<uint8> scratch_memory;
     dnn::AlgorithmDesc algorithm_desc;
@@ -351,7 +352,7 @@ class Stream {
           dnn::ToDataType<OutputType>::value, this, input_descriptor,
           input_data, filter_descriptor, filter_data, output_descriptor,
           *output, convolution_descriptor, algorithm_desc, scratch_memory,
-          output_profile_result);
+          call_context, output_profile_result);
     }
     return port::UnimplementedError("DNN library is not found.");
   }
@@ -489,6 +490,7 @@ class Stream {
       DeviceMemory<ElementType> *backward_input_data,
       ScratchAllocator *scratch_allocator,
       const dnn::AlgorithmConfig &algorithm_config,
+      dnn::CallContext call_context,
       dnn::ProfileResult *output_profile_result) {
     DeviceMemory<uint8> scratch_memory;
     dnn::AlgorithmDesc algorithm_desc;
@@ -505,7 +507,7 @@ class Stream {
           dnn::ToDataType<ElementType>::value, this, input_descriptor,
           *backward_input_data, filter_descriptor, filter_data,
           output_descriptor, backward_output_data, convolution_descriptor,
-          algorithm_desc, scratch_memory, output_profile_result);
+          algorithm_desc, scratch_memory, call_context, output_profile_result);
     }
     return port::UnimplementedError("DNN library is not found.");
   }
@@ -521,6 +523,7 @@ class Stream {
       DeviceMemory<ElementType> *backward_filter_data,
       ScratchAllocator *scratch_allocator,
       const dnn::AlgorithmConfig &algorithm_config,
+      dnn::CallContext call_context,
       dnn::ProfileResult *output_profile_result) {
     DeviceMemory<uint8> scratch_memory;
     dnn::AlgorithmDesc algorithm_desc;
@@ -537,7 +540,7 @@ class Stream {
           dnn::ToDataType<ElementType>::value, this, input_descriptor,
           input_data, filter_descriptor, *backward_filter_data,
           output_descriptor, backward_output_data, convolution_descriptor,
-          algorithm_desc, scratch_memory, output_profile_result);
+          algorithm_desc, scratch_memory, call_context, output_profile_result);
     }
     return port::UnimplementedError("DNN library is not found.");
   }

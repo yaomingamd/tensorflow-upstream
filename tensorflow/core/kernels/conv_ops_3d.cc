@@ -572,7 +572,7 @@ struct LaunchConvOp<GPUDevice, T> {
           cudnn_launch_status = stream->ConvolveWithAlgorithm(
               input_desc, input_ptr, filter_desc, filter_ptr, conv_desc,
               output_desc, &output_ptr_rz, allocator_used, profile_config,
-              &profile_result);
+              se::dnn::CallContext::kForward, &profile_result);
         }
 
         if (cudnn_launch_status.ok() && profile_result.is_valid()) {
@@ -617,7 +617,8 @@ struct LaunchConvOp<GPUDevice, T> {
                       se::dnn::ConvolutionKind::FORWARD,
                       se::dnn::ToDataType<T>::value, stream, input_desc,
                       input_ptr, filter_desc, filter_ptr, output_desc,
-                      output_ptr, conv_desc, &scratch_allocator, &algorithms),
+                      output_ptr, conv_desc, &scratch_allocator,
+		      se::dnn::CallContext::kForward, &algorithms),
                   errors::Unknown(
                       "Failed to get convolution algorithm. This is probably "
                       "because MIOpen failed to initialize, so try looking to "
@@ -644,7 +645,7 @@ struct LaunchConvOp<GPUDevice, T> {
               output_desc, &output_ptr, &scratch_allocator,
               AlgorithmConfig(profile_algorithm,
                               miopen_algorithm.scratch_size()),
-              &profile_result);
+              se::dnn::CallContext::kForward, &profile_result);
           if (miopen_launch_status.ok()) {
             if (profile_result.is_valid()) {
               results.emplace_back();
@@ -692,7 +693,7 @@ struct LaunchConvOp<GPUDevice, T> {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
           input_desc, input_ptr, filter_desc, filter_ptr, conv_desc,
           output_desc, &output_ptr, &scratch_allocator, algorithm_config,
-          nullptr);
+          se::dnn::CallContext::kForward, nullptr);
     }
 
     if (!cudnn_launch_status.ok()) {

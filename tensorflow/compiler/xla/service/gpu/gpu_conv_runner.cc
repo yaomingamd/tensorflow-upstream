@@ -89,7 +89,7 @@ Status RunGpuConvForward(GpuConvParams params,
       params.config.input_descriptor, input_buf,
       params.config.filter_descriptor, filter_buf, params.config.conv_desc,
       params.config.output_descriptor, &output_buf, scratch_allocator,
-      algorithm, options.profile_result);
+      algorithm, params.config.call_context, options.profile_result);
 }
 
 template <typename ElementType, typename BiasType, typename OutputType>
@@ -179,7 +179,7 @@ Status RunGpuConvInternalImpl(GpuConvParams params,
           params.config.filter_descriptor, filter_buf,
           params.config.output_descriptor, output_buf, params.config.conv_desc,
           params.config.input_descriptor, &input_buf, scratch_allocator,
-          algorithm, options.profile_result);
+          algorithm, params.config.call_context, options.profile_result);
       break;
     case CudnnConvKind::kBackwardFilter:
       if (params.config.conv_result_scale != 1) {
@@ -191,7 +191,7 @@ Status RunGpuConvInternalImpl(GpuConvParams params,
           params.config.input_descriptor, input_buf,
           params.config.output_descriptor, output_buf, params.config.conv_desc,
           params.config.filter_descriptor, &filter_buf, scratch_allocator,
-          algorithm, options.profile_result);
+          algorithm, params.config.call_context, options.profile_result);
       break;
     case CudnnConvKind::kForwardActivation: {
       return RunGpuConvForwardActivation<ElementType, BiasType, OutputType>(
@@ -289,6 +289,16 @@ int64 GetVectCSize(FilterLayout layout) {
 
 }  // anonymous namespace
 
+se::dnn::CallContext GetCallContext(const absl::string_view call_context) {
+  if (call_context == "kForward")
+    return se::dnn::CallContext::kForward;
+  else if (call_context == "kBackpropData")
+    return se::dnn::CallContext::kBackpropData;
+  else if (call_context == "kBackpropFilter")
+    return se::dnn::CallContext::kBackpropFilter;
+  return se::dnn::CallContext::kNone;
+}
+
 StatusOr<GpuConvConfig> GetGpuConvConfig(
     const GpuConvDescriptor& desc, const absl::string_view inst_as_string) {
   GpuConvConfig config;
@@ -301,6 +311,7 @@ StatusOr<GpuConvConfig> GetGpuConvConfig(
   config.input_type = operand0_shape.element_type();
   config.output_type = result_shape.element_type();
   config.kind = desc.kind;
+  config.call_context = GetCallContext(backend_config.call_context());
 
   // The third field is scratch size stored from conv_algorithm_picker
   // The operand is added to the shape field of the conv instruction

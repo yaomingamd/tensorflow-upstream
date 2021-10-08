@@ -3007,7 +3007,7 @@ port::Status MIOpenSupport::DoConvolve(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
-    dnn::ProfileResult* output_profile_result) {
+    dnn::CallContext call_context, dnn::ProfileResult* output_profile_result) {
   auto miopen = miopen_->GetHandle(parent_, stream);
   ScopedTensorDescriptor input_nd{input_descriptor,
                                   ToMIOpenDataType(element_type)};
@@ -3148,19 +3148,19 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
     DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
-    ScratchAllocator* scratch_allocator,
+    ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   return use_immediate_mode_
              ? GetMIOpenConvolveAlgorithmsImmediateMode(
                    kind, element_type, stream, input_descriptor, input_data,
                    filter_descriptor, filter_data, output_descriptor,
                    output_data, convolution_descriptor, scratch_allocator,
-                   out_algorithms)
+                   call_context, out_algorithms)
              : GetMIOpenConvolveAlgorithmsFindMode(
                    kind, element_type, stream, input_descriptor, input_data,
                    filter_descriptor, filter_data, output_descriptor,
                    output_data, convolution_descriptor, scratch_allocator,
-                   out_algorithms);
+                   call_context, out_algorithms);
 }
 
 bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
@@ -3170,7 +3170,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
     DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
-    ScratchAllocator* scratch_allocator,
+    ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
@@ -3379,7 +3379,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
     DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
-    ScratchAllocator* scratch_allocator,
+    ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
