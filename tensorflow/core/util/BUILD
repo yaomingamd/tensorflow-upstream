@@ -15,6 +15,11 @@ load(
     "tf_cuda_library",
     "tf_cuda_only_cc_test",
     "tf_kernel_library",
+    "tf_mkl_kernel_library",
+)
+load(
+    "//third_party/mkl:build_defs.bzl",
+    "mkl_deps",
 )
 
 # buildifier: disable=same-origin-load
@@ -392,6 +397,20 @@ cc_library(
     ],
 )
 
+tf_mkl_kernel_library(
+    name = "mkl_util",
+    srcs = ["mkl_util.cc"],
+    hdrs = ["mkl_util.h"],
+    deps = [
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core/framework:bounds_check",
+        "//tensorflow/core/kernels:ops_util",
+    ] + mkl_deps(),
+)
+
 cc_library(
     name = "ragged_to_dense_util_common",
     hdrs = [
@@ -647,6 +666,12 @@ alias(
     visibility = ["//tensorflow:__subpackages__"],
 )
 
+cc_library(
+    name = "determinism_test_util",
+    hdrs = [":determinism_test_util.h"],
+    deps = [":determinism"],
+)
+
 tf_kernel_library(
     name = "cuda_solvers",
     srcs = ["cuda_solvers.cc"],
@@ -695,7 +720,10 @@ tf_kernel_library(
 tf_kernel_library(
     name = "cuda_sparse",
     srcs = if_cuda(["cuda_sparse.cc"]) + if_rocm(["rocm_sparse.cc"]),
-    hdrs = ["cuda_sparse.h", "gpu_solvers.h"],
+    hdrs = [
+        "cuda_sparse.h",
+        "gpu_solvers.h",
+    ],
     compatible_with = [],
     deps = [
         ":cuda_solvers",

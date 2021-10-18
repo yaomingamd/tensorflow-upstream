@@ -6,6 +6,9 @@ load("//tensorflow:tensorflow.bzl", "if_not_windows", "if_xla_available", "py_te
 load("//tensorflow:tensorflow.bzl", "tf_python_pybind_extension")
 
 # buildifier: disable=same-origin-load
+load("//tensorflow:tensorflow.bzl", "pytype_library")
+
+# buildifier: disable=same-origin-load
 load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 
 # buildifier: disable=same-origin-load
@@ -1186,14 +1189,16 @@ py_library(
     ],
 )
 
-py_library(
+pytype_library(
     name = "type_spec",
     srcs = ["type_spec.py"],
     srcs_version = "PY3",
     visibility = visibility,
     deps = [
+        ":composite_tensor",
         ":dtypes",
         ":tensor_shape",
+        "//tensorflow/python:platform",
         "//tensorflow/python/util",
         "//third_party/py/numpy",
     ],
@@ -1279,6 +1284,7 @@ py_library(
         "//tensorflow/python/eager:backprop",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:tape",
+        "//tensorflow/python/ops/ragged:ragged_ops",
         "//tensorflow/python/ops/ragged:ragged_tensor",
         "//tensorflow/python/ops/ragged:ragged_tensor_value",
         "//tensorflow/python/platform:_pywrap_stacktrace_handler",
@@ -2000,7 +2006,6 @@ tf_python_pybind_extension(
     module_name = "_errors_test_helper",
     deps = [
         "//tensorflow/python/lib/core:pybind11_status",
-        "@com_google_absl//absl/strings:cord",
         "@pybind11",
     ],
 )
@@ -2038,9 +2043,10 @@ tf_py_test(
 
 tf_py_test(
     name = "convert_to_constants_test",
-    size = "small",
+    size = "medium",
     srcs = ["convert_to_constants_test.py"],
     python_version = "PY3",
+    shard_count = 4,
     tags = ["no_rocm"],
     deps = [
         ":convert_to_constants",

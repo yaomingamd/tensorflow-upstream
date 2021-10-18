@@ -166,6 +166,24 @@ gentbl_cc_library(
 )
 
 gentbl_cc_library(
+    name = "hlo_ops_base_attrs_inc_gen",
+    compatible_with = get_compatible_with_cloud(),
+    tbl_outs = [
+        (
+            ["-gen-attrdef-decls"],
+            "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base_attrs.h.inc",
+        ),
+        (
+            ["-gen-attrdef-defs"],
+            "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base_attrs.cc.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base.td",
+    deps = [":hlo_ops_td_files"],
+)
+
+gentbl_cc_library(
     name = "hlo_ops_base_structs_inc_gen",
     compatible_with = get_compatible_with_cloud(),
     tbl_outs = [
@@ -480,7 +498,8 @@ cc_library(
 cc_library(
     name = "hlo_ops_base_structs",
     srcs = [
-        "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base_structs.h.inc",
+        "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base_attrs.h",
+        "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base_attrs.h.inc",
         "lib/Dialect/mhlo/IR/hlo_ops_base_structs.cc",
     ],
     hdrs = [
@@ -488,7 +507,9 @@ cc_library(
     ],
     includes = ["include"],
     deps = [
+        ":hlo_ops_base_attrs_inc_gen",
         ":hlo_ops_base_structs_inc_gen",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
     ],
@@ -526,6 +547,8 @@ cc_library(
     srcs = [
         "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops.cc.inc",
         "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops.h.inc",
+        "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base_attrs.cc.inc",
+        "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base_attrs.h.inc",
         "lib/Dialect/mhlo/IR/chlo_ops.cc",
         "lib/Dialect/mhlo/IR/hlo_ops.cc",
         "lib/utils/broadcast_utils.cc",
@@ -535,6 +558,7 @@ cc_library(
         "include/mlir-hlo/Dialect/mhlo/IR/chlo_ops.h",
         "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops.h",
         "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base.h",
+        "include/mlir-hlo/Dialect/mhlo/IR/hlo_ops_base_attrs.h",
         "include/mlir-hlo/utils/broadcast_utils.h",
         "include/mlir-hlo/utils/hlo_utils.h",
     ],
@@ -543,6 +567,7 @@ cc_library(
         ":canonicalize_inc_gen",
         ":chlo_ops_inc_gen",
         ":convert_op_folder",
+        ":hlo_ops_base_attrs_inc_gen",
         ":hlo_ops_base_enums",
         ":hlo_ops_base_inc_gen",
         ":hlo_ops_base_structs",
@@ -581,6 +606,7 @@ cc_library(
     ],
     includes = ["include"],
     deps = [
+        ":hlo",
         ":hlo_ops_base_enums",
         ":hlo_ops_base_inc_gen",
         ":hlo_ops_base_structs",
@@ -1613,6 +1639,7 @@ cc_library(
     name = "test_passes",
     srcs = [
         "include/mlir-hlo/Dialect/mhlo/transforms/rewriters.h",
+        "lib/Analysis/test_shape_component_analysis.cc",
         "lib/Analysis/test_userange_analysis.cc",
         "lib/Dialect/mhlo/transforms/chlo_legalize_to_hlo_pass.cc",
         "lib/Dialect/mhlo/transforms/materialize_broadcasts_pass.cc",
@@ -1626,6 +1653,7 @@ cc_library(
         ":lhlo",
         ":materialize_broadcasts",  # build-cleaner: keep
         ":pass_details",
+        ":shape_component_analysis",
         ":transforms_pass_details",
         ":unfuse_batch_norm",  # build-cleaner: keep
         ":userange_analysis",
@@ -1661,6 +1689,7 @@ cc_library(
         ":broadcast_propagation",
         ":buffer_reuse",
         ":chlo_legalize_to_hlo",
+        ":copy_removal",
         ":expand_hlo_tuples",
         ":hlo_legalize_to_lhlo",
         ":hlo_legalize_to_memref",
@@ -1690,6 +1719,7 @@ cc_library(
         ":ral_legalize_to_llvm",
         ":ral_lower_to_library_call",
         ":rank_specialization",
+        ":reshape_simplifier",
         ":sink_constants_to_control_flow",
         ":test_passes",
         ":transforms_pass_details",
@@ -1753,6 +1783,22 @@ cc_library(
 )
 
 cc_library(
+    name = "shape_component_analysis",
+    srcs = ["lib/Analysis/shape_component_analysis.cc"],
+    hdrs = [
+        "include/mlir-hlo/Analysis/shape_component_analysis.h",
+    ],
+    includes = ["include"],
+    deps = [
+        ":hlo",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Shape",
+        "@llvm-project//mlir:TensorDialect",
+    ],
+)
+
+cc_library(
     name = "buffer_reuse",
     srcs = ["lib/Transforms/buffer_reuse.cc"],
     hdrs = [
@@ -1767,6 +1813,43 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:LoopLikeInterface",
         "@llvm-project//mlir:MemRefDialect",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Transforms",
+    ],
+)
+
+cc_library(
+    name = "copy_removal",
+    srcs = ["lib/Transforms/copy_removal.cc"],
+    hdrs = [
+        "include/mlir-hlo/Analysis/userange_analysis.h",
+        "include/mlir-hlo/Transforms/PassDetail.h",
+        "include/mlir-hlo/Transforms/passes.h",
+    ],
+    deps = [
+        ":hlo",
+        ":lhlo",
+        ":transforms_pass_inc_gen",
+        "@llvm-project//mlir:Analysis",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Transforms",
+    ],
+)
+
+cc_library(
+    name = "reshape_simplifier",
+    srcs = ["lib/Transforms/reshape_simplifier.cc"],
+    hdrs = [
+        "include/mlir-hlo/Transforms/PassDetail.h",
+        "include/mlir-hlo/Transforms/passes.h",
+    ],
+    deps = [
+        ":hlo",
+        ":shape_component_analysis",
+        ":transforms_pass_inc_gen",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:LinalgOps",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Transforms",
     ],

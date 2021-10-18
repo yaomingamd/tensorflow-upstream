@@ -38,7 +38,6 @@ limitations under the License.
 #include "tensorflow/core/util/gpu_solvers.h"
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
-
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
@@ -286,7 +285,7 @@ struct LaunchBatchMatrixTriangularSolve<GPUDevice, Scalar> {
       std::vector<Scalar*> out_ptrs;
       std::vector<const Scalar*> b_tmp_ptrs;
       auto* b_base_ptr = in_y.template flat<Scalar>().data();
-      const std::vector<int64>& b_batch_indices = bcast.y_batch_indices();
+      const std::vector<int64_t>& b_batch_indices = bcast.y_batch_indices();
       for (int64_t i = 0; i < bcast.y_batch_size(); ++i) {
         b_tmp_ptrs.push_back(b_base_ptr + i * m * n);
       }
@@ -343,8 +342,8 @@ struct LaunchBatchMatrixTriangularSolve<GPUDevice, Scalar> {
     trans = adjoint ? rocblas_operation_conjugate_transpose
                     : rocblas_operation_none;
 #endif
-    auto solver = absl::make_unique<GpuSolver>(context);
 
+    auto solver = absl::make_unique<GpuSolver>(context);
     const uint64 leading_dim_matrix = m;
     const uint64 leading_dim_output = n;
     const uint64 colmajor_rows = n;
@@ -366,7 +365,7 @@ struct LaunchBatchMatrixTriangularSolve<GPUDevice, Scalar> {
         out_ptrs.push_back(out_base_ptr + i * m * n);
       }
     } else {
-      const std::vector<int64>& a_batch_indices = bcast.x_batch_indices();
+      const std::vector<int64_t>& a_batch_indices = bcast.x_batch_indices();
       for (int64_t i = 0; i < bcast.x_batch_size(); ++i) {
         a_tmp_ptrs.push_back(a_base_ptr + i * m * m);
       }

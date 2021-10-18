@@ -23,6 +23,7 @@ limitations under the License.
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/str_join.h"
 #include "tensorflow/core/common_runtime/function.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/dataset.h"
@@ -506,11 +507,13 @@ absl::flat_hash_set<string> GetExperiments(
 
 void LogAndRecordExperiments(const absl::flat_hash_set<string>& experiments) {
   if (!experiments.empty()) {
-    VLOG(1) << "The input pipeline is subject to tf.data experiments. "
-               "Please see `go/tf-data-experiments` for more details.";
+    constexpr float TEN_MINUTES = 60.0 * 10.0;
+    LOG_EVERY_N_SEC(INFO, TEN_MINUTES)
+        << "The input pipeline is subject to the following tf.data experiments:"
+        << " " << absl::StrJoin(experiments, ", ") << ". "
+        << "See `go/tf-data-experiments` for more details.";
   }
   for (auto& experiment : experiments) {
-    VLOG(1) << "The experiment \"" << experiment << "\" is applied.";
     metrics::RecordTFDataExperiment(experiment);
   }
 }
@@ -522,12 +525,10 @@ void GetOptimizations(const Options& options,
   DefaultOptimizationGraphRewrites(options, optimizations_enabled,
                                    optimizations_disabled,
                                    optimizations_default);
-  if (options.optional_deterministic_case() == Options::kDeterministic) {
-    if (options.deterministic()) {
-      optimizations_disabled->insert(kMakeSloppyOpt);
-    } else {
-      optimizations_enabled->insert(kMakeSloppyOpt);
-    }
+  if (!OpDeterminismRequired() &&
+      options.optional_deterministic_case() == Options::kDeterministic &&
+      !options.deterministic()) {
+    optimizations_enabled->insert(kMakeSloppyOpt);
   }
   if (options.optional_slack_case() == Options::kSlack) {
     if (options.slack()) {
@@ -902,7 +903,8 @@ namespace {
 
 REGISTER_DATASET_EXPERIMENT("parallelize_batch_copy", 100);
 REGISTER_DATASET_EXPERIMENT("max_parallelism", 100);
-REGISTER_DATASET_EXPERIMENT("inject_prefetch", 5);
+REGISTER_DATASET_EXPERIMENT("min_outer_interleave_parallelism", 0);
+REGISTER_DATASET_EXPERIMENT("inject_prefetch", 50);
 }  // namespace
 }  // namespace data
 }  // namespace tensorflow

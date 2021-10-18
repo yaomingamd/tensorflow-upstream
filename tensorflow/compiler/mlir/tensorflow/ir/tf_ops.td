@@ -218,22 +218,6 @@ def TF_ConstOp : TF_Op<"Const", [ConstantLike, NoSideEffect,
   }];
 }
 
-def TF_XlaAllReduceOp : TF_Op<"XlaAllReduce", [NoSideEffect, TF_AllTypesMatch<["input", "output"]>]> {
-  let summary = "An Op to reduce inputs across replicated TPU instances.";
-
-  let arguments = (ins
-    TensorOf<[TF_Bfloat16, TF_Float16, TF_Float32, TF_Int32, TF_Uint32]>:$input,
-    TF_Int32Tensor:$group_assignment,
-    TF_AnyStrAttrOf<["Min", "Max", "Mul", "Add", "Mean"]>:$reduce_op
-  );
-
-  let results = (outs
-    TensorOf<[TF_Bfloat16, TF_Float16, TF_Float32, TF_Int32, TF_Uint32]>:$output
-  );
-
-  TF_DerivedOperandTypeAttr T = TF_DerivedOperandTypeAttr<0>;
-}
-
 def TF_EmptyTensorListOp : TF_TensorListInitOp<"EmptyTensorList"> {
   let summary = "Creates and returns an empty tensor list.";
 
@@ -1453,7 +1437,7 @@ outputs outside the XLA computation.
 // Declares symbol reference attribute `shape_inference_graph` to be optional
 // unlike the TensorFlow definition. This is required to support ops that use
 // empty string value for the attribute to signify missing.
-def TF_XlaHostComputeOp : TF_Op<"XlaHostCompute", []> {
+def TF_XlaHostComputeOp : TF_Op<"XlaHostCompute", [TF_SendRecvSideEffect]> {
   let summary = [{
 A pseudo-op to represent host-side computation in an XLA program.
   }];

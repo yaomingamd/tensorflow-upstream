@@ -147,6 +147,11 @@ cc_library(
     hdrs = ["c_api_macros.h"],
     copts = tf_copts(),
     visibility = ["//visibility:public"],
+    deps = [
+        ":tf_status",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+    ],
 )
 
 tf_cuda_library(
@@ -200,7 +205,6 @@ tf_cuda_library(
     visibility = [
         "//tensorflow/c:__subpackages__",
         "//tensorflow/python:__subpackages__",
-        "//third_party/llvm/llvm-project:__subpackages__",
     ],
     deps = [
         ":c_api_internal",
@@ -313,7 +317,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":tf_status_internal",
-        "@com_google_absl//absl/strings:cord",
     ] + select({
         "//tensorflow:android": [
             "//tensorflow/core:portable_tensorflow_lib_lite",  # TODO(annarev): exclude runtime srcs
@@ -356,6 +359,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//tensorflow/core/platform:status",
         "//tensorflow/core/platform:tstring",
     ],
 )
@@ -527,7 +531,6 @@ tf_cc_test(
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "@com_google_absl//absl/strings:cord",
     ],
 )
 

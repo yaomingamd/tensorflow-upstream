@@ -235,6 +235,11 @@ std::unique_ptr<OperationPass<FuncOp>> CreateLowerQuantizedPass();
 }  // namespace TF
 
 namespace tf_executor {
+
+// Creates a pass to chain control outputs of while loop body.
+std::unique_ptr<OperationPass<ModuleOp>>
+CreateTFExecutorConvertControlToDataOutputsPass();
+
 // Creates a pass to merge IslandOps from TFExecutor dialect.
 std::unique_ptr<OperationPass<FuncOp>> CreateTFExecutorIslandCoarseningPass();
 
@@ -345,11 +350,6 @@ std::unique_ptr<OperationPass<FuncOp>> CreateDeviceAttributeToLaunchPass();
 // attribute to each TensorFlow dialect op in the body based on the `device`
 // attribute on the `tf_device.launch`.
 std::unique_ptr<OperationPass<FuncOp>> CreateLaunchToDeviceAttributePass();
-
-// Creates a pass that hoists a `tf_device.replicate` body and replicates each
-// TensorFlow dialect op in the body based on its `device` attribute and the
-// `devices` attribute on the `tf_device.replicate`.
-std::unique_ptr<OperationPass<mlir::ModuleOp>> CreateTFDeviceReplicationPass();
 
 // Creates a pass that extracts ops in tf_device.launch op with host device
 // assignment and adds an `_xla_outside_compilation` attribute value.

@@ -14,8 +14,6 @@
    ==============================================================================
 */
 #if TENSORFLOW_USE_ROCM
-#include "tensorflow/core/util/gpu_solvers.h"
-
 #include <complex>
 #include <unordered_map>
 #include <vector>
@@ -30,6 +28,7 @@
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/gpu_solvers.h"
 #include "tensorflow/stream_executor/gpu/gpu_activation.h"
 #include "tensorflow/stream_executor/gpu/gpu_executor.h"
 #include "tensorflow/stream_executor/lib/env.h"
@@ -42,7 +41,6 @@ namespace {
 
 using stream_executor::gpu::GpuExecutor;
 using stream_executor::gpu::ScopedActivateExecutorContext;
-
 
 inline bool CopyHostToDevice(OpKernelContext* context, void* dst,
                              const void* src, uint64 bytes) {
@@ -118,76 +116,76 @@ GpuSolver::~GpuSolver() {
   }
 }
 
-// Static 
+// Static
 void GpuSolver::CheckLapackInfoAndDeleteSolverAsync(
     std::unique_ptr<GpuSolver> solver,
     const std::vector<DeviceLapackInfo>& dev_lapack_infos,
     std::function<void(const Status&, const std::vector<HostLapackInfo>&)>
         info_checker_callback) {
-    CHECK(info_checker_callback != nullptr);
-    std::vector<HostLapackInfo> host_lapack_infos;
-    if (dev_lapack_infos.empty()) {
-        info_checker_callback(Status::OK(), host_lapack_infos); 
-        return;
-    }
+  CHECK(info_checker_callback != nullptr);
+  std::vector<HostLapackInfo> host_lapack_infos;
+  if (dev_lapack_infos.empty()) {
+    info_checker_callback(Status::OK(), host_lapack_infos);
+    return;
+  }
 
-    // Launch memcpys to copy info back from device to host
-    for (const auto& dev_lapack_info : dev_lapack_infos) {
-        bool success = true;
-        auto host_copy = dev_lapack_info.CopyToHost(&success);
-        OP_REQUIRES(
-            solver->context(), success, 
-            errors::Internal(
-                "Failed to launch copy of dev_lapack_info to host, debug_info = ",
-                dev_lapack_info.debug_info()));
-        host_lapack_infos.push_back(std::move(host_copy)); 
-    }
+  // Launch memcpys to copy info back from device to host
+  for (const auto& dev_lapack_info : dev_lapack_infos) {
+    bool success = true;
+    auto host_copy = dev_lapack_info.CopyToHost(&success);
+    OP_REQUIRES(
+        solver->context(), success,
+        errors::Internal(
+            "Failed to launch copy of dev_lapack_info to host, debug_info = ",
+            dev_lapack_info.debug_info()));
+    host_lapack_infos.push_back(std::move(host_copy));
+  }
 
-    // This callback checks that all batch items in all calls were processed
-    // successfully and passes status to the info_checker_callback accordingly.
-    auto* stream = solver->context()->op_device_context()->stream();
-    auto wrapped_info_checker_callback = 
-        [stream](
-            GpuSolver* solver,
-            std::function<void(const Status&, const std::vector<HostLapackInfo>&)>
-                info_checker_callback,
-            std::vector<HostLapackInfo> host_lapack_infos) {
+  // This callback checks that all batch items in all calls were processed
+  // successfully and passes status to the info_checker_callback accordingly.
+  auto* stream = solver->context()->op_device_context()->stream();
+  auto wrapped_info_checker_callback =
+      [stream](
+          GpuSolver* solver,
+          std::function<void(const Status&, const std::vector<HostLapackInfo>&)>
+              info_checker_callback,
+          std::vector<HostLapackInfo> host_lapack_infos) {
         ScopedActivateExecutorContext scoped_activation{stream->parent()};
         Status status;
         for (const auto& host_lapack_info : host_lapack_infos) {
-            for (int i = 0; i < host_lapack_info.size() && status.ok(); ++i) {
-                const int info_value = host_lapack_info(i);
-                if (info_value != 0) {
-                    status = errors::InvalidArgument(
-                        "Got info = ", info_value, " for batch index ", i,
-                        ", expected info = 0. Debug_info = ",
-                        host_lapack_info.debug_info());
-                }
+          for (int i = 0; i < host_lapack_info.size() && status.ok(); ++i) {
+            const int info_value = host_lapack_info(i);
+            if (info_value != 0) {
+              status = errors::InvalidArgument(
+                  "Got info = ", info_value, " for batch index ", i,
+                  ", expected info = 0. Debug_info = ",
+                  host_lapack_info.debug_info());
             }
-            if (!status.ok()) {
-                break;
-            }
+          }
+          if (!status.ok()) {
+            break;
+          }
         }
         // Delete solver to release temp tensor refs.
         delete solver;
 
         // Delegate further error checking to provided functor.
         info_checker_callback(status, host_lapack_infos);
-    };
-    // Note: An std::function cannot have unique_ptr arguments (it must be copy
-    // constructible and therefore so must its arguments). Therefore, we release
-    // solver into a raw pointer to be deleted at the end of
-    // wrapped_info_checker_callback.
-    // Release ownership of solver. It will be deleted in the cb callback.
-    auto solver_raw_ptr = solver.release();
-    auto cb =
-        std::bind(wrapped_info_checker_callback, solver_raw_ptr,
-                  std::move(info_checker_callback), std::move(host_lapack_infos));
+      };
+  // Note: An std::function cannot have unique_ptr arguments (it must be copy
+  // constructible and therefore so must its arguments). Therefore, we release
+  // solver into a raw pointer to be deleted at the end of
+  // wrapped_info_checker_callback.
+  // Release ownership of solver. It will be deleted in the cb callback.
+  auto solver_raw_ptr = solver.release();
+  auto cb =
+      std::bind(wrapped_info_checker_callback, solver_raw_ptr,
+                std::move(info_checker_callback), std::move(host_lapack_infos));
 
-    solver_raw_ptr->context()
-        ->device()
-        ->tensorflow_gpu_device_info()
-        ->event_mgr->ThenExecute(stream, std::move(cb));
+  solver_raw_ptr->context()
+      ->device()
+      ->tensorflow_gpu_device_info()
+      ->event_mgr->ThenExecute(stream, std::move(cb));
 }
 
 // static
@@ -195,21 +193,20 @@ void GpuSolver::CheckLapackInfoAndDeleteSolverAsync(
     std::unique_ptr<GpuSolver> solver,
     const std::vector<DeviceLapackInfo>& dev_lapack_info,
     AsyncOpKernel::DoneCallback done) {
-    OpKernelContext* context = solver->context();
-    auto wrapped_done = [context, done](
-                            const Status& status,
-                            const std::vector<HostLapackInfo>& /* unused */) {
-        if (done != nullptr) {
-            OP_REQUIRES_OK_ASYNC(context, status, done);
-            done();
-        } else {
-            OP_REQUIRES_OK(context, status);
-        }
-    };
-    CheckLapackInfoAndDeleteSolverAsync(std::move(solver), dev_lapack_info,
-                                        wrapped_done);
+  OpKernelContext* context = solver->context();
+  auto wrapped_done = [context, done](
+                          const Status& status,
+                          const std::vector<HostLapackInfo>& /* unused */) {
+    if (done != nullptr) {
+      OP_REQUIRES_OK_ASYNC(context, status, done);
+      done();
+    } else {
+      OP_REQUIRES_OK(context, status);
+    }
+  };
+  CheckLapackInfoAndDeleteSolverAsync(std::move(solver), dev_lapack_info,
+                                      wrapped_done);
 }
-
 
 #define TF_RETURN_IF_ROCBLAS_ERROR(expr)                                  \
   do {                                                                    \
@@ -225,27 +222,92 @@ void GpuSolver::CheckLapackInfoAndDeleteSolverAsync(
 #define TF_CALL_LAPACK_TYPES(m) \
   m(float, s) m(double, d) m(std::complex<float>, c) m(std::complex<double>, z)
 #define TF_CALL_LAPACK_TYPES_NO_COMPLEX(m) m(float, s) m(double, d)
+#define TF_CALL_LAPACK_TYPES_NO_REAL(m) m(std::complex<float>, c) m(std::complex<double>, z)
 
 #define BLAS_SOLVER_FN(method, type_prefix) \
   wrap::rocblas##_##type_prefix##method
 
-//Macro to construct rocsolver method names.
-#define SOLVER_FN(method, type_prefix) \
-  wrap::rocsolver##_##type_prefix##method
+// Macro to construct rocsolver method names.
+#define SOLVER_FN(method, type_prefix) wrap::rocsolver##_##type_prefix##method
 
-#define GETRF_INSTANCE(Scalar, type_prefix)                                   \
-  template <>                                                                 \
-  Status GpuSolver::Getrf<Scalar>(int m, int n, Scalar* A, int lda,           \
-                                   int* dev_pivots, int* dev_lapack_info) {   \
-    mutex_lock lock(handle_map_mutex);                                        \
-    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                   \
-    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrf, type_prefix)(                 \
-        rocm_blas_handle_, m, n, reinterpret_cast<ROCmScalar*>(A), lda,       \
-        dev_pivots, dev_lapack_info));                                        \
-    return Status::OK();                                                      \
+#define GETRF_INSTANCE(Scalar, type_prefix)                                \
+  template <>                                                              \
+  Status GpuSolver::Getrf<Scalar>(int m, int n, Scalar* A, int lda,        \
+                                  int* dev_pivots, int* dev_lapack_info) { \
+    mutex_lock lock(handle_map_mutex);                                     \
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                \
+    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrf, type_prefix)(              \
+        rocm_blas_handle_, m, n, reinterpret_cast<ROCmScalar*>(A), lda,    \
+        dev_pivots, dev_lapack_info));                                     \
+    return Status::OK();                                                   \
   }
 
 TF_CALL_LAPACK_TYPES(GETRF_INSTANCE);
+
+#define GEQRF_INSTANCE(Scalar, type_prefix)                                      \
+  template <>                                                                    \
+  Status GpuSolver::Geqrf(int m, int n, Scalar* dev_A, int lda, Scalar* dev_tau, \
+                int* dev_lapack_info){                                           \
+      mutex_lock lock(handle_map_mutex);                                         \
+      using ROCmScalar = typename ROCmComplexT<Scalar>::type;                    \
+      TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(geqrf, type_prefix)(                  \
+          rocm_blas_handle_, m, n, reinterpret_cast<ROCmScalar*>(dev_A), lda,    \
+          reinterpret_cast<ROCmScalar*>(dev_tau)));             \
+      return Status::OK();                                                       \
+  }
+
+TF_CALL_LAPACK_TYPES(GEQRF_INSTANCE);
+
+#define UMMQR_INSTANCE(Scalar, type_prefix)                                          \
+  template <>                                                                        \
+  Status GpuSolver::Unmqr(rocblas_side side, rocblas_operation trans, int m, int n,  \
+               int k, const Scalar* dev_a, int lda, const Scalar* dev_tau,           \
+               Scalar* dev_c, int ldc, int* dev_lapack_info){                         \
+      mutex_lock lock(handle_map_mutex);                                              \
+      using ROCmScalar = typename ROCmComplexT<Scalar>::type;                          \
+      ScratchSpace<uint8> dev_a_copy =                                                 \
+        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) * m*k, "",                    \
+        /*on host */ false);                                                           \
+      if (!CopyHostToDevice(context_, dev_a_copy.mutable_data(), dev_a,                \
+                          dev_a_copy.bytes())) {                                        \
+      return errors::Internal("Unmqr: Failed to copy ptrs to device");                  \
+      }                                                                                 \
+      ScratchSpace<uint8> dev_tau_copy =                                                \
+        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) *k*n, "",                     \
+        /*on host */ false);                                                            \
+      if (!CopyHostToDevice(context_, dev_tau_copy.mutable_data(), dev_tau,             \
+                          dev_tau_copy.bytes())) {                                      \
+      return errors::Internal("Unmqr: Failed to copy ptrs to device");                  \
+      }                                                                                   \
+      TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(unmqr, type_prefix)(                               \
+          rocm_blas_handle_,side,trans, m, n, k, reinterpret_cast<ROCmScalar*>(dev_a_copy.mutable_data()), lda,    \
+          reinterpret_cast<ROCmScalar*>(dev_tau_copy.mutable_data()),reinterpret_cast<ROCmScalar*>(dev_c), ldc));             \
+      return Status::OK();    \
+}
+
+TF_CALL_LAPACK_TYPES_NO_REAL(UMMQR_INSTANCE);
+
+#define UNGQR_INSTANCE(Scalar, type_prefix)                                          \
+  template <>                                                                        \
+  Status GpuSolver::Ungqr(int m, int n, int k, Scalar* dev_a, int lda,               \
+               const Scalar* dev_tau, int* dev_lapack_info){                         \
+      mutex_lock lock(handle_map_mutex);                                              \
+      using ROCmScalar = typename ROCmComplexT<Scalar>::type;                          \
+      ScratchSpace<uint8> dev_tau_copy =                                                \
+        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) *k*n, "",                     \
+        /*on host */ false);                                                            \
+      if (!CopyHostToDevice(context_, dev_tau_copy.mutable_data(), dev_tau,             \
+                          dev_tau_copy.bytes())) {                                      \
+      return errors::Internal("Ungqr: Failed to copy ptrs to device");                  \
+      }                                                                                   \
+      TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(ungqr, type_prefix)(                               \
+          rocm_blas_handle_, m, n, k, reinterpret_cast<ROCmScalar*>(dev_a), lda,    \
+          reinterpret_cast<ROCmScalar*>(dev_tau_copy.mutable_data())));             \
+      return Status::OK();    \
+}
+
+TF_CALL_LAPACK_TYPES_NO_REAL(UNGQR_INSTANCE);
+
 
 #define POTRF_INSTANCE(Scalar, type_prefix)                                   \
   template <>                                                                 \
@@ -276,88 +338,76 @@ TF_CALL_LAPACK_TYPES(POTRF_INSTANCE);
 
 TF_CALL_LAPACK_TYPES(GETRS_INSTANCE);
 
-#define GETRF_BATCHED_INSTANCE(Scalar, type_prefix)                           \
-  template <>                                                                 \
-  Status GpuSolver::GetrfBatched<Scalar>(                                     \
-                                   int n, Scalar** A, int lda,                \
-                                   int* dev_pivots,                           \
-                                   DeviceLapackInfo* dev_info,                \
-                                   const int batch_size) {                    \
-    rocblas_stride stride = n;                                                \
-    mutex_lock lock(handle_map_mutex);                                        \
-    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                   \
-    ScratchSpace<uint8> dev_a =                                               \
-        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) * batch_size, "",    \
-        /*on host */ false);                                                  \
-    if (!CopyHostToDevice(context_, dev_a.mutable_data(), A,                  \
-                          dev_a.bytes())) {                                   \
-      return errors::Internal("GetrfBatched: Failed to copy ptrs to device"); \
-    }                                                                         \
-    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrf_batched, type_prefix)(         \
-        rocm_blas_handle_, n, n,                                              \
-        reinterpret_cast<ROCmScalar**>(dev_a.mutable_data()), lda,            \
-        dev_pivots, stride, dev_info->mutable_data(), batch_size));           \
-    return Status::OK();                                                      \
+#define GETRF_BATCHED_INSTANCE(Scalar, type_prefix)                            \
+  template <>                                                                  \
+  Status GpuSolver::GetrfBatched<Scalar>(                                      \
+      int n, Scalar** A, int lda, int* dev_pivots, DeviceLapackInfo* dev_info, \
+      const int batch_size) {                                                  \
+    mutex_lock lock(handle_map_mutex);                                         \
+    rocblas_stride stride = n;                                                 \
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                    \
+    ScratchSpace<uint8> dev_a = this->GetScratchSpace<uint8>(                  \
+        sizeof(ROCmScalar*) * batch_size, "", /*on host */ false);             \
+    if (!CopyHostToDevice(context_, dev_a.mutable_data(), A, dev_a.bytes())) { \
+      return errors::Internal("GetrfBatched: Failed to copy ptrs to device");  \
+    }                                                                          \
+    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrf_batched, type_prefix)(          \
+        rocm_blas_handle_, n, n,                                               \
+        reinterpret_cast<ROCmScalar**>(dev_a.mutable_data()), lda, dev_pivots, \
+        stride, dev_info->mutable_data(), batch_size));                        \
+    return Status::OK();                                                       \
   }
 
-TF_CALL_LAPACK_TYPES(GETRF_BATCHED_INSTANCE); 
+TF_CALL_LAPACK_TYPES(GETRF_BATCHED_INSTANCE);
 
 #define POTRF_BATCHED_INSTANCE(Scalar, type_prefix)                           \
   template <>                                                                 \
-  Status GpuSolver::PotrfBatched<Scalar>(rocblas_fill uplo, int n,            \
-                      const Scalar* const host_a_dev_ptrs[], int lda,         \
-                      DeviceLapackInfo* dev_lapack_info,                      \
-                      int batch_size) {                                       \
+  Status GpuSolver::PotrfBatched<Scalar>(                                     \
+      rocblas_fill uplo, int n, const Scalar* const host_a_dev_ptrs[],        \
+      int lda, DeviceLapackInfo* dev_lapack_info, int batch_size) {           \
     rocblas_stride stride = n;                                                \
     mutex_lock lock(handle_map_mutex);                                        \
     using ROCmScalar = typename ROCmComplexT<Scalar>::type;                   \
-    ScratchSpace<uint8> dev_a =                                               \
-        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) * batch_size, "",    \
-        /*on host */ false);                                                  \
+    ScratchSpace<uint8> dev_a = this->GetScratchSpace<uint8>(                 \
+        sizeof(ROCmScalar*) * batch_size, "", /*on host */ false);            \
     if (!CopyHostToDevice(context_, dev_a.mutable_data(), host_a_dev_ptrs,    \
                           dev_a.bytes())) {                                   \
       return errors::Internal("PotrfBatched: Failed to copy ptrs to device"); \
     }                                                                         \
     TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(potrf_batched, type_prefix)(         \
-              rocm_blas_handle_, uplo,  n,                                    \
-              reinterpret_cast<ROCmScalar**>(dev_a.mutable_data()),           \
-              lda, dev_lapack_info->mutable_data(), batch_size));             \
+        rocm_blas_handle_, uplo, n,                                           \
+        reinterpret_cast<ROCmScalar**>(dev_a.mutable_data()), lda,            \
+        dev_lapack_info->mutable_data(), batch_size));                        \
     return Status::OK();                                                      \
   }
 
-TF_CALL_LAPACK_TYPES(POTRF_BATCHED_INSTANCE); 
+TF_CALL_LAPACK_TYPES(POTRF_BATCHED_INSTANCE);
 
-
-#define GETRS_BATCHED_INSTANCE(Scalar, type_prefix)                               \
-  template <>                                                                     \
-  Status GpuSolver::GetrsBatched<Scalar>(                                         \
-      const rocblas_operation trans, int n, int nrhs, Scalar** A, int lda,        \
-      int* dev_pivots, Scalar** B, const int ldb, int* host_lapack_info,          \
-      const int batch_size) {                                                     \
-    rocblas_stride stride = n;                                                    \
-    mutex_lock lock(handle_map_mutex);                                            \
-    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                       \
-    ScratchSpace<uint8> dev_a =                                                   \
-        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) * batch_size, "",        \
-        /*on host */ false);                                                      \
-    if (!CopyHostToDevice(context_, dev_a.mutable_data(), A,                      \
-                          dev_a.bytes())) {                                       \
-      return errors::Internal("GetrfBatched: Failed to copy ptrs to device");     \
-    }                                                                             \
-    ScratchSpace<uint8> dev_b =                                                   \
-        this->GetScratchSpace<uint8>(sizeof(ROCmScalar*) * batch_size, "",        \
-        /*on host */ false);                                                      \
-    if (!CopyHostToDevice(context_, dev_b.mutable_data(), B,                      \
-                          dev_b.bytes())) {                                       \
-      return errors::Internal("GetrfBatched: Failed to copy ptrs to device");     \
-    }                                                                             \
-    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrs_batched, type_prefix)(             \
-        rocm_blas_handle_, trans, n, nrhs,                                        \
-        reinterpret_cast<ROCmScalar**>(dev_a.mutable_data()),                     \
-        lda, dev_pivots, stride,                                                  \
-        reinterpret_cast<ROCmScalar**>(dev_b.mutable_data()), ldb,                \
-        batch_size));                                                             \
-    return Status::OK();                                                          \
+#define GETRS_BATCHED_INSTANCE(Scalar, type_prefix)                            \
+  template <>                                                                  \
+  Status GpuSolver::GetrsBatched<Scalar>(                                      \
+      const rocblas_operation trans, int n, int nrhs, Scalar** A, int lda,     \
+      int* dev_pivots, Scalar** B, const int ldb, int* host_lapack_info,       \
+      const int batch_size) {                                                  \
+    rocblas_stride stride = n;                                                 \
+    mutex_lock lock(handle_map_mutex);                                         \
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                    \
+    ScratchSpace<uint8> dev_a = this->GetScratchSpace<uint8>(                  \
+        sizeof(ROCmScalar*) * batch_size, "", /*on host */ false);             \
+    if (!CopyHostToDevice(context_, dev_a.mutable_data(), A, dev_a.bytes())) { \
+      return errors::Internal("GetrfBatched: Failed to copy ptrs to device");  \
+    }                                                                          \
+    ScratchSpace<uint8> dev_b = this->GetScratchSpace<uint8>(                  \
+        sizeof(ROCmScalar*) * batch_size, "", /*on host */ false);             \
+    if (!CopyHostToDevice(context_, dev_b.mutable_data(), B, dev_b.bytes())) { \
+      return errors::Internal("GetrfBatched: Failed to copy ptrs to device");  \
+    }                                                                          \
+    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getrs_batched, type_prefix)(          \
+        rocm_blas_handle_, trans, n, nrhs,                                     \
+        reinterpret_cast<ROCmScalar**>(dev_a.mutable_data()), lda, dev_pivots, \
+        stride, reinterpret_cast<ROCmScalar**>(dev_b.mutable_data()), ldb,     \
+        batch_size));                                                          \
+    return Status::OK();                                                       \
   }
 
 TF_CALL_LAPACK_TYPES(GETRS_BATCHED_INSTANCE);
@@ -366,8 +416,8 @@ TF_CALL_LAPACK_TYPES(GETRS_BATCHED_INSTANCE);
 // TensorReference to the underlying Tensor to prevent it from being deallocated
 // prematurely.
 Status GpuSolver::allocate_scoped_tensor(DataType type,
-                                          const TensorShape& shape,
-                                          Tensor* out_temp) {
+                                         const TensorShape& shape,
+                                         Tensor* out_temp) {
   const Status status = context_->allocate_temp(type, shape, out_temp);
   if (status.ok()) {
     scratch_tensor_refs_.emplace_back(*out_temp);
@@ -409,7 +459,7 @@ static inline Status TrsmImpl(GpuExecutor* gpu_executor, SolverFnT solver,
 
 #define TRSM_INSTANCE(Scalar, type_prefix)                                    \
   template <>                                                                 \
-  Status GpuSolver::Trsm<Scalar>(                                            \
+  Status GpuSolver::Trsm<Scalar>(                                             \
       rocblas_side side, rocblas_fill uplo, rocblas_operation trans,          \
       rocblas_diagonal diag, int m, int n,                                    \
       const Scalar* alpha, /* host or device pointer */                       \
@@ -423,6 +473,39 @@ static inline Status TrsmImpl(GpuExecutor* gpu_executor, SolverFnT solver,
 
 TF_CALL_LAPACK_TYPES_NO_COMPLEX(TRSM_INSTANCE);
 
+template <typename Scalar, typename SolverFnT>                                                           
+  Status GeamImpl(GpuExecutor* gpu_executor, SolverFnT solver, rocblas_handle rocm_blas_handle,
+                rocblas_operation transa, rocblas_operation transb, int m, int n,
+                const Scalar* alpha, /* host or device pointer */ const Scalar* A, int lda, 
+                const Scalar* beta, /* host or device pointer */ const Scalar* B, int ldb, 
+                Scalar* C, int ldc){
+      mutex_lock lock(handle_map_mutex);                                        
+      using ROCmScalar = typename ROCmComplexT<Scalar>::type;   
+      
+      ScopedActivateExecutorContext sac{gpu_executor};                
+      TF_RETURN_IF_ROCBLAS_ERROR(solver(                  
+          rocm_blas_handle, transa, transb, m, n, 
+          reinterpret_cast<const ROCmScalar*>(alpha), reinterpret_cast<const ROCmScalar*>(A), lda,    
+          reinterpret_cast<const ROCmScalar*>(beta), reinterpret_cast<const ROCmScalar*>(B), ldb,
+          reinterpret_cast<ROCmScalar*>(C), ldc ));            
+      return Status::OK(); 
+  }
+
+  #define GEAM_INSTANCE(Scalar, type_prefix)                                    \
+  template <>                                                                 \
+  Status GpuSolver::Geam<Scalar>(                                            \
+       rocblas_operation transa, rocblas_operation transb, int m, int n, \
+                const Scalar* alpha, const Scalar* A, int lda, \
+                const Scalar* beta, const Scalar* B, int ldb, \
+                Scalar* C, int ldc){ \
+    GpuExecutor* gpu_executor = static_cast<GpuExecutor*>(                    \
+        context_->op_device_context()->stream()->parent()->implementation()); \
+    return GeamImpl(gpu_executor, BLAS_SOLVER_FN(geam, type_prefix),          \
+                    rocm_blas_handle_, transa, transb, m, n, alpha,  \
+                    A, lda,beta, B, ldb,C,ldc);                                          \
+  } 
+
+  TF_CALL_LAPACK_TYPES_NO_COMPLEX(GEAM_INSTANCE);
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_USE_ROCM
