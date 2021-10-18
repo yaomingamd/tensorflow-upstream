@@ -20,7 +20,7 @@ CONTAINER_NAME=tensorflow
 
 # start new container
 CONTAINER_ID=$(drun -d -w $WORK_DIR --name $CONTAINER_NAME $MEMORY $VOLUMES $DEVICES $IMAGE_NAME)
-docker cp . $CONTAINER_ID:$WORK_DIR
+# docker cp . $CONTAINER_ID:$WORK_DIR
 # docker exec $CONTAINER_ID bash -c "bash scripts/amd/run.sh"
 docker attach $CONTAINER_ID
 docker stop $CONTAINER_ID
