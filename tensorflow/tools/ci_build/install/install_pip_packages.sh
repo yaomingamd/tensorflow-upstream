@@ -95,7 +95,7 @@ pip3 install --upgrade gast
 pip3 install --upgrade termcolor
 
 # Estimator
-pip3 install tensorflow-estimator~=2.6 --no-deps
+pip3 install tf-estimator~nightly --no-deps
 
 # Tensorboard
 pip3 install tensorboard~=2.6 --no-deps
