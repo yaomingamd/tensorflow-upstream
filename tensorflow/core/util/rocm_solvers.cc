@@ -360,6 +360,43 @@ TF_CALL_LAPACK_TYPES(GETRS_INSTANCE);
 
 TF_CALL_LAPACK_TYPES(GETRF_BATCHED_INSTANCE);
 
+#define GETRI_BATCHED_INSTANCE(Scalar, type_prefix)                            \
+  template <>                                                                  \
+  Status GpuSolver::GetriBatched<Scalar>(                                      \
+                      int n, const Scalar* const host_a_dev_ptrs[], int lda, \
+                      const int* dev_pivots, const Scalar* const host_a_inverse_dev_ptrs[], \
+                      int ldainv, DeviceLapackInfo* dev_lapack_info, int batch_size) {                                                  \
+    mutex_lock lock(handle_map_mutex);                                         \
+    rocblas_stride stride = n;                                                 \
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;                   \
+    ScratchSpace<uint8> dev_a = this->GetScratchSpace<uint8>(                 \
+        sizeof(ROCmScalar*) * batch_size, "", /*on host */ false);            \
+    if (!CopyHostToDevice(context_, dev_a.mutable_data(), host_a_dev_ptrs,    \
+                          dev_a.bytes())) {                                   \
+      return errors::Internal("GetriBatched: Failed to copy ptrs to device"); \
+    }                                                                                   \
+    ScratchSpace<uint8> dev_a_inverse = this->GetScratchSpace<uint8>(                 \
+        sizeof(ROCmScalar*) * batch_size, "", /*on host */ false);            \
+    if (!CopyHostToDevice(context_, dev_a_inverse.mutable_data(), host_a_inverse_dev_ptrs,    \
+                          dev_a_inverse.bytes())) {                                   \
+      return errors::Internal("GetriBatched: Failed to copy ptrs to device"); \
+    }                                                                          \
+    ScratchSpace<uint8> pivots = this->GetScratchSpace<uint8>(                 \
+        sizeof(ROCmScalar*) * batch_size, "", /*on host */ false);            \
+    if (!CopyHostToDevice(context_, pivots.mutable_data(), dev_pivots,    \
+                          pivots.bytes())) {                                   \
+      return errors::Internal("GetriBatched: Failed to copy ptrs to device"); \
+    }                                                                          \
+    TF_RETURN_IF_ROCBLAS_ERROR(SOLVER_FN(getri_batched, type_prefix)(          \
+        rocm_blas_handle_, n,                                                  \
+        reinterpret_cast<ROCmScalar**>(dev_a.mutable_data()), lda,              \
+        reinterpret_cast<int*>(pivots.mutable_data()),                           \
+        stride, dev_lapack_info->mutable_data(), batch_size));                   \
+    return Status::OK();                                                       \
+  }
+
+TF_CALL_LAPACK_TYPES(GETRI_BATCHED_INSTANCE);
+
 #define POTRF_BATCHED_INSTANCE(Scalar, type_prefix)                           \
   template <>                                                                 \
   Status GpuSolver::PotrfBatched<Scalar>(                                     \

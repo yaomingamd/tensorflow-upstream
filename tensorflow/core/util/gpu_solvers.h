@@ -256,6 +256,15 @@ class GpuSolver {
                       Scalar** A, int lda, int* dev_pivots, Scalar** B,
                       const int ldb, int* lapack_info, const int batch_count);
 
+  // Computes matrix inverses for a batch of small matrices. Uses the outputs
+  // from GetrfBatched. 
+  template <typename Scalar>
+  Status GetriBatched(int n, const Scalar* const host_a_dev_ptrs[], int lda,
+                      const int* dev_pivots,
+                      const Scalar* const host_a_inverse_dev_ptrs[], int ldainv,
+                      DeviceLapackInfo* dev_lapack_info,
+                      int batch_size);
+
   // Cholesky factorization
   // Computes the Cholesky factorization A = L * L^H for a single matrix.
   template <typename Scalar>
