@@ -987,7 +987,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
       cudnn_use_autotune, AutotuneConvBwdFilter::GetInstance(), conv_parameters,
       ctx, se::dnn::ConvolutionKind::BACKWARD_FILTER, input_desc, input_ptr,
       filter_desc, filter_backprop_ptr, conv_desc, output_desc,
-      out_backprop_ptr, ConvolveBackwardFilterScratchSize);
+      out_backprop_ptr, ConvolveBackwardFilterScratchSize, f8_enable);
   OP_REQUIRES_OK(ctx, config_or.status());
   AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 

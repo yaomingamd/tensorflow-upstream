@@ -261,7 +261,7 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
     se::DeviceMemory<T> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc, se::DeviceMemory<T> output_ptr,
-    int64_t scratch_size_limit) {
+    int64_t scratch_size_limit, bool f8_enable) {
   se::dnn::AlgorithmConfig algorithm_config;
 
   // cudnn_use_autotune is applicable only the CUDA flow
@@ -339,12 +339,12 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
         return stream->ConvolveWithExecutionPlan(
             kind, input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
             output_ptr, conv_desc, allocator_used, profile_config,
-            profile_result, 0);
+            profile_result, f8_enable?4:0);
       } else {
         return stream->ConvolveWithAlgorithm(
             kind, input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
             output_ptr, conv_desc, allocator_used, profile_config,
-            profile_result, 0);
+            profile_result, f8_enable?4:0);
       }
     };
 
@@ -386,8 +386,8 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
             kind, input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
             output_ptr, conv_desc, &scratch_allocator,
             se::dnn::AlgorithmConfig(profile_algorithm,
-                                     miopen_algorithm.scratch_size()),
-            &profile_result, 0);
+            miopen_algorithm.scratch_size()),
+            &profile_result, f8_enable?4:0);
         if (miopen_launch_status.ok() && profile_result.is_valid()) {
           results.emplace_back();
           auto& result = results.back();
@@ -424,7 +424,7 @@ template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<double>(
     se::DeviceMemory<double> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc,
-    se::DeviceMemory<double> output_ptr, int64_t scratch_size_limit);
+    se::DeviceMemory<double> output_ptr, int64_t scratch_size_limit, bool f8_enable);
 
 template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<float>(
     bool cudnn_use_autotune,
@@ -436,7 +436,7 @@ template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<float>(
     se::DeviceMemory<float> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc,
-    se::DeviceMemory<float> output_ptr, int64_t scratch_size_limit);
+    se::DeviceMemory<float> output_ptr, int64_t scratch_size_limit, bool f8_enable);
 
 template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<Eigen::half>(
     bool cudnn_use_autotune,
@@ -448,7 +448,7 @@ template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<Eigen::half>(
     se::DeviceMemory<Eigen::half> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc,
-    se::DeviceMemory<Eigen::half> output_ptr, int64_t scratch_size_limit);
+    se::DeviceMemory<Eigen::half> output_ptr, int64_t scratch_size_limit, bool f8_enable);
 
 }  // namespace tensorflow
 

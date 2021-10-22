@@ -1435,7 +1435,7 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
       if (maybe_hasXDLOPS.ok() && maybe_hasXDLOPS.ValueOrDie()) {
         VLOG(1) << "Using rocblas_gemm_ex";
         bool hasFP8 = true;
-        if(hasFP8) { // && (grad_flags & 4)) {
+        if(hasFP8 && (grad_flags & 4)) {
            return DoEmulatedBlasGemmF8(stream,
              ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
              m, n, k, alpha, a.opaque(), lda,

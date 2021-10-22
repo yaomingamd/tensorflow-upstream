@@ -152,7 +152,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     auto no_transpose = se::blas::Transpose::kNoTranspose;
 
     OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(transpose, no_transpose, n, m, k,
-                                             b_ptr, k, a_ptr, k, &c_ptr, n, 1+(f8_enable?4:0)));
+                                             b_ptr, k, a_ptr, k, &c_ptr, n, 2+(f8_enable?4:0)));
     return;
   } else if (dims.spatial_dims[0].filter_size ==
                  dims.spatial_dims[0].input_size &&
@@ -178,7 +178,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     auto no_transpose = se::blas::Transpose::kNoTranspose;
 
     OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(transpose, no_transpose, n, m, k,
-                                             b_ptr, k, a_ptr, k, &c_ptr, n, 1+(f8_enable?4:0)));
+                                             b_ptr, k, a_ptr, k, &c_ptr, n, 2+(f8_enable?4:0)));
     return;
   }
 
@@ -380,7 +380,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
       cudnn_use_autotune, AutotuneConvBwdData::GetInstance(), conv_parameters,
       ctx, se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
       filter_desc, filter_ptr, conv_desc, output_desc, out_backprop_ptr,
-      ConvolveBackwardDataScratchSize);
+      ConvolveBackwardDataScratchSize, f8_enable);
   OP_REQUIRES_OK(ctx, config_or.status());
   AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 

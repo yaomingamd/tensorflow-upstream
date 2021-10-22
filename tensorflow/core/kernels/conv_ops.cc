@@ -1108,7 +1108,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
   auto config_or = AutotuneUnfusedConv(
       cudnn_use_autotune, AutotuneConv::GetInstance(), conv_parameters, ctx,
       se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
-      filter_ptr, conv_desc, output_desc, output_ptr, ConvolveScratchSize);
+      filter_ptr, conv_desc, output_desc, output_ptr, ConvolveScratchSize, f8_enable);
   OP_REQUIRES_OK(ctx, config_or.status());
   AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 
@@ -1124,7 +1124,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithExecutionPlan(
         se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
         filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-        algorithm_config, nullptr, f8_enable?5:1);
+        algorithm_config, nullptr, f8_enable?4:0);
   } else {
     VLOG(4) << "Convolution Algorithm: "
             << algorithm_config.algorithm()->algo_id();
@@ -1134,7 +1134,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithAlgorithm(
         se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
         filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-        algorithm_config, nullptr, f8_enable?5:1);
+        algorithm_config, nullptr, f8_enable?4:0);
   }
 
   if (!cudnn_launch_status.ok()) {

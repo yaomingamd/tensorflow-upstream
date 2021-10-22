@@ -1510,7 +1510,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
         cudnn_use_autotune_, AutotuneConv3dBwdData::GetInstance(),
         conv_parameters, context, se::dnn::ConvolutionKind::BACKWARD_DATA,
         input_desc, in_backprop_ptr, filter_desc, filter_ptr, conv_desc,
-        output_desc, out_backprop_ptr, ConvolveBackwardDataScratchSize);
+        output_desc, out_backprop_ptr, ConvolveBackwardDataScratchSize, f8_enable_);
 
     OP_REQUIRES_OK(context, config_or.status());
     AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
@@ -1728,7 +1728,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       OP_REQUIRES_OK(context,
                      stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                           se::blas::Transpose::kTranspose, n, m,
-                                          k, b_ptr, n, a_ptr, m, &c_ptr, n, 2+(f8_enable_?4:0)));
+                                          k, b_ptr, n, a_ptr, m, &c_ptr, n, 1+(f8_enable_?4:0)));
       return;
     }
 
@@ -1919,7 +1919,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
         cudnn_use_autotune_, AutotuneConv3dBwdFilter::GetInstance(),
         conv_parameters, context, se::dnn::ConvolutionKind::BACKWARD_FILTER,
         input_desc, input_ptr, filter_desc, filter_backprop_ptr, conv_desc,
-        output_desc, out_backprop_ptr, ConvolveBackwardFilterScratchSize);
+        output_desc, out_backprop_ptr, ConvolveBackwardFilterScratchSize, f8_enable_);
     OP_REQUIRES_OK(context, config_or.status());
     AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 

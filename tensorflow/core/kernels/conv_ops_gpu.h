@@ -119,7 +119,7 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
     se::DeviceMemory<T> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc, se::DeviceMemory<T> output_ptr,
-    int64_t scratch_size_limit);
+    int64_t scratch_size_limit, bool f8_enable);
 
 }  // namespace tensorflow
 

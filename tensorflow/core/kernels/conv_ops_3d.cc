@@ -504,7 +504,7 @@ struct LaunchConvOp<GPUDevice, T> {
     auto config_or = AutotuneUnfusedConv(
         cudnn_use_autotune, AutotuneConv3d::GetInstance(), conv_parameters, ctx,
         se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
-        filter_ptr, conv_desc, output_desc, output_ptr, ConvolveScratchSize);
+        filter_ptr, conv_desc, output_desc, output_ptr, ConvolveScratchSize, f8_enable);
     OP_REQUIRES_OK(ctx, config_or.status());
     AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 
