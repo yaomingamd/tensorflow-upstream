@@ -1510,7 +1510,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
         cudnn_use_autotune_, AutotuneConv3dBwdData::GetInstance(),
         conv_parameters, context, se::dnn::ConvolutionKind::BACKWARD_DATA,
         input_desc, in_backprop_ptr, filter_desc, filter_ptr, conv_desc,
-        output_desc, out_backprop_ptr, ConvolveBackwardDataScratchSize);
+        output_desc, out_backprop_ptr, ConvolveBackwardDataScratchSize, f8_enable_);
 
     OP_REQUIRES_OK(context, config_or.status());
     AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
@@ -1533,7 +1533,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
           se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
           filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-          &scratch_allocator, algorithm_config, nullptr);
+          &scratch_allocator, algorithm_config, f8_enable_, nullptr);
     }
 
     if (!cudnn_launch_status.ok()) {
@@ -1919,7 +1919,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
         cudnn_use_autotune_, AutotuneConv3dBwdFilter::GetInstance(),
         conv_parameters, context, se::dnn::ConvolutionKind::BACKWARD_FILTER,
         input_desc, input_ptr, filter_desc, filter_backprop_ptr, conv_desc,
-        output_desc, out_backprop_ptr, ConvolveBackwardFilterScratchSize);
+        output_desc, out_backprop_ptr, ConvolveBackwardFilterScratchSize, f8_enable_);
     OP_REQUIRES_OK(context, config_or.status());
     AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 
@@ -1941,7 +1941,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
           se::dnn::ConvolutionKind::BACKWARD_FILTER, input_desc, input_ptr,
           filter_desc, filter_backprop_ptr, output_desc, out_backprop_ptr,
-          conv_desc, &scratch_allocator, algorithm_config, nullptr);
+          conv_desc, &scratch_allocator, algorithm_config, f8_enable_, nullptr);
     }
 
     if (!cudnn_launch_status.ok()) {

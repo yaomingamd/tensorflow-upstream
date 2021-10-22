@@ -3001,7 +3001,6 @@ port::Status MIOpenSupport::DoPrepareForConvolution(
 
 void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152);
 
-
 port::Status MIOpenSupport::DoConvolve(
     dnn::ConvolutionKind kind, dnn::DataType element_type,
     dnn::DataType output_type, Stream* stream,
@@ -3011,6 +3010,7 @@ port::Status MIOpenSupport::DoConvolve(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
+    bool f8_enable,
     dnn::ProfileResult* output_profile_result) {
   auto miopen = miopen_->GetHandle(parent_, stream);
   ScopedTensorDescriptor input_nd{input_descriptor,
@@ -3044,9 +3044,7 @@ port::Status MIOpenSupport::DoConvolve(
     }
   }
 
-  bool f8 = false;
-  tensorflow::ReadBoolFromEnvVar("TF_ROCM_F8", false, &f8);
-  if(f8 && element_type == dnn::DataType::kHalf) {
+  if(f8_enable && element_type == dnn::DataType::kHalf) {
     __half* p1, *p2;
     uint64_t sz1=0, sz2=0;
     int grad_flags = 0;
@@ -3062,17 +3060,21 @@ port::Status MIOpenSupport::DoConvolve(
        sz2 = nFilterElem;
        grad_flags = 0;
     } else if(kind == dnn::ConvolutionKind::BACKWARD_DATA) {
+       //TODO: Confirm that filter and input data does not need 152 in backward convolution
        p1 = const_cast<__half*>(reinterpret_cast<const __half*>(output_data.opaque()));
        p2 = const_cast<__half*>(reinterpret_cast<const __half*>(filter_data.opaque()));
        sz1 = output_descriptor.ElementCount();
        sz2 = nFilterElem;
        grad_flags = 1;
-    } else {
+    } else if (kind == dnn::ConvolutionKind::BACKWARD_FILTER) {
        p1 = const_cast<__half*>(reinterpret_cast<const __half*>(output_data.opaque()));
        p2 = const_cast<__half*>(reinterpret_cast<const __half*>(input_data.opaque()));
        sz1 = output_descriptor.ElementCount();
        sz2 = input_descriptor.ElementCount();
        grad_flags = 1;
+    } else {
+       return port::InternalError(
+          absl::StrCat("Unexpected convolution kind ", static_cast<int>(kind)));
     }
 
     std::random_device rd;
@@ -3082,6 +3084,10 @@ port::Status MIOpenSupport::DoConvolve(
     Quant8_inplace(p1, sz1, seed, AsGpuStreamValue(stream), grad_flags & 1);
     seed = distribution(gen);
     Quant8_inplace(p2, sz2, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1);
+    VLOG(3) << "sz1=" << sz1 << ", sz2=" << sz2 
+            << ", input size=" << input_data.size()/sizeof(__half) 
+            << ", filter size=" << filter_data.size()/sizeof(__half)
+            << ", output size=" << output_data.size()/sizeof(__half) ;
   }
 
   miopenStatus_t status = miopenStatusSuccess;

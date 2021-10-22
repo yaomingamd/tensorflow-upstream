@@ -342,6 +342,7 @@ class Stream {
       const dnn::ConvolutionDescriptor &convolution_descriptor,
       ScratchAllocator *scratch_allocator,
       const dnn::AlgorithmConfig &algorithm_config,
+      bool f8_enable,
       dnn::ProfileResult *output_profile_result) {
     DeviceMemory<uint8> scratch_memory;
     dnn::AlgorithmDesc algorithm_desc;
@@ -356,7 +357,7 @@ class Stream {
                              input_descriptor, input_data, filter_descriptor,
                              filter_data, output_descriptor, output_data,
                              convolution_descriptor, algorithm_desc,
-                             scratch_memory, output_profile_result);
+                             scratch_memory, f8_enable, output_profile_result);
     }
     return port::UnimplementedError("DNN library is not found.");
   }

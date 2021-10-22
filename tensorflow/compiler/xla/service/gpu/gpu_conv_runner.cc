@@ -89,7 +89,7 @@ Status RunGpuConvForward(GpuConvParams params,
       se::dnn::ConvolutionKind::FORWARD, params.config.input_descriptor,
       input_buf, params.config.filter_descriptor, filter_buf,
       params.config.output_descriptor, output_buf, params.config.conv_desc,
-      scratch_allocator, algorithm, options.profile_result);
+      scratch_allocator, algorithm, false, options.profile_result);
 }
 
 template <typename ElementType, typename BiasType, typename OutputType>
@@ -180,7 +180,7 @@ Status RunGpuConvInternalImpl(GpuConvParams params,
           params.config.input_descriptor, input_buf,
           params.config.filter_descriptor, filter_buf,
           params.config.output_descriptor, output_buf, params.config.conv_desc,
-          scratch_allocator, algorithm, options.profile_result);
+          scratch_allocator, algorithm, false, options.profile_result);
       break;
     case CudnnConvKind::kBackwardFilter:
       if (params.config.conv_result_scale != 1) {
@@ -193,7 +193,7 @@ Status RunGpuConvInternalImpl(GpuConvParams params,
           params.config.input_descriptor, input_buf,
           params.config.filter_descriptor, filter_buf,
           params.config.output_descriptor, output_buf, params.config.conv_desc,
-          scratch_allocator, algorithm, options.profile_result);
+          scratch_allocator, algorithm, false, options.profile_result);
       break;
     case CudnnConvKind::kForwardActivation: {
       return RunGpuConvForwardActivation<ElementType, BiasType, OutputType>(

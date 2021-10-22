@@ -321,7 +321,8 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
 #else
     use_cudnn_grouped_conv_ = false;
 #endif
-    context->GetAttr("_f8", &f8_enable_); // OK to fail
+    //context->GetAttr("_f8", &f8_enable_); // OK to fail
+    f8_enable_ = context->AllowF8();
   }
 
   void Compute(OpKernelContext* context) override {

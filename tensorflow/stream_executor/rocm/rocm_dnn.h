@@ -325,6 +325,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       DeviceMemoryBase output_data,
       const dnn::ConvolutionDescriptor& convolution_descriptor,
       dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
+      bool f8_enable,
       dnn::ProfileResult* output_profile_result) override;
 
   port::Status DoFusedConvolve(

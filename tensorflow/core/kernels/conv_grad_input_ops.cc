@@ -380,7 +380,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
       cudnn_use_autotune, AutotuneConvBwdData::GetInstance(), conv_parameters,
       ctx, se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
       filter_desc, filter_ptr, conv_desc, output_desc, out_backprop_ptr,
-      ConvolveBackwardDataScratchSize);
+      ConvolveBackwardDataScratchSize, f8_enable);
   OP_REQUIRES_OK(ctx, config_or.status());
   AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 
@@ -400,7 +400,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithAlgorithm(
         se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
         filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-        &scratch_allocator, algorithm_config, nullptr);
+        &scratch_allocator, algorithm_config, f8_enable, nullptr);
   }
 
   if (!cudnn_launch_status.ok()) {
