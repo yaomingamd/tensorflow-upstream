@@ -543,6 +543,47 @@ template <typename Scalar, typename SolverFnT>
   } 
 
   TF_CALL_LAPACK_TYPES_NO_COMPLEX(GEAM_INSTANCE);
+
+  template <typename Scalar, typename SolverFnT>
+  Status MatInvBatchedImpl(GpuExecutor* gpu_executor, SolverFnT solver,
+                           rocblas_handle rocm_blas_handle, int n,
+                           const Scalar* const host_a_dev_ptrs[], int lda,
+                           int* dev_pivots,
+                           const Scalar* const host_a_inverse_dev_ptrs[],
+                           int ldainv, DeviceLapackInfo* dev_lapack_info,
+                           int batch_size) {
+    mutex_lock lock(handle_map_mutex);
+    using ROCmScalar = typename ROCmComplexT<Scalar>::type;
+    ScopedActivateExecutorContext sac{gpu_executor};
+
+    GetrfBatched(n, host_a_dev_ptrs, lda, dev_pivots, dev_lapack_info,
+                 batch_size);
+
+    GetriBatched(n, host_a_dev_ptrs, lda, dev_pivots, host_a_inverse_dev_ptrs,
+                 ldainv, dev_lapack_info, batch_size);
+
+    return Status::OK();
+  }
+
+#define GEAM_INSTANCE(Scalar, type_prefix)                                    \
+  template <>                                                                 \
+  Status GpuSolver::MatInvBatched<Scalar>(                                    \
+      int n, const Scalar* const host_a_dev_ptrs[], int lda,                  \
+      const Scalar* const host_a_inverse_dev_ptrs[], int ldainv,              \
+      DeviceLapackInfo* dev_lapack_info, int batch_size) {                    \
+    GpuExecutor* gpu_executor = static_cast<GpuExecutor*>(                    \
+        context_->op_device_context()->stream()->parent()->implementation()); \
+    Tensor pivots;                                                            \
+    context_->allocate_scoped_tensor(DataTypeToEnum<int>::value,              \
+                                     TensorShape{batch_size, n}, &pivots);    \
+    auto pivots_mat = pivots.template matrix<int>();                          \
+    int* dev_pivots = pivots_mat.data();                                      \
+    return MatInvBatchedImpl(                                                 \
+        gpu_executor, BLAS_SOLVER_FN(matinvbatched, type_prefix),             \
+        rocm_blas_handle_, n, host_a_dev_ptrs, lda, dev_pivots,               \
+        host_a_inverse_dev_ptrs, ldainv, dev_lapack_info, batch_size);        \
+  }
+
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_USE_ROCM
