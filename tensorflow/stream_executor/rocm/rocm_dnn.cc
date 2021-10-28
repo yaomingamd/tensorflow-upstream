@@ -358,6 +358,7 @@ namespace wrap {
   __macro(miopenSetCTCLossDescriptor)                                \
   __macro(miopenGetCTCLossWorkspaceSize)                             \
   __macro(miopenCTCLoss)                                             \
+  __macro(miopenSetConvolutionAttribute)			     \
   __macro(miopenDestroyCTCLossDescriptor)
 // clang-format on
 
@@ -3010,6 +3011,7 @@ port::Status MIOpenSupport::DoConvolve(
     dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
     dnn::CallContext call_context, dnn::ProfileResult* output_profile_result) {
   auto miopen = miopen_->GetHandle(parent_, stream);
+
   ScopedTensorDescriptor input_nd{input_descriptor,
                                   ToMIOpenDataType(element_type)};
   ScopedTensorDescriptor output_nd{output_descriptor,
@@ -3018,6 +3020,14 @@ port::Status MIOpenSupport::DoConvolve(
                                 ToMIOpenDataType(element_type)};
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
+
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
 
   // Alpha is the scaling factor for input.
   float alpha = 1.0;
@@ -3078,6 +3088,7 @@ port::Status MIOpenSupport::DoConvolve(
             &beta, input_nd.handle(), input_data.opaque(),
             scratch_memory.opaque(), scratch_memory.size());
       }
+
       break;
     }
     case dnn::ConvolutionKind::BACKWARD_FILTER: {
@@ -3097,6 +3108,7 @@ port::Status MIOpenSupport::DoConvolve(
             &beta, filter.handle(), filter_data.opaque(),
             scratch_memory.opaque(), scratch_memory.size());
       }
+
       break;
     }
     default:
@@ -3183,6 +3195,14 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
                                 ToMIOpenDataType(element_type)};
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
+
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
 
   // First determine the number of algorityhms available
   size_t maxSolutionCount = 0;
@@ -3392,6 +3412,14 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
                                 ToMIOpenDataType(element_type)};
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
+
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
 
   // Determine the workspace memory size that will need by the call to Find
   size_t scratch_memory_size = 0;
