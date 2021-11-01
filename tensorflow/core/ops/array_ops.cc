@@ -168,7 +168,7 @@ Status TransposeShapeFn(InferenceContext* c) {
 
     for (int32_t i = 0; i < rank; ++i) {
       int64_t in_idx = data[i];
-      if (in_idx >= rank) {
+      if (in_idx >= rank || in_idx <= -rank) {
         return errors::InvalidArgument("perm dim ", in_idx,
                                        " is out of range of input rank ", rank);
       }
@@ -679,6 +679,12 @@ REGISTER_OP("SplitV")
           auto size = data[i];
           if (data[i] == -1 && c->ValueKnown(split_dim_size)) {
             size = split_dim_size - total_size;
+          }
+          // If we have a negative known size (either explicit, or computed
+          // via -1), then the split sizes are invalid.
+          if (size < -1 || (size == -1 && c->ValueKnown(split_dim_size))) {
+            return errors::InvalidArgument("Split size at index ", i,
+                                           " must be >= 0. Got: ", size);
           }
           TF_RETURN_IF_ERROR(
               c->ReplaceDim(input, split_dim, c->MakeDim(size), &output_shape));
@@ -2854,7 +2860,10 @@ REGISTER_OP("QuantizeAndDequantizeV2")
       ShapeHandle minmax;
       TF_RETURN_IF_ERROR(c->WithRank(c->input(1), minmax_rank, &minmax));
       TF_RETURN_IF_ERROR(c->Merge(c->input(2), minmax, &minmax));
-      if (axis != -1) {
+      if (axis < -1) {
+        return errors::InvalidArgument("axis should be at least -1, got ",
+                                       axis);
+      } else if (axis != -1) {
         ShapeHandle input;
         TF_RETURN_IF_ERROR(c->WithRankAtLeast(c->input(0), axis + 1, &input));
         DimensionHandle depth;
@@ -2886,7 +2895,10 @@ REGISTER_OP("QuantizeAndDequantizeV4")
       ShapeHandle minmax;
       TF_RETURN_IF_ERROR(c->WithRank(c->input(1), minmax_rank, &minmax));
       TF_RETURN_IF_ERROR(c->Merge(c->input(2), minmax, &minmax));
-      if (axis != -1) {
+      if (axis < -1) {
+        return errors::InvalidArgument("axis should be at least -1, got ",
+                                       axis);
+      } else if (axis != -1) {
         ShapeHandle input;
         TF_RETURN_IF_ERROR(c->WithRankAtLeast(c->input(0), axis + 1, &input));
         DimensionHandle depth;
@@ -2914,7 +2926,10 @@ REGISTER_OP("QuantizeAndDequantizeV4Grad")
       ShapeHandle minmax;
       TF_RETURN_IF_ERROR(c->WithRank(c->input(2), minmax_rank, &minmax));
       TF_RETURN_IF_ERROR(c->Merge(c->input(3), minmax, &minmax));
-      if (axis != -1) {
+      if (axis < -1) {
+        return errors::InvalidArgument("axis should be at least -1, got ",
+                                       axis);
+      } else if (axis != -1) {
         ShapeHandle input;
         TF_RETURN_IF_ERROR(c->WithRankAtLeast(c->input(0), axis + 1, &input));
         DimensionHandle depth;
@@ -2947,7 +2962,10 @@ REGISTER_OP("QuantizeAndDequantizeV3")
       ShapeHandle minmax;
       TF_RETURN_IF_ERROR(c->WithRank(c->input(1), minmax_rank, &minmax));
       TF_RETURN_IF_ERROR(c->Merge(c->input(2), minmax, &minmax));
-      if (axis != -1) {
+      if (axis < -1) {
+        return errors::InvalidArgument("axis should be at least -1, got ",
+                                       axis);
+      } else if (axis != -1) {
         ShapeHandle input;
         TF_RETURN_IF_ERROR(c->WithRankAtLeast(c->input(0), axis + 1, &input));
         DimensionHandle depth;
