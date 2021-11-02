@@ -196,6 +196,8 @@ class TridiagonalMulOpTest(test.TestCase):
   def testInvalidShapesEagerGpu(self):
     if not test.is_gpu_available():
       self.skipTest('Test requires GPU')
+    if test.is_built_with_rocm():
+      self.skipTest('TridiagonalMatMul is not yet supported on ROCm')
     self._testErrorWithShapesEager('Input must have rank >= 2, but got ',
                                    [2], [2], [2], [2])
     self._testErrorWithShapesEager(
