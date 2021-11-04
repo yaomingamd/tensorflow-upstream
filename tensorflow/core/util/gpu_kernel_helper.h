@@ -390,7 +390,7 @@ __device__ OutType lower_bound(const T* first, OutType count, T val) {
 }
 
 #if TENSORFLOW_USE_ROCM
-inline bool isGfx10(OpKernelContext* ctx) {
+inline bool isGfx10() {
   hipDeviceProp_t props;
   int dev = 0;
   hipError_t result = hipGetDevice(&dev);
