@@ -389,6 +389,20 @@ __device__ OutType lower_bound(const T* first, OutType count, T val) {
   return first - orig;
 }
 
+#if TENSORFLOW_USE_ROCM
+inline bool isGfx10(OpKernelContext* ctx) {
+  hipDeviceProp_t props;
+  int dev = 0;
+  hipError_t result = hipGetDevice(&dev);
+  result = hipGetDeviceProperties(&props, dev);
+  if (result == hipSuccess) {
+    std::string gcnArchName = props.gcnArchName;
+    return (gcnArchName.substr(0, 5) == "gfx10");
+  }
+  return false;
+}
+#endif
+
 }  // namespace gpu_helper
 
 #ifndef TENSORFLOW_USE_ROCM

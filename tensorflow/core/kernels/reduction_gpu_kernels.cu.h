@@ -706,26 +706,12 @@ struct GatherOp {
   int group_size_;
 };
 
-#if TENSORFLOW_USE_ROCM
-inline bool isGfx10(OpKernelContext* ctx) {
-  hipDeviceProp_t props;
-  int dev = 0;
-  hipError_t result = hipGetDevice(&dev);
-  result = hipGetDeviceProperties(&props, dev);
-  if (result == hipSuccess) {
-    std::string gcnArchName = props.gcnArchName;
-    return (gcnArchName.substr(0,5)=="gfx10");
-  }
-  return false;
-}
-#endif
-
 template <typename T, typename Op, typename OUT_T, typename IN_T>
 void LaunchScalarReduction(OpKernelContext* ctx, OUT_T out, IN_T in,
                            int in_size, Op op, T init,
                            const gpuStream_t& cu_stream) {
 #if TENSORFLOW_USE_ROCM
-  int WARPSIZE = isGfx10(ctx) ? 32 : 64;
+  int WARPSIZE = gpu_helper::isGfx10(ctx) ? 32 : 64;
 #else
   constexpr int WARPSIZE = TF_RED_WARPSIZE;
 #endif
@@ -797,7 +783,7 @@ void LaunchRowReduction(OpKernelContext* ctx, OUT_T out, IN_T in, int num_rows,
                         int num_cols, Op op, T init,
                         const gpuStream_t& cu_stream) {
 #if TENSORFLOW_USE_ROCM
-  int WARPSIZE = isGfx10(ctx) ? 32 : 64;
+  int WARPSIZE = gpu_helper::isGfx10(ctx) ? 32 : 64;
 #else
   constexpr int WARPSIZE = TF_RED_WARPSIZE;
 #endif
@@ -847,8 +833,10 @@ void LaunchColumnReduction_LTE16Cols(OpKernelContext* ctx, OUT_T out, IN_T in,
                                      int extent_x, int extent_y, Op op, T init,
                                      const gpuStream_t& cu_stream) {
 #if TENSORFLOW_USE_ROCM
-  int WARPSIZE = (std::is_same<T, hipDoubleComplex>::value || isGfx10(ctx))
-      ? 32 : 64;
+  int WARPSIZE =
+      (std::is_same<T, hipDoubleComplex>::value || gpu_helper::isGfx10(ctx))
+          ? 32
+          : 64;
 #else
   constexpr int WARPSIZE = TF_RED_WARPSIZE;
 #endif
@@ -908,8 +896,10 @@ void LaunchColumnReduction_LTE4096Cols(OpKernelContext* ctx, OUT_T out, IN_T in,
   // On ROCm, TF_RED_WARPSIZE is 64 and the default value would require
   // 66 kB of shared memory with double complex - more than actually
   // available in the GPU.
-  int WARPSIZE = (std::is_same<T, hipDoubleComplex>::value || isGfx10(ctx))
-      ? 32 : 64;
+  int WARPSIZE =
+      (std::is_same<T, hipDoubleComplex>::value || gpu_helper::isGfx10(ctx))
+          ? 32
+          : 64;
 #else
   constexpr int WARPSIZE = TF_RED_WARPSIZE;
 #endif
