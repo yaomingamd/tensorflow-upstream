@@ -248,7 +248,7 @@ void LaunchScan(const GPUDevice& d, typename TTypes<T, 3>::ConstTensor in,
   int num_blocks = dimx * dimz;
 
   int ideal_block_size = dimy / items_per_thread;
-  const int rocm_threads_per_warp = 64;
+  const int rocm_threads_per_warp = gpu_helper::isGfx10() ? 32 : 64;
   ideal_block_size = std::max(ideal_block_size, rocm_threads_per_warp);
 
   // There seems to be a bug when the type is not float and block_size 1024.
