@@ -63,7 +63,7 @@ struct TensorBlasGemm<Device, T, true /* USE_CUBLAS */> {
 
     TensorCuBlasGemm<T>()(ctx, transb, transa, n, m, k, alpha, b.data(),
                           transb ? k : n, a.data(), transa ? m : k, beta,
-                          c.data(), n, grad_flags);
+                          c.data(), n, ((grad_flags&1)<<1) + ((grad_flags&2)>>1) + (grad_flags&4));
   }
 };
 

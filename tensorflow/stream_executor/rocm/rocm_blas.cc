@@ -1371,10 +1371,14 @@ port::Status ROCMBlas::DoEmulatedBlasGemmF8(Stream *stream, rocblas_operation tr
                       const void *b, int ldb, 
                       const void *beta, void *c,
                       int ldc, int grad_flags) {
-        uint32_t seed = time(0) ^ (m+n+k); // todo: use std::random
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
+        uint32_t seed = distribution(gen);
         // todo: confirm dimensions; is it possible for buffer dims to differ due to unusual value of lda?
-        Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(a)), m*k, seed, AsGpuStreamValue(stream), grad_flags & 1);
-        Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(b)), n*k, seed^0x5555, AsGpuStreamValue(stream), (grad_flags>>1) & 1);
+        Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(a)), m*k, seed, AsGpuStreamValue(stream), (grad_flags>>0) & 1);
+        seed = distribution(gen);
+        Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(b)), n*k, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1);
         return DoBlasInternalStatus(
             wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
             transa, transb,
@@ -1431,8 +1435,8 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
       if (maybe_hasXDLOPS.ok() && maybe_hasXDLOPS.ValueOrDie()) {
         VLOG(1) << "Using rocblas_gemm_ex";
         bool hasFP8 = true;
-        if(hasFP8 && (grad_flags & 4)) {
-           return DoEmulatedBlasGemmF8(stream, 
+        if(hasFP8) { // && (grad_flags & 4)) {
+           return DoEmulatedBlasGemmF8(stream,
              ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
              m, n, k, alpha, a.opaque(), lda,
              b.opaque(), ldb, beta, c->opaque(), ldc, grad_flags);

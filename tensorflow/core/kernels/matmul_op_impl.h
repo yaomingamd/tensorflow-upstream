@@ -436,6 +436,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
               ", k=", k));
         }
       } else {
+        grad_flags = ((grad_flags&1)<<1) | ((grad_flags&2)>>1) | (grad_flags&4);
         OP_REQUIRES_OK(context,
                        stream->ThenBlasGemm(
                            blas_transpose_b, blas_transpose_a, n, m, k,
@@ -443,6 +444,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                            adj_x || trans_x ? m : k, c_ptrs[0], n, grad_flags));
       }
     } else if (use_strided_batched) {
+      grad_flags = ((grad_flags&1)<<1) | ((grad_flags&2)>>1) | (grad_flags&4);
       OP_REQUIRES_OK(context, stream->ThenBlasGemmStridedBatched(
                                   blas_transpose_b, blas_transpose_a, n, m, k,
                                   static_cast<Coefficient>(1.0), *b_ptrs[0],
@@ -452,6 +454,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                                   c_ptrs[0], n, c_stride, batch_size, grad_flags));
     } else {
       BlasScratchAllocator scratch_allocator(context);
+      grad_flags = ((grad_flags&1)<<1) | ((grad_flags&2)>>1) | (grad_flags&4);
       bool blas_launch_status =
           stream
               ->ThenBlasGemmBatchedWithScratch(
@@ -554,6 +557,8 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
     }
 
     typedef float Coefficient;
+
+    grad_flags = ((grad_flags&1)<<1) | ((grad_flags&2)>>1) | (grad_flags&4);
 
     // Blas does
     // C = A x B

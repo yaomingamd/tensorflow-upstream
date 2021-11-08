@@ -35,8 +35,8 @@ void broadcast_fp32(void* stream, float* dst, int dst_stride, int batches, int s
                      (hipStream_t)stream, dst, dst_stride, batches, src, size);
 }
 
-template <typename T>
-__global__ void Quant8_52_inplace(T* _p, int32_t count, bool stoch, uint32_t seed) {
+template <typename T, int we, int wm>
+__global__ void Quant8_inplace(T* _p, int32_t count, bool stoch, uint32_t seed) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   if (i >= count) return;
   typedef typename std::conditional<sizeof(T)==2, uint16_t, uint32_t>::type IT;
@@ -44,7 +44,7 @@ __global__ void Quant8_52_inplace(T* _p, int32_t count, bool stoch, uint32_t see
   IT* p = (IT*) _p;
   FT* fp = (FT*) _p;
   IT x = p[i];
-  const int we=5, wm=2;
+//  const int we=5, wm=2;
 
   uint8_t y;
   if(!stoch)
@@ -61,6 +61,7 @@ __global__ void Quant8_52_inplace(T* _p, int32_t count, bool stoch, uint32_t see
   fp[i] = hip_f8_impl::cast_from_f8<wm,we,FT,false>(y);
 }
 
+#if 0
 template <typename T>
 __global__ void Quant8_43_inplace(T* _p, int32_t count, bool stoch, uint32_t seed) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
@@ -87,12 +88,14 @@ __global__ void Quant8_43_inplace(T* _p, int32_t count, bool stoch, uint32_t see
   }
   fp[i] = hip_f8_impl::cast_from_f8<wm,we,FT,false>(y);
 }
+#endif
 
-template __global__ void Quant8_52_inplace<__half>(__half* _p, int32_t count, bool stoch, uint32_t seed);
-template __global__ void Quant8_43_inplace<__half>(__half* _p, int32_t count, bool stoch, uint32_t seed);
+template __global__ void Quant8_inplace<__half,5,2>(__half* _p, int32_t count, bool stoch, uint32_t seed);
+template __global__ void Quant8_inplace<__half,4,3>(__half* _p, int32_t count, bool stoch, uint32_t seed);
+//template __global__ void Quant8_43_inplace<__half>(__half* _p, int32_t count, bool stoch, uint32_t seed);
 
 void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152) {
-        auto fun = f152 ? Quant8_52_inplace<__half> : Quant8_43_inplace<__half>;
+        auto fun = f152 ? Quant8_inplace<__half,5,2> : Quant8_inplace<__half,4,3>;
         uint32_t dim_a = count; 
         uint32_t grid_a = (dim_a+255)/256;
         hipLaunchKernelGGL(fun,
