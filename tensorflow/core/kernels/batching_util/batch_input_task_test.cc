@@ -31,6 +31,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/kernels/batching_util/batch_resource_base.h"
+#include "tensorflow/core/kernels/batching_util/input_split_metadata.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/platform/status_matchers.h"
 #include "tensorflow/core/platform/test.h"
@@ -40,6 +41,21 @@ limitations under the License.
 
 namespace tensorflow {
 namespace serving {
+namespace internal {
+
+template <typename TaskType>
+class BatchInputTaskHandleTestAccess {
+ public:
+  explicit BatchInputTaskHandleTestAccess(
+      BatchInputTaskHandle<TaskType>* handle)
+      : handle_(handle) {}
+
+  int split_id() const { return handle_->split_id(); }
+
+ private:
+  BatchInputTaskHandle<TaskType>* const handle_;
+};
+
 namespace {
 
 using TensorMatrix = std::vector<std::vector<Tensor>>;
@@ -92,51 +108,6 @@ NodeDef CreateBatchKernelNodeDef() {
   return batch_kernel_node_def;
 }
 
-// Tests that constructor of BatchInputTask would compute following information
-// correctly:
-// 1) How many slots the batch-input-task will occupy after being enqueued.
-// 2) The number of batches after split
-//    - The number of slot in a batch is within range [1, batch_size_limit]
-// 3) The number of new batches created by enqueueing this input
-// 4) The number of slots used by last batch
-TEST(BatchInputTask, BatchTaskSplitSize) {
-  for (const auto& batch_task_param :
-       {std::tuple<int /* input_size */, int /* open_batch_remaining_slot */,
-                   int /* batch_size_limit */, int /* expected_num_batches */,
-                   int /* expected_num_new_batches */,
-                   int /* expected_tail_batch_task_size */>{5, 1, 1, 5, 4, 1},
-        {10, 3, 4, 3, 2, 3},
-        {20, 5, 6, 4, 3, 3},
-        {30, 0, 11, 3, 3, 8},
-        {5, 6, 8, 1, 0, 7}}) {
-    const int input_size = std::get<0>(batch_task_param);
-    const int open_batch_remaining_slot = std::get<1>(batch_task_param);
-    const int batch_size_limit = std::get<2>(batch_task_param);
-    const int expected_num_batches = std::get<3>(batch_task_param);
-    const int expected_num_new_batches = std::get<4>(batch_task_param);
-    const int expected_tail_batch_task_size = std::get<5>(batch_task_param);
-
-    // The number of remaining slots should be smaller than or equal to
-    // batch_size_limit; whearas we allow one input (of `input_size`) to span
-    // over multiple batches.
-    ASSERT_LE(open_batch_remaining_slot, batch_size_limit);
-
-    auto batch_task = std::make_unique<BatchResourceBase::BatchTask>();
-    batch_task->inputs.push_back(CreateTensor<int64>(
-        TensorShape({input_size, 1}), std::vector<int64>(input_size, 1)));
-    auto batch_input_task =
-        std::make_shared<BatchInputTask<BatchResourceBase::BatchTask>>(
-            std::move(batch_task), open_batch_remaining_slot, batch_size_limit,
-            BatchResourceBase::SplitInputTask);
-
-    EXPECT_EQ(batch_input_task->size(), input_size);
-    EXPECT_EQ(batch_input_task->num_batches(), expected_num_batches);
-    EXPECT_EQ(batch_input_task->num_new_batches(), expected_num_new_batches);
-    EXPECT_EQ(batch_input_task->tail_batch_task_size(),
-              expected_tail_batch_task_size);
-  }
-}
-
 class BatchInputTaskTest : public ::testing::Test {
  protected:
   BatchInputTaskTest() {
@@ -173,13 +144,13 @@ class BatchInputTaskTest : public ::testing::Test {
 TEST_F(BatchInputTaskTest, BatchInputToSplitTasks) {
   auto batch_task = std::make_unique<BatchResourceBase::BatchTask>();
 
-  batch_task->inputs.push_back(CreateTensor<int64>(
+  batch_task->inputs.push_back(CreateTensor<int64_t>(
       TensorShape({5, 2, 1}), {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}));
-  batch_task->inputs.push_back(CreateTensor<int64>(
+  batch_task->inputs.push_back(CreateTensor<int64_t>(
       TensorShape({5, 1, 2}), {11, 12, 13, 14, 15, 16, 17, 18, 19, 20}));
 
   batch_task->captured_inputs.push_back(
-      CreateTensor<int64>(TensorShape{1}, {0}));
+      CreateTensor<int64_t>(TensorShape{1}, {0}));
 
   batch_task->context = op_kernel_context();
 
@@ -195,33 +166,31 @@ TEST_F(BatchInputTaskTest, BatchInputToSplitTasks) {
           std::move(batch_task), /*open_batch_remaining_slot=*/1,
           /*batch_size_limit=*/3, BatchResourceBase::SplitInputTask);
 
-  ASSERT_EQ(batch_input_task->size(), 5);
-
-  ASSERT_EQ(batch_input_task->num_batches(), 3);
-
   std::vector<
       std::unique_ptr<BatchInputTaskHandle<BatchResourceBase::BatchTask>>>
       output_tasks;
-  for (auto task = batch_input_task->GetNextTaskHandle(); task != nullptr;
-       task = batch_input_task->GetNextTaskHandle()) {
-    output_tasks.push_back(std::move(task));
-  }
+  batch_input_task->ToTaskHandles(&output_tasks);
 
-  EXPECT_EQ(output_tasks.size(), batch_input_task->num_batches());
 
   // Output tasks haven't invoked `done_callback`, so
   // `batch_task->done_callback` hasn't run yet.
   ASSERT_FALSE(batch_task_done_callback_executed);
 
+  const std::vector<int> expected_task_sizes{1, 3, 1};
   // Call `done_callback` for each output task, so `batch_task->done_callback`
   // can be executed and batch_task_done_callback_executed will be updated.
   for (int i = 0; i < output_tasks.size(); i++) {
     // When emitting output tasks, split_id starts from zero and increases by
     // one.
-    EXPECT_EQ(output_tasks[i]->split_id(), i);
+    EXPECT_EQ(
+        internal::BatchInputTaskHandleTestAccess<BatchResourceBase::BatchTask>(
+            output_tasks[i].get())
+            .split_id(),
+        i);
 
     auto batch_task = output_tasks[i]->GetSplitTask();
     ASSERT_NE(batch_task, nullptr);
+    EXPECT_EQ(batch_task->size(), expected_task_sizes[i]);
     batch_task->done_callback();
 
     // `GetSplitTask` returns nullptr from the 2nd call and on.
@@ -233,5 +202,6 @@ TEST_F(BatchInputTaskTest, BatchInputToSplitTasks) {
 }
 
 }  // namespace
+}  // namespace internal
 }  // namespace serving
 }  // namespace tensorflow

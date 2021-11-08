@@ -135,14 +135,14 @@ Status HloCostAnalysis::HandleElementwiseOp(
   }
 }
 
-int64 HloCostAnalysis::GetShapeSize(const Shape& shape) const {
+int64_t HloCostAnalysis::GetShapeSize(const Shape& shape) const {
   if (!LayoutUtil::HasLayout(shape)) {
     return 0;
   }
   return shape_size_(shape);
 }
 
-int64 HloCostAnalysis::FusionParameterReadBytes(
+int64_t HloCostAnalysis::FusionParameterReadBytes(
     const HloInstruction* hlo) const {
   int64_t size = 0;
   bool seen_trivial_user = false;
@@ -320,7 +320,8 @@ Status HloCostAnalysis::HandleDomain(const HloInstruction* domain) {
   return Status::OK();
 }
 
-Status HloCostAnalysis::HandleDot(const HloInstruction* dot) {
+/* static */
+int64_t HloCostAnalysis::GetDotFlops(const HloInstruction* dot) {
   const Shape& lhs_shape = dot->operand(0)->shape();
   const Shape& dot_shape = dot->shape();
   const DotDimensionNumbers& dnums = dot->dot_dimension_numbers();
@@ -331,8 +332,11 @@ Status HloCostAnalysis::HandleDot(const HloInstruction* dot) {
     reduction_width *= lhs_shape.dimensions(dim);
   }
   // Each output element requires reduction_width FMA operations.
-  current_properties_[kFlopsKey] =
-      kFmaFlops * ShapeUtil::ElementsIn(dot_shape) * reduction_width;
+  return kFmaFlops * ShapeUtil::ElementsIn(dot_shape) * reduction_width;
+}
+
+Status HloCostAnalysis::HandleDot(const HloInstruction* dot) {
+  current_properties_[kFlopsKey] = GetDotFlops(dot);
   return Status::OK();
 }
 
@@ -567,7 +571,9 @@ Status HloCostAnalysis::HandleAddDependency(
   return Status::OK();
 }
 
-Status HloCostAnalysis::HandleConvolution(const HloInstruction* convolution) {
+/* static */
+int64_t HloCostAnalysis::GetConvolutionFlops(
+    const HloInstruction* convolution) {
   auto lhs = convolution->operand(0);
   auto rhs = convolution->operand(1);
   Window window = convolution->window();
@@ -630,7 +636,7 @@ Status HloCostAnalysis::HandleConvolution(const HloInstruction* convolution) {
         kernel_limits[spatial_dimension] == output_limits[spatial_dimension] &&
         input_limits[spatial_dimension] == window_dim.base_dilation() &&
         window_dim.window_dilation() == 1 &&
-        std::max<int64>(1, input_limits[spatial_dimension] - 1) ==
+        std::max<int64_t>(1, input_limits[spatial_dimension] - 1) ==
             window_dim.stride() &&
         window_dim.padding_low() == 0 && window_dim.padding_high() == 0) {
       valid_position_counts.push_back(input_limits[spatial_dimension]);
@@ -688,7 +694,11 @@ Status HloCostAnalysis::HandleConvolution(const HloInstruction* convolution) {
       (input_feature / convolution->feature_group_count()) * output_feature *
       (batch / convolution->batch_group_count()) *
       Product(valid_position_counts);
-  current_properties_[kFlopsKey] = fma_count * kFmaFlops;
+  return fma_count * kFmaFlops;
+}
+
+Status HloCostAnalysis::HandleConvolution(const HloInstruction* convolution) {
+  current_properties_[kFlopsKey] = GetConvolutionFlops(convolution);
   return Status::OK();
 }
 
@@ -1097,27 +1107,27 @@ float HloCostAnalysis::optimal_seconds() const {
   return GetProperty(kOptimalSecondsKey, properties_sum_);
 }
 
-int64 HloCostAnalysis::flop_count(const HloInstruction& hlo) const {
+int64_t HloCostAnalysis::flop_count(const HloInstruction& hlo) const {
   return GetPropertyForHlo(hlo, kFlopsKey, hlo_properties_);
 }
 
-int64 HloCostAnalysis::transcendental_count(const HloInstruction& hlo) const {
+int64_t HloCostAnalysis::transcendental_count(const HloInstruction& hlo) const {
   return GetPropertyForHlo(hlo, kTranscendentalsKey, hlo_properties_);
 }
 
-int64 HloCostAnalysis::bytes_accessed(const HloInstruction& hlo) const {
+int64_t HloCostAnalysis::bytes_accessed(const HloInstruction& hlo) const {
   return GetPropertyForHlo(hlo, kBytesAccessedKey, hlo_properties_);
 }
 
-int64 HloCostAnalysis::operand_bytes_accessed(const HloInstruction& hlo,
-                                              int64_t operand_num,
-                                              ShapeIndex index) const {
+int64_t HloCostAnalysis::operand_bytes_accessed(const HloInstruction& hlo,
+                                                int64_t operand_num,
+                                                ShapeIndex index) const {
   return GetPropertyForHlo(hlo, GetOperandBytesAccessedKey(operand_num, index),
                            hlo_properties_);
 }
 
-int64 HloCostAnalysis::output_bytes_accessed(const HloInstruction& hlo,
-                                             ShapeIndex index) const {
+int64_t HloCostAnalysis::output_bytes_accessed(const HloInstruction& hlo,
+                                               ShapeIndex index) const {
   return GetPropertyForHlo(hlo, GetOutputBytesAccessedKey(index),
                            hlo_properties_);
 }
@@ -1126,32 +1136,34 @@ float HloCostAnalysis::optimal_seconds(const HloInstruction& hlo) const {
   return GetPropertyForHlo(hlo, kOptimalSecondsKey, hlo_properties_);
 }
 
-int64 HloCostAnalysis::GetBytesRead(const HloInstruction& hlo,
-                                    absl::optional<int64> memory_space) const {
+int64_t HloCostAnalysis::GetBytesRead(
+    const HloInstruction& hlo, absl::optional<int64_t> memory_space) const {
   int64_t bytes_read = 0;
   for (int operand_number = 0; operand_number < hlo.operand_count();
        ++operand_number) {
-    for (const ShapeUtil::IndexedShape& indexed_shape :
-         ShapeUtil::GetLeafShapes(hlo.operand(operand_number)->shape())) {
-      absl::optional<int64> index_memory_space;
-      if (indexed_shape.shape.has_layout()) {
-        index_memory_space = indexed_shape.shape.layout().memory_space();
-      }
-      if (!memory_space || memory_space == index_memory_space) {
-        bytes_read +=
-            operand_bytes_accessed(hlo, operand_number, indexed_shape.index);
-      }
-    }
+    const Shape& shape = hlo.operand(operand_number)->shape();
+    ShapeUtil::ForEachSubshape(
+        shape, [&](const Shape& sub_shape, const ShapeIndex& index) {
+          if (ShapeUtil::IsLeafIndex(shape, index)) {
+            absl::optional<int64_t> index_memory_space;
+            if (sub_shape.has_layout()) {
+              index_memory_space = sub_shape.layout().memory_space();
+            }
+            if (!memory_space || memory_space == index_memory_space) {
+              bytes_read += operand_bytes_accessed(hlo, operand_number, index);
+            }
+          }
+        });
   }
   return bytes_read;
 }
 
-int64 HloCostAnalysis::GetBytesWritten(
-    const HloInstruction& hlo, absl::optional<int64> memory_space) const {
+int64_t HloCostAnalysis::GetBytesWritten(
+    const HloInstruction& hlo, absl::optional<int64_t> memory_space) const {
   int64_t bytes_written = 0;
   for (const ShapeUtil::IndexedShape& indexed_shape :
        ShapeUtil::GetLeafShapes(hlo.shape())) {
-    absl::optional<int64> index_memory_space;
+    absl::optional<int64_t> index_memory_space;
     if (indexed_shape.shape.has_layout()) {
       index_memory_space = indexed_shape.shape.layout().memory_space();
     }

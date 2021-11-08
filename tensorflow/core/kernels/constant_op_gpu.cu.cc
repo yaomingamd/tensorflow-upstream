@@ -72,7 +72,8 @@ struct FillFunctor<GPUDevice, T> {
   void operator()(const GPUDevice& d, typename TTypes<T>::Flat out,
                   typename TTypes<T>::ConstScalar in) {
     Eigen::internal::scalar_const_op<T> f(in.data());
-    To32Bit(out).device(d) = To32Bit(out).nullaryExpr(f);
+    MaybeWith32BitIndexing<GPUDevice>(
+        [&](auto out32) { out32.device(d) = out32.nullaryExpr(f); }, out);
   }
 };
 
@@ -85,19 +86,19 @@ TF_CALL_bool(DEFINE_FILL_GPU);
 template <typename T>
 struct SetZeroFunctor<GPUDevice, T> {
   void operator()(const GPUDevice& d, typename TTypes<T>::Flat out) {
-    To32Bit(out).device(d) = To32Bit(out).constant(T(0));
+    MaybeWith32BitIndexing<GPUDevice>(
+        [&](auto out32) { out32.device(d) = out32.constant(T(0)); }, out);
   }
 };
 
 #define DEFINE_SETZERO_GPU(T) template struct SetZeroFunctor<GPUDevice, T>;
-#if !defined(MLIR_GENERATED_GPU_KERNELS_ENABLED) || \
-    !defined(MLIR_GENERATED_EXPERIMENTAL_KERNELS_ENABLED)
+
+// The SetZeroFunctor is called from several other ops, so even though on GPU we
+// are using a MLIR generated ZerosLike kernel, we still need to define this
+// functor for the other ops.
 TF_CALL_bool(DEFINE_SETZERO_GPU);
 TF_CALL_int64(DEFINE_SETZERO_GPU);
 TF_CALL_FLOAT_TYPES(DEFINE_SETZERO_GPU);
-#else
-TF_CALL_bfloat16(DEFINE_SETZERO_GPU);
-#endif
 TF_CALL_int32(DEFINE_SETZERO_GPU);
 TF_CALL_COMPLEX_TYPES(DEFINE_SETZERO_GPU);
 #undef DEFINE_SETZERO_GPU
@@ -106,7 +107,8 @@ TF_CALL_COMPLEX_TYPES(DEFINE_SETZERO_GPU);
 template <typename T>
 struct SetOneFunctor<GPUDevice, T> {
   void operator()(const GPUDevice& d, typename TTypes<T>::Flat out) {
-    To32Bit(out).device(d) = To32Bit(out).constant(T(1));
+    MaybeWith32BitIndexing<GPUDevice>(
+        [&](auto out32) { out32.device(d) = out32.constant(T(1)); }, out);
   }
 };
 

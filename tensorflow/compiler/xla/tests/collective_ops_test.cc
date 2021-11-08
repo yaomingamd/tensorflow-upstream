@@ -50,7 +50,7 @@ class CollectiveOpsTest : public HloTestBase {
 
  protected:
   std::unique_ptr<HloModule> MakeCrsModule(
-      const Shape& shape, std::vector<std::vector<int64>> replica_groups,
+      const Shape& shape, std::vector<std::vector<int64_t>> replica_groups,
       const HloModuleConfig& config, std::string op = "add",
       std::string datatype = "f32") {
     std::string hlo_template = R"(
@@ -71,6 +71,7 @@ class CollectiveOpsTest : public HloTestBase {
       }
     )";
     std::vector<string> replica_group_strs;
+    replica_group_strs.reserve(replica_groups.size());
     for (const auto& g : replica_groups) {
       replica_group_strs.push_back(
           absl::StrFormat("{%s}", absl::StrJoin(g, ",")));
@@ -144,8 +145,8 @@ class CollectiveOpsTest : public HloTestBase {
 
 // Returns the non-empty subsets of {0, 1, ..., n}.  For example,
 // PowerSetOfIota(3) = {{0}, {1}, {2}, {0,1}, {0,2}, {1,2}, {0,1,2}}.
-std::vector<std::vector<int64>> PowerSetOfIota(int64_t n) {
-  std::vector<std::vector<int64>> power_set;
+std::vector<std::vector<int64_t>> PowerSetOfIota(int64_t n) {
+  std::vector<std::vector<int64_t>> power_set;
   for (int64_t i = 1; i < (1 << n); ++i) {
     power_set.emplace_back();
     for (int64_t j = 0; j < n; ++j) {
@@ -158,7 +159,7 @@ std::vector<std::vector<int64>> PowerSetOfIota(int64_t n) {
 }
 
 // Makes a DeviceAssignment assigning replica-id i to devices[i].
-DeviceAssignment MakeDeviceAssn(std::vector<int64> devices) {
+DeviceAssignment MakeDeviceAssn(std::vector<int64_t> devices) {
   DeviceAssignment assn(/*replica_count=*/devices.size(),
                         /*computation_count=*/1);
   for (int64_t i = 0; i < devices.size(); ++i) {
@@ -208,11 +209,11 @@ XLA_TEST_F(CollectiveOpsTest, AllReduceTwoReplicasOneOperand_int32) {
 }
 
 XLA_TEST_F(CollectiveOpsTest, AllReduceTwoReplicasOneOperand_int64) {
-  TestAllOpsForReduce<int64>();
+  TestAllOpsForReduce<int64_t>();
 }
 
 XLA_TEST_F(CollectiveOpsTest, AllReduceTwoReplicasOneOperand_uint64) {
-  TestAllOpsForReduce<uint64>();
+  TestAllOpsForReduce<uint64_t>();
 }
 
 XLA_TEST_F(CollectiveOpsTest, AllReduceTwoReplicasOneOperand_float32) {
@@ -334,7 +335,7 @@ XLA_TEST_F(CollectiveOpsTest, AllReduce_AllCombinations) {
   const int64_t kNumDevices = 4;
   const int64_t kNumElems = 1024;
 
-  for (std::vector<int64> devices : PowerSetOfIota(kNumDevices)) {
+  for (std::vector<int64_t> devices : PowerSetOfIota(kNumDevices)) {
     SCOPED_TRACE(absl::StrFormat("Running on devices {%s}",
                                  absl::StrJoin(devices, ", ")));
 
@@ -375,8 +376,10 @@ XLA_TEST_F(CollectiveOpsTest, DISABLED_ON_CPU(AllReduce_NcclChannelCaching)) {
     HloRunner::ReplicatedExecuteOptions opts;
   };
   std::vector<ExecutableInfo> executables;
-  for (const auto& devices :
-       std::vector<std::vector<int64>>{{0, 1}, {1, 2}, {0, 1, 2}}) {
+  const auto devices_vec =
+      std::vector<std::vector<int64_t>>{{0, 1}, {1, 2}, {0, 1, 2}};
+  executables.reserve(devices_vec.size());
+  for (const auto& devices : devices_vec) {
     executables.emplace_back();
     auto& e = executables.back();
 
@@ -449,7 +452,7 @@ XLA_TEST_F(CollectiveOpsTest, AllReduce_ManyConcurrentAllReduces) {
                                           /*replica_groups=*/{}, config),
                             /*run_hlo_passes=*/true)
           .ValueOrDie();
-  std::vector<int64> devices = {0, 1};
+  std::vector<int64_t> devices = {0, 1};
   auto device_assn = MakeDeviceAssn(devices);
 
   HloRunner::ReplicatedExecuteOptions opts;
@@ -545,6 +548,7 @@ XLA_TEST_F(CollectiveOpsTest, AllReduce_ThreeReplicaGroups) {
   ASSERT_EQ(results.size(), 4);
 
   std::vector<float> input_vec_doubled;
+  input_vec_doubled.reserve(input_vec.size());
   for (float n : input_vec) {
     input_vec_doubled.push_back(n * 2);
   }
@@ -599,7 +603,7 @@ XLA_TEST_F(CollectiveOpsTest, DISABLED_ON_CPU(AsyncAllReduce)) {
 
       ENTRY test_computation {
         id = u32[] replica-id()
-        start = (u32[], u32[]) all-reduce-start(id), to_apply=apply_op
+        start = u32[] all-reduce-start(id), to_apply=apply_op
         ROOT done = u32[] all-reduce-done(start)
       }
     )";
@@ -632,7 +636,7 @@ XLA_TEST_F(CollectiveOpsTest, DISABLED_ON_CPU(AsyncAllReduceTwoOperands)) {
       ENTRY test_computation {
         id = u32[] replica-id()
         id2 = u32[] multiply(id, id)
-        start = ((u32[], u32[]), (u32[], u32[])) all-reduce-start(id, id2), to_apply=apply_op
+        start = (u32[], u32[]) all-reduce-start(id, id2), to_apply=apply_op
         ROOT done = (u32[], u32[]) all-reduce-done(start)
       }
     )";

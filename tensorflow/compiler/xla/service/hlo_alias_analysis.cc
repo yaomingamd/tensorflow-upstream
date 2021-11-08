@@ -57,7 +57,7 @@ class BufferValueMap {
   // contiguous, while BufferNumbers may not be. BufferNumbers may not be
   // dense because buffers may be created and destroyed during the analysis
   // construction process.
-  using BufferNumber = int64;
+  using BufferNumber = int64_t;
 
   explicit BufferValueMap(const HloModule* module,
                           const HloDataflowAnalysis& dataflow)
@@ -114,6 +114,7 @@ class BufferValueMap {
   // iterate through all buffers stabily.
   std::vector<BufferNumber> ComputeSortedBufferNumbers() const {
     std::vector<BufferNumber> buffer_numbers;
+    buffer_numbers.reserve(buffers_.size());
     for (const auto& pair : buffers_) {
       buffer_numbers.push_back(pair.first);
     }

@@ -113,7 +113,7 @@ Status TransferBufferToInfeed(int device_ordinal, int64_t size,
 }
 
 StatusOr<Shape> TransferBuffersFromOutfeedInternal(
-    int device_ordinal, absl::Span<const std::pair<void*, int64>> buffer_data,
+    int device_ordinal, absl::Span<const std::pair<void*, int64_t>> buffer_data,
     bool is_tuple) {
   std::vector<std::unique_ptr<CpuOutfeedBuffer>> buffers;
   for (auto b : buffer_data) {
@@ -146,6 +146,7 @@ StatusOr<Shape> TransferBuffersFromOutfeedInternal(
   xfeed_manager->outfeed()->EnqueueBuffersAtomically(buffer_pointers);
   VLOG(2) << "Waiting for buffer to be notified as populated.";
   std::vector<Shape> outfed_shapes;
+  outfed_shapes.reserve(buffers.size());
   for (auto& buffer : buffers) {
     TF_ASSIGN_OR_RETURN(Shape outfed_shape, buffer->WaitForNotification());
     outfed_shapes.push_back(std::move(outfed_shape));
@@ -165,7 +166,8 @@ StatusOr<Shape> TransferArrayBufferFromOutfeed(int device_ordinal,
 }
 
 StatusOr<Shape> TransferTupleBuffersFromOutfeed(
-    int device_ordinal, absl::Span<const std::pair<void*, int64>> buffer_data) {
+    int device_ordinal,
+    absl::Span<const std::pair<void*, int64_t>> buffer_data) {
   return TransferBuffersFromOutfeedInternal(device_ordinal, buffer_data,
                                             /*is_tuple=*/true);
 }
@@ -224,8 +226,8 @@ Status TransferLiteralFromOutfeedOnCpu(int device_ordinal,
         cpu::runtime::GetByteSizeRequirement(literal.shape(), sizeof(void*));
     // Note: OSS build didn't like implicit conversion from
     // literal.shape().dimensions() to the array slice on 2017-07-10.
-    absl::Span<const int64> dimensions(
-        absl::bit_cast<const int64*>(literal.shape().dimensions().data()),
+    absl::Span<const int64_t> dimensions(
+        absl::bit_cast<const int64_t*>(literal.shape().dimensions().data()),
         literal.shape().dimensions().size());
     TF_ASSIGN_OR_RETURN(Shape received_shape,
                         TransferArrayBufferFromOutfeed(
@@ -246,8 +248,8 @@ Status TransferLiteralFromOutfeedOnCpu(int device_ordinal,
         "Nested tuple outfeeds are not yet implemented on CPU.");
   }
 
-  std::vector<std::pair<void*, int64>> buffer_data;
-  for (int64_t i = 0; i < literal.shape().tuple_shapes_size(); ++i) {
+  std::vector<std::pair<void*, int64_t>> buffer_data;
+  for (int i = 0; i < literal.shape().tuple_shapes_size(); ++i) {
     const Shape& tuple_element_shape =
         ShapeUtil::GetTupleElementShape(literal.shape(), i);
     int64_t size = cpu::runtime::GetByteSizeRequirement(tuple_element_shape,

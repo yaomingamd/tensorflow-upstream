@@ -13,10 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 """Tests for the `MapParallelization` optimization."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import functools
 
 from absl.testing import parameterized
@@ -116,7 +112,7 @@ class MapParallelizationTest(test_base.DatasetTestBase, parameterized.TestCase):
     options.experimental_optimization.apply_default_optimizations = False
     options.experimental_optimization.map_parallelization = True
     if apply_autotune is not None:
-      options.experimental_optimization.autotune = apply_autotune
+      options.autotune.enabled = apply_autotune
     dataset = dataset.with_options(options)
     self.assertDatasetProduces(dataset, expected_output=[2, 3, 4, 5])
 

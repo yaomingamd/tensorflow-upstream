@@ -58,6 +58,8 @@ TfLiteStatus FlexDelegate::Initialize(TfLiteContext* context) {
   if (context->recommended_num_threads > 0) {
     session_options.config.set_intra_op_parallelism_threads(
         context->recommended_num_threads);
+    session_options.config.set_inter_op_parallelism_threads(
+        context->recommended_num_threads);
   }
 
   auto status = delegate_data_.Prepare(
@@ -130,7 +132,7 @@ TfLiteStatus FlexDelegate::CopyFromBufferHandle(
   // The life cycle of the pointer will be managed by the reference counting in
   // the TensorFlow world and the pointer will be freed when all the buffer
   // maps, who own it, are gone.
-  if (output->type == kTfLiteResource || output->type == kTfLiteVariant) {
+  if (flex::IsResourceOrVariant(output)) {
     const size_t required_bytes = sizeof(tensorflow::Tensor**);
     const tensorflow::Tensor** tf_tensor_ptr =
         reinterpret_cast<const tensorflow::Tensor**>(malloc(required_bytes));

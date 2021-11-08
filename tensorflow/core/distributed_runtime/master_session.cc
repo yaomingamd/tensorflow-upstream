@@ -56,6 +56,7 @@ limitations under the License.
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/tracing.h"
+#include "tensorflow/core/protobuf/coordination_config.pb.h"
 #include "tensorflow/core/public/session_options.h"
 #include "tensorflow/core/util/device_name_utils.h"
 
@@ -113,7 +114,7 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
 
   const BuildGraphOptions& build_graph_options() { return bg_opts_; }
 
-  int64 collective_graph_key() { return collective_graph_key_; }
+  int64_t collective_graph_key() { return collective_graph_key_; }
 
   std::unique_ptr<ProfileHandler> GetProfileHandler(uint64 step,
                                                     int64_t execution_count,
@@ -121,7 +122,7 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
     return stats_publisher_->GetProfileHandler(step, execution_count, ropts);
   }
 
-  int64 get_and_increment_execution_count() {
+  int64_t get_and_increment_execution_count() {
     return execution_count_.fetch_add(1);
   }
 
@@ -246,8 +247,8 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
   std::unordered_map<string, NodeDetails> name_to_node_details_;
 
   const bool should_deregister_;
-  const int64 collective_graph_key_;
-  std::atomic<int64> execution_count_ = {0};
+  const int64_t collective_graph_key_;
+  std::atomic<int64_t> execution_count_ = {0};
 
   // Graph partitioned into per-location subgraphs.
   struct Part {
@@ -406,7 +407,7 @@ void MasterSession::ReffedClientGraph::TrackFeedsAndFetches(
         uint64 send_device_incarnation;
         TF_CHECK_OK(
             GetNodeAttr(ndef, "send_device_incarnation",
-                        reinterpret_cast<int64*>(&send_device_incarnation)));
+                        reinterpret_cast<int64_t*>(&send_device_incarnation)));
         const string& key =
             Rendezvous::CreateKey(send_device, send_device_incarnation,
                                   recv_device, name, FrameAndIter(0, 0));
@@ -524,14 +525,15 @@ class RunManyGraphs {
     if (resp->status_code() != error::Code::OK) {
       // resp->status_code will only be non-OK if s.ok().
       mutex_lock l(mu_);
-      ReportBadStatus(Status(resp->status_code(),
-                             strings::StrCat("From ", *call->worker_name, ":\n",
-                                             resp->status_error_message())));
+      Status resp_status = call->resp->status();
+      ReportBadStatus(errors::CreateWithUpdatedMessage(
+          resp_status, strings::StrCat("From ", *call->worker_name, ":\n",
+                                       resp_status.error_message())));
     } else if (!s.ok()) {
       mutex_lock l(mu_);
-      ReportBadStatus(
-          Status(s.code(), strings::StrCat("From ", *call->worker_name, ":\n",
-                                           s.error_message())));
+      ReportBadStatus(errors::CreateWithUpdatedMessage(
+          s, strings::StrCat("From ", *call->worker_name, ":\n",
+                             s.error_message())));
     }
     pending_.DecrementCount();
   }
@@ -1255,7 +1257,7 @@ void MasterSession::UpdateLastAccessTime() {
 }
 
 Status MasterSession::Create(GraphDef&& graph_def,
-                             const WorkerCacheFactoryOptions& options) {
+                             const ClusterDef& cluster_def) {
   if (session_opts_.config.use_per_session_threads() ||
       session_opts_.config.session_inter_op_thread_pool_size() > 0) {
     return errors::InvalidArgument(
@@ -1277,11 +1279,10 @@ Status MasterSession::Create(GraphDef&& graph_def,
         std::move(graph_def), execution_options, &execution_state_));
   }
   should_delete_worker_sessions_ = true;
-  return CreateWorkerSessions(options);
+  return CreateWorkerSessions(cluster_def);
 }
 
-Status MasterSession::CreateWorkerSessions(
-    const WorkerCacheFactoryOptions& options) {
+Status MasterSession::CreateWorkerSessions(const ClusterDef& cluster_def) {
   const std::vector<string> worker_names = filtered_worker_list_;
   WorkerCacheInterface* worker_cache = get_worker_cache();
 
@@ -1355,10 +1356,9 @@ Status MasterSession::CreateWorkerSessions(
       return status;
     }
 
-    if (options.cluster_def) {
-      *workers[i].request.mutable_server_def()->mutable_cluster() =
-          *options.cluster_def;
-      workers[i].request.mutable_server_def()->set_protocol(*options.protocol);
+    if (!cluster_def.job().empty()) {
+      *workers[i].request.mutable_server_def()->mutable_cluster() = cluster_def;
+      workers[i].request.mutable_server_def()->set_protocol("grpc");
       workers[i].request.mutable_server_def()->set_job_name(name.job);
       workers[i].request.mutable_server_def()->set_task_index(name.task);
       // Session state is always isolated when ClusterSpec propagation
@@ -1370,6 +1370,8 @@ Status MasterSession::CreateWorkerSessions(
       workers[i].request.set_isolate_session_state(
           session_opts_.config.isolate_session_state());
     }
+    *workers[i].request.mutable_coordination_service_config() =
+        session_opts_.config.experimental().coordination_config();
     if (session_opts_.config.experimental()
             .share_session_state_in_clusterspec_propagation()) {
       // In a dynamic cluster, the ClusterSpec info is usually propagated by
@@ -1515,7 +1517,8 @@ WorkerCacheInterface* MasterSession::get_worker_cache() const {
 }
 
 Status MasterSession::StartStep(const BuildGraphOptions& opts, bool is_partial,
-                                ReffedClientGraph** out_rcg, int64* out_count) {
+                                ReffedClientGraph** out_rcg,
+                                int64_t* out_count) {
   const uint64 hash = HashBuildGraphOptions(opts);
   {
     mutex_lock l(mu_);
@@ -1568,7 +1571,7 @@ uint64 MasterSession::NewStepId(int64_t graph_key) {
   } else {
     uint64 step_id = env_->collective_executor_mgr->NextStepId(graph_key);
     int32_t retry_count = 0;
-    while (static_cast<int64>(step_id) == CollectiveExecutor::kInvalidId) {
+    while (static_cast<int64_t>(step_id) == CollectiveExecutor::kInvalidId) {
       Notification note;
       Status status;
       env_->collective_executor_mgr->RefreshStepIdSequenceAsync(

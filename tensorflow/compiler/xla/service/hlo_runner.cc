@@ -65,6 +65,7 @@ StatusOr<ScopedShapedBuffer> HloRunner::TransferLiteralToDevice(
 StatusOr<std::vector<ScopedShapedBuffer>> HloRunner::TransferLiteralsToDevice(
     absl::Span<const Literal* const> literals) {
   std::vector<ScopedShapedBuffer> buffers;
+  buffers.reserve(literals.size());
   for (const Literal* literal : literals) {
     CHECK(literal != nullptr);
     TF_ASSIGN_OR_RETURN(ScopedShapedBuffer buffer,
@@ -165,6 +166,9 @@ StatusOr<ExecutionOutput> HloRunner::ExecuteWithDeviceBuffers(
 StatusOr<ExecutionOutput> HloRunner::ExecuteWithDeviceBuffers(
     Executable* executable, absl::Span<ScopedShapedBuffer const> arguments,
     ExecutionProfile* profile) {
+  UpdateEntryComputationLayout(&executable->module(),
+                               device_shape_representation_fn_);
+
   // Get service run options.
   se::Stream stream(backend().default_stream_executor());
   stream.Init();
@@ -200,7 +204,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
         const std::vector<ServiceExecutableRunOptions>&,
         const std::vector<absl::Span<const ShapedBuffer* const>>&)>
         execution_helper,
-    std::function<int64(int64_t)> argument_count_provider,
+    std::function<int64_t(int64_t)> argument_count_provider,
     std::function<const Literal*(int64_t, int64_t)> argument_provider,
     const ReplicatedExecuteOptions& options,
     DeviceAssignment* device_assignment) {
@@ -322,6 +326,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicatedImpl(
   LOG(INFO) << "Replicated execution terminated";
 
   std::vector<Literal> exec_results;
+  exec_results.reserve(options.num_replicas);
   for (int64_t i = 0; i < options.num_replicas; ++i) {
     TF_RETURN_IF_ERROR(streams[i]->BlockHostUntilDone());
     TF_ASSIGN_OR_RETURN(Literal literal,
@@ -383,7 +388,7 @@ StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
 
 StatusOr<std::vector<Literal>> HloRunner::ExecuteReplicated(
     std::function<Executable*(int64_t)> executable_provider,
-    std::function<int64(int64_t)> argument_count_provider,
+    std::function<int64_t(int64_t)> argument_count_provider,
     std::function<const Literal*(int64_t, int64_t)> argument_provider,
     const ReplicatedExecuteOptions& options) {
   TF_ASSIGN_OR_RETURN(
@@ -481,6 +486,10 @@ Backend& HloRunner::backend() {
 
 const Backend& HloRunner::backend() const {
   return const_cast<HloRunner*>(this)->backend();
+}
+
+absl::string_view HloRunner::Name() const {
+  return backend_->platform()->Name();
 }
 
 }  // namespace xla

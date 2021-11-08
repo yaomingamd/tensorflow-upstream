@@ -92,7 +92,7 @@ class ConcatBaseOp : public OpKernel {
           internal::SubtleMustCopy(concat_dim_tensor.scalar<int32>()());
     } else {
       concat_dim =
-          internal::SubtleMustCopy(concat_dim_tensor.scalar<int64>()());
+          internal::SubtleMustCopy(concat_dim_tensor.scalar<int64_t>()());
     }
 
     const int N = values_input_end_index_ - values_input_start_index_;
@@ -133,10 +133,11 @@ class ConcatBaseOp : public OpKernel {
         }
         OP_REQUIRES(
             c, in.dim_size(j) == input_shape.dim_size(j),
-            errors::InvalidArgument(
-                "ConcatOp : Dimensions of inputs should match: shape[0] = ",
-                input_shape.DebugString(), " vs. shape[", i,
-                "] = ", in.shape().DebugString()));
+            errors::InvalidArgument("ConcatOp : Dimension ", j,
+                                    " in both shapes must be equal: "
+                                    "shape[0] = ",
+                                    input_shape.DebugString(), " vs. shape[", i,
+                                    "] = ", in.shape().DebugString()));
       }
       if (in.NumElements() > 0) {
         int64_t inputs_flat_dim1 = in.NumElements() / inputs_flat_dim0;

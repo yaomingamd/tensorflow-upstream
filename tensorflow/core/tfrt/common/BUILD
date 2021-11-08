@@ -5,15 +5,16 @@ package(
     licenses = ["notice"],
 )
 
+# Authorized users go here.
 package_group(
     name = "friends",
     packages = [
-        # Authorized users go here.
-        "//tensorflow/core/tfrt/...",
         # copybara:uncomment "//learning/brain/experimental/dtensor/...",
         # copybara:uncomment "//learning/brain/experimental/tfrt/...",
-        # copybara:uncomment "//learning/brain/tfrt/...",
         # copybara:uncomment "//learning/brain/google/xla/...",
+        # copybara:uncomment "//learning/brain/tfrc/...",
+        # copybara:uncomment "//learning/brain/tfrt/...",
+        "//tensorflow/core/tfrt/...",
     ],
 )
 

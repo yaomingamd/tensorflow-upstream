@@ -14,10 +14,6 @@
 # ==============================================================================
 """Helpers to connect to remote servers."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 
 from absl import logging
@@ -181,6 +177,12 @@ def connect_to_cluster(cluster_spec_or_resolver,
     # TODO(fishx): Update this to make sure remote worker has valid ip address
     # to connect with local.
     job_def.tasks[0] = "localhost:{}".format(local_port)
+
+  if context.context().coordination_service is None:
+    # Maybe enable coordination service for the communication protocol
+    coordination_service = remote_utils.coordination_service_type(protocol)
+    if coordination_service:
+      context.context().configure_coordination_service(coordination_service)
 
   server_def = ServerDef(
       cluster=cluster_def,

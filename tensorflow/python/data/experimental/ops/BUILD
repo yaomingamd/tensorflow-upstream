@@ -62,6 +62,7 @@ py_library(
     deps = [
         "//tensorflow/python:experimental_dataset_ops_gen",
         "//tensorflow/python:framework_ops",
+        "//tensorflow/python/compat",
         "//tensorflow/python/data/experimental/service:_pywrap_utils",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/data/ops:options",
@@ -141,19 +142,13 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":random_ops",
-        "//tensorflow/python:array_ops",
-        "//tensorflow/python:dtypes",
-        "//tensorflow/python:experimental_dataset_ops_gen",
         "//tensorflow/python:framework_ops",
         "//tensorflow/python:math_ops",
-        "//tensorflow/python:stateless_random_ops_gen",
         "//tensorflow/python:tf2",
         "//tensorflow/python:util",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/data/ops:readers",
         "//tensorflow/python/data/util:nest",
-        "//tensorflow/python/data/util:structure",
-        "//tensorflow/python/framework:tensor_spec",
         "//tensorflow/python/util:tf_export",
     ],
 )
@@ -259,6 +254,16 @@ py_library(
 )
 
 py_library(
+    name = "random_access",
+    srcs = ["random_access.py"],
+    srcs_version = "PY3",
+    deps = [
+        "//tensorflow/python:experimental_dataset_ops_gen",
+        "//tensorflow/python/data/util:structure",
+    ],
+)
+
+py_library(
     name = "random_ops",
     srcs = [
         "random_ops.py",
@@ -308,18 +313,8 @@ py_library(
     srcs = ["resampling.py"],
     srcs_version = "PY3",
     deps = [
-        ":batching",
-        ":interleave_ops",
-        ":scan_ops",
-        "//tensorflow/python:array_ops",
-        "//tensorflow/python:control_flow_ops",
-        "//tensorflow/python:dtypes",
-        "//tensorflow/python:framework_ops",
-        "//tensorflow/python:logging_ops",
-        "//tensorflow/python:math_ops",
-        "//tensorflow/python:random_ops",
+        "//tensorflow/python:util",
         "//tensorflow/python/data/ops:dataset_ops",
-        "//third_party/py/numpy",
     ],
 )
 
@@ -419,6 +414,7 @@ py_library(
         ":map_defun",
         ":matching_files",
         ":prefetching_ops",
+        ":random_access",
         ":readers",
         ":resampling",
         ":scan_ops",

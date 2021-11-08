@@ -28,6 +28,7 @@ load(
     "tf_protobuf_compiler_deps",
     "tf_protobuf_deps",
     "tf_resource_deps",
+    "tf_testing_deps",
     "tf_windows_aware_platform_deps",
 )
 load(
@@ -44,6 +45,7 @@ load(
     "tf_cc_tests",
     "tf_copts",  # @unused
     "tf_cuda_library",
+    "tf_native_cc_binary",
 )
 load(
     "@local_config_rocm//rocm:build_defs.bzl",
@@ -209,6 +211,15 @@ cc_library(
     ],
 )
 
+# Used by //tensorflow/python/platform:platform.
+tf_native_cc_binary(
+    name = "_cpu_feature_guard.so",
+    linkshared = True,
+    deps = [
+        "//tensorflow/core/platform:cpu_feature_guard",
+    ],
+)
+
 cc_library(
     name = "casts",
     hdrs = ["casts.h"],
@@ -286,26 +297,17 @@ cc_library(
 )
 
 cc_library(
-    name = "error",
-    srcs = ["error.cc"],
-    hdrs = ["error.h"],
-    deps = [
-        ":platform",
-        ":status",
-        ":strcat",
-        ":types",
-    ],
-)
-
-cc_library(
     name = "errors",
+    srcs = ["errors.cc"],
     hdrs = ["errors.h"],
     deps = [
         ":logging",
         ":macros",
+        ":platform",
         ":status",
         ":str_util",
         ":strcat",
+        ":types",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -574,6 +576,22 @@ cc_library(
     hdrs = ["refcount.h"],
     deps = [
         ":logging",
+        ":mutex",
+        ":thread_annotations",
+    ],
+)
+
+tf_cc_test(
+    name = "refcount_test",
+    size = "small",
+    srcs = [
+        "refcount_test.cc",
+    ],
+    deps = [
+        ":env",
+        ":refcount",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
     ],
 )
 
@@ -618,7 +636,7 @@ cc_library(
     name = "resource_loader",
     testonly = 1,
     textual_hdrs = ["resource_loader.h"],
-    deps = tf_platform_deps("resource_loader"),
+    deps = tf_testing_deps("resource_loader"),
 )
 
 cc_library(
@@ -700,7 +718,10 @@ cc_library(
         ":stringprintf",
         ":types",
         "//tensorflow/core/protobuf:error_codes_proto_impl_cc",
+        "//tensorflow/core/protobuf:for_core_protos_cc",
         "@com_google_absl//absl/base",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -818,7 +839,12 @@ cc_library(
     name = "test",
     testonly = True,
     textual_hdrs = ["test.h"],
-    deps = tf_platform_deps("test"),
+    deps = tf_testing_deps("test") + [
+        ":macros",
+        ":platform",
+        "@com_google_googletest//:gtest",
+        "//tensorflow/core:tflite_portable_logging",
+    ],
 )
 
 cc_library(
@@ -826,9 +852,9 @@ cc_library(
     testonly = True,
     hdrs = ["test_benchmark.h"],
     deps = [
-        "@com_google_benchmark//:benchmark",
         ":platform",
-    ] + tf_platform_deps("test_benchmark"),
+        "@com_google_benchmark//:benchmark",
+    ],
 )
 
 cc_library(
@@ -954,6 +980,21 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core/platform:str_util",
+    ],
+)
+
+tf_cc_test(
+    name = "status_test",
+    size = "small",
+    srcs = ["status_test.cc"],
+    deps = [
+        ":status",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -1494,7 +1535,6 @@ filegroup(
         "crash_analysis.h",
         "dynamic_annotations.h",
         "env.h",
-        "error.h",
         "errors.h",
         "file_statistics.h",
         "file_system.h",
@@ -1727,8 +1767,7 @@ filegroup(
         "env.cc",
         "env.h",
         "env_time.h",
-        "error.cc",
-        "error.h",
+        "errors.cc",
         "errors.h",
         "file_statistics.h",
         "file_system.cc",
@@ -1787,7 +1826,7 @@ filegroup(
         "tstring.h",
         "types.h",
     ] + selects.with_or({
-        ("//tensorflow:chromiumos", "//tensorflow:fuchsia"): tf_google_mobile_srcs_no_runtime(),
+        "//tensorflow:fuchsia": tf_google_mobile_srcs_no_runtime(),
         "//conditions:default": [
             "//tensorflow/core/platform/default:mobile_srcs_no_runtime",
             "file_system_helper.cc",

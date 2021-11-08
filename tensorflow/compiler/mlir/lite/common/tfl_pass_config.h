@@ -39,7 +39,9 @@ struct PassConfig {
         runtime_verification(true),
         enable_tflite_variables(false),
         disable_variable_freezing(false),
-        unfold_large_splat_constant(false) {}
+        unfold_large_splat_constant(false),
+        guarantee_all_funcs_one_use(false),
+        enable_hlo_to_tf_conversion(false) {}
 
   // If `emit_builtin_tflite_ops` is true, TF Lite legalization passes will be
   // added, which produces TF Lite ops.
@@ -61,6 +63,8 @@ struct PassConfig {
   // Note: This is staging step and will be removed.
   // TODO(b/137395003): Remove post switching legalization.
   bool legalize_tf_while;
+  // Whether to outline WhileOp at the end of the pipeline.
+  bool outline_tf_while = false;
   // Whether to do shape inference.
   bool shape_inference;
   // Whether to do TFLite runtime verification.
@@ -75,6 +79,11 @@ struct PassConfig {
   // Whether to unfold large splat constant tensors and replace them with
   // fill operation.
   bool unfold_large_splat_constant;
+  // Whether to run the `GuaranteeAllFuncsOneUsePass` to ensure each function
+  // has a single use.
+  bool guarantee_all_funcs_one_use;
+  // Whether to enable the hlo to tf conversion.
+  bool enable_hlo_to_tf_conversion;
 };
 
 }  // namespace TFL

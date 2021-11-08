@@ -85,14 +85,17 @@ void ConvertXPlaneToTraceEvents(uint32 device_id, const XPlaneVisitor& xplane,
           event->set_timestamp_ps(xevent.TimestampPs());
           event->set_duration_ps(xevent.DurationPs());
 
-          xevent.ForEachStat([&](const XStatVisitor& stat) {
+          auto for_each_stat = [&](const XStatVisitor& stat) {
             if (stat.ValueCase() == XStat::VALUE_NOT_SET) return;
             if (IsInternalStat(stat.Type())) return;
             if (stat.Type() == StatType::kStepName) {
               event->set_name(stat.ToString());
             }
             args[std::string(stat.Name())] = stat.ToString();
-          });
+          };
+          // The metadata stats should appear before the per-occurrence stats.
+          xevent.Metadata().ForEachStat(for_each_stat);
+          xevent.ForEachStat(for_each_stat);
         });
   });
 }
@@ -128,9 +131,13 @@ void ConvertXSpaceToTraceEvents(const XSpace& xspace, Trace* trace) {
   }
   std::vector<const XPlane*> device_planes =
       FindPlanesWithPrefix(xspace, kGpuPlanePrefix);
-  // We don't expect GPU and TPU planes to be present in the same XSpace.
+  // We don't expect GPU and TPU planes and custom devices to be present in the
+  // same XSpace.
   if (device_planes.empty()) {
     device_planes = FindPlanesWithPrefix(xspace, kTpuPlanePrefix);
+  }
+  if (device_planes.empty()) {
+    device_planes = FindPlanesWithPrefix(xspace, kCustomPlanePrefix);
   }
   for (const XPlane* device_plane : device_planes) {
     XPlaneVisitor xplane = CreateTfXPlaneVisitor(device_plane);

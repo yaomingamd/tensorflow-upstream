@@ -292,7 +292,7 @@ class BlasScratchAllocator : public se::ScratchAllocator {
 
   BlasScratchAllocator(OpKernelContext* context) : context_(context) {}
 
-  int64 GetMemoryLimitInBytes() override { return -1; }
+  int64_t GetMemoryLimitInBytes() override { return -1; }
 
   se::port::StatusOr<DeviceMemoryBytes> AllocateBytes(
       int64_t byte_size) override {
@@ -382,8 +382,8 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
         c_ptrs.push_back(&c_device_memory.back());
       }
     } else {
-      const std::vector<int64>& a_batch_indices = bcast.x_batch_indices();
-      const std::vector<int64>& b_batch_indices = bcast.y_batch_indices();
+      const std::vector<int64_t>& a_batch_indices = bcast.x_batch_indices();
+      const std::vector<int64_t>& b_batch_indices = bcast.y_batch_indices();
       for (int64_t i = 0; i < bcast.x_batch_size(); ++i) {
         a_device_memory.push_back(AsDeviceMemory(a_base_ptr + i * m * k));
       }
@@ -483,7 +483,7 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
     const uint64 m = in_x.dim_size(adj_x || trans_x ? 2 : 1);
     const uint64 k = in_x.dim_size(adj_x || trans_x ? 1 : 2);
     const uint64 n = in_y.dim_size(adj_y || trans_y ? 1 : 2);
-    const uint64 batch_size = bcast.output_batch_size();
+    const int64_t batch_size = bcast.output_batch_size();
     auto blas_transpose_a = trans[adj_x ? 2 : (trans_x ? 1 : 0)];
     auto blas_transpose_b = trans[adj_y ? 2 : (trans_y ? 1 : 0)];
 
@@ -536,8 +536,8 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
         c_ptrs.push_back(&c_device_memory.back());
       }
     } else {
-      const std::vector<int64>& a_batch_indices = bcast.x_batch_indices();
-      const std::vector<int64>& b_batch_indices = bcast.y_batch_indices();
+      const std::vector<int64_t>& a_batch_indices = bcast.x_batch_indices();
+      const std::vector<int64_t>& b_batch_indices = bcast.y_batch_indices();
       for (int64_t i = 0; i < bcast.x_batch_size(); ++i) {
         a_device_memory.push_back(AsDeviceMemory(a_base_ptr + i * m * k));
       }
@@ -670,11 +670,11 @@ class BaseBatchMatMulOp : public OpKernel {
                          in1.shape().DebugString()));
     if (adj_x_ || trans_x_) std::swap(d0, d1);
     if (adj_y_ || trans_y_) std::swap(d2, d3);
-    OP_REQUIRES(ctx, d1 == d2,
-                errors::InvalidArgument(
-                    "In[0] mismatch In[1] shape: ", d1, " vs. ", d2, ": ",
-                    in0.shape().DebugString(), " ", in1.shape().DebugString(),
-                    " ", adj_x_, " ", adj_y_));
+    OP_REQUIRES(
+        ctx, d1 == d2,
+        errors::InvalidArgument(
+            "Matrix size-incompatible: In[0]: ", in0.shape().DebugString(),
+            ", In[1]: ", in1.shape().DebugString()));
     out_shape.AddDim(d0);
     out_shape.AddDim(d3);
     Tensor* out = nullptr;

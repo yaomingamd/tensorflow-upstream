@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensorflow/lite/core/subgraph.h"
 #include "tensorflow/lite/delegates/flex/buffer_map_util.h"
 #include "tensorflow/lite/delegates/flex/subgraph_resource.h"
+#include "tensorflow/lite/delegates/flex/util.h"
 #include "tensorflow/lite/kernels/kernel_util.h"
 #include "tensorflow/lite/string_util.h"
 
@@ -57,7 +58,8 @@ REGISTER_OP("TfLiteSubgraphExecute")
 // subject to change.
 class TfLiteSubgraphExecute : public OpKernel {
  public:
-  explicit TfLiteSubgraphExecute(OpKernelConstruction* ctx) : OpKernel(ctx) {}
+  explicit TfLiteSubgraphExecute(OpKernelConstruction* ctx)
+      : OpKernel(ctx), tfl_tensors_need_allocation_(true) {}
 
   void Compute(OpKernelContext* ctx) override {
     // Fetch the TF Lite subgraph to execute.
@@ -84,7 +86,11 @@ class TfLiteSubgraphExecute : public OpKernel {
     // Resize input tensors if necessary.
     ResizeInputTensor(ctx, subgraph_selected);
 
-    subgraph_selected.AllocateTensors();
+    if (tfl_tensors_need_allocation_) {
+      OP_REQUIRES(ctx, subgraph_selected.AllocateTensors() == kTfLiteOk,
+                  errors::Internal("Failed to call allocate tensors"));
+      tfl_tensors_need_allocation_ = false;
+    }
 
     // Copy input tensors to subgraph.
     SetSubgraphInput(ctx, subgraph_selected);
@@ -98,7 +104,7 @@ class TfLiteSubgraphExecute : public OpKernel {
 
  private:
   void ResizeInputTensor(OpKernelContext* ctx,
-                         tflite::Subgraph& subgraph_selected) const {
+                         tflite::Subgraph& subgraph_selected) {
     for (int i = 0; i < subgraph_selected.inputs().size(); ++i) {
       // Shift index by 1 since the first input is always the resource name.
       const Tensor& tf_tensor = ctx->input(i + 1);
@@ -118,6 +124,7 @@ class TfLiteSubgraphExecute : public OpKernel {
         for (auto dim : tf_tensor.shape().dim_sizes()) {
           new_shape.push_back(dim);
         }
+        tfl_tensors_need_allocation_ = true;
         OP_REQUIRES(ctx,
                     subgraph_selected.ResizeInputTensor(
                         subgraph_selected.inputs()[i], new_shape) == kTfLiteOk,
@@ -143,8 +150,7 @@ class TfLiteSubgraphExecute : public OpKernel {
         }
 
         dynamic_buffer.WriteToTensor(subgraph_input, /*new_shape=*/nullptr);
-      } else if (subgraph_input->type == kTfLiteResource ||
-                 subgraph_input->type == kTfLiteVariant) {
+      } else if (tflite::flex::IsResourceOrVariant(subgraph_input)) {
         // TODO(b/179094265): This is an experimental implementation, subject to
         // change. This can be re-implemented with life cycle management
         // mechanism like reference counting.
@@ -187,6 +193,9 @@ class TfLiteSubgraphExecute : public OpKernel {
       ctx->set_output(i, std::move(tensor));
     }
   }
+
+  // Tells if the target subgraph needs to invoko AllocateTensors().
+  bool tfl_tensors_need_allocation_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("TfLiteSubgraphExecute").Device(DEVICE_CPU),

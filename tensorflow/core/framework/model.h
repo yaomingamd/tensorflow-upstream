@@ -52,6 +52,9 @@ constexpr char kBufferSize[] = "buffer_size";
 // A key used to identify the input time of the model.
 constexpr char kModelInputTimeKey[] = "model_input_time";
 
+// Default share of available RAM that can be used by model's internal buffers.
+constexpr double kRamBudgetShare = 0.5;
+
 enum class TraversalOrder {
   BFS = 0,
   REVERSE_BFS = 1,
@@ -135,7 +138,7 @@ class Node {
  public:
   // Arguments for `Node` constructor.
   struct Args {
-    int64 id;
+    int64_t id;
     string name;
     std::shared_ptr<Node> output;
   };
@@ -202,27 +205,25 @@ class Node {
   }
 
   // Returns an indication whether autotuning is enabled for this node.
-  bool autotune() const TF_LOCKS_EXCLUDED(mu_) {
-    return autotune_;
-  }
+  bool autotune() const TF_LOCKS_EXCLUDED(mu_) { return autotune_; }
 
   // Returns the number of bytes stored in this node's buffer.
-  int64 buffered_bytes() const TF_LOCKS_EXCLUDED(mu_) {
+  int64_t buffered_bytes() const TF_LOCKS_EXCLUDED(mu_) {
     return buffered_bytes_;
   }
 
   // Returns the number of elements stored in this node's buffer.
-  int64 buffered_elements() const TF_LOCKS_EXCLUDED(mu_) {
+  int64_t buffered_elements() const TF_LOCKS_EXCLUDED(mu_) {
     return buffered_elements_;
   }
 
   // Returns the number of bytes consumed by the node.
-  int64 bytes_consumed() const TF_LOCKS_EXCLUDED(mu_) {
+  int64_t bytes_consumed() const TF_LOCKS_EXCLUDED(mu_) {
     return bytes_consumed_;
   }
 
   // Returns the number of bytes produced by the node.
-  int64 bytes_produced() const TF_LOCKS_EXCLUDED(mu_) {
+  int64_t bytes_produced() const TF_LOCKS_EXCLUDED(mu_) {
     return bytes_produced_;
   }
 
@@ -236,7 +237,7 @@ class Node {
   }
 
   // Returns the unique node ID.
-  int64 id() const TF_LOCKS_EXCLUDED(mu_) { return id_; }
+  int64_t id() const TF_LOCKS_EXCLUDED(mu_) { return id_; }
 
   // Returns the node inputs.
   std::list<std::shared_ptr<Node>> inputs() const TF_LOCKS_EXCLUDED(mu_) {
@@ -251,9 +252,7 @@ class Node {
   const string& name() const { return name_; }
 
   // Returns the number of elements produced by the node.
-  int64 num_elements() const TF_LOCKS_EXCLUDED(mu_) {
-    return num_elements_;
-  }
+  int64_t num_elements() const TF_LOCKS_EXCLUDED(mu_) { return num_elements_; }
 
   // Returns the node output.
   Node* output() const { return output_; }
@@ -265,7 +264,7 @@ class Node {
   }
 
   // Returns the aggregate processing time.
-  int64 processing_time() const TF_LOCKS_EXCLUDED(mu_) {
+  int64_t processing_time() const TF_LOCKS_EXCLUDED(mu_) {
     return processing_time_;
   }
 
@@ -286,9 +285,7 @@ class Node {
   }
 
   // Records that the node produced an element.
-  void record_element() TF_LOCKS_EXCLUDED(mu_) {
-    num_elements_++;
-  }
+  void record_element() TF_LOCKS_EXCLUDED(mu_) { num_elements_++; }
 
   // Records that a node thread has started executing.
   void record_start(int64_t time_nanos) TF_LOCKS_EXCLUDED(mu_) {
@@ -432,13 +429,13 @@ class Node {
     monitoring::CounterCell* const bytes_consumed_counter_;
     monitoring::CounterCell* const bytes_produced_counter_;
     monitoring::CounterCell* const num_elements_counter_;
-    std::atomic<int64> recorded_bytes_consumed_;
-    std::atomic<int64> recorded_bytes_produced_;
-    std::atomic<int64> recorded_num_elements_;
+    std::atomic<int64_t> recorded_bytes_consumed_;
+    std::atomic<int64_t> recorded_bytes_produced_;
+    std::atomic<int64_t> recorded_num_elements_;
   };
 
   // Returns the number of inputs.
-  int64 num_inputs() const TF_SHARED_LOCKS_REQUIRED(mu_) {
+  int64_t num_inputs() const TF_SHARED_LOCKS_REQUIRED(mu_) {
     int64_t num_inputs = 0;
     for (auto& input : inputs_) {
       // Inputs for which autotuning is disabled are excluded.
@@ -562,19 +559,19 @@ class Node {
   static thread_local int64_t work_start_;  // Will be initialized to zero.
 
   mutable mutex mu_;
-  const int64 id_;
+  const int64_t id_;
   const string name_;
 
   // Indicates whether the subtree rooted in this node should be included in
   // autotuning. In particular, if this is `false`, then the subtree is excluded
   // from computation of output time and processing time.
   std::atomic<bool> autotune_;
-  std::atomic<int64> buffered_bytes_;
-  std::atomic<int64> buffered_elements_;
-  std::atomic<int64> bytes_consumed_;
-  std::atomic<int64> bytes_produced_;
-  std::atomic<int64> num_elements_;
-  std::atomic<int64> processing_time_;
+  std::atomic<int64_t> buffered_bytes_;
+  std::atomic<int64_t> buffered_elements_;
+  std::atomic<int64_t> bytes_consumed_;
+  std::atomic<int64_t> bytes_produced_;
+  std::atomic<int64_t> num_elements_;
+  std::atomic<int64_t> processing_time_;
   std::atomic<bool> record_metrics_;
   Metrics metrics_;
   absl::flat_hash_map<string, std::shared_ptr<Parameter>> parameters_
@@ -582,7 +579,7 @@ class Node {
 
   // Statistic of inputs processing time history.
   double input_processing_time_sum_ = 0.0L;
-  int64 input_processing_time_count_ = 0;
+  int64_t input_processing_time_count_ = 0;
 
   // Inputs of this node. These can represent an iterator created from the input
   // dataset but also other input iterators (e.g. created by the user-defined
@@ -650,9 +647,6 @@ class Model {
   Model();
   ~Model();
 
-  // Indicates whether to collect resource usage.
-  bool collect_resource_usage() const { return collect_resource_usage_; }
-
   // Returns a pointer to the model's output node.
   const std::shared_ptr<Node> output() {
     mutex_lock l(mu_);
@@ -711,6 +705,11 @@ class Model {
                      OptimizationParams* optimization_params);
 
  private:
+  // Determines whether optimization should stop given total processing time,
+  // estimated output time, and estimated number of buffers bytes.
+  using StopPredicate =
+      std::function<bool(const ModelParameters&, double, double, double)>;
+
   static constexpr int64_t kOptimizationPeriodMinMs = 10;
   static constexpr int64_t kOptimizationPeriodMaxMs =
       60 * EnvTime::kSecondsToMillis;
@@ -723,16 +722,6 @@ class Model {
   void FlushMetrics() TF_LOCKS_EXCLUDED(mu_);
 
   // This optimization algorithm starts by setting all tunable parallelism
-  // parameters to the minimum value. It then repeatedly identifies the
-  // parameter whose increase in parallelism decreases the output time the most.
-  // This process is repeated until all parameters reach their maximum values or
-  // the projected output time is less than or equal to the processing time
-  // needed to produce an element divided by CPU budget.
-  void OptimizeHillClimb(std::shared_ptr<Node> snapshot,
-                         const OptimizationParams& optimization_params,
-                         CancellationManager* cancellation_manager);
-
-  // This optimization algorithm starts by setting all tunable parallelism
   // parameters to the minimum value. It then improves current parameters by
   // making a step in the direction opposite to the gradient of `OutputTime` and
   // projecting resulting values on the feasible intervals. Improvement step is
@@ -742,6 +731,30 @@ class Model {
   void OptimizeGradientDescent(std::shared_ptr<Node> snapshot,
                                const OptimizationParams& optimization_params,
                                CancellationManager* cancellation_manager);
+
+  // Helper method for implementing hill-climb optimization that can be
+  // parametrized by a predicate to use for stopping the optimization.
+  void OptimizeHillClimbHelper(std::shared_ptr<Node> snapshot,
+                               const OptimizationParams& optimization_params,
+                               CancellationManager* cancellation_manager,
+                               StopPredicate should_stop);
+
+  // This optimization algorithm starts by setting all tunable parallelism
+  // parameters to the minimum value. It then repeatedly identifies the
+  // parameter whose increase in parallelism decreases the output time the most.
+  // This process is repeated until all parameters reach their maximum values or
+  // the projected output time is less than or equal to the processing time
+  // needed to produce an element divided by CPU budget.
+  void OptimizeHillClimb(std::shared_ptr<Node> snapshot,
+                         const OptimizationParams& optimization_params,
+                         CancellationManager* cancellation_manager);
+
+  // This optimization behaves similarly to the hill climb optimization but uses
+  // a relaxed stoping condition, allowing the optimization to oversubscribe
+  // CPU.
+  void OptimizeMaxParallelism(std::shared_ptr<Node> snapshot,
+                              const OptimizationParams& optimization_params,
+                              CancellationManager* cancellation_manager);
 
   // Determines if we should stop the gradient descent optimization iterations
   // based on number of increasable parameters, CPU budget, RAM budget and
@@ -771,20 +784,12 @@ class Model {
   mutex mu_;
   // Used for coordinating the optimization loop and model modifications.
   condition_variable optimize_cond_var_;
-  int64 id_counter_ TF_GUARDED_BY(mu_) = 1;
+  int64_t id_counter_ TF_GUARDED_BY(mu_) = 1;
   std::shared_ptr<Node> output_ TF_GUARDED_BY(mu_) = nullptr;
-
-  // Indicates whether the modeling framework should collect resource usage
-  // (e.g. CPU, memory). The logic for collecting this information assumes that
-  // the collection is not repeatedly disabled and enabled. As a consequence,
-  // the implementation starts collecting resource usage when it encounters a
-  // tunable parameter (because the information is used for tuning the value of
-  // the parameter) and never stops.
-  std::atomic<bool> collect_resource_usage_;
 
   // Determines the time the optimization loop should wait between
   // running optimizations.
-  int64 optimization_period_ms_ TF_GUARDED_BY(mu_);
+  int64_t optimization_period_ms_ TF_GUARDED_BY(mu_);
 
   // Gauge cell that can be used to collect the state of the model.
   monitoring::GaugeCell<std::function<std::string()>>* model_gauge_cell_ =

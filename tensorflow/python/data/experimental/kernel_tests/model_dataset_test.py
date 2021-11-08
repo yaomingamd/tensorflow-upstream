@@ -13,10 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 """Tests for the private `_ModelDataset` transformation."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from absl.testing import parameterized
 
 from tensorflow.python.data.experimental.ops import testing
@@ -37,7 +33,7 @@ class ModelDatasetTest(test_base.DatasetTestBase, parameterized.TestCase):
         testing.assert_next(["Root"]))
     options = options_lib.Options()
     options.experimental_optimization.apply_default_optimizations = False
-    options.experimental_optimization.autotune = True
+    options.autotune.enabled = True
     dataset = dataset.with_options(options)
     get_next = self.getNext(dataset)
 

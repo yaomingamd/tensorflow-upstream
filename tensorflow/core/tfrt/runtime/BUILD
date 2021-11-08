@@ -21,10 +21,8 @@ package_group(
     ],
 )
 
-# No native TFRT-based TF CPU op/kernels.
-# This target is cheaper to build.
 cc_library(
-    name = "runtime_fallback_only",
+    name = "runtime",
     srcs = ["runtime.cc"],
     hdrs = ["runtime.h"],
     copts = if_cuda(
@@ -33,13 +31,11 @@ cc_library(
     ),
     deps = [
         ":work_queue_interface",
-        "@com_google_absl//absl/flags:flag",
         "//tensorflow/core:lib",
         "//tensorflow/core:framework",
         "//tensorflow/core/runtime_fallback/kernel:kernel_fallback_op_handler",
         "//tensorflow/core/runtime_fallback/kernel:kernel_fallback_tensor",
         "//tensorflow/core/runtime_fallback/runtime:runtime_fallback_alwayslink",
-        "@tf_runtime//:core_runtime",
         "@tf_runtime//:core_runtime_alwayslink",
         "@tf_runtime//:hostcontext",
         "@tf_runtime//:tensor",
@@ -55,20 +51,6 @@ cc_library(
 )
 
 cc_library(
-    name = "runtime",
-    hdrs = ["runtime.h"],
-    deps = [
-        ":runtime_fallback_only",
-        ":work_queue_interface",
-        "//tensorflow/core/runtime_fallback/kernel:kernel_fallback_op_handler",
-        "//tensorflow/core/runtime_fallback/runtime:runtime_fallback_alwayslink",
-        "@com_google_absl//absl/flags:flag",
-        "@tf_runtime//:core_runtime_alwayslink",
-        "@tf_runtime//backends/cpu:core_runtime_alwayslink",
-    ],
-)
-
-cc_library(
     name = "work_queue_interface",
     srcs = ["work_queue_interface.cc"],
     hdrs = ["work_queue_interface.h"],
@@ -76,6 +58,8 @@ cc_library(
         "//tensorflow/core:lib",
         "//tensorflow/core/platform:status",
         "//tensorflow/core/platform:threadpool_interface",
+        "//tensorflow/core/profiler/lib:connected_traceme",
+        "//tensorflow/core/profiler/lib:traceme_encode",
         "@tf_runtime//:hostcontext",
         "@tf_runtime//:support",
     ],
@@ -86,6 +70,8 @@ tf_cc_test(
     srcs = ["work_queue_interface_test.cc"],
     deps = [
         ":work_queue_interface",
+        "//tensorflow/core:test",
+        "//tensorflow/core/tfrt/utils:thread_pool",
         "@com_google_googletest//:gtest_main",
         "@tf_runtime//:hostcontext",
         "@tf_runtime//cpp_tests:common",
@@ -119,7 +105,7 @@ tf_cc_test(
         "//tensorflow/core:test_main",
         "//tensorflow/core/platform:errors",
         "//tensorflow/core/platform:status_matchers",
-        "//tensorflow/core/tfrt/utils:test_util",
+        "//tensorflow/core/tfrt/utils:thread_pool",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",

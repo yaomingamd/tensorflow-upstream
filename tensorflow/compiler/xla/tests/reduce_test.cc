@@ -154,7 +154,7 @@ class ReduceTest : public ClientLibraryTestBase {
   // Reduce predicate tensor with dimension rows * cols to dimension cols, to
   // test the implementation of atomic operations on misaligned small data
   // types.
-  template <int64 cols>
+  template <int64_t cols>
   void RunR2ToR1PredTest(bool and_reduce, int64_t rows, int64_t minor = 1,
                          int64_t major = 0) {
     XlaBuilder builder(TestName());
@@ -246,6 +246,7 @@ class ReduceTest : public ClientLibraryTestBase {
         client_->TransferToServer(input_literal).ConsumeValueOrDie();
 
     std::vector<float> expected;
+    expected.reserve(cols);
     for (int64_t colno = 0; colno < cols; ++colno) {
       float column_sum = 0;
       for (int64_t rowno = 0; rowno < rows; ++rowno) {
@@ -456,6 +457,7 @@ XLA_TEST_F(ReduceTest, ReduceElementwiseR2_111x50_To_R1) {
       client_->TransferToServer(input_literal).ConsumeValueOrDie();
 
   std::vector<float> expected;
+  expected.reserve(cols);
   for (int64_t colno = 0; colno < cols; ++colno) {
     float column_sum = 0;
     for (int64_t rowno = 0; rowno < rows; ++rowno) {
@@ -487,6 +489,7 @@ XLA_TEST_F(ReduceTest, TransposeAndReduceElementwiseR2_111x50_To_R1) {
       client_->TransferToServer(input_literal).ConsumeValueOrDie();
 
   std::vector<float> expected;
+  expected.reserve(cols);
   for (int64_t colno = 0; colno < cols; ++colno) {
     float column_sum = 0;
     for (int64_t rowno = 0; rowno < rows; ++rowno) {
@@ -533,6 +536,7 @@ XLA_TEST_F(ReduceTest, Reshape_111x2x25Reduce_111x50_To_R1) {
       client_->TransferToServer(input_literal).ConsumeValueOrDie();
 
   std::vector<float> expected;
+  expected.reserve(cols);
   for (int64_t major = 0; major < 2; ++major) {
     for (int64_t colno = 0; colno < cols / 2; ++colno) {
       float column_sum = 0;
@@ -547,9 +551,9 @@ XLA_TEST_F(ReduceTest, Reshape_111x2x25Reduce_111x50_To_R1) {
 }
 
 struct BoundsLayout {
-  std::vector<int64> bounds;
-  std::vector<int64> layout;
-  std::vector<int64> reduce_dims;
+  std::vector<int64_t> bounds;
+  std::vector<int64_t> layout;
+  std::vector<int64_t> reduce_dims;
 };
 
 void PrintTo(const BoundsLayout& spec, std::ostream* os) {
@@ -916,15 +920,15 @@ XLA_TEST_F(ReduceInitializerTest, U8InitializerBigNonPowerOf2) {
 }
 
 XLA_TEST_F(ReduceInitializerTest, U64InitializerZero) {
-  DoTest<uint64>(0, 1024);
+  DoTest<uint64_t>(0, 1024);
 }
 
 XLA_TEST_F(ReduceInitializerTest, U64InitializerOne) {
-  DoTest<uint64>(1, 1024);
+  DoTest<uint64_t>(1, 1024);
 }
 
 XLA_TEST_F(ReduceInitializerTest, U64InitializerBigValue) {
-  DoTest<uint64>(1234556789123, 1024);
+  DoTest<uint64_t>(1234556789123, 1024);
 }
 
 // Test the operational semantic that the init value is passed on the lhs for
@@ -960,29 +964,31 @@ XLA_TEST_F(ReduceTest, ReduceIdentity) {
 
 XLA_TEST_F(ReduceTest, AndReduceU64) {
   XlaBuilder builder(TestName());
-  Array2D<uint64> initializer = {{0x123456789ABCDEF0ULL, 0x3BCDEF12A4567890ULL},
-                                 {0XFFFFFFFFFFFFFFD6ULL, 101},
-                                 {1, 0XFFFFFFFFFFFFFFFFULL}};
+  Array2D<uint64_t> initializer = {
+      {0x123456789ABCDEF0ULL, 0x3BCDEF12A4567890ULL},
+      {0XFFFFFFFFFFFFFFD6ULL, 101},
+      {1, 0XFFFFFFFFFFFFFFFFULL}};
   auto reducer = CreateScalarAndComputation(U64, &builder);
   auto m = ConstantR2FromArray2D(&builder, initializer);
-  Reduce(m, ConstantR0<uint64>(&builder, 0xFFFFFFFFFFFFFFFFLL), reducer, {1});
+  Reduce(m, ConstantR0<uint64_t>(&builder, 0xFFFFFFFFFFFFFFFFLL), reducer, {1});
 
-  std::vector<uint64> expected = {0x1204461080145890LL, 68, 1};
-  ComputeAndCompareR1<uint64>(&builder, expected, {});
+  std::vector<uint64_t> expected = {0x1204461080145890LL, 68, 1};
+  ComputeAndCompareR1<uint64_t>(&builder, expected, {});
 }
 
 XLA_TEST_F(ReduceTest, OrReduceU64) {
   XlaBuilder builder(TestName());
-  Array2D<uint64> initializer = {{0x123456789ABCDEF0ULL, 0x3BCDEF12A4567890ULL},
-                                 {0xFFFFFFFFFFFFFFD6ULL, 101},
-                                 {1, 0xCAFEBEEFABABABABULL}};
+  Array2D<uint64_t> initializer = {
+      {0x123456789ABCDEF0ULL, 0x3BCDEF12A4567890ULL},
+      {0xFFFFFFFFFFFFFFD6ULL, 101},
+      {1, 0xCAFEBEEFABABABABULL}};
   auto reducer = CreateScalarOrComputation(U64, &builder);
   auto m = ConstantR2FromArray2D(&builder, initializer);
-  Reduce(m, ConstantR0<uint64>(&builder, 0), reducer, {1});
+  Reduce(m, ConstantR0<uint64_t>(&builder, 0), reducer, {1});
 
-  std::vector<uint64> expected = {0X3BFDFF7ABEFEFEF0ULL, 0XFFFFFFFFFFFFFFF7ULL,
-                                  0xCAFEBEEFABABABABULL};
-  ComputeAndCompareR1<uint64>(&builder, expected, {});
+  std::vector<uint64_t> expected = {
+      0X3BFDFF7ABEFEFEF0ULL, 0XFFFFFFFFFFFFFFF7ULL, 0xCAFEBEEFABABABABULL};
+  ComputeAndCompareR1<uint64_t>(&builder, expected, {});
 }
 
 XLA_TEST_F(ReduceTest, R0ReduceInDisguise) {
@@ -1161,6 +1167,49 @@ XLA_TEST_F(VariadicReduceTest, Reduce_R1x2_to_R0x2_argmax) {
   EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{1e-5, 1e-5}));
 }
 
+XLA_TEST_F(VariadicReduceTest, Reduce_R1x2_to_R0x2_argmax_column) {
+  absl::string_view hlo_string = R"(
+    HloModule Reduce_R1x2_to_R0x2_argmax
+
+    add {
+      acc = f32[] parameter(1)
+      op = f32[] parameter(0)
+      ROOT out = f32[] add(acc, op)
+    }
+
+    argmax {
+      running_max = f32[] parameter(0)
+      running_max_idx = u32[] parameter(1)
+      current_value = f32[] parameter(2)
+      current_value_idx = u32[] parameter(3)
+
+      current = (f32[], u32[]) tuple(running_max, running_max_idx)
+      potential = (f32[], u32[]) tuple(current_value, current_value_idx)
+
+      cmp_code = pred[] compare(current_value, running_max), direction=GT
+
+      new_max = f32[] select(cmp_code, current_value, running_max)
+      new_idx = u32[] select(cmp_code, current_value_idx, running_max_idx)
+
+      ROOT out = (f32[], u32[]) tuple(new_max, new_idx)
+    }
+
+    ENTRY main {
+      input = f32[32,128] parameter(0)
+      idxs = u32[32,128] iota(), iota_dimension=0
+      zero = f32[] constant(0)
+      zero_idx = u32[] constant(0)
+
+      ROOT argmax_result = (f32[128], u32[128]) reduce(
+        input, idxs, zero, zero_idx),
+        dimensions={0},
+        to_apply=%argmax
+    }
+)";
+
+  EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{1e-5, 1e-5}));
+}
+
 XLA_TEST_F(VariadicReduceTest, ReduceMultiOutputVariadicAnd) {
   absl::string_view hlo_string = R"(
     HloModule VariadicReduceMultiOutput
@@ -1188,6 +1237,42 @@ XLA_TEST_F(VariadicReduceTest, ReduceMultiOutputVariadicAnd) {
 
       ROOT returned = u32[] get-tuple-element(out), index=1
     }
+)";
+
+  EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{1e-5, 1e-5}));
+}
+
+XLA_TEST_F(VariadicReduceTest, ReduceMultiOutputVariadicDifferentLayout) {
+  absl::string_view hlo_string = R"(
+HloModule ReduceWithLayoutChangeVariadicDifferent
+
+argmax {
+  running_max = f32[] parameter(0)
+  running_max_idx = u32[] parameter(1)
+  current_value = f32[] parameter(2)
+  current_value_idx = u32[] parameter(3)
+
+  current = (f32[], u32[]) tuple(running_max, running_max_idx)
+  potential = (f32[], u32[]) tuple(current_value, current_value_idx)
+
+  cmp_code = pred[] compare(current_value, running_max), direction=GT
+
+  new_max = f32[] select(cmp_code, current_value, running_max)
+  new_idx = u32[] select(cmp_code, current_value_idx, running_max_idx)
+
+  ROOT out = (f32[], u32[]) tuple(new_max, new_idx)
+}
+
+ENTRY main {
+  arg0 = f32[2,3,4,1024]{2,1,0,3}  parameter(0)
+  idxs = u32[2,3,4,1024]{3,2,1,0}  parameter(1)
+  constant0 = f32[] constant(0)
+  constant1 = u32[] constant(0)
+  ROOT reduce0 = (
+      f32[2,3,4]{2,1,0},
+      u32[2,3,4]{1,0,2}
+    ) reduce(arg0, idxs, constant0,constant1), dimensions={3}, to_apply=argmax
+}
 )";
 
   EXPECT_TRUE(RunAndCompare(hlo_string, ErrorSpec{1e-5, 1e-5}));

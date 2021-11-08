@@ -53,6 +53,12 @@ class CustomCallSchedule(enum.IntEnum):
   SCHEDULE_LATEST: int
   SCHEDULE_EARLIEST: int
 
+# TODO(b/189822916): Remove this enum when all clients are migrated to the
+# status-returning API.
+class CustomCallApiVersion(enum.IntEnum):
+  API_VERSION_ORIGINAL: int
+  API_VERSION_STATUS_RETURNING: int
+
 def AfterAll(builder: XlaBuilder, tokens: Sequence[XlaOp]) -> XlaOp: ...
 def AllGather(
     operand: XlaOp,
@@ -68,6 +74,22 @@ def AllReduce(
     replica_groups: Sequence[_ReplicaGroup] = ...,
     channel_id: Optional[ChannelHandle] = ...,
     shape_with_layout: Optional[_Layout] = ...) -> XlaOp: ...
+def ApproxTopK(
+    builder: XlaBuilder,
+    operands: Sequence[XlaOp],
+    init_values: Sequence[XlaOp],
+    top_k: int,
+    reduction_dim: int,
+    comparator: XlaComputation,
+    recall_target: Optional[float],
+    aggregate_to_topk: Optional[bool],
+    reduction_input_size_override: Optional[int]) -> XlaOp: ...
+def ApproxTopKReductionOutputSize(
+    input_size: int,
+    rank: int,
+    top_k: int,
+    recall_target: float,
+    aggregate_to_topk: Optional[bool]) -> Tuple[int, int]: ...
 def ReduceScatter(
     operand: XlaOp,
     computation: XlaComputation,
@@ -142,7 +164,8 @@ def CustomCall(
     shape: Shape,
     opaque: bytes = ...,
     has_side_effects: bool = ...,
-    schedule: CustomCallSchedule = ...) -> XlaOp: ...
+    schedule: CustomCallSchedule = ...,
+    api_version: CustomCallApiVersion = ...) -> XlaOp: ...
 def CustomCallWithLayout(
     builder: XlaBuilder,
     call_target_name: bytes,
@@ -151,7 +174,8 @@ def CustomCallWithLayout(
     operand_shapes_with_layout: Sequence[Shape],
     opaque: bytes = ...,
     has_side_effects: bool = ...,
-    schedule: CustomCallSchedule = ...) -> XlaOp: ...
+    schedule: CustomCallSchedule = ...,
+    api_version: CustomCallApiVersion = ...) -> XlaOp: ...
 def CustomCallWithAliasing(
     builder: XlaBuilder,
     call_target_name: bytes,
@@ -162,7 +186,8 @@ def CustomCallWithAliasing(
     has_side_effects: bool = ...,
     output_operand_aliasing: Sequence[Tuple[ShapeIndex, Tuple[int, ShapeIndex]]] = ...,
     literal: _LiteralSlice = ...,
-    schedule: CustomCallSchedule = ...) -> XlaOp: ...
+    schedule: CustomCallSchedule = ...,
+    api_version: CustomCallApiVersion = ...) -> XlaOp: ...
 def Dot(
     lhs: XlaOp,
     rhs: XlaOp,
@@ -236,7 +261,7 @@ def Parameter(
     shape: Shape,
     name: str = ...,
     replicated_at_leaf_buffers: Sequence[bool] = ...) -> XlaOp: ...
-def QR(a: XlaOp, full_matrices: bool) -> XlaOp: ...
+def QR(a: XlaOp, full_matrices: bool) -> Tuple[XlaOp, XlaOp]: ...
 def Reduce(
     builder: XlaBuilder,
     operands: Sequence[XlaOp],
@@ -329,7 +354,7 @@ def TriangularSolve(
     left_side: bool,
     lower: bool,
     unit_diagonal: bool,
-    transpose_a: bool) -> XlaOp: ...
+    transpose_a: TriangularSolveOptions_Transpose) -> XlaOp: ...
 def Tuple(builder: XlaBuilder, elements: Sequence[XlaOp]) -> XlaOp: ...
 def While(
     condition: XlaComputation,
@@ -338,8 +363,8 @@ def While(
 
 
 def Igamma(a: XlaOp, x: XlaOp) -> XlaOp: ...
-def Igamac(a: XlaOp, x: XlaOp) -> XlaOp: ...
-def IgamaGradA(a: XlaOp, x: XlaOp) -> XlaOp: ...
+def Igammac(a: XlaOp, x: XlaOp) -> XlaOp: ...
+def IgammaGradA(a: XlaOp, x: XlaOp) -> XlaOp: ...
 def RandomGammaGrad(a: XlaOp, x: XlaOp) -> XlaOp: ...
 def RegularizedIncompleteBeta(a: XlaOp, b: XlaOp, x: XlaOp) -> XlaOp: ...
 def Zeta(a: XlaOp, q: XlaOp) -> XlaOp: ...

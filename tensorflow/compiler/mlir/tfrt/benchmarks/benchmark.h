@@ -16,6 +16,8 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_MLIR_TFRT_BENCHMARKS_BENCHMARK_H_
 #define TENSORFLOW_COMPILER_MLIR_TFRT_BENCHMARKS_BENCHMARK_H_
 
+#define EIGEN_USE_THREADS
+
 #include <memory>
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
@@ -23,7 +25,7 @@ limitations under the License.
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "tensorflow/compiler/mlir/tensorflow/dialect_registration.h"
-#include "tensorflow/compiler/mlir/tfrt/jit/tf_cpurt_passes.h"
+#include "tensorflow/compiler/mlir/tfrt/jit/tf_cpurt_pipeline.h"
 #include "tensorflow/core/platform/test_benchmark.h"
 #include "tfrt/cpu/jit/cpurt.h"  // from @tf_runtime
 #include "tfrt/dtype/dtype.h"  // from @tf_runtime
@@ -44,6 +46,7 @@ using ::tfrt::cpu::jit::MemrefDesc;
 using ::tfrt::cpu::jit::Type;
 
 std::unique_ptr<HostContext> CreateSingleThreadedHostContext();
+std::unique_ptr<HostContext> CreateMultiThreadedHostContext(int num_threads);
 
 // Generate random Eigen Tensor of the given dimensions:
 //   (rand<T>() + offset) * scale
@@ -79,7 +82,8 @@ mlir::LogicalResult FreeReturnedMemref(const ResultConversionCtx&,
 JitExecutable& CreateJitExecutable(const HostContext& host,
                                    llvm::StringRef mlir_input,
                                    llvm::StringRef function_name,
-                                   bool lower_from_tensorflow);
+                                   bool lower_from_tensorflow,
+                                   const TfCpuRtPipelineOptions& tf_cpurt_opts);
 
 // Converts Eigen Tensor to Memref descriptor.
 template <typename T, int rank>
@@ -112,6 +116,21 @@ struct ExecuteAssignOp {
     Executor::run(Assign(dst, expr), d);
   }
 };
+
+// -------------------------------------------------------------------------- //
+// Common utilities.
+// -------------------------------------------------------------------------- //
+
+static constexpr int64_t kDynSize = mlir::ShapedType::kDynamicSize;
+
+// Prints an MLIR tensor type, i.e. for `shape` {1, kDynSize} and `element_type`
+// "f32" the output is "tensor<1x?xf32>".
+std::string PrintTensorType(llvm::ArrayRef<int64_t> shape,
+                            llvm::StringRef element_type);
+
+// Prints an MLIR dense array attribute, i.e. for `array` {1, 2} the output is
+// "dense<[1, 2]>".
+std::string PrintDenseArray(llvm::ArrayRef<int32_t> array);
 
 }  // namespace tensorflow
 

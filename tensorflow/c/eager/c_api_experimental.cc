@@ -632,9 +632,9 @@ void TFE_ContextGetFunctionDef(TFE_Context* ctx, const char* function_name,
 TF_Tensor* TFE_AllocateHostTensor(TFE_Context* ctx, TF_DataType dtype,
                                   const int64_t* dims, int num_dims,
                                   TF_Status* status) {
-  std::vector<tensorflow::int64> dimvec(num_dims);
+  std::vector<int64_t> dimvec(num_dims);
   for (int i = 0; i < num_dims; ++i) {
-    dimvec[i] = static_cast<tensorflow::int64>(dims[i]);
+    dimvec[i] = static_cast<int64_t>(dims[i]);
   }
 
   if (ctx == nullptr) {
@@ -704,6 +704,11 @@ void TFE_ContextSetLogDevicePlacement(TFE_Context* ctx, unsigned char enable,
   tensorflow::unwrap(ctx)->SetLogDevicePlacement(enable);
 }
 
+void TFE_ContextSetRunEagerOpAsFunction(TFE_Context* ctx, unsigned char enable,
+                                        TF_Status* status) {
+  tensorflow::unwrap(ctx)->SetRunEagerOpAsFunction(enable);
+}
+
 const char* TFE_TensorHandleDeviceType(TFE_TensorHandle* h, TF_Status* status) {
   if (h == nullptr) {
     status->status = tensorflow::errors::InvalidArgument("Invalid handle");
@@ -718,6 +723,11 @@ int TFE_TensorHandleDeviceID(TFE_TensorHandle* h, TF_Status* status) {
     return -1;
   }
   return tensorflow::unwrap(h)->DeviceId(&status->status);
+}
+
+TF_CAPI_EXPORT extern void TFE_TensorHandleGetStatus(TFE_TensorHandle* h,
+                                                     TF_Status* status) {
+  status->status = tensorflow::unwrap(h)->TensorHandleStatus();
 }
 
 void TFE_GetExecutedOpNames(TFE_Context* ctx, TF_Buffer* buf,
@@ -816,4 +826,20 @@ void TFE_DeleteConfigKeyValue(TFE_Context* ctx, const char* key,
     return;
   }
   status->status = coord_agent->DeleteKeyValue(key);
+}
+
+void TFE_ReportErrorToCluster(TFE_Context* ctx, int error_code,
+                              const char* error_message, TF_Status* status) {
+  tensorflow::ImmediateExecutionDistributedManager* dist_mgr =
+      tensorflow::unwrap(ctx)->GetDistributedManager();
+  tensorflow::CoordinationServiceAgent* coord_agent =
+      dist_mgr->GetCoordinationServiceAgent();
+  if (coord_agent == nullptr) {
+    status->status = tensorflow::errors::FailedPrecondition(
+        "Coordination service is not enabled.");
+    return;
+  }
+  tensorflow::Status s(static_cast<tensorflow::error::Code>(error_code),
+                       error_message);
+  status->status = coord_agent->ReportError(s);
 }
