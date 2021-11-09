@@ -49,3 +49,4 @@ bazel test \
       -//tensorflow/lite/... \
       -//tensorflow/python/ops/ragged:ragged_dispatch_test \
       -//tensorflow/python/ops/ragged:ragged_print_op_test \
+      -//tensorflow/compiler/xla/service:generate_test_hlo_checks_test \
