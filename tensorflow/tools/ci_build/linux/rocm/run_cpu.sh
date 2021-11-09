@@ -47,3 +47,5 @@ bazel test \
       -//tensorflow/core/tpu/... \
       -//tensorflow/java/... \
       -//tensorflow/lite/... \
+      -//tensorflow/python/ops/ragged:ragged_dispatch_test \
+      -//tensorflow/python/ops/ragged:ragged_print_op_test \
