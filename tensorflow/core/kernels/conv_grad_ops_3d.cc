@@ -1728,7 +1728,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       OP_REQUIRES_OK(context,
                      stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                           se::blas::Transpose::kTranspose, n, m,
-                                          k, b_ptr, n, a_ptr, m, &c_ptr, n, 2+(f8_enable_?4:0)));
+                                          k, b_ptr, n, a_ptr, m, &c_ptr, n, 1+(f8_enable_?4:0)));
       return;
     }
 
