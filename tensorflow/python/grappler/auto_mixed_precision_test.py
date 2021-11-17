@@ -20,6 +20,9 @@ from __future__ import print_function
 
 import os
 
+os.environ["MIOPEN_DEBUG_CONVOLUTION_ATTRIB_FP16_ALT_IMPL"] = "0"
+os.environ["ROCBLAS_INTERNAL_FP16_ALT_IMPL"] = "0"
+
 from absl.testing import parameterized
 import numpy as np
 

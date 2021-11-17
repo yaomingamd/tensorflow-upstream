@@ -757,9 +757,11 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
                                 filter_backprop->template flat<T>().size());
 
     OP_REQUIRES_OK(
-        ctx, stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
-                                  se::blas::Transpose::kTranspose, n, m, k,
-                                  a_ptr, n, b_ptr, m, &c_ptr, n));
+        ctx,
+        stream->ThenBlasGemm(
+            se::blas::Transpose::kNoTranspose, se::blas::Transpose::kTranspose,
+            n, m, k, a_ptr, n, b_ptr, m, &c_ptr, n,
+            stream_executor::blas::CallContext::kBackpropInput2));
     return;
   } else if (dims.spatial_dims[0].filter_size ==
                  dims.spatial_dims[0].input_size &&
@@ -782,9 +784,11 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
                                 filter_backprop->template flat<T>().size());
 
     OP_REQUIRES_OK(
-        ctx, stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
-                                  se::blas::Transpose::kTranspose, n, m, k,
-                                  b_ptr, n, a_ptr, m, &c_ptr, n));
+        ctx,
+        stream->ThenBlasGemm(
+            se::blas::Transpose::kNoTranspose, se::blas::Transpose::kTranspose,
+            n, m, k, b_ptr, n, a_ptr, m, &c_ptr, n,
+            stream_executor::blas::CallContext::kBackpropInput2));
     return;
   }
 
@@ -1006,7 +1010,8 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithAlgorithm(
         se::dnn::ConvolutionKind::BACKWARD_FILTER, input_desc, input_ptr,
         filter_desc, filter_backprop_ptr, output_desc, out_backprop_ptr,
-        conv_desc, &scratch_allocator, algorithm_config, nullptr);
+        conv_desc, &scratch_allocator, algorithm_config,
+        se::dnn::CallContext::kBackpropFilter, nullptr);
   }
 
   if (!cudnn_launch_status.ok()) {

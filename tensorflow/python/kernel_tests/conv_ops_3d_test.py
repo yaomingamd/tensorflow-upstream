@@ -18,6 +18,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
+
+os.environ["MIOPEN_DEBUG_CONVOLUTION_ATTRIB_FP16_ALT_IMPL"] = "0"
+os.environ["ROCBLAS_INTERNAL_FP16_ALT_IMPL"] = "0"
+
 import math
 
 import numpy as np

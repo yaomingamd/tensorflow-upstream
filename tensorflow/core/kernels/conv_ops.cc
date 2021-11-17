@@ -826,8 +826,10 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
                                 output->template flat<T>().size());
 
     auto no_transpose = se::blas::Transpose::kNoTranspose;
-    OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m,
-                                             k, b_ptr, n, a_ptr, k, &c_ptr, n));
+    OP_REQUIRES_OK(
+        ctx, stream->ThenBlasGemm(
+                 no_transpose, no_transpose, n, m, k, b_ptr, n, a_ptr, k,
+                 &c_ptr, n, stream_executor::blas::CallContext::kForward));
     return;
   } else if (patch_rows == in_rows && patch_cols == in_cols &&
              !is_grouped_convolution && row_dilation == 1 &&
@@ -847,8 +849,10 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
                                 output->template flat<T>().size());
 
     auto no_transpose = se::blas::Transpose::kNoTranspose;
-    OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m,
-                                             k, b_ptr, n, a_ptr, k, &c_ptr, n));
+    OP_REQUIRES_OK(
+        ctx, stream->ThenBlasGemm(
+                 no_transpose, no_transpose, n, m, k, b_ptr, n, a_ptr, k,
+                 &c_ptr, n, stream_executor::blas::CallContext::kForward));
     return;
   }
 
@@ -1133,7 +1137,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithAlgorithm(
         se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
         filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-        algorithm_config, nullptr);
+        algorithm_config, se::dnn::CallContext::kForward, nullptr);
   }
 
   if (!cudnn_launch_status.ok()) {
