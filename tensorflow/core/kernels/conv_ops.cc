@@ -1124,7 +1124,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithExecutionPlan(
         se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
         filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-        algorithm_config, nullptr);
+        algorithm_config, nullptr, f8_enable?5:1);
   } else {
     VLOG(4) << "Convolution Algorithm: "
             << algorithm_config.algorithm()->algo_id();
@@ -1134,7 +1134,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithAlgorithm(
         se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
         filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-        algorithm_config, nullptr);
+        algorithm_config, nullptr, f8_enable?5:1);
   }
 
   if (!cudnn_launch_status.ok()) {

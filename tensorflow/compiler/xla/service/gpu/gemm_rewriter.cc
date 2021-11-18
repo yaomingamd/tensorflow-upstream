@@ -72,6 +72,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       std::unique_ptr<HloInstruction> gemm_call =
           HloInstruction::CreateCustomCall(output_shape, {lhs, rhs},
                                            kGemmCallTarget);
+      gemm_call->add_frontend_attributes(instr->frontend_attributes());
       GemmBackendConfig gemm_config;
       gemm_config.set_alpha_real(1.0);
       gemm_config.set_alpha_imag(0.0);
@@ -149,6 +150,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
                 {existing_gemm->mutable_operand(0),
                  existing_gemm->mutable_operand(1), bias},
                 kGemmCallTarget);
+        gemm_call->add_frontend_attributes(instr->frontend_attributes());
         TF_RETURN_IF_ERROR(gemm_call->set_backend_config(config));
         TF_RETURN_IF_ERROR(SetName(instr->GetModule(), gemm_call.get()));
         TF_RETURN_IF_ERROR(

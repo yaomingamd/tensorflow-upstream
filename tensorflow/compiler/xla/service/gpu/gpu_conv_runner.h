@@ -76,6 +76,7 @@ struct GpuConvConfig {
   Shape filter_shape;
   Shape output_shape;
   absl::optional<FusionConfig> fusion;
+  int grad_flags = 0;
 };
 
 // Implementation struct exposed for debugging and log analysis.

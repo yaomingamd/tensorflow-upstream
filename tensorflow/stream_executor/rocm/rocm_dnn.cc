@@ -3011,7 +3011,7 @@ port::Status MIOpenSupport::DoConvolve(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
-    dnn::ProfileResult* output_profile_result) {
+    dnn::ProfileResult* output_profile_result, int grad_flags) {
   auto miopen = miopen_->GetHandle(parent_, stream);
   ScopedTensorDescriptor input_nd{input_descriptor,
                                   ToMIOpenDataType(element_type)};
@@ -3022,6 +3022,10 @@ port::Status MIOpenSupport::DoConvolve(
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
 
+  if(grad_flags & 8) {
+    printf("ERROR: grad_flags %d in DoConvolve()\n", grad_flags);
+   exit(-1);
+  }
   // Alpha is the scaling factor for input.
   float alpha = 1.0;
   // Beta is the scaling factor for output.
@@ -3044,12 +3048,12 @@ port::Status MIOpenSupport::DoConvolve(
     }
   }
 
-  bool f8 = false;
-  tensorflow::ReadBoolFromEnvVar("TF_ROCM_F8", false, &f8);
+  bool f8 = (grad_flags & 4);
+  //tensorflow::ReadBoolFromEnvVar("TF_ROCM_F8", false, &f8);
   if(f8 && element_type == dnn::DataType::kHalf) {
     __half* p1, *p2;
     uint64_t sz1=0, sz2=0;
-    int grad_flags = 0;
+//    int grad_flags = 0;
     int Cin = filter_descriptor.input_feature_map_count();
     int Cout = filter_descriptor.output_feature_map_count();
     int fh = filter_descriptor.input_filter_height();
@@ -3066,13 +3070,13 @@ port::Status MIOpenSupport::DoConvolve(
        p2 = const_cast<__half*>(reinterpret_cast<const __half*>(filter_data.opaque()));
        sz1 = output_descriptor.ElementCount();
        sz2 = nFilterElem;
-       grad_flags = 1;
+//       grad_flags = 1;
     } else {
        p1 = const_cast<__half*>(reinterpret_cast<const __half*>(output_data.opaque()));
        p2 = const_cast<__half*>(reinterpret_cast<const __half*>(input_data.opaque()));
        sz1 = output_descriptor.ElementCount();
        sz2 = input_descriptor.ElementCount();
-       grad_flags = 1;
+//       grad_flags = 1;
     }
 
     std::random_device rd;
@@ -3791,7 +3795,7 @@ port::Status MIOpenSupport::DoFusedConvolve(
     const dnn::BatchDescriptor& output_descriptor, DeviceMemoryBase output_data,
     ScratchAllocator* scratch_allocator,
     const dnn::AlgorithmConfig& algorithm_config,
-    dnn::ProfileResult* output_profile_result) {
+    dnn::ProfileResult* output_profile_result, int grad_flags) {
   return port::UnimplementedError("fused convolve not implemented yet");
 }
 

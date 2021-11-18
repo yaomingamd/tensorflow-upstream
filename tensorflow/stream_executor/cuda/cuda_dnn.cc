@@ -4915,7 +4915,7 @@ port::Status CudnnSupport::DoFusedConvolve(
     const dnn::BatchDescriptor& output_descriptor, DeviceMemoryBase output_data,
     ScratchAllocator* scratch_allocator,
     const dnn::AlgorithmConfig& algorithm_config,
-    dnn::ProfileResult* output_profile_result) {
+    dnn::ProfileResult* output_profile_result, int grad_flags) {
   if (input_type == dnn::DataType::kInt8 &&
       !stream->GetCudaComputeCapability().IsAtLeast(6, 1)) {
     return port::UnimplementedError(
@@ -5065,7 +5065,7 @@ port::Status CudnnSupport::DoFusedConvolveWithExecutionPlan(
     const dnn::BatchDescriptor& output_descriptor, DeviceMemoryBase output_data,
     ScratchAllocator* scratch_allocator,
     const dnn::AlgorithmConfig& algorithm_config,
-    dnn::ProfileResult* output_profile_result) {
+    dnn::ProfileResult* output_profile_result, int grad_flags) {
 #if CUDNN_VERSION >= 8100 && TF_ENABLE_CUDNN_FRONTEND
   auto cudnn = cudnn_->GetHandle(parent_, stream);
 

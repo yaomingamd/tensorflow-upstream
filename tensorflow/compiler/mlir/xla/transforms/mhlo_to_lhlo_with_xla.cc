@@ -790,6 +790,15 @@ StatusOr<Operation*> LhloDialectEmitter::EmitGemm(
     op.batch_sizeAttr(builder_.getI64IntegerAttr(config.batch_size()));
     op.lhs_strideAttr(builder_.getI64IntegerAttr(config.lhs_stride()));
     op.rhs_strideAttr(builder_.getI64IntegerAttr(config.rhs_stride()));
+    /*
+    auto attr = custom_call->frontend_attributes().map();
+    if(attr.find("grad_flags") != attr.end())
+      op.grad_flagsAttr(builder_.getI64IntegerAttr(std::stoi(attr["grad_flags"])));
+    else {
+      printf("Attempting to emit gemm op with unset grad_flags\n");
+      exit(-1);
+    }
+    */
     if (config.algorithm_case() ==
         xla::gpu::GemmBackendConfig::kSelectedAlgorithm) {
       op.algorithmAttr(builder_.getI64IntegerAttr(config.selected_algorithm()));
@@ -892,6 +901,16 @@ StatusOr<Operation*> LhloDialectEmitter::EmitDnnConvolution(
         &custom_call->precision_config(), &builder_));
     op.result_scaleAttr(
         builder_.getF64FloatAttr(backend_config.conv_result_scale()));
+    auto attr = custom_call->frontend_attributes().map();
+    if(attr.find("grad_flags") != attr.end())
+      op.grad_flagsAttr(builder_.getI64IntegerAttr(std::stoi(attr["grad_flags"])));
+    else if(backend_config.grad_flags() & 256) {
+      op.grad_flagsAttr(builder_.getI64IntegerAttr(backend_config.grad_flags()));
+    }
+    else {
+      printf("Attempting to emit convolution op with unset grad_flags\n");
+      exit(-1);
+    }
     auto config = mlir::lmhlo_gpu::ConvolutionBackendConfig::get(
         builder_.getI64IntegerAttr(backend_config.algorithm()),
         builder_.getBoolAttr(backend_config.tensor_ops_enabled()),

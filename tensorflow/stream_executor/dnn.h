@@ -1274,7 +1274,7 @@ class DnnSupport {
       const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data, ScratchAllocator* scratch_allocator,
       const dnn::AlgorithmConfig& algorithm_config,
-      dnn::ProfileResult* output_profile_result) {
+      dnn::ProfileResult* output_profile_result, int grad_flags) {
     return port::UnimplementedError(
         "DnnSupport::DoFusedConvolve not implemented on this platform.");
   }
@@ -1341,7 +1341,7 @@ class DnnSupport {
       DeviceMemoryBase output_data,
       const ConvolutionDescriptor& convolution_descriptor,
       AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
-      ProfileResult* output_profile_result) = 0;
+      ProfileResult* output_profile_result, int grad_flags) = 0;
 
   // Return a list of algorithms supported by the forward convolution pass.
   // cc_major and cc_minor are the compute capabilities of the device.

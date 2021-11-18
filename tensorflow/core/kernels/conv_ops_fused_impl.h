@@ -572,7 +572,7 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
           bias_desc, bias_ptr,              // bias
           dnn_activation_mode,              // activation
           output_desc, &output_ptr,         // output
-          &scratch_allocator, algorithm_config, nullptr);
+          &scratch_allocator, algorithm_config, nullptr, grad_flags);
     } else {
       cudnn_launch_status = stream->FusedConvolveWithAlgorithm(
           input_desc, input_ptr,            // input
@@ -583,7 +583,7 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
           bias_desc, bias_ptr,              // bias
           dnn_activation_mode,              // activation
           output_desc, &output_ptr,         // output
-          &scratch_allocator, algorithm_config, nullptr);
+          &scratch_allocator, algorithm_config, nullptr, grad_flags);
     }
 
     OP_REQUIRES_OK(context, cudnn_launch_status);

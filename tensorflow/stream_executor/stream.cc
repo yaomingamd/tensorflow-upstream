@@ -455,14 +455,14 @@ Stream &Stream::ThenConvolve(
     const DeviceMemory<float> &filter_data,
     const dnn::ConvolutionDescriptor &convolution_descriptor,
     const dnn::BatchDescriptor &output_descriptor,
-    DeviceMemory<float> *output) {
+    DeviceMemory<float> *output, int grad_flags) {
   if (ok()) {
     CheckError(ConvolveWithAlgorithm(
                    dnn::ConvolutionKind::FORWARD, input_descriptor, input_data,
                    filter_descriptor, filter_data, output_descriptor, *output,
                    convolution_descriptor,
                    /*scratch_allocator=*/nullptr, dnn::AlgorithmConfig(),
-                   /*output_profile_result=*/nullptr)
+                   /*output_profile_result=*/nullptr, grad_flags)
                    .ok());
   }
   return *this;

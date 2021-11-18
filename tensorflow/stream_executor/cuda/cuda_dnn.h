@@ -320,7 +320,7 @@ class CudnnSupport : public dnn::DnnSupport {
       const dnn::ConvolutionDescriptor& convolution_descriptor,
       const dnn::AlgorithmConfig& plan_config,
       ScratchAllocator* scratch_allocator,
-      dnn::ProfileResult* output_profile_result);
+      dnn::ProfileResult* output_profile_result, int grad_flags);
 
   port::Status DoFusedConvolve(
       Stream* stream, dnn::DataType input_type, dnn::DataType side_input_type,
@@ -336,7 +336,7 @@ class CudnnSupport : public dnn::DnnSupport {
       const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data, ScratchAllocator* scratch_allocator,
       const dnn::AlgorithmConfig& algorithm_config,
-      dnn::ProfileResult* output_profile_result) override;
+      dnn::ProfileResult* output_profile_result, int grad_flags) override;
 
   port::Status DoFusedConvolveWithExecutionPlan(
       Stream* stream, dnn::DataType element_type,

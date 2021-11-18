@@ -395,12 +395,12 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithExecutionPlan(
         se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
         filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-        &scratch_allocator, algorithm_config, nullptr);
+        &scratch_allocator, algorithm_config, nullptr, (f8_enable?4:0)+1);
   } else {
     cudnn_launch_status = stream->ConvolveWithAlgorithm(
         se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
         filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-        &scratch_allocator, algorithm_config, nullptr);
+        &scratch_allocator, algorithm_config, nullptr, (f8_enable?4:0)+1);
   }
 
   if (!cudnn_launch_status.ok()) {

@@ -339,12 +339,12 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
         return stream->ConvolveWithExecutionPlan(
             kind, input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
             output_ptr, conv_desc, allocator_used, profile_config,
-            profile_result);
+            profile_result, 0);
       } else {
         return stream->ConvolveWithAlgorithm(
             kind, input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
             output_ptr, conv_desc, allocator_used, profile_config,
-            profile_result);
+            profile_result, 0);
       }
     };
 
@@ -387,7 +387,7 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
             output_ptr, conv_desc, &scratch_allocator,
             se::dnn::AlgorithmConfig(profile_algorithm,
                                      miopen_algorithm.scratch_size()),
-            &profile_result);
+            &profile_result, 0);
         if (miopen_launch_status.ok() && profile_result.is_valid()) {
           results.emplace_back();
           auto& result = results.back();

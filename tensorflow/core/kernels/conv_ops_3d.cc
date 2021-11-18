@@ -61,7 +61,7 @@ struct LaunchConvOp<CPUDevice, T> {
                      const Tensor& input, const Tensor& filter,
                      const std::array<int64, 3>& dilations,
                      const std::array<int64, 3>& strides, const Padding padding,
-                     TensorFormat data_format, Tensor* output) {
+                     TensorFormat data_format, Tensor* output, int grad_flags) {
     OP_REQUIRES(context, data_format == FORMAT_NHWC,
                 errors::InvalidArgument("CPU implementation of Conv3D "
                                         "currently only supports the NHWC "
@@ -125,6 +125,7 @@ class Conv3DOp : public BinaryOp<T> {
         errors::InvalidArgument("Dilated rates should be larger than 0."));
     OP_REQUIRES_OK(context, context->GetAttr("padding", &padding_));
     cudnn_use_autotune_ = CudnnUseAutotune();
+    f8_enable_ = context->AllowF8();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -190,7 +191,7 @@ class Conv3DOp : public BinaryOp<T> {
 
     LaunchConvOp<Device, T>::launch(context, cudnn_use_autotune_, input, filter,
                                     dilations, strides, padding_, data_format_,
-                                    output);
+                                    output, f8_enable_?4:0);
   }
 
  private:
@@ -199,6 +200,7 @@ class Conv3DOp : public BinaryOp<T> {
   Padding padding_;
   TensorFormat data_format_;
   bool cudnn_use_autotune_;
+  bool f8_enable_;
 };
 
 #define REGISTER_CPU_KERNEL(T)                                  \
@@ -228,7 +230,7 @@ struct LaunchConvOp<GPUDevice, T> {
                      const Tensor& input_param, const Tensor& filter,
                      const std::array<int64, 3>& dilations,
                      const std::array<int64, 3>& strides, const Padding padding,
-                     TensorFormat data_format, Tensor* output) {
+                     TensorFormat data_format, Tensor* output, int grad_flags) {
     auto* stream = ctx->op_device_context()->stream();
     OP_REQUIRES(ctx, stream, errors::Internal("No GPU stream available."));
 
@@ -282,7 +284,7 @@ struct LaunchConvOp<GPUDevice, T> {
       auto no_transpose = se::blas::Transpose::kNoTranspose;
       OP_REQUIRES_OK(
           ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m, k, b_ptr,
-                                    n, a_ptr, k, &c_ptr, n, 0));
+                                    n, a_ptr, k, &c_ptr, n, grad_flags));
       return;
     } else if (!is_grouped_convolution && filter_planes == in_planes &&
                filter_rows == in_rows && filter_cols == in_cols &&
@@ -303,7 +305,7 @@ struct LaunchConvOp<GPUDevice, T> {
       auto no_transpose = se::blas::Transpose::kNoTranspose;
       OP_REQUIRES_OK(
           ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m, k, b_ptr,
-                                    n, a_ptr, k, &c_ptr, n, 0));
+                                    n, a_ptr, k, &c_ptr, n, grad_flags));
       return;
     }
 
@@ -518,12 +520,12 @@ struct LaunchConvOp<GPUDevice, T> {
       cudnn_launch_status = stream->ConvolveWithExecutionPlan(
           se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
           filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-          algorithm_config, nullptr);
+          algorithm_config, nullptr, grad_flags);
     } else {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
           se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
           filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-          algorithm_config, nullptr);
+          algorithm_config, nullptr, grad_flags);
     }
 
     if (!cudnn_launch_status.ok()) {

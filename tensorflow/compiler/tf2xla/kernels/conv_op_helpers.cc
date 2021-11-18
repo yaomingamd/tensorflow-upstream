@@ -185,7 +185,7 @@ StatusOr<ConvOpAttrs> ConvOpAttrs::Create(int num_spatial_dims, bool depthwise,
 
 StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
     StringPiece /*type_string*/, xla::XlaOp conv_input, xla::XlaOp filter,
-    const ConvOpAttrs& attrs, const xla::PrecisionConfig* precision_config) {
+    const ConvOpAttrs& attrs, const xla::PrecisionConfig* precision_config, int grad_flags) {
   TF_RETURN_IF_ERROR(CheckConvAttrs(attrs));
 
   auto* builder = conv_input.builder();
@@ -275,25 +275,29 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
   }
 
   if (padding_type != xla::PaddingType::PADDING_INVALID) {
-    return xla::DynamicConvForward(
+    auto retval = xla::DynamicConvForward(
         conv_input, filter, window_strides, padding, lhs_dilation, rhs_dilation,
         dims,
         /*feature_group_count=*/attrs.depthwise ? in_depth
                                                 : feature_group_count,
         /*batch_group_count=*/1, precision_config, padding_type);
+    builder->SetInstructionFrontendAttribute(retval, "grad_flags", std::to_string(grad_flags));
+    return retval;
   }
 
-  return xla::ConvGeneralDilated(
+  auto retval = xla::ConvGeneralDilated(
       conv_input, filter, window_strides, padding, lhs_dilation, rhs_dilation,
       dims,
       /*feature_group_count=*/attrs.depthwise ? in_depth : feature_group_count,
       /*batch_group_count=*/1, precision_config);
+  builder->SetInstructionFrontendAttribute(retval, "grad_flags", std::to_string(grad_flags));
+  return retval;
 }
 
 StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(
     StringPiece type_string, const xla::Shape& input_shape, xla::XlaOp filter,
     xla::XlaOp out_backprop, const ConvOpAttrs& attrs,
-    const xla::PrecisionConfig* precision_config, xla::XlaOp* input_sizes) {
+    const xla::PrecisionConfig* precision_config, xla::XlaOp* input_sizes, int grad_flags) {
   TF_RETURN_IF_ERROR(CheckConvAttrs(attrs));
 
   int num_dims = attrs.num_spatial_dims + 2;
@@ -372,26 +376,30 @@ StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(
   filter = xla::Rev(filter, kernel_spatial_dims);
   if (padding_type != xla::PaddingType::PADDING_INVALID) {
     TF_RET_CHECK(input_sizes != nullptr);
-    return xla::DynamicConvInputGrad(
+    auto retval = xla::DynamicConvInputGrad(
         *input_sizes, out_backprop, filter, /*window_strides=*/ones, padding,
         lhs_dilation, rhs_dilation, dnums,
         /*feature_group_count=*/
         feature_group_count,
         /*batch_group_count=*/1, precision_config, padding_type);
+    builder->SetInstructionFrontendAttribute(retval, "grad_flags", std::to_string(grad_flags));
+    return retval;
   }
   // activation gradients
   //   = gradients (with padding and dilation) <conv> mirrored_weights
-  return xla::ConvGeneralDilated(out_backprop, filter, /*window_strides=*/ones,
+  auto retval = xla::ConvGeneralDilated(out_backprop, filter, /*window_strides=*/ones,
                                  padding, lhs_dilation, rhs_dilation, dnums,
                                  /*feature_group_count=*/
                                  feature_group_count,
                                  /*batch_group_count=*/1, precision_config);
+  builder->SetInstructionFrontendAttribute(retval, "grad_flags", std::to_string(grad_flags));
+  return retval;
 }
 
 StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(
     StringPiece type_string, xla::XlaOp activations,
     const xla::Shape& filter_shape, xla::XlaOp gradients,
-    const ConvOpAttrs& attrs, const xla::PrecisionConfig* precision_config) {
+    const ConvOpAttrs& attrs, const xla::PrecisionConfig* precision_config, int grad_flags) {
   TF_RETURN_IF_ERROR(CheckConvAttrs(attrs));
 
   auto* builder = activations.builder();
@@ -538,6 +546,7 @@ StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(
         /*feature_group_count=*/1,
         /*batch_group_count=*/batch_group_count, precision_config);
   }
+  builder->SetInstructionFrontendAttribute(filter_backprop, "grad_flags", std::to_string(grad_flags));
 
   if (attrs.depthwise) {
     filter_backprop = xla::Reshape(filter_backprop, filter_shape.dimensions());

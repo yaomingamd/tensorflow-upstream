@@ -111,7 +111,8 @@ def LHLOGPU_BatchNormTrainingOp : LHLOGPU_Op<"batch_norm_training"> {
 class GpuConvolutionAttributes<dag extraAttribs> {
   dag attributes = !con(
     ConvolutionAttributes.attributes,
-    (ins F64Attr:$result_scale),
+    (ins F64Attr:$result_scale,
+         OptionalAttr<I64Attr>:$grad_flags),
     extraAttribs,
     (ins ConvolutionBackendConfigAttr:$backend_config));
 }
@@ -206,6 +207,7 @@ def LHLOGPU_GEMMOp : LHLOGPU_Op<"gemm"> {
     I64Attr:$batch_size,
     I64Attr:$lhs_stride,
     I64Attr:$rhs_stride,
+    OptionalAttr<I64Attr>:$grad_flags,
     OptionalAttr<I64Attr>:$algorithm);
 }
 
@@ -223,6 +225,7 @@ def LHLOGPU_GEMM_BiasOp : LHLOGPU_Op<"gemm_bias"> {
     I64Attr:$batch_size,
     I64Attr:$lhs_stride,
     I64Attr:$rhs_stride,
+    OptionalAttr<I64Attr>:$grad_flags,
     OptionalAttr<I64Attr>:$algorithm);
 }
 

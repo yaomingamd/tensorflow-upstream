@@ -1528,12 +1528,12 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       cudnn_launch_status = stream->ConvolveWithExecutionPlan(
           se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
           filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-          &scratch_allocator, algorithm_config, nullptr);
+          &scratch_allocator, algorithm_config, nullptr, f8_enable_?5:1);
     } else {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
           se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
           filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-          &scratch_allocator, algorithm_config, nullptr);
+          &scratch_allocator, algorithm_config, nullptr, f8_enable_?5:1);
     }
 
     if (!cudnn_launch_status.ok()) {
@@ -1936,12 +1936,12 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       cudnn_launch_status = stream->ConvolveWithExecutionPlan(
           se::dnn::ConvolutionKind::BACKWARD_FILTER, input_desc, input_ptr,
           filter_desc, filter_backprop_ptr, output_desc, out_backprop_ptr,
-          conv_desc, &scratch_allocator, algorithm_config, nullptr);
+          conv_desc, &scratch_allocator, algorithm_config, nullptr, f8_enable_?5:1);
     } else {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
           se::dnn::ConvolutionKind::BACKWARD_FILTER, input_desc, input_ptr,
           filter_desc, filter_backprop_ptr, output_desc, out_backprop_ptr,
-          conv_desc, &scratch_allocator, algorithm_config, nullptr);
+          conv_desc, &scratch_allocator, algorithm_config, nullptr, f8_enable_?5:1);
     }
 
     if (!cudnn_launch_status.ok()) {

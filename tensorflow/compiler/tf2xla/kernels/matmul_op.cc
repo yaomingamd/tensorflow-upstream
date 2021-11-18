@@ -48,6 +48,10 @@ class MatMulOp : public XlaOpKernel {
       OP_REQUIRES_OK(ctx, ctx->GetAttr("a_is_sparse", &dummy_is_sparse));
       OP_REQUIRES_OK(ctx, ctx->GetAttr("b_is_sparse", &dummy_is_sparse));
     }
+    bool grad_a = false, grad_b = false;
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_a", &grad_a));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_b", &grad_b));
+    grad_flags_ = (grad_a?1:0) + (grad_b?2:0) + (ctx->AllowF8()?4:0) + 256;
   }
 
   ~MatMulOp() override = default;
@@ -88,7 +92,10 @@ class MatMulOp : public XlaOpKernel {
         b = xla::ConvertElementType(b, xla::F32);
       }
     }
-    ctx->SetOutput(0, xla::BatchDot(a, transpose_a_, b, transpose_b_));
+    auto retval = xla::BatchDot(a, transpose_a_, b, transpose_b_);
+    auto builder = a.builder();
+    builder->SetInstructionFrontendAttribute(retval, "grad_flags", std::to_string(grad_flags_));
+    ctx->SetOutput(0, retval);
   }
 
  private:
@@ -97,6 +104,7 @@ class MatMulOp : public XlaOpKernel {
   bool transpose_b_;
   DataType a_type_;
   DataType b_type_;
+  int grad_flags_;
 };
 
 REGISTER_XLA_OP(Name("MatMul").TypeConstraint("T", kMatmulTypes), MatMulOp);

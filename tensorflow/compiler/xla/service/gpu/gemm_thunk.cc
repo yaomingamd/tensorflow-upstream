@@ -85,6 +85,7 @@ struct MatrixDescriptor {
   se::DeviceMemory<T> cast() const {
     return se::DeviceMemory<T>(data);
   }
+  int gradient = -1;
 };
 
 // Converts from an XLA PrimitiveType to a blas::ComputationType, which is
@@ -122,6 +123,8 @@ static Status DoGemmWithAlgorithm(
       *ComputationTypeFromPrimitive(output_type);
   se::DeviceMemory<Output> output_data(output_matrix.data);
 
+  if(lhs.gradient<0 || rhs.gradient<0)
+    printf("ERROR: gradient flag uninitialized\n");
   if (batch_size != 1) {
     return stream->ThenBlasGemmStridedBatchedWithAlgorithm(
         lhs.transpose, rhs.transpose, output_matrix.num_rows,
@@ -132,7 +135,7 @@ static Status DoGemmWithAlgorithm(
         /*leading dim of RHS=*/rhs.num_rows, rhs.stride,
         /*beta=*/beta, &output_data,
         /*leading dim of output=*/output_matrix.num_rows, output_matrix.stride,
-        batch_size, computation_type, algorithm, 0, output_profile_result);
+        batch_size, computation_type, algorithm, (lhs.gradient?1:0)+(rhs.gradient?2:0), output_profile_result);
   } else {
     return stream->ThenBlasGemmWithAlgorithm(
         lhs.transpose, rhs.transpose, output_matrix.num_rows,
@@ -142,7 +145,7 @@ static Status DoGemmWithAlgorithm(
         /*lda=*/lhs.num_rows, rhs.cast<Input>(),
         /*ldb=*/rhs.num_rows,
         /*beta=*/beta, &output_data,
-        /*ldc=*/output_matrix.num_rows, computation_type, algorithm, 0,
+        /*ldc=*/output_matrix.num_rows, computation_type, algorithm, (lhs.gradient?1:0)+(rhs.gradient?2:0),
         output_profile_result);
   }
 }
@@ -172,7 +175,7 @@ static Status DoGemm(int64_t batch_size, const MatrixDescriptor &lhs,
         /*leading dim of RHS=*/rhs.num_rows, rhs.stride,
         /*beta=*/beta, &output_data,
         /*leading dim of output=*/output_matrix.num_rows, output_matrix.stride,
-        batch_size, 0);
+        batch_size, (lhs.gradient?1:0)+(rhs.gradient?2:0));
   }
   return stream->ThenBlasGemm(
       lhs.transpose, rhs.transpose, output_matrix.num_rows,
@@ -181,7 +184,7 @@ static Status DoGemm(int64_t batch_size, const MatrixDescriptor &lhs,
       /*leading dim of LHS=*/lhs.num_rows, rhs.cast<Input>(),
       /*leading dim of RHS=*/rhs.num_rows,
       /*beta=*/beta, &output_data,
-      /*leading dim of output=*/output_matrix.num_rows, 0);
+      /*leading dim of output=*/output_matrix.num_rows, (lhs.gradient?1:0)+(rhs.gradient?2:0));
 }
 
 Status RunGemm(const GpuGemmConfig &gemm_config,
@@ -259,7 +262,7 @@ Status RunGemm(const GpuGemmConfig &gemm_config,
   // B^T and thus the number of columns in B.
   auto make_descriptor = [&](se::DeviceMemoryBase data, const Shape &shape,
                              int64_t row_dim, bool transpose,
-                             int64_t stride) -> MatrixDescriptor {
+                             int64_t stride, int grad_flag) -> MatrixDescriptor {
     bool is_row_major = LayoutUtil::Minor(shape.layout(), row_dim) != 0;
     bool layout_mismatch =
         LayoutUtil::Minor(shape.layout(), row_dim) !=
@@ -275,20 +278,23 @@ Status RunGemm(const GpuGemmConfig &gemm_config,
                             transpose ^ layout_mismatch
                                 ? se::blas::Transpose::kTranspose
                                 : se::blas::Transpose::kNoTranspose,
-                            rows, cols, stride};
+                            rows, cols, stride, grad_flag};
   };
 
   bool lhs_transpose = dim_nums.lhs_contracting_dimensions(0) ==
                        dim_nums.lhs_batch_dimensions_size();
   bool rhs_transpose = dim_nums.rhs_contracting_dimensions(0) ==
                        dim_nums.rhs_batch_dimensions_size() + 1;
-
+  if(!(gemm_config.backend_config.grad_flags() & 256)) {
+    printf("ERROR: GpuGemmConfig grad_flags uninitialized in gemm_thunk.cc\n");
+    abort();
+  }
   MatrixDescriptor lhs_matrix = make_descriptor(
       lhs_buffer, lhs_shape, dim_nums.lhs_batch_dimensions_size(),
-      lhs_transpose, backend_config.lhs_stride());
+      lhs_transpose, backend_config.lhs_stride(), gemm_config.backend_config.grad_flags()&1);
   MatrixDescriptor rhs_matrix = make_descriptor(
       rhs_buffer, rhs_shape, dim_nums.rhs_batch_dimensions_size(),
-      rhs_transpose, backend_config.rhs_stride());
+      rhs_transpose, backend_config.rhs_stride(), gemm_config.backend_config.grad_flags()&2);
 
   if (LayoutUtil::Minor(output_shape.layout(), output_row_dim) != 0) {
     std::swap(lhs_matrix, rhs_matrix);
@@ -297,7 +303,7 @@ Status RunGemm(const GpuGemmConfig &gemm_config,
 
   const MatrixDescriptor output_matrix{
       output_buffer, se::blas::Transpose::kNoTranspose, output_num_rows,
-      output_num_cols, output_num_rows * output_num_cols};
+      output_num_cols, output_num_rows * output_num_cols, gemm_config.backend_config.grad_flags()};
   auto best_algorithm = [&]() -> absl::optional<se::blas::AlgorithmType> {
     if (algorithm) {
       return *algorithm;

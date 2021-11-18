@@ -406,6 +406,7 @@ REGISTER_OP("Conv2DBackpropInput")
     .Attr(GetExplicitPaddingsAttrString())
     .Attr(GetConvnetDataFormatAttrString())
     .Attr("dilations: list(int) = [1, 1, 1, 1]")
+    .Attr("gradient: bool = true")
     .SetShapeFn(shape_inference::Conv2DBackpropInputShape);
 
 // TODO(jeff): Instead of 'use_cudnn_for_gpu', maybe we should have a
@@ -423,6 +424,7 @@ REGISTER_OP("Conv2DBackpropFilter")
     .Attr(GetExplicitPaddingsAttrString())
     .Attr(GetConvnetDataFormatAttrString())
     .Attr("dilations: list(int) = [1, 1, 1, 1]")
+    .Attr("gradient: bool = true")
     .SetShapeFn([](InferenceContext* c) {
       ShapeHandle s;
       TF_RETURN_IF_ERROR(c->MakeShapeFromShapeTensor(1, &s));
