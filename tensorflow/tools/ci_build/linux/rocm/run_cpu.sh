@@ -51,3 +51,5 @@ bazel test \
       -//tensorflow/python/ops/ragged:ragged_print_op_test \
       -//tensorflow/compiler/xla/service:generate_test_hlo_checks_test \
       -//tensorflow/c/eager:c_api_distributed_test \
+      -//tensorflow/python/data/experimental/kernel_tests/service:local_workers_test \
+      -//tensorflow/python/data/experimental/kernel_tests/service:worker_tags_test \
