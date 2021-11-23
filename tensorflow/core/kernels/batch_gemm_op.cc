@@ -89,8 +89,9 @@ class BatchGemmOp : public OpKernel {
 
     LaunchBatchMatMul<Device, Scalar>::Launch(ctx, in0_reshaped, in1_reshaped,
                                               /*adj_x=*/false, /*adj_y=*/false,
-                                              transpose_a_, transpose_b_, bcast,
-                                              &out_reshaped, alpha_, beta_);
+                                              transpose_a_, transpose_b_, 
+                                              /*grad_x=*/false, /*grad_y=*/false,
+                                              bcast, &out_reshaped, alpha_, beta_);
   }
 
  private:

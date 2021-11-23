@@ -22,6 +22,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "third_party/eigen3/Eigen/Core"
 #include "rocm/include/miopen/miopen.h"
+#include "rocm/rocm_config.h"
 #include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/stream_executor/dnn.h"
@@ -362,6 +363,12 @@ namespace wrap {
 // clang-format on
 
 MIOPEN_DNN_ROUTINE_EACH(STREAM_EXECUTOR_MIOPEN_WRAP)
+
+#if TF_ROCM_VERSION >= 50000
+
+STREAM_EXECUTOR_MIOPEN_WRAP(miopenSetConvolutionAttribute)
+
+#endif
 
 #undef MIOPEN_DNN_ROUTINE_EACH
 
@@ -3007,8 +3014,9 @@ port::Status MIOpenSupport::DoConvolve(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
-    dnn::ProfileResult* output_profile_result) {
+    dnn::CallContext call_context, dnn::ProfileResult* output_profile_result) {
   auto miopen = miopen_->GetHandle(parent_, stream);
+
   ScopedTensorDescriptor input_nd{input_descriptor,
                                   ToMIOpenDataType(element_type)};
   ScopedTensorDescriptor output_nd{output_descriptor,
@@ -3018,6 +3026,15 @@ port::Status MIOpenSupport::DoConvolve(
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
 
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+#if TF_ROCM_VERSION >= 50000
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
+#endif
   // Alpha is the scaling factor for input.
   float alpha = 1.0;
   // Beta is the scaling factor for output.
@@ -3077,6 +3094,7 @@ port::Status MIOpenSupport::DoConvolve(
             &beta, input_nd.handle(), input_data.opaque(),
             scratch_memory.opaque(), scratch_memory.size());
       }
+
       break;
     }
     case dnn::ConvolutionKind::BACKWARD_FILTER: {
@@ -3096,6 +3114,7 @@ port::Status MIOpenSupport::DoConvolve(
             &beta, filter.handle(), filter_data.opaque(),
             scratch_memory.opaque(), scratch_memory.size());
       }
+
       break;
     }
     default:
@@ -3148,19 +3167,19 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
     DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
-    ScratchAllocator* scratch_allocator,
+    ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   return use_immediate_mode_
              ? GetMIOpenConvolveAlgorithmsImmediateMode(
                    kind, element_type, stream, input_descriptor, input_data,
                    filter_descriptor, filter_data, output_descriptor,
                    output_data, convolution_descriptor, scratch_allocator,
-                   out_algorithms)
+                   call_context, out_algorithms)
              : GetMIOpenConvolveAlgorithmsFindMode(
                    kind, element_type, stream, input_descriptor, input_data,
                    filter_descriptor, filter_data, output_descriptor,
                    output_data, convolution_descriptor, scratch_allocator,
-                   out_algorithms);
+                   call_context, out_algorithms);
 }
 
 bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
@@ -3170,7 +3189,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
     DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
-    ScratchAllocator* scratch_allocator,
+    ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
@@ -3183,6 +3202,15 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
 
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+#if TF_ROCM_VERSION >= 50000
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
+#endif
   // First determine the number of algorityhms available
   size_t maxSolutionCount = 0;
 
@@ -3379,7 +3407,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
     DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
-    ScratchAllocator* scratch_allocator,
+    ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
@@ -3392,6 +3420,15 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
 
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+#if TF_ROCM_VERSION >= 50000
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
+#endif
   // Determine the workspace memory size that will need by the call to Find
   size_t scratch_memory_size = 0;
   switch (kind) {
@@ -3866,7 +3903,8 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
     if (!stream
              ->ThenBlasGemm(blas::Transpose::kNoTranspose,
                             blas::Transpose::kNoTranspose, m, n, k, weights, m,
-                            input_data, k, output_data, m)
+                            input_data, k, output_data, m,
+                            blas::CallContext::kNone)
              .ok()) {
       return false;
     }
@@ -3949,7 +3987,7 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
     stream->ThenBlasGemmBatched(blas::Transpose::kNoTranspose,
                                 blas::Transpose::kNoTranspose, m, n, k, alpha,
                                 toPtrs(a), lda, toPtrs(b), ldb, beta, toPtrs(c),
-                                ldc, batch_count);
+                                ldc, batch_count, blas::CallContext::kNone);
   }
 
   return stream->ok();

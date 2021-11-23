@@ -151,8 +151,10 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     auto transpose = se::blas::Transpose::kTranspose;
     auto no_transpose = se::blas::Transpose::kNoTranspose;
 
-    OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(transpose, no_transpose, n, m, k,
-                                             b_ptr, k, a_ptr, k, &c_ptr, n));
+    OP_REQUIRES_OK(
+        ctx, stream->ThenBlasGemm(
+                 transpose, no_transpose, n, m, k, b_ptr, k, a_ptr, k, &c_ptr,
+                 n, stream_executor::blas::CallContext::kBackpropInput1));
     return;
   } else if (dims.spatial_dims[0].filter_size ==
                  dims.spatial_dims[0].input_size &&
@@ -177,8 +179,10 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     auto transpose = se::blas::Transpose::kTranspose;
     auto no_transpose = se::blas::Transpose::kNoTranspose;
 
-    OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(transpose, no_transpose, n, m, k,
-                                             b_ptr, k, a_ptr, k, &c_ptr, n));
+    OP_REQUIRES_OK(
+        ctx, stream->ThenBlasGemm(
+                 transpose, no_transpose, n, m, k, b_ptr, k, a_ptr, k, &c_ptr,
+                 n, stream_executor::blas::CallContext::kBackpropInput1));
     return;
   }
 
@@ -456,7 +460,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
         cudnn_launch_status = stream->ConvolveBackwardDataWithAlgorithm(
             filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
             input_desc, &in_backprop_ptr_rz, allocator_used, profile_config,
-            &profile_result);
+            se::dnn::CallContext::kBackpropData, &profile_result);
       }
 
       if (cudnn_launch_status.ok() && profile_result.is_valid()) {
@@ -502,7 +506,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
             se::dnn::ConvolutionKind::BACKWARD_DATA,
             se::dnn::ToDataType<T>::value, stream, input_desc, in_backprop_ptr,
             filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-            &scratch_allocator, &algorithms),
+            &scratch_allocator, se::dnn::CallContext::kBackpropData, &algorithms),
         errors::Unknown(
             "Failed to get convolution algorithm. This is probably "
             "because MIOpen failed to initialize, so try looking to "
@@ -529,7 +533,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
             filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
             input_desc, &in_backprop_ptr, &scratch_allocator,
             AlgorithmConfig(profile_algorithm, miopen_algorithm.scratch_size()),
-            &profile_result);
+            se::dnn::CallContext::kBackpropData, &profile_result);
 
         if (miopen_launch_status.ok() && profile_result.is_valid()) {
           results.emplace_back();
@@ -576,7 +580,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveBackwardDataWithAlgorithm(
         filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
         input_desc, &in_backprop_ptr, &scratch_allocator, algorithm_config,
-        nullptr);
+        se::dnn::CallContext::kBackpropData, nullptr);
   }
 
   if (!cudnn_launch_status.ok()) {

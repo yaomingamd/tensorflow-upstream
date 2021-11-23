@@ -124,6 +124,8 @@ REGISTER_OP("BatchMatMul")
         "complex128}")
     .Attr("adj_x: bool = false")
     .Attr("adj_y: bool = false")
+    .Attr("grad_x: bool = false")
+    .Attr("grad_y: bool = false")
     .SetShapeFn(shape_inference::BatchMatMulShape);
 
 REGISTER_OP("BatchMatMulV2")
@@ -135,6 +137,8 @@ REGISTER_OP("BatchMatMulV2")
         "complex128}")
     .Attr("adj_x: bool = false")
     .Attr("adj_y: bool = false")
+    .Attr("grad_x: bool = false")
+    .Attr("grad_y: bool = false")
     .SetShapeFn(shape_inference::BatchMatMulV2Shape);
 
 // Note: Reusing the BatchMatMulV2Shape inference function
@@ -165,6 +169,8 @@ REGISTER_OP("BatchMatMulV3")
         "complex128}")
     .Attr("adj_x: bool = false")
     .Attr("adj_y: bool = false")
+    .Attr("grad_x: bool = false")
+    .Attr("grad_y: bool = false")
     .SetShapeFn(shape_inference::BatchMatMulV2Shape);
 
 #ifdef INTEL_MKL
@@ -1080,6 +1086,8 @@ REGISTER_OP("MatMul")
     .Attr(
         "T: {bfloat16, half, float, double, int32, int64, complex64, "
         "complex128}")
+    .Attr("grad_a: bool = false")
+    .Attr("grad_b: bool = false")
     .SetShapeFn(shape_inference::MatMulShape);
 
 #ifdef INTEL_MKL
