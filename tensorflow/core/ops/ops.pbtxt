@@ -3782,6 +3782,20 @@ op {
       b: false
     }
   }
+  attr {
+    name: "grad_x"
+    type: "bool"
+    default_value {
+      b: false
+    }
+  }
+  attr {
+    name: "grad_y"
+    type: "bool"
+    default_value {
+      b: false
+    }
+  }
 }
 op {
   name: "BatchMatMulV2"
@@ -3823,6 +3837,20 @@ op {
   }
   attr {
     name: "adj_y"
+    type: "bool"
+    default_value {
+      b: false
+    }
+  }
+  attr {
+    name: "grad_x"
+    type: "bool"
+    default_value {
+      b: false
+    }
+  }
+  attr {
+    name: "grad_y"
     type: "bool"
     default_value {
       b: false
@@ -3907,6 +3935,20 @@ op {
   }
   attr {
     name: "adj_y"
+    type: "bool"
+    default_value {
+      b: false
+    }
+  }
+  attr {
+    name: "grad_x"
+    type: "bool"
+    default_value {
+      b: false
+    }
+  }
+  attr {
+    name: "grad_y"
     type: "bool"
     default_value {
       b: false
@@ -23600,6 +23642,20 @@ op {
         type: DT_COMPLEX64
         type: DT_COMPLEX128
       }
+    }
+  }
+  attr {
+    name: "grad_a"
+    type: "bool"
+    default_value {
+      b: false
+    }
+  }
+  attr {
+    name: "grad_b"
+    type: "bool"
+    default_value {
+      b: false
     }
   }
 }

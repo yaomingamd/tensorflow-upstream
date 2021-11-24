@@ -1300,8 +1300,10 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       auto no_transpose = se::blas::Transpose::kNoTranspose;
 
       OP_REQUIRES_OK(
-          context, stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr,
-                                        k, a_ptr, k, &c_ptr, n));
+          context,
+          stream->ThenBlasGemm(
+              transpose, no_transpose, n, m, k, b_ptr, k, a_ptr, k, &c_ptr, n,
+              stream_executor::blas::CallContext::kBackpropInput1));
       return;
     } else if (!is_grouped_convolution &&
                dims.filter_size(0) == dims.input_size(0) &&
@@ -1324,8 +1326,10 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       auto no_transpose = se::blas::Transpose::kNoTranspose;
 
       OP_REQUIRES_OK(
-          context, stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr,
-                                        k, a_ptr, k, &c_ptr, n));
+          context,
+          stream->ThenBlasGemm(
+              transpose, no_transpose, n, m, k, b_ptr, k, a_ptr, k, &c_ptr, n,
+              stream_executor::blas::CallContext::kBackpropInput1));
       return;
     }
 
@@ -1532,7 +1536,8 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
           se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
           filter_desc, filter_ptr, output_desc, out_backprop_ptr, conv_desc,
-          &scratch_allocator, algorithm_config, nullptr);
+          &scratch_allocator, algorithm_config,
+          se::dnn::CallContext::kBackpropData, nullptr);
     }
 
     if (!cudnn_launch_status.ok()) {
@@ -1700,10 +1705,12 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       auto c_ptr = AsDeviceMemory(filter_backprop->template flat<T>().data(),
                                   filter_backprop->template flat<T>().size());
 
-      OP_REQUIRES_OK(context,
-                     stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
-                                          se::blas::Transpose::kTranspose, n, m,
-                                          k, a_ptr, n, b_ptr, m, &c_ptr, n));
+      OP_REQUIRES_OK(
+          context,
+          stream->ThenBlasGemm(
+              se::blas::Transpose::kNoTranspose,
+              se::blas::Transpose::kTranspose, n, m, k, a_ptr, n, b_ptr, m,
+              &c_ptr, n, stream_executor::blas::CallContext::kBackpropInput2));
       return;
     } else if (!is_grouped_convolution &&
                dims.filter_size(0) == dims.input_size(0) &&
@@ -1722,10 +1729,12 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       auto c_ptr = AsDeviceMemory(filter_backprop->template flat<T>().data(),
                                   filter_backprop->template flat<T>().size());
 
-      OP_REQUIRES_OK(context,
-                     stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
-                                          se::blas::Transpose::kTranspose, n, m,
-                                          k, b_ptr, n, a_ptr, m, &c_ptr, n));
+      OP_REQUIRES_OK(
+          context,
+          stream->ThenBlasGemm(
+              se::blas::Transpose::kNoTranspose,
+              se::blas::Transpose::kTranspose, n, m, k, b_ptr, n, a_ptr, m,
+              &c_ptr, n, stream_executor::blas::CallContext::kBackpropInput2));
       return;
     }
 
@@ -1938,7 +1947,8 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       cudnn_launch_status = stream->ConvolveWithAlgorithm(
           se::dnn::ConvolutionKind::BACKWARD_FILTER, input_desc, input_ptr,
           filter_desc, filter_backprop_ptr, output_desc, out_backprop_ptr,
-          conv_desc, &scratch_allocator, algorithm_config, nullptr);
+          conv_desc, &scratch_allocator, algorithm_config,
+          se::dnn::CallContext::kBackpropFilter, nullptr);
     }
 
     if (!cudnn_launch_status.ok()) {
