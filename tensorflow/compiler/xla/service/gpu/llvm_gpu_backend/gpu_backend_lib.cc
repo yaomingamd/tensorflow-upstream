@@ -572,7 +572,7 @@ std::vector<string> GetROCDLPaths(std::string amdgpu_version,
   // AMDGPU version-neutral bitcodes.
 #if TF_ROCM_VERSION >= 30900
   static std::vector<string>* rocdl_filenames = new std::vector<string>(
-      {"hc.bc", "opencl.bc", "ocml.bc", "ockl.bc", "oclc_finite_only_off.bc",
+      {"opencl.bc", "ocml.bc", "ockl.bc", "oclc_finite_only_off.bc",
        "oclc_daz_opt_off.bc", "oclc_correctly_rounded_sqrt_on.bc",
        "oclc_unsafe_math_off.bc", "oclc_wavefrontsize64_on.bc"});
 #else
