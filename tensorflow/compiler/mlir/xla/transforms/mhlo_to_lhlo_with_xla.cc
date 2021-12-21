@@ -902,11 +902,15 @@ StatusOr<Operation*> LhloDialectEmitter::EmitDnnConvolution(
     op.result_scaleAttr(
         builder_.getF64FloatAttr(backend_config.conv_result_scale()));
     auto attr = custom_call->frontend_attributes().map();
-    if(attr.find("grad_flags") != attr.end())
-      op.grad_flagsAttr(builder_.getI64IntegerAttr(std::stoi(attr["grad_flags"])));
-    else if(backend_config.grad_flags() & 256) {
-      op.grad_flagsAttr(builder_.getI64IntegerAttr(backend_config.grad_flags()));
+    if(attr.find("grad_flags") != attr.end()) {
+      printf("mhlo_to_lhlo: EmitDnnConvolution: found grad_flags on frontend\n");
+      fflush(stdout);
+      op.f8_flagsAttr(builder_.getI64IntegerAttr(std::stoi(attr["grad_flags"])));
     }
+    else if(backend_config.f8_conv_backend_flags() & 256) {
+      printf("mhlo_to_lhlo: EmitDnnConvolution: found f8_conv_backend_flags on backend config\n");
+      fflush(stdout);
+      op.f8_flagsAttr(builder_.getI64IntegerAttr(backend_config.f8_conv_backend_flags()));
     else {
       printf("Attempting to emit convolution op with unset grad_flags\n");
       exit(-1);

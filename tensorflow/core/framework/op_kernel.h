@@ -339,13 +339,23 @@ class OpKernelConstruction {
   // ideas.
   DeviceBase* device() const { return device_; }
 
-  inline bool AllowF8() const {
-    bool f8 = false;
+  inline int GetFlagsF8() const {
+    bool f8 = false, f8_2 = false;
+    bool clip = true;
+    bool sr = true;
+    ReadBoolFromEnvVar("TF_ROCM_F8", false, &f8_2);
     GetAttr("_f8", &f8);
-    if(f8)
-      return true;
-    ReadBoolFromEnvVar("TF_ROCM_F8", false, &f8);
-    return f8;
+    GetAttr("_clip", &clip);
+    GetAttr("_sr", &sr);
+    int flags = 0;
+    if(f8 || f8_2) {
+      flags |= 4;
+      if(!clip)
+        flags |= 8;
+      if(!sr)
+        flags |= 16;
+    }
+    return flags;
   }
 
  private:

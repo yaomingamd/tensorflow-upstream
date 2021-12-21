@@ -603,6 +603,7 @@ class ConvolutionDescriptor {
     proto_.set_name(name);
     return *this;
   }
+  ConvolutionDescriptor& set_grad_flags(int g) { proto_.set_grad_flags(g); return *this; }
   int64_t zero_padding_height() const { return GetDim(padding(), DimIndex::Y); }
   int64_t zero_padding_width() const { return GetDim(padding(), DimIndex::X); }
   int64_t vertical_filter_stride() const {
@@ -629,6 +630,7 @@ class ConvolutionDescriptor {
   bool convolution_not_crosscorr() const {
     return proto_.convolution_mode() == ConvolutionMode::CONVOLUTION;
   }
+  int grad_flags() const { return proto_.grad_flags(); }
 
   absl::Span<const int64_t> strides() const {
     return AsInt64Slice(proto_.strides());
@@ -1274,7 +1276,7 @@ class DnnSupport {
       const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data, ScratchAllocator* scratch_allocator,
       const dnn::AlgorithmConfig& algorithm_config,
-      dnn::ProfileResult* output_profile_result, int grad_flags) {
+      dnn::ProfileResult* output_profile_result) {
     return port::UnimplementedError(
         "DnnSupport::DoFusedConvolve not implemented on this platform.");
   }
@@ -1341,7 +1343,7 @@ class DnnSupport {
       DeviceMemoryBase output_data,
       const ConvolutionDescriptor& convolution_descriptor,
       AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
-      ProfileResult* output_profile_result, int grad_flags) = 0;
+      ProfileResult* output_profile_result) = 0;
 
   // Return a list of algorithms supported by the forward convolution pass.
   // cc_major and cc_minor are the compute capabilities of the device.

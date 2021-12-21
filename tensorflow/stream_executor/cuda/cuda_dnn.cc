@@ -4915,7 +4915,7 @@ port::Status CudnnSupport::DoFusedConvolve(
     const dnn::BatchDescriptor& output_descriptor, DeviceMemoryBase output_data,
     ScratchAllocator* scratch_allocator,
     const dnn::AlgorithmConfig& algorithm_config,
-    dnn::ProfileResult* output_profile_result, int grad_flags) {
+    dnn::ProfileResult* output_profile_result) {
   if (input_type == dnn::DataType::kInt8 &&
       !stream->GetCudaComputeCapability().IsAtLeast(6, 1)) {
     return port::UnimplementedError(

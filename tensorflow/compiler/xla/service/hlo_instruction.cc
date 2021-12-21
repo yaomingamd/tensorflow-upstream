@@ -64,6 +64,16 @@ using absl::StrAppend;
 using absl::StrCat;
 using absl::StrJoin;
 
+static bool testPrecisionConfigF8(const PrecisionConfig& cfg) {
+  for(int i=0; i<cfg.operand_precision_size(); i++)
+  {
+      int flag = cfg.operand_precision()[i];
+      if(flag>=PrecisionConfig::F8 && flag<=PrecisionConfig::F8OFF)
+        return true;
+  }
+  return false;
+}
+
 /* static */
 StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     const HloInstructionProto& proto,
@@ -816,12 +826,40 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     case HloOpcode::kDot: {
       TF_RET_CHECK(proto.has_dot_dimension_numbers())
           << "Dot instruction should have dot_dimension_numbers.";
+      auto attr = proto.frontend_attributes().map();
       PrecisionConfig precision_config = proto.precision_config();
+      /*
+      // the first two entries are not guaranteed to be there
       precision_config.mutable_operand_precision()->Resize(
-          proto.operand_ids_size(), PrecisionConfig::DEFAULT);
+        max(proto.operand_ids_size(), precision_config.operand_precision_size()),
+        PrecisionConfig::DEFAULT);
+      */
+      if(attr.find("grad_flags") == attr.end() && !testPrecisionConfigF8(precision_config)) {
+        printf("FromProto: kDot with no grad_flags\n");
+        for(auto x: attr)
+          printf("Frontend attr %s = %s\n", x.first.c_str(), x.second.c_str());
+        for(int i=0; i<precision_config.operand_precision_size(); i++)
+        {
+            int flag = precision_config.operand_precision()[i];
+            printf("Precision config element %d\n", flag);
+        }
+        exit(0);
+      }
+
       instruction = absl::make_unique<HloDotInstruction>(
           shape, operands(0), operands(1), proto.dot_dimension_numbers(),
           precision_config);
+/*
+      printf("Creating a kDot %p from proto %p\n", (HloDotInstruction*)(HloInstruction*)instruction, &proto);
+      printf("PrecisionConfig flags %d\n", precision_config.f8_flags());
+      for(auto x: attr)
+        printf("Frontend attr %s = %s\n", x.first.c_str(), x.second.c_str());
+      //printf("Frontend attr %d\n", (int)(attr.find("grad_flags") != attr.end()));
+      printf("Desc %s\n", proto.custom_desc().c_str());
+      fflush(stdout);
+      if(!(precision_config.f8_flags() & 256) && (attr.find("grad_flags") == attr.end()))
+        exit(0);
+*/
       break;
     }
     case HloOpcode::kDomain: {
@@ -927,6 +965,10 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     TF_ASSIGN_OR_RETURN(const auto& sharding,
                         HloSharding::FromProto(proto.sharding()));
     instruction->set_sharding(sharding);
+  }
+
+  if(opcode == HloOpcode::kDot) 
+  {
   }
 
   if (proto.has_frontend_attributes()) {

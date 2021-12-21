@@ -307,6 +307,8 @@ message HloInstructionProto {
   // TODO(b/189822916): Remove this field when all clients are migrated to the
   // status-returning API.
   CustomCallApiVersion custom_call_api_version = 77;
+
+  string custom_desc = 78;
 }
 
 // Serialization of HloComputation.

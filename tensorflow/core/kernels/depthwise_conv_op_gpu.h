@@ -787,7 +787,7 @@ void LaunchDepthwiseConvOp<GpuDevice, T>::operator()(OpKernelContext* ctx,
                                                      const DepthwiseArgs& args,
                                                      const T* input,
                                                      const T* filter, T* output,
-                                                     TensorFormat data_format, bool f8) {
+                                                     TensorFormat data_format) {
   if (args.filter_rows == 3 && args.filter_cols == 3) {
     OP_REQUIRES_OK(ctx, LaunchDepthwiseConv2dGPU<T, 3, 3>(
                             ctx, args, input, filter, output, data_format));
@@ -951,7 +951,7 @@ Status LaunchDepthwiseConv2dBackpropInputGPU(OpKernelContext* ctx,
                                              const DepthwiseArgs& args,
                                              const T* out_backprop,
                                              const T* filter, T* in_backprop,
-                                             TensorFormat data_format, bool f8) {
+                                             TensorFormat data_format) {
   void (*kernel)(const DepthwiseArgs, const T*, const T*, T*, int);
   switch (data_format) {
     case FORMAT_NHWC:
@@ -983,7 +983,7 @@ Status LaunchDepthwiseConv2dBackpropInputGPU(OpKernelContext* ctx,
                                              const DepthwiseArgs& args,
                                              const T* out_backprop,
                                              const T* filter, T* in_backprop,
-                                             TensorFormat data_format, bool f8) {
+                                             TensorFormat data_format) {
   if (args.depth_multiplier == 1) {
     // This kernel doesn't currently work in all cases so it is disabled.
     // TODO(b/150988950): Fix and reenable this kernel.
@@ -995,11 +995,11 @@ Status LaunchDepthwiseConv2dBackpropInputGPU(OpKernelContext* ctx,
 
     return LaunchDepthwiseConv2dBackpropInputGPU<T, kKnownFilterWidth,
                                                  kKnownFilterHeight, 1>(
-        ctx, args, out_backprop, filter, in_backprop, data_format, f8);
+        ctx, args, out_backprop, filter, in_backprop, data_format);
   } else {
     return LaunchDepthwiseConv2dBackpropInputGPU<T, kKnownFilterWidth,
                                                  kKnownFilterHeight, -1>(
-        ctx, args, out_backprop, filter, in_backprop, data_format, f8);
+        ctx, args, out_backprop, filter, in_backprop, data_format);
   }
 }
 
@@ -1007,15 +1007,15 @@ Status LaunchDepthwiseConv2dBackpropInputGPU(OpKernelContext* ctx,
 template <typename T>
 void LaunchDepthwiseConvBackpropInputOp<GpuDevice, T>::operator()(
     OpKernelContext* ctx, const DepthwiseArgs& args, const T* out_backprop,
-    const T* filter, T* in_backprop, TensorFormat data_format, bool f8) {
+    const T* filter, T* in_backprop, TensorFormat data_format) {
   if (args.filter_rows == 3 && args.filter_cols == 3) {
     OP_REQUIRES_OK(
         ctx, LaunchDepthwiseConv2dBackpropInputGPU<T, 3, 3>(
-                 ctx, args, out_backprop, filter, in_backprop, data_format, f8));
+                 ctx, args, out_backprop, filter, in_backprop, data_format));
   } else {
     OP_REQUIRES_OK(
         ctx, LaunchDepthwiseConv2dBackpropInputGPU<T, -1, -1>(
-                 ctx, args, out_backprop, filter, in_backprop, data_format, f8));
+                 ctx, args, out_backprop, filter, in_backprop, data_format));
   }
 }
 
@@ -1702,7 +1702,7 @@ template <typename T, int kKnownFilterWidth, int kKnownFilterHeight,
           int kKnownDepthMultiplier>
 Status LaunchDepthwiseConv2dBackpropFilterGPU(
     OpKernelContext* ctx, const DepthwiseArgs& args, const T* out_backprop,
-    const T* input, T* filter_backprop, TensorFormat data_format, bool f8_enable) {
+    const T* input, T* filter_backprop, TensorFormat data_format) {
   void (*kernel)(const DepthwiseArgs, const T*, const T*, T*, int);
   switch (data_format) {
     case FORMAT_NHWC:
@@ -1732,7 +1732,7 @@ Status LaunchDepthwiseConv2dBackpropFilterGPU(
 template <typename T, int kKnownFilterWidth, int kKnownFilterHeight>
 Status LaunchDepthwiseConv2dBackpropFilterGPU(
     OpKernelContext* ctx, const DepthwiseArgs& args, const T* out_backprop,
-    const T* input, T* filter_backprop, TensorFormat data_format, bool f8_enable) {
+    const T* input, T* filter_backprop, TensorFormat data_format) {
   if (args.depth_multiplier == 1) {
     if (TryLaunchDepthwiseConv2dBackpropFilterGPUSmall<T, kKnownFilterWidth,
                                                        kKnownFilterHeight>(
@@ -1743,11 +1743,11 @@ Status LaunchDepthwiseConv2dBackpropFilterGPU(
 
     return LaunchDepthwiseConv2dBackpropFilterGPU<T, kKnownFilterWidth,
                                                   kKnownFilterHeight, 1>(
-        ctx, args, out_backprop, input, filter_backprop, data_format, f8_enable);
+        ctx, args, out_backprop, input, filter_backprop, data_format);
   } else {
     return LaunchDepthwiseConv2dBackpropFilterGPU<T, kKnownFilterWidth,
                                                   kKnownFilterHeight, -1>(
-        ctx, args, out_backprop, input, filter_backprop, data_format, f8_enable);
+        ctx, args, out_backprop, input, filter_backprop, data_format);
   }
 }
 
@@ -1755,7 +1755,7 @@ Status LaunchDepthwiseConv2dBackpropFilterGPU(
 template <typename T>
 void LaunchDepthwiseConvBackpropFilterOp<GpuDevice, T>::operator()(
     OpKernelContext* ctx, const DepthwiseArgs& args, const T* out_backprop,
-    const T* input, T* filter_backprop, TensorFormat data_format, bool f8_enable) {
+    const T* input, T* filter_backprop, TensorFormat data_format) {
   auto stream = ctx->op_device_context()->stream();
 
   OP_REQUIRES(
@@ -1773,11 +1773,11 @@ void LaunchDepthwiseConvBackpropFilterOp<GpuDevice, T>::operator()(
   if (args.filter_rows == 3 && args.filter_cols == 3) {
     OP_REQUIRES_OK(
         ctx, LaunchDepthwiseConv2dBackpropFilterGPU<T, 3, 3>(
-                 ctx, args, out_backprop, input, filter_backprop, data_format, f8_enable));
+                 ctx, args, out_backprop, input, filter_backprop, data_format));
   } else {
     OP_REQUIRES_OK(
         ctx, LaunchDepthwiseConv2dBackpropFilterGPU<T, -1, -1>(
-                 ctx, args, out_backprop, input, filter_backprop, data_format, f8_enable));
+                 ctx, args, out_backprop, input, filter_backprop, data_format));
   }
 }
 }  // namespace tensorflow

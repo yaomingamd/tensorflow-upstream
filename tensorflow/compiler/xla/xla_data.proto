@@ -705,8 +705,12 @@ message PrecisionConfig {
     DEFAULT = 0;
     HIGH = 1;
     HIGHEST = 2;
-
-    // Next: 3
+    F8 = 3;
+    F8GRAD = 4;
+    F8OFF = 5;
+    F8NOCLIP = 6;
+    F8NOSR = 7;
+    // Next: 8
   }
   repeated Precision operand_precision = 1;
 

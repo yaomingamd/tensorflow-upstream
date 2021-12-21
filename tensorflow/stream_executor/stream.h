@@ -309,7 +309,7 @@ class Stream {
                        const DeviceMemory<float> &filter_data,
                        const dnn::ConvolutionDescriptor &convolution_descriptor,
                        const dnn::BatchDescriptor &output_descriptor,
-                       DeviceMemory<float> *output, int grad_flags);
+                       DeviceMemory<float> *output);
 
   Stream &ThenConvolveQuantized(
       const dnn::BatchDescriptor &input_descriptor,
@@ -342,7 +342,7 @@ class Stream {
       const dnn::ConvolutionDescriptor &convolution_descriptor,
       ScratchAllocator *scratch_allocator,
       const dnn::AlgorithmConfig &algorithm_config,
-      dnn::ProfileResult *output_profile_result, int grad_flags) {
+      dnn::ProfileResult *output_profile_result) {
     DeviceMemory<uint8> scratch_memory;
     dnn::AlgorithmDesc algorithm_desc;
     if (dnn::DnnSupport *dnn = parent_->AsDnn()) {
@@ -356,7 +356,7 @@ class Stream {
                              input_descriptor, input_data, filter_descriptor,
                              filter_data, output_descriptor, output_data,
                              convolution_descriptor, algorithm_desc,
-                             scratch_memory, output_profile_result, grad_flags);
+                             scratch_memory, output_profile_result);
     }
     return port::UnimplementedError("DNN library is not found.");
   }
@@ -402,7 +402,7 @@ class Stream {
       const dnn::BatchDescriptor &output_descriptor,
       DeviceMemory<OutputT> *output, ScratchAllocator *scratch_allocator,
       const dnn::AlgorithmConfig &algorithm_config,
-      dnn::ProfileResult *output_profile_result, int grad_flags) {
+      dnn::ProfileResult *output_profile_result) {
     if (dnn::DnnSupport *dnn = parent_->AsDnn()) {
       return dnn->DoFusedConvolve(
           this, dnn::ToDataType<InputT>::value,
@@ -411,7 +411,7 @@ class Stream {
           conv_input_data, conv_input_scale, filter_descriptor, filter_data,
           convolution_descriptor, side_input_data, side_input_scale,
           bias_descriptor, biases, activation_mode, output_descriptor, *output,
-          scratch_allocator, algorithm_config, output_profile_result, grad_flags);
+          scratch_allocator, algorithm_config, output_profile_result);
     }
     return port::UnimplementedError("DNN library is not found.");
   }

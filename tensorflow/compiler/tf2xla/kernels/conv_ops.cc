@@ -49,7 +49,7 @@ class ConvOp : public XlaOpKernel {
         ConvOpAttrs::Create(num_spatial_dims, depthwise, ctx);
     OP_REQUIRES_OK(ctx, attrs.status());
     attrs_ = attrs.ValueOrDie();
-    grad_flags_ = (ctx->AllowF8()?4:0) + 256;
+    grad_flags_ = ctx->GetFlagsF8()|256;
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
@@ -102,7 +102,7 @@ class ConvBackpropInputOp : public XlaOpKernel {
         ConvOpAttrs::Create(num_spatial_dims, depthwise, ctx);
     OP_REQUIRES_OK(ctx, attrs.status());
     attrs_ = attrs.ValueOrDie();
-    grad_flags_ = 1 + (ctx->AllowF8()?4:0) + 256;
+    grad_flags_ = ctx->GetFlagsF8()|256|1;
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
@@ -172,7 +172,7 @@ class ConvBackpropFilterOp : public XlaOpKernel {
         ConvOpAttrs::Create(num_spatial_dims, depthwise, ctx);
     OP_REQUIRES_OK(ctx, attrs.status());
     attrs_ = attrs.ValueOrDie();
-    grad_flags_ = 2 + (ctx->AllowF8()?4:0) + 256;
+    grad_flags_ = ctx->GetFlagsF8()|256|1;
   }
 
   void Compile(XlaOpKernelContext* ctx) override {

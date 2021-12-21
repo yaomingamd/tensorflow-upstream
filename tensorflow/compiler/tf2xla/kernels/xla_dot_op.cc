@@ -24,6 +24,8 @@ limitations under the License.
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/types.pb.h"
 
+using xla::PrecisionConfig;
+
 namespace tensorflow {
 namespace {
 
@@ -46,7 +48,8 @@ class XlaDotOp : public XlaOpKernel {
     bool grad_a = false, grad_b = false;
     OP_REQUIRES_OK(context, context->GetAttr("grad_a", &grad_a));
     OP_REQUIRES_OK(context, context->GetAttr("grad_b", &grad_b));
-    grad_flags_ = (grad_a?1:0) + (grad_b?2:0) + (context->AllowF8()?4:0) + 256;
+    // TODO: what's inside precision_config by default?
+    SetXlaPrecisionConfigF8Flags(precision_config_, context->GetFlagsF8(), grad_a, grad_b);
   }
 
   void Compile(XlaOpKernelContext* context) override {
@@ -58,15 +61,11 @@ class XlaDotOp : public XlaOpKernel {
     xla::XlaOp output =
         xla::DotGeneral(context->Input(0), context->Input(1), dnums_,
                         &precision_config_, preferred_element_type_);
-    auto* builder = output.builder();
-    builder->SetInstructionFrontendAttribute(output, "grad_flags", 
-          std::to_string(grad_flags_));
     context->SetOutput(0, output);
   }
 
  protected:
   absl::optional<xla::PrimitiveType> preferred_element_type_;
-  int grad_flags_ = 0;
 
  private:
   xla::DotDimensionNumbers dnums_;

@@ -336,7 +336,7 @@ class CudnnSupport : public dnn::DnnSupport {
       const dnn::BatchDescriptor& output_descriptor,
       DeviceMemoryBase output_data, ScratchAllocator* scratch_allocator,
       const dnn::AlgorithmConfig& algorithm_config,
-      dnn::ProfileResult* output_profile_result, int grad_flags) override;
+      dnn::ProfileResult* output_profile_result) override;
 
   port::Status DoFusedConvolveWithExecutionPlan(
       Stream* stream, dnn::DataType element_type,

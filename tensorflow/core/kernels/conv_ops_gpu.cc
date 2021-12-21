@@ -261,7 +261,7 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
     se::DeviceMemory<T> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc, se::DeviceMemory<T> output_ptr,
-    int64_t scratch_size_limit, bool f8_enable) {
+    int64_t scratch_size_limit) {
   se::dnn::AlgorithmConfig algorithm_config;
 
   // cudnn_use_autotune is applicable only the CUDA flow
@@ -339,12 +339,12 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
         return stream->ConvolveWithExecutionPlan(
             kind, input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
             output_ptr, conv_desc, allocator_used, profile_config,
-            profile_result, f8_enable?4:0);
+            profile_result);
       } else {
         return stream->ConvolveWithAlgorithm(
             kind, input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
             output_ptr, conv_desc, allocator_used, profile_config,
-            profile_result, f8_enable?4:0);
+            profile_result);
       }
     };
 
@@ -387,7 +387,7 @@ StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv(
             output_ptr, conv_desc, &scratch_allocator,
             se::dnn::AlgorithmConfig(profile_algorithm,
             miopen_algorithm.scratch_size()),
-            &profile_result, f8_enable?4:0);
+            &profile_result);
         if (miopen_launch_status.ok() && profile_result.is_valid()) {
           results.emplace_back();
           auto& result = results.back();

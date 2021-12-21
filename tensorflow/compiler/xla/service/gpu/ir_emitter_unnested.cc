@@ -979,8 +979,8 @@ Status IrEmitterUnnested::EmitConvolutionThunk(mlir::Operation* op) {
         op.backend_config().tensor_ops_enabled().getValue());
     descriptor.backend_config.set_conv_result_scale(
         op.result_scale().convertToDouble());
-    if(op.grad_flags().hasValue())
-      descriptor.backend_config.set_grad_flags(op.grad_flags().getValue());
+    if(op.f8_flags().hasValue())
+      descriptor.backend_config.set_f8_conv_backend_flags(op.f8_flags().getValue());
     else {
       printf("Attempting to emit convolution thunk with unset grad_flags\n");
       exit(-1);
@@ -1061,8 +1061,14 @@ Status IrEmitterUnnested::EmitGemmThunk(mlir::Operation* op) {
     }
     backend.set_lhs_stride(op.lhs_stride());
     backend.set_rhs_stride(op.rhs_stride());
-    if(op.grad_flags().hasValue())
-      backend.set_grad_flags(op.grad_flags().getValue());
+    if(op.f8_flags().hasValue())
+      backend.set_f8_gemm_backend_flags(op.f8_flags().getValue());
+    else
+    {
+       printf("ERROR: IrEmitterUnnested::EmitGemmThunk: op has no grad flags\n");
+       fflush(stdout);
+       exit(-1);
+    }
 
     auto& dims = *backend.mutable_dot_dimension_numbers();
     auto mlir_dims = op.dot_dimension_numbers();

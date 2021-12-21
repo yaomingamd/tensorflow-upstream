@@ -426,6 +426,7 @@ Status XlaBuilder::SetInstructionFrontendAttribute(const XlaOp op,
                                                    std::string value) {
   TF_ASSIGN_OR_RETURN(auto instr_proto, LookUpMutableInstruction(op));
   auto* frontend_attributes = instr_proto->mutable_frontend_attributes();
+  printf("Setting the frontend attribute %s = %s on %p\n", attribute.c_str(), value.c_str(), instr_proto);
   (*frontend_attributes->mutable_map())[attribute] = std::move(value);
   return Status::OK();
 }
@@ -1305,6 +1306,8 @@ XlaOp XlaBuilder::Dot(XlaOp lhs, XlaOp rhs,
     dimension_numbers.add_lhs_contracting_dimensions(
         lhs_shape->dimensions_size() == 1 ? 0 : 1);
     dimension_numbers.add_rhs_contracting_dimensions(0);
+    printf("Directly calling Dot is not supported\n");
+    exit(0);
     return DotGeneral(lhs, rhs, dimension_numbers, precision_config,
                       preferred_element_type);
   });
@@ -1326,6 +1329,8 @@ XlaOp XlaBuilder::DotGeneral(
   });
 }
 
+static int dotgeneral_counter=0;
+
 StatusOr<XlaOp> XlaBuilder::DotGeneralInternal(
     const Shape& shape, XlaOp lhs, XlaOp rhs,
     const DotDimensionNumbers& dimension_numbers,
@@ -1333,9 +1338,15 @@ StatusOr<XlaOp> XlaBuilder::DotGeneralInternal(
   HloInstructionProto instr;
   *instr.mutable_shape() = shape.ToProto();
   *instr.mutable_dot_dimension_numbers() = dimension_numbers;
+  int cfg_flags=-1;
   if (precision_config != nullptr) {
     *instr.mutable_precision_config() = *precision_config;
-  }
+    cfg_flags = GetXlaPrecisionConfigF8Flags(precision_config);
+  }  
+  printf("DotGeneralInternal(%d): flags %d\n", dotgeneral_counter, cfg_flags);
+  fflush(stdout);
+  instr.set_custom_desc(std::string("DotGeneralInternal")+std::to_string(dotgeneral_counter));
+  dotgeneral_counter++;
   return AddInstruction(std::move(instr), HloOpcode::kDot, {lhs, rhs});
 }
 

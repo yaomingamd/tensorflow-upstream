@@ -243,7 +243,7 @@ struct LaunchConv2DOp<CPUDevice, T> {
                   int col_dilation, int row_stride, int col_stride,
                   const Padding& padding,
                   const std::vector<int64>& explicit_paddings, Tensor* output,
-                  TensorFormat data_format, bool f8_enable) {
+                  TensorFormat data_format, int f8_flags) {
     if (data_format != FORMAT_NHWC) {
       ctx->SetStatus(errors::Unimplemented(
           "The Conv2D op currently only supports the NHWC tensor format on the "
@@ -314,7 +314,7 @@ struct LaunchConv2DOp<GPUDevice, int32> {
                   int col_dilation, int row_stride, int col_stride,
                   const Padding& padding,
                   const std::vector<int64_t>& explicit_paddings, Tensor* output,
-                  TensorFormat data_format, bool f8_enable) {
+                  TensorFormat data_format, int f8_flags) {
     if (data_format != FORMAT_NHWC) {
       ctx->SetStatus(
           errors::Unimplemented("The Conv2D op currently only supports the "
@@ -650,7 +650,7 @@ class Conv2DOp : public BinaryOp<T> {
 
     OP_REQUIRES_OK(context, context->GetAttr("use_cudnn_on_gpu", &use_cudnn_));
     cudnn_use_autotune_ = CudnnUseAutotune();
-    f8_enable_ = context->AllowF8();
+    f8_flags_ = context->GetFlagsF8();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -721,14 +721,14 @@ class Conv2DOp : public BinaryOp<T> {
     launcher_(context, use_cudnn_, cudnn_use_autotune_, input, filter,
               dimensions.dilation_rows, dimensions.dilation_cols,
               dimensions.stride_rows, dimensions.stride_cols, params_.padding,
-              params_.explicit_paddings, output, params_.data_format, f8_enable_);
+              params_.explicit_paddings, output, params_.data_format, f8_flags_);
   }
 
  private:
   Conv2DParameters params_;
   bool use_cudnn_;
   bool cudnn_use_autotune_;
-  bool f8_enable_ = false;
+  int f8_flags_ = 0;
   LaunchConv2DOp<Device, T> launcher_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(Conv2DOp);
@@ -778,7 +778,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     const Tensor& input_param, const Tensor& filter, int row_dilation,
     int col_dilation, int row_stride, int col_stride, const Padding& padding,
     const std::vector<int64_t>& explicit_paddings, Tensor* output,
-    TensorFormat data_format, bool f8_enable) {
+    TensorFormat data_format, int f8_flags) {
   using se::dnn::AlgorithmConfig;
   using se::dnn::AlgorithmDesc;
   using se::dnn::ProfileResult;
@@ -828,7 +828,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
 
     auto no_transpose = se::blas::Transpose::kNoTranspose;
     OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m,
-                                             k, b_ptr, n, a_ptr, k, &c_ptr, n, f8_enable?4:0));
+                                             k, b_ptr, n, a_ptr, k, &c_ptr, n, f8_flags));
     return;
   } else if (patch_rows == in_rows && patch_cols == in_cols &&
              !is_grouped_convolution && row_dilation == 1 &&
@@ -849,7 +849,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
 
     auto no_transpose = se::blas::Transpose::kNoTranspose;
     OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m,
-                                             k, b_ptr, n, a_ptr, k, &c_ptr, n, f8_enable?4:0));
+                                             k, b_ptr, n, a_ptr, k, &c_ptr, n, f8_flags));
     return;
   }
 
@@ -1023,7 +1023,8 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
       .set_horizontal_filter_stride(col_stride)
       .set_zero_padding_height(common_padding_rows)
       .set_zero_padding_width(common_padding_cols)
-      .set_group_count(in_depths / patch_depths);
+      .set_group_count(in_depths / patch_depths)
+      .set_grad_flags(256+(f8_flags&~3));
 
   Tensor transformed_filter;
 
@@ -1124,7 +1125,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithExecutionPlan(
         se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
         filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-        algorithm_config, nullptr, f8_enable?4:0);
+        algorithm_config, nullptr);
   } else {
     VLOG(4) << "Convolution Algorithm: "
             << algorithm_config.algorithm()->algo_id();
@@ -1134,7 +1135,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     cudnn_launch_status = stream->ConvolveWithAlgorithm(
         se::dnn::ConvolutionKind::FORWARD, input_desc, input_ptr, filter_desc,
         filter_ptr, output_desc, output_ptr, conv_desc, &scratch_allocator,
-        algorithm_config, nullptr, f8_enable?4:0);
+        algorithm_config, nullptr);
   }
 
   if (!cudnn_launch_status.ok()) {

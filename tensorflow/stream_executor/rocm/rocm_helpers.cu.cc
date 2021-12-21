@@ -102,6 +102,48 @@ void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream
            dim3(grid_a,1,1), dim3(256,1,1), 0, stream, _p, dim_a, true, seed);
 }
 
+
+__global__ void inplace_fp16_to_bf16_kernel(half* dst, int nElements)
+{
+  int id = threadIdx.x + blockIdx.x*blockDim.x;
+  for(int i=id; i<nElements; i+=blockDim.x*gridDim.x)
+  {
+    float x = __half2float(dst[i]);
+    uint32_t v = reinterpret_cast<uint32_t&>(x);
+    *(uint16_t*)(dst+i) = v>>16;
+  }
+}
+
+__global__ void inplace_bf16_to_fp16_kernel(half* dst, int nElements)
+{
+  int id = threadIdx.x + blockIdx.x*blockDim.x;
+  for(int i=id; i<nElements; i+=blockDim.x*gridDim.x)
+  {
+    uint16_t x = *(uint16_t*)(dst+i);
+    uint32_t y = ((uint32_t)x)<<16;
+    float fy = reinterpret_cast<float&>(y);
+    dst[i] = __float2half(fy);
+  }
+}
+
+void inplace_fp16_to_bf16(void* data, int nElements, hipStream_t stream)
+{
+  int blocks = min(1024, (nElements+255)/256);
+  hipLaunchKernelGGL(inplace_fp16_to_bf16_kernel, dim3(blocks, 1, 1), dim3(256, 1, 1), 0, stream, (half*)data, nElements);
+}
+
+void inplace_bf16_to_fp16(void* data, int nElements, hipStream_t stream)
+{
+  int blocks = min(1024, (nElements+255)/256);
+  hipLaunchKernelGGL(inplace_bf16_to_fp16_kernel, dim3(blocks, 1, 1), dim3(256, 1, 1), 0, stream, (half*)data, nElements);
+}
+
+
+
+
+
+
+
 };  // namespace gpu
 };  // namespace stream_executor
 

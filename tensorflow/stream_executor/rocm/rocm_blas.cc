@@ -1364,6 +1364,10 @@ bool ROCMBlas::DoBlasTrsv(Stream *stream, blas::UpperLower uplo,
 
 void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152);
 
+void inplace_fp16_to_bf16(void* data, int nElements, hipStream_t stream);
+void inplace_bf16_to_fp16(void* data, int nElements, hipStream_t stream);
+
+
 port::Status ROCMBlas::DoEmulatedBlasGemmF8(Stream *stream, rocblas_operation transa,
                       rocblas_operation transb, 
                       uint64 m, uint64 n, uint64 k, 
@@ -1371,24 +1375,29 @@ port::Status ROCMBlas::DoEmulatedBlasGemmF8(Stream *stream, rocblas_operation tr
                       const void *b, int ldb, 
                       const void *beta, void *c,
                       int ldc, int grad_flags) {
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
-        uint32_t seed = distribution(gen);
-        // todo: confirm dimensions; is it possible for buffer dims to differ due to unusual value of lda?
-        Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(a)), m*k, seed, AsGpuStreamValue(stream), (grad_flags>>0) & 1);
-        seed = distribution(gen);
-        Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(b)), n*k, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1);
-        return DoBlasInternalStatus(
-            wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
-            transa, transb,
-            (rocblas_int)m, (rocblas_int)n, (rocblas_int)k, alpha, a,
-            rocblas_datatype_f16_r, lda, b, rocblas_datatype_f16_r,
-            ldb, beta, c, rocblas_datatype_f16_r, ldc, c,
-            rocblas_datatype_f16_r, ldc, rocblas_datatype_f32_r,
-            rocblas_gemm_algo_standard, 0, 0);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
+  uint32_t seed = distribution(gen);
+  // todo: confirm dimensions; is it possible for buffer dims to differ due to unusual value of lda?
+  Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(a)), m*k, seed, AsGpuStreamValue(stream), (grad_flags>>0) & 1);
+  seed = distribution(gen);
+  Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(b)), n*k, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1);
+  inplace_fp16_to_bf16((void*)a, m*k, AsGpuStreamValue(stream));
+  inplace_fp16_to_bf16((void*)b, n*k, AsGpuStreamValue(stream));
+  port::Status retval = DoBlasInternalStatus(
+      wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
+      transa, transb,
+      (rocblas_int)m, (rocblas_int)n, (rocblas_int)k, alpha, a,
+      rocblas_datatype_f16_r, lda, b, rocblas_datatype_f16_r,
+      ldb, beta, c, rocblas_datatype_f16_r, ldc, c,
+      rocblas_datatype_f16_r, ldc, rocblas_datatype_f32_r,
+      rocblas_gemm_algo_standard, 0, 0);
+  inplace_bf16_to_fp16((void*)a, m*k, AsGpuStreamValue(stream));
+  inplace_bf16_to_fp16((void*)b, n*k, AsGpuStreamValue(stream));
+  inplace_bf16_to_fp16((void*)c, m*n, AsGpuStreamValue(stream));
+  return retval;
 }
-
 
 port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                                   blas::Transpose transb, uint64_t m, uint64 n,
@@ -1434,14 +1443,38 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
       port::StatusOr<bool> maybe_hasXDLOPS = GpuDriver::GetMFMASupport();
       if (maybe_hasXDLOPS.ok() && maybe_hasXDLOPS.ValueOrDie()) {
         VLOG(1) << "Using rocblas_gemm_ex";
+        if(!(grad_flags & 256))
+        {
+            printf("GEMM %d %d, flags %x\n", (int)transa, (int)transb, grad_flags);
+            fflush(stdout);
+            exit(0);
+        }
         bool hasFP8 = true;
-        if(hasFP8 && (grad_flags & 4)) {
-           return DoEmulatedBlasGemmF8(stream,
+        port::Status retval;
+        if(hasFP8 && (grad_flags & 4))
+           retval = DoEmulatedBlasGemmF8(stream,
              ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
              m, n, k, alpha, a.opaque(), lda,
              b.opaque(), ldb, beta, c->opaque(), ldc, grad_flags);
-        }
-        return DoBlasInternalStatus(
+        else {
+#if 1
+          inplace_fp16_to_bf16((void*)a.opaque(), m*k, AsGpuStreamValue(stream));
+          inplace_fp16_to_bf16((void*)b.opaque(), n*k, AsGpuStreamValue(stream));
+
+          retval = DoBlasInternalStatus(
+            wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
+            ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
+            (rocblas_int)m, (rocblas_int)n, (rocblas_int)k, alpha, a.opaque(),
+            rocblas_datatype_bf16_r, lda, b.opaque(), rocblas_datatype_bf16_r,
+            ldb, beta, c->opaque(), rocblas_datatype_bf16_r, ldc, c->opaque(),
+            rocblas_datatype_bf16_r, ldc, rocblas_datatype_f32_r,
+            rocblas_gemm_algo_standard, 0, 0);
+
+          inplace_bf16_to_fp16((void*)a.opaque(), m*k, AsGpuStreamValue(stream));
+          inplace_bf16_to_fp16((void*)b.opaque(), n*k, AsGpuStreamValue(stream));
+          inplace_bf16_to_fp16((void*)c->opaque(), m*n, AsGpuStreamValue(stream));
+#else
+          retval = DoBlasInternalStatus(
             wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
             ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
             (rocblas_int)m, (rocblas_int)n, (rocblas_int)k, alpha, a.opaque(),
@@ -1449,6 +1482,9 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
             ldb, beta, c->opaque(), rocblas_datatype_f16_r, ldc, c->opaque(),
             rocblas_datatype_f16_r, ldc, rocblas_datatype_f32_r,
             rocblas_gemm_algo_standard, 0, 0);
+#endif            
+        }
+        return retval;
       } else {
         VLOG(1) << "Using rocblas_hgemm";
         const Eigen::half alpha_half(*static_cast<const float *>(alpha));

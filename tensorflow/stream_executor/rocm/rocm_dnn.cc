@@ -1703,6 +1703,8 @@ miopenDataType_t ToMIOpenDataType(
       return miopenFloat;
     case dnn::DataType::kHalf:
       return miopenHalf;
+    case dnn::DataType::kBF16:
+      return miopenBFloat16;
     case dnn::DataType::kDouble:
       LOG(FATAL)
           << "Unsupported DNN data type: tf.float64 (dnn::DataType::kDouble)";
@@ -3000,6 +3002,8 @@ port::Status MIOpenSupport::DoPrepareForConvolution(
 }
 
 void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152);
+void inplace_fp16_to_bf16(void* data, int nElements, hipStream_t stream);
+void inplace_bf16_to_fp16(void* data, int nElements, hipStream_t stream);
 
 port::Status MIOpenSupport::DoConvolve(
     dnn::ConvolutionKind kind, dnn::DataType element_type,
@@ -3010,8 +3014,12 @@ port::Status MIOpenSupport::DoConvolve(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
-    dnn::ProfileResult* output_profile_result, int grad_flags) {
+    dnn::ProfileResult* output_profile_result) {
   auto miopen = miopen_->GetHandle(parent_, stream);
+
+  bool denorm_fix = (output_type==dnn::DataType::kHalf && (kind!=dnn::ConvolutionKind::FORWARD || (convolution_descriptor.grad_flags() & 3)));
+  auto fake_element_type = denorm_fix ? miopenBFloat16 : ToMIOpenDataType(output_type),
+
   ScopedTensorDescriptor input_nd{input_descriptor,
                                   ToMIOpenDataType(element_type)};
   ScopedTensorDescriptor output_nd{output_descriptor,
@@ -3021,10 +3029,12 @@ port::Status MIOpenSupport::DoConvolve(
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
 
-  if(grad_flags & 8) {
-    printf("ERROR: grad_flags %d in DoConvolve()\n", grad_flags);
-   exit(-1);
+  int gf = convolution_descriptor.grad_flags();
+  if(!(gf & 256)) {
+    printf("ERROR: uninitialized grad_flags in ConvolutionDescriptor\n");
+    exit(-1);
   }
+  bool f8 = (gf & 4);
   // Alpha is the scaling factor for input.
   float alpha = 1.0;
   // Beta is the scaling factor for output.
@@ -3048,7 +3058,7 @@ port::Status MIOpenSupport::DoConvolve(
   }
 
   bool f8 = (grad_flags & 4);
-  if(f8 && element_type == dnn::DataType::kHalf) {
+  if(element_type == dnn::DataType::kHalf) {
     __half* p1, *p2;
     uint64_t sz1=0, sz2=0;
     int Cin = filter_descriptor.input_feature_map_count();
@@ -3074,14 +3084,20 @@ port::Status MIOpenSupport::DoConvolve(
        sz2 = input_descriptor.ElementCount();
      }
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
-    uint32_t seed = distribution(gen);
-    Quant8_inplace(p1, sz1, seed, AsGpuStreamValue(stream), grad_flags & 1);
-    seed = distribution(gen);
-    Quant8_inplace(p2, sz2, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1);
-    VLOG(3) << "sz1=" << sz1 << ", sz2=" << sz2 
+      if(f8) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
+        uint32_t seed = distribution(gen);
+        Quant8_inplace(p1, sz1, seed, AsGpuStreamValue(stream), gf & 1);
+        seed = distribution(gen);
+        Quant8_inplace(p2, sz2, seed, AsGpuStreamValue(stream), (gf>>1) & 1);
+      }
+      if(denorm_fix) {
+        inplace_fp16_to_bf16(p1, sz1, AsGpuStreamValue(stream));
+        inplace_fp16_to_bf16(p2, sz2, AsGpuStreamValue(stream));
+      }
+      VLOG(3) << "sz1=" << sz1 << ", sz2=" << sz2 
             << ", input size=" << input_data.size()/sizeof(__half) 
             << ", filter size=" << filter_data.size()/sizeof(__half)
             << ", output size=" << output_data.size()/sizeof(__half) ;
@@ -3149,6 +3165,16 @@ port::Status MIOpenSupport::DoConvolve(
       return port::InternalError(
           absl::StrCat("Unexpected convolution kind ", static_cast<int>(kind)));
   }
+  if(denorm_fix) {
+    int Cin = filter_descriptor.input_feature_map_count();
+    int Cout = filter_descriptor.output_feature_map_count();
+    int fh = filter_descriptor.input_filter_height();
+    int fw = filter_descriptor.input_filter_width();
+    int nFilterElem = Cin * Cout * fw * fh;
+    inplace_bf16_to_fp16(output_data.opaque(), output_descriptor_.ElementCount(), AsGpuStreamValue(stream));
+    inplace_bf16_to_fp16(filter_data.opaque(), fw*fh*Cin*Cout, AsGpuStreamValue(stream));
+    inplace_bf16_to_fp16(input_data.opaque(), input_descriptor_.ElementCount(), AsGpuStreamValue(stream));
+  }
 
   if (is_profiling) {
     if (!timer->Stop(AsGpuStream(stream))) {
@@ -3197,6 +3223,12 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     ScratchAllocator* scratch_allocator,
     std::vector<dnn::ProfileResult>* out_algorithms) {
+
+  if(element_type==dnn::DataType::kHalf && 
+      (kind!=dnn::ConvolutionKind::FORWARD || 
+       (convolution_descriptor.grad_flags() & 3)))
+    element_type = dnn::DataType::kBF16;
+
   return use_immediate_mode_
              ? GetMIOpenConvolveAlgorithmsImmediateMode(
                    kind, element_type, stream, input_descriptor, input_data,
@@ -3794,7 +3826,7 @@ port::Status MIOpenSupport::DoFusedConvolve(
     const dnn::BatchDescriptor& output_descriptor, DeviceMemoryBase output_data,
     ScratchAllocator* scratch_allocator,
     const dnn::AlgorithmConfig& algorithm_config,
-    dnn::ProfileResult* output_profile_result, int grad_flags) {
+    dnn::ProfileResult* output_profile_result) {
   return port::UnimplementedError("fused convolve not implemented yet");
 }
 

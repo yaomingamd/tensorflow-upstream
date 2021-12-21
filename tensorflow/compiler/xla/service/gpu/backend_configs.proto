@@ -47,7 +47,7 @@ message CudnnConvBackendConfig {
   // bit 3: disable clipping
   // bit 4: disable stochastic rounding
   // bit 8: initialized
-  int64 grad_flags = 6;
+  int64 f8_conv_backend_flags = 7;
 }
 
 // Backend config for the GEMM operation running through cuBLAS.
@@ -71,7 +71,7 @@ message GemmBackendConfig {
   int64 lhs_stride = 10;
   int64 rhs_stride = 11;
 
-  int64 grad_flags = 12;
+  int64 f8_gemm_backend_flags = 12;
 }
 
 // Backend config for bitcast operation generated from MLIR MHLO dialect.

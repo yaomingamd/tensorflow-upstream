@@ -61,9 +61,7 @@ string PrecisionConfigToString(const PrecisionConfig& precision_config) {
           })) {
     return "";
   }
-
-  return StrCat(
-      "operand_precision={",
+  return StrCat("operand_precision={",
       StrJoin(
           precision_config.operand_precision(), ",",
           [](string* out, int32_t precision) {
@@ -2504,6 +2502,7 @@ HloCustomCallInstruction::HloCustomCallInstruction(
       custom_call_has_side_effect_(false),
       custom_call_schedule_(CustomCallSchedule::SCHEDULE_NONE),
       api_version_(api_version) {
+  printf("Creating a HloCustomCallInstruction with opaque %s\n", opaque.c_str());
   set_raw_backend_config_string(std::move(opaque));
   for (auto operand : operands) {
     AppendOperand(operand);
@@ -3119,7 +3118,31 @@ HloDotInstruction::HloDotInstruction(
   AppendOperand(rhs);
 }
 
+static bool testPrecisionConfigF8(const PrecisionConfig& cfg) {
+  for(int i=0; i<cfg.operand_precision_size(); i++)
+  {
+      int flag = cfg.operand_precision()[i];
+      if(flag>=PrecisionConfig::F8 && flag<=PrecisionConfig::F8OFF)
+        return true;
+  }
+  return false;
+}
+
 HloInstructionProto HloDotInstruction::ToProto() const {
+  auto attr = frontend_attributes().map();
+  if(attr.find("grad_flags") != attr.end()) {
+    printf("HloDotInstruction::ToProto(): found grad_flags on frontend\n");
+    fflush(stdout);
+  }
+  else if(testPrecisionConfigF8(precision_config_)) {
+    printf("HloDotInstruction::ToProto(): found grad_flags in precision config\n");
+    fflush(stdout);
+  }
+  else {
+     printf("ERROR: HloDotInstruction::ToProto(): unset grad_flags\n");
+     fflush(stdout);
+     exit(0);
+  }
   HloInstructionProto proto = HloInstruction::ToProto();
   *proto.mutable_dot_dimension_numbers() = dot_dimension_numbers_;
   *proto.mutable_precision_config() = precision_config_;

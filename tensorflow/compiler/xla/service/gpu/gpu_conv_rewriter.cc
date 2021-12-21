@@ -747,7 +747,7 @@ StatusOr<bool> RunOnInstruction(HloInstruction* conv) {
     exit(-1);
   }
   auto backend_config = GetDefaultBackendConfig();
-  backend_config.set_grad_flags(std::stoi(attr["grad_flags"]));
+  backend_config.set_f8_conv_backend_flags(std::stoi(attr["grad_flags"]));
   TF_RETURN_IF_ERROR(custom_call->set_backend_config(backend_config));
 
   VLOG(1) << "Replacing convolution " << conv->ToString() << " with "

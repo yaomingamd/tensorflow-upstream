@@ -320,7 +320,9 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
                   const Tensor& filter, FusedComputationType fusion,
                   const FusedComputationArgs& fusion_args,
                   const Conv2DParameters& params,
-                  const Conv2DDimensions& dimensions, Tensor* output) {
+                  const Conv2DDimensions& dimensions, 
+                  int f8_flags,
+                  Tensor* output) {
     OP_REQUIRES(
         context,
         params.data_format == FORMAT_NHWC || params.data_format == FORMAT_NCHW,
@@ -477,7 +479,8 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
         .set_horizontal_filter_stride(dimensions.stride_cols)
         .set_zero_padding_height(common_padding_rows)
         .set_zero_padding_width(common_padding_cols)
-        .set_group_count(in_depths / patch_depths);
+        .set_group_count(in_depths / patch_depths)
+        .set_grad_flags(256+f8_flags);
     se::dnn::BatchDescriptor output_desc;
     output_desc.set_count(out_batch)
         .set_height(out_rows)
@@ -572,7 +575,7 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
           bias_desc, bias_ptr,              // bias
           dnn_activation_mode,              // activation
           output_desc, &output_ptr,         // output
-          &scratch_allocator, algorithm_config, nullptr, grad_flags);
+          &scratch_allocator, algorithm_config, nullptr);
     } else {
       cudnn_launch_status = stream->FusedConvolveWithAlgorithm(
           input_desc, input_ptr,            // input
@@ -583,7 +586,7 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
           bias_desc, bias_ptr,              // bias
           dnn_activation_mode,              // activation
           output_desc, &output_ptr,         // output
-          &scratch_allocator, algorithm_config, nullptr, grad_flags);
+          &scratch_allocator, algorithm_config, nullptr);
     }
 
     OP_REQUIRES_OK(context, cudnn_launch_status);

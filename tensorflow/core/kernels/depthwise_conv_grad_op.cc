@@ -388,7 +388,7 @@ struct LaunchDepthwiseConvBackpropInputOp<CPUDevice, T> {
 
   void operator()(OpKernelContext* ctx, const DepthwiseArgs& args,
                   const T* out_backprop, const T* depthwise_filter,
-                  T* in_backprop, TensorFormat data_format, bool f8_enable) {
+                  T* in_backprop, TensorFormat data_format) {
     OP_REQUIRES(
         ctx, data_format == FORMAT_NHWC,
         errors::Unimplemented(
@@ -606,7 +606,7 @@ class DepthwiseConv2dNativeBackpropInputOp : public OpKernel {
 #else
     use_cudnn_grouped_conv_ = false;
 #endif
-    f8_enable_ = context->AllowF8();
+    f8_flags_ = context->GetFlagsF8();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -679,7 +679,7 @@ class DepthwiseConv2dNativeBackpropInputOp : public OpKernel {
       launcher_(context, /*use_cudnn=*/true, cudnn_use_autotune_, out_backprop,
                 reshaped_filter, /*row_dilation=*/1, /*col_dilation=*/1,
                 stride_, stride_, padding_, explicit_paddings_, in_backprop,
-                data_format_, f8_enable_);
+                data_format_, f8_flags_);
       return;
     }
 
@@ -688,7 +688,7 @@ class DepthwiseConv2dNativeBackpropInputOp : public OpKernel {
     auto in_backprop_ptr = in_backprop->template flat<T>().data();
     LaunchDepthwiseConvBackpropInputOp<Device, T>()(
         context, args, out_backprop_ptr, filter_ptr, in_backprop_ptr,
-        data_format_, f8_enable_);
+        data_format_);
   }
 
  protected:
@@ -705,7 +705,7 @@ class DepthwiseConv2dNativeBackpropInputOp : public OpKernel {
   LaunchConv2DBackpropInputOp<Device, T> launcher_;
   bool cudnn_use_autotune_;
   DataType dtype_;
-  bool f8_enable_ = false;
+  int f8_flags_ = 0;
 
   TF_DISALLOW_COPY_AND_ASSIGN(DepthwiseConv2dNativeBackpropInputOp);
 };
@@ -873,7 +873,7 @@ struct LaunchDepthwiseConvBackpropFilterOp<CPUDevice, T> {
 
   void operator()(OpKernelContext* ctx, const DepthwiseArgs& args,
                   const T* out_backprop, const T* input, T* filter_backprop,
-                  TensorFormat data_format, bool f8_enable) {
+                  TensorFormat data_format) {
     OP_REQUIRES(
         ctx, data_format == FORMAT_NHWC,
         errors::Unimplemented(
@@ -1106,7 +1106,7 @@ class DepthwiseConv2dNativeBackpropFilterOp : public OpKernel {
 #else
     use_cudnn_grouped_conv_ = false;
 #endif
-    f8_enable_ = context->AllowF8();
+    f8_flags_ = context->GetFlagsF8();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -1179,7 +1179,7 @@ class DepthwiseConv2dNativeBackpropFilterOp : public OpKernel {
       launcher_(context, /*use_cudnn=*/true, cudnn_use_autotune_, out_backprop,
                 input,
                 /*row_dilation=*/1, /*col_dilation=*/1, stride_, stride_,
-                padding_, explicit_paddings_, &reshaped_filter, data_format_, f8_enable_);
+                padding_, explicit_paddings_, &reshaped_filter, data_format_, f8_flags_);
       return;
     }
 
@@ -1214,7 +1214,7 @@ class DepthwiseConv2dNativeBackpropFilterOp : public OpKernel {
     auto filter_backprop_ptr = casted_filter_backprop.template flat<U>().data();
     LaunchDepthwiseConvBackpropFilterOp<Device, U>()(
         context, args, out_backprop_ptr, input_ptr, filter_backprop_ptr,
-        data_format_, f8_enable_);
+        data_format_);
 
     if (cast_to_float) {
       functor::CastFunctor<Device, Eigen::half, float> cast;
@@ -1238,7 +1238,7 @@ class DepthwiseConv2dNativeBackpropFilterOp : public OpKernel {
   LaunchConv2DBackpropFilterOp<Device, T> launcher_;
   bool cudnn_use_autotune_;
   DataType dtype_;
-  bool f8_enable_ = false;
+  int f8_flags_ = 0;
 
   TF_DISALLOW_COPY_AND_ASSIGN(DepthwiseConv2dNativeBackpropFilterOp);
 };

@@ -51,7 +51,9 @@ class MatMulOp : public XlaOpKernel {
     bool grad_a = false, grad_b = false;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_a", &grad_a));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_b", &grad_b));
-    grad_flags_ = (grad_a?1:0) + (grad_b?2:0) + (ctx->AllowF8()?4:0) + 256;
+    precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
+    precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
+    SetXlaPrecisionConfigF8Flags(precision_config_, ctx->GetFlagsF8(), grad_a, grad_b);
   }
 
   ~MatMulOp() override = default;
@@ -92,9 +94,8 @@ class MatMulOp : public XlaOpKernel {
         b = xla::ConvertElementType(b, xla::F32);
       }
     }
-    auto retval = xla::BatchDot(a, transpose_a_, b, transpose_b_);
-    auto builder = a.builder();
-    builder->SetInstructionFrontendAttribute(retval, "grad_flags", std::to_string(grad_flags_));
+    printf("MatmulOp::compile()\n");
+    auto retval = xla::BatchDot(a, transpose_a_, b, transpose_b_, precision_config_);
     ctx->SetOutput(0, retval);
   }
 
@@ -104,7 +105,7 @@ class MatMulOp : public XlaOpKernel {
   bool transpose_b_;
   DataType a_type_;
   DataType b_type_;
-  int grad_flags_;
+  xla::PrecisionConfig precision_config_; 
 };
 
 REGISTER_XLA_OP(Name("MatMul").TypeConstraint("T", kMatmulTypes), MatMulOp);

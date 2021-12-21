@@ -57,11 +57,11 @@ struct LaunchConv2DBackpropInputOp<GPUDevice, int32> {
                   int row_dilation, int col_dilation, int row_stride,
                   int col_stride, const Padding& padding,
                   const std::vector<int64_t>& explicit_paddings,
-                  Tensor* in_backprop, TensorFormat data_format, bool f8_enable) {
+                  Tensor* in_backprop, TensorFormat data_format, int f8_flags) {
     LaunchConv2DBackpropInputOpImpl<GPUDevice, int32> launcher;
     launcher(ctx, use_cudnn, cudnn_use_autotune, out_backprop, filter,
              row_dilation, col_dilation, row_stride, col_stride, padding,
-             explicit_paddings, in_backprop, data_format, f8_enable);
+             explicit_paddings, in_backprop, data_format, f8_flags);
   }
 };
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -72,7 +72,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     const Tensor& out_backprop, const Tensor& filter, int row_dilation,
     int col_dilation, int row_stride, int col_stride, const Padding& padding,
     const std::vector<int64_t>& explicit_paddings, Tensor* in_backprop,
-    TensorFormat data_format, bool f8_enable) {
+    TensorFormat data_format, int f8_flags) {
   using se::dnn::AlgorithmConfig;
   using se::dnn::AlgorithmDesc;
   using se::dnn::ProfileResult;
@@ -152,7 +152,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     auto no_transpose = se::blas::Transpose::kNoTranspose;
 
     OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(transpose, no_transpose, n, m, k,
-                                             b_ptr, k, a_ptr, k, &c_ptr, n, 2+(f8_enable?4:0)));
+                                             b_ptr, k, a_ptr, k, &c_ptr, n, 1|f8_flags));
     return;
   } else if (dims.spatial_dims[0].filter_size ==
                  dims.spatial_dims[0].input_size &&
@@ -178,7 +178,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     auto no_transpose = se::blas::Transpose::kNoTranspose;
 
     OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(transpose, no_transpose, n, m, k,
-                                             b_ptr, k, a_ptr, k, &c_ptr, n, 2+(f8_enable?4:0)));
+                                             b_ptr, k, a_ptr, k, &c_ptr, n, 1|f8_flags));
     return;
   }
 
@@ -261,7 +261,8 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
       .set_horizontal_filter_stride(dims.spatial_dims[1].stride)
       .set_zero_padding_height(common_padding_rows)
       .set_zero_padding_width(common_padding_cols)
-      .set_group_count(dims.in_depth / filter_shape.dim_size(2));
+      .set_group_count(dims.in_depth / filter_shape.dim_size(2))
+      .set_grad_flags(256|1|f8_flags);
 
   // Tensorflow filter format: HWIO
   // cuDNN filter formats: (data format) -> (filter format)
@@ -380,7 +381,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
       cudnn_use_autotune, AutotuneConvBwdData::GetInstance(), conv_parameters,
       ctx, se::dnn::ConvolutionKind::BACKWARD_DATA, input_desc, in_backprop_ptr,
       filter_desc, filter_ptr, conv_desc, output_desc, out_backprop_ptr,
-      ConvolveBackwardDataScratchSize, f8_enable);
+      ConvolveBackwardDataScratchSize);
   OP_REQUIRES_OK(ctx, config_or.status());
   AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 
