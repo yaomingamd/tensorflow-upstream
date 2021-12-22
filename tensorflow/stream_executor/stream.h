@@ -372,7 +372,7 @@ class Stream {
       const dnn::ConvolutionDescriptor &convolution_descriptor,
       ScratchAllocator *scratch_allocator,
       const dnn::AlgorithmConfig &plan_config,
-      dnn::ProfileResult *output_profile_result, int grad_flags) {
+      dnn::ProfileResult *output_profile_result) {
 #if GOOGLE_CUDA
     dnn::DnnSupport *dnn = parent_->AsDnn();
     if (dnn) {
@@ -382,7 +382,7 @@ class Stream {
           dnn::ToDataType<OutputType>::value, this, input_descriptor,
           input_data, filter_descriptor, filter_data, output_descriptor,
           output_data, convolution_descriptor, plan_config, scratch_allocator,
-          output_profile_result, grad_flags);
+          output_profile_result);
     }
 #endif  // GOOGLE_CUDA
     return port::UnimplementedError("DNN library is not found.");

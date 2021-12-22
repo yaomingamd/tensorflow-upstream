@@ -911,7 +911,7 @@ StatusOr<Operation*> LhloDialectEmitter::EmitDnnConvolution(
       printf("mhlo_to_lhlo: EmitDnnConvolution: found f8_conv_backend_flags on backend config\n");
       fflush(stdout);
       op.f8_flagsAttr(builder_.getI64IntegerAttr(backend_config.f8_conv_backend_flags()));
-    else {
+    } else {
       printf("Attempting to emit convolution op with unset grad_flags\n");
       exit(-1);
     }

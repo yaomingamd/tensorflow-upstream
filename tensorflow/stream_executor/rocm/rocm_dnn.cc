@@ -3018,7 +3018,7 @@ port::Status MIOpenSupport::DoConvolve(
   auto miopen = miopen_->GetHandle(parent_, stream);
 
   bool denorm_fix = (output_type==dnn::DataType::kHalf && (kind!=dnn::ConvolutionKind::FORWARD || (convolution_descriptor.grad_flags() & 3)));
-  auto fake_element_type = denorm_fix ? miopenBFloat16 : ToMIOpenDataType(output_type),
+  auto fake_element_type = denorm_fix ? miopenBFloat16 : ToMIOpenDataType(output_type);
 
   ScopedTensorDescriptor input_nd{input_descriptor,
                                   ToMIOpenDataType(element_type)};
@@ -3057,7 +3057,6 @@ port::Status MIOpenSupport::DoConvolve(
     }
   }
 
-  bool f8 = (grad_flags & 4);
   if(element_type == dnn::DataType::kHalf) {
     __half* p1, *p2;
     uint64_t sz1=0, sz2=0;
@@ -3171,9 +3170,9 @@ port::Status MIOpenSupport::DoConvolve(
     int fh = filter_descriptor.input_filter_height();
     int fw = filter_descriptor.input_filter_width();
     int nFilterElem = Cin * Cout * fw * fh;
-    inplace_bf16_to_fp16(output_data.opaque(), output_descriptor_.ElementCount(), AsGpuStreamValue(stream));
+    inplace_bf16_to_fp16(output_data.opaque(), output_descriptor.ElementCount(), AsGpuStreamValue(stream));
     inplace_bf16_to_fp16(filter_data.opaque(), fw*fh*Cin*Cout, AsGpuStreamValue(stream));
-    inplace_bf16_to_fp16(input_data.opaque(), input_descriptor_.ElementCount(), AsGpuStreamValue(stream));
+    inplace_bf16_to_fp16(input_data.opaque(), input_descriptor.ElementCount(), AsGpuStreamValue(stream));
   }
 
   if (is_profiling) {

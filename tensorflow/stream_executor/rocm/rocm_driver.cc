@@ -1269,7 +1269,7 @@ static uint64 GetReservedMemory() {
   // allocations by internal ROCm libraries (e.g. rocBLAS alone needs
   // ~200 MB to put its kernels as of ROCm 4.1)
       if (gcnArchName.substr(0,6)=="gfx908")
-        reserve = 1048576*512;
+        reserve = 1048576*1024;
       else if (gcnArchName.substr(0,6)=="gfx90a"
           || gcnArchName.substr(0,6)=="gfx910")
         reserve = 1048576*1024;

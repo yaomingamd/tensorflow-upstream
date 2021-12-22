@@ -1921,7 +1921,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
         cudnn_use_autotune_, AutotuneConv3dBwdFilter::GetInstance(),
         conv_parameters, context, se::dnn::ConvolutionKind::BACKWARD_FILTER,
         input_desc, input_ptr, filter_desc, filter_backprop_ptr, conv_desc,
-        output_desc, out_backprop_ptr, ConvolveBackwardFilterScratchSize, f8_enable_);
+        output_desc, out_backprop_ptr, ConvolveBackwardFilterScratchSize);
     OP_REQUIRES_OK(context, config_or.status());
     AlgorithmConfig algorithm_config = config_or.ConsumeValueOrDie();
 

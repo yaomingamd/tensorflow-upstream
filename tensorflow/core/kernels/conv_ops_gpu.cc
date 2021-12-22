@@ -424,7 +424,7 @@ template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<double>(
     se::DeviceMemory<double> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc,
-    se::DeviceMemory<double> output_ptr, int64_t scratch_size_limit, bool f8_enable);
+    se::DeviceMemory<double> output_ptr, int64_t scratch_size_limit);
 
 template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<float>(
     bool cudnn_use_autotune,
@@ -436,7 +436,7 @@ template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<float>(
     se::DeviceMemory<float> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc,
-    se::DeviceMemory<float> output_ptr, int64_t scratch_size_limit, bool f8_enable);
+    se::DeviceMemory<float> output_ptr, int64_t scratch_size_limit);
 
 template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<Eigen::half>(
     bool cudnn_use_autotune,
@@ -448,7 +448,7 @@ template StatusOr<se::dnn::AlgorithmConfig> AutotuneUnfusedConv<Eigen::half>(
     se::DeviceMemory<Eigen::half> filter_ptr,
     const se::dnn::ConvolutionDescriptor& conv_desc,
     const se::dnn::BatchDescriptor& output_desc,
-    se::DeviceMemory<Eigen::half> output_ptr, int64_t scratch_size_limit, bool f8_enable);
+    se::DeviceMemory<Eigen::half> output_ptr, int64_t scratch_size_limit);
 
 }  // namespace tensorflow
 
