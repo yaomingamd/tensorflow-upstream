@@ -37,7 +37,7 @@ package_group(
 
 bool_flag(
     name = "enable_gpu",
-    build_setting_default = True,
+    build_setting_default = False,
 )
 
 config_setting(
