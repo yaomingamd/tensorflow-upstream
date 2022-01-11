@@ -69,7 +69,7 @@ def _get_header_version(path, name):
 
 def _find_rocm_config(rocm_install_path):
 
-  def rocm_version_numbers_pre_rocm45(path):
+  def rocm_version_numbers_pre_rocm50(path):
     version_file = os.path.join(path, ".info/version-dev")
     if not os.path.exists(version_file):
       raise ConfigError('ROCm version file "{}" not found.'.format(version_file))
@@ -82,21 +82,20 @@ def _find_rocm_config(rocm_install_path):
     patch = int(version_numbers[2].split("-")[0])
     return major, minor, patch
 
-  def rocm_version_numbers_post_rocm45(path):
-    version_file = os.path.join(path, "include/rocm/rocm_version.h")
+  def rocm_version_numbers_post_rocm50(path):
+    version_file = os.path.join(path, "include/rocm_version.h")
     if not os.path.exists(version_file):
       raise ConfigError('ROCm version file "{}" not found. Trying an alternate approach to determine the ROCm version.'.format(version_file))
     major = _get_header_version(version_file, "ROCM_VERSION_MAJOR")
     minor = _get_header_version(version_file, "ROCM_VERSION_MINOR")
-    # ROCM_VERSION_PATCH is only defined in ROCm 5.0 and higher
-    patch = _get_header_version(version_file, "ROCM_VERSION_PATCH") if int(major) >= 5 else 0
+    patch = _get_header_version(version_file, "ROCM_VERSION_PATCH")
     return major, minor, patch
 
   try:
-    major, minor, patch = rocm_version_numbers_post_rocm45(rocm_install_path)
+    major, minor, patch = rocm_version_numbers_post_rocm50(rocm_install_path)
   except ConfigError as e:
     sys.stderr.write("\nWARNING: {}\n\n".format(str(e)))
-    major, minor, patch = rocm_version_numbers_pre_rocm45(rocm_install_path)
+    major, minor, patch = rocm_version_numbers_pre_rocm50(rocm_install_path)
     pass
 
   rocm_config = {
