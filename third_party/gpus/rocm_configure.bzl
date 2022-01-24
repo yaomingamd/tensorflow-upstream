@@ -489,7 +489,7 @@ def _find_libs(repository_ctx, rocm_config):
             "hiprand",
             repository_ctx,
             cpu_value,
-            rocm_config.rocm_toolkit_path + "/hiprand",
+            rocm_config.rocm_toolkit_path,
         ),
         "miopen": _find_rocm_lib(
             "MIOpen",
