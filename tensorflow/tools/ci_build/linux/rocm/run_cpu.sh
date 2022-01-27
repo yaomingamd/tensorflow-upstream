@@ -38,6 +38,7 @@ bazel test \
       --local_test_jobs=${N_BUILD_JOBS} \
       --test_timeout 600,900,2400,7200 \
       --build_tests_only \
+      --test_env=SETUPTOOLS_USE_DISTUTILS=stdlib \
       --test_output=errors \
       --test_sharding_strategy=disabled \
       --test_size_filters=small,medium,large \
