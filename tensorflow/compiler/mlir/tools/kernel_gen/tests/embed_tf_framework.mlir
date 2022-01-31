@@ -45,11 +45,11 @@ func @tf_entry_no_ctx(%size : index) attributes {tf_entry} {
 // CHECK-LABEL: func @assert(
 // CHECK-SAME: [[CTX:%.*]]: !tf_framework.op_kernel_context
 func @assert(%arg0: !tf_framework.op_kernel_context) attributes {tf_entry} {
-  %true = constant true
+  %true = arith.constant true
   assert %true, "the one and only"
   return
 }
-// CHECK:   [[TRUE:%.*]] = constant true
+// CHECK:   [[TRUE:%.*]] = arith.constant true
 // CHECK-NEXT: tf_framework.assert [[CTX]], [[TRUE]], INVALID_ARGUMENT
 
 // -----
@@ -81,6 +81,6 @@ func @jit_compile_from_str(%ctx : !tf_framework.op_kernel_context)
   %0 = tf_framework.jit_compile_from_str "placeholder" {
       architectures = ["sm_123", "sm_456"], tileSizes = [1, 2, 3],
       unrollFactors = [4], maxSupportedRank = 3 : i64, enableFtz = false,
-      cpuCodegen = false }
+      index64Bit = false, cpuCodegen = false }
   return %0 : !tf_framework.jit_callable
 }

@@ -497,6 +497,7 @@ xla_test(
         # Hlo profiles are not supported on the interpreter backend.
         "interpreter",
     ],
+    tags = ["no_aarch64"],
     deps = [
         ":client_library_test_base",
         ":test_macros_header",
@@ -1796,6 +1797,7 @@ xla_test(
         "//tensorflow/compiler/xla/client:xla_builder",
         "//tensorflow/compiler/xla/client/lib:arithmetic",
         "//tensorflow/compiler/xla/tests:client_library_test_base",
+        "//tensorflow/compiler/xla/tests:hlo_test_base",
         "//tensorflow/compiler/xla/tests:literal_test_util",
         "//tensorflow/compiler/xla/tests:xla_internal_test_main",
         "//tensorflow/core:lib",
@@ -2065,7 +2067,6 @@ xla_test(
         "//tensorflow/compiler/xla/client:local_client",
         "//tensorflow/compiler/xla/service:hlo",
         "//tensorflow/compiler/xla/service:hlo_runner",
-        "//tensorflow/compiler/xla/service/gpu:nccl_test_utils",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:test",
@@ -2277,6 +2278,7 @@ xla_test(
         # Hlo profiles are not supported on the interpreter backend.
         "interpreter",
     ],
+    tags = ["no_aarch64"],
     deps = [
         ":client_library_test_base",
         ":test_macros_header",
@@ -2799,5 +2801,20 @@ xla_test(
         "//tensorflow/compiler/xla/tests:xla_internal_test_main",
         "//tensorflow/core:test",
         "//tensorflow/core/platform:tensor_float_32_utils",
+    ],
+)
+
+xla_test(
+    name = "constant_reduction_function_test",
+    srcs = ["constant_reduction_function_test.cc"],
+    deps = [
+        ":hlo_test_base",
+        ":test_macros_header",
+        "//tensorflow/compiler/xla:test",
+        "//tensorflow/compiler/xla:types",
+        "//tensorflow/compiler/xla/tests:literal_test_util",
+        "//tensorflow/compiler/xla/tests:xla_internal_test_main",
+        "//tensorflow/core:lib",
+        "@com_google_absl//absl/types:optional",
     ],
 )

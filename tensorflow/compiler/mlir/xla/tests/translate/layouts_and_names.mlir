@@ -1,4 +1,4 @@
-// RUN: tf-mlir-translate -mlir-hlo-to-hlo-text-with-layouts %s | FileCheck %s
+// RUN: tf-mlir-translate -mlir-hlo-to-hlo-text --with-layouts=true --print-layouts=true %s | FileCheck %s
 
 // Checks exporting layouts
 
@@ -28,7 +28,7 @@ func @main(%arg0: tensor<128x224x224x4xf16>, %arg1: tensor<64x7x7x4xf16>) -> ten
   } : (tensor<128x224x224x4xf16>, tensor<64x7x7x4xf16>)-> tensor<128x64x112x112xf16> loc("root.42")
 
   // CHECK: s32[1,1]{0,1} constant({ {42} })
-  %cst_1 = "std.constant"() {value = dense<[[42]]> : tensor<1x1xi32>, xla_shape = "s32[1,1]{0,1}"} : () -> tensor<1x1xi32>
+  %cst_1 = "arith.constant"() {value = dense<[[42]]> : tensor<1x1xi32>, xla_shape = "s32[1,1]{0,1}"} : () -> tensor<1x1xi32>
 
   return %0 : tensor<128x64x112x112xf16>
 }

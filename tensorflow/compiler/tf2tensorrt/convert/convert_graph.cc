@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensorflow/compiler/tf2tensorrt/common/utils.h"
 #include "tensorflow/compiler/tf2tensorrt/convert/convert_nodes.h"
 #include "tensorflow/compiler/tf2tensorrt/convert/logger_registry.h"
+#include "tensorflow/compiler/tf2tensorrt/convert/ops/quantization_ops.h"
 #include "tensorflow/compiler/tf2tensorrt/convert/utils.h"
 #include "tensorflow/compiler/tf2tensorrt/segment/segment.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_id.h"
@@ -253,7 +254,7 @@ Status GetEngineInfo(const Graph* g,
   TF_RETURN_IF_ERROR(
       ConvertSegmentToGraphDef(g, graph_properties, subgraph_nodes, info));
   VLOG(1) << "Converted TensorRT candidate segment '" << info->engine_name
-          << "' to a GraphDef " << info->has_int32_input;
+          << "' to a GraphDef";
   if (segment_device.has_type) {
     // If the accumulated device assignment for the segment has a device type,
     // the segmenter guarantees the device type is GPU. Use the device
@@ -315,6 +316,21 @@ void UpdateToEngineNode(const std::vector<EngineInfo>& infos,
   LOG(FATAL) << "Node " << node_name << " not found in any engine.";
 }
 
+tensorflow::TensorShapeProto ComputeTRTNodeIOShape(
+    std::vector<PartialTensorShape>& partial_tensorshape_vect,
+    std::vector<tensorflow::TensorShapeProto>& shape_proto_vect,
+    const PartialTensorShape& conn_shape, int port_number) {
+  tensorflow::TensorShapeProto tmp_shape_proto;
+  conn_shape.AsProto(&tmp_shape_proto);
+
+  if (partial_tensorshape_vect.size() <= port_number) {
+    shape_proto_vect.resize(port_number + 1);
+    partial_tensorshape_vect.resize(port_number + 1);
+  }
+
+  return tmp_shape_proto;
+}
+
 // Function to insert a TRT engine node into the graph.
 // Create engine nodes in the following way:
 // 1. Each invocation of CreateTRTNode creates an engine node for infos[pos]
@@ -333,7 +349,9 @@ Status CreateTRTNode(const ConversionParams& params,
                      std::vector<Node*>* engine_nodes) {
   const auto& info = infos.at(pos);
   std::vector<tensorflow::TensorShapeProto> input_shape_protos;
+  std::vector<tensorflow::TensorShapeProto> output_shape_protos;
   std::vector<PartialTensorShape> input_shapes;
+  std::vector<PartialTensorShape> output_shapes;
   std::vector<NodeDefBuilder::NodeOut> inputs;
   std::vector<Node*> input_nodes;
   std::vector<Node*> control_input_nodes;
@@ -366,19 +384,33 @@ Status CreateTRTNode(const ConversionParams& params,
     } else {
       // Data edges
       if (!conn.is_input_edge) {
-        // Set the data types of output edge.
+        // Set the shapes and data types of the output edge.
+        tensorflow::TensorShapeProto out_shape = ComputeTRTNodeIOShape(
+            /*partial_tensorshape_vect=*/output_shapes,
+            /*shape_proto_vect=*/output_shape_protos,
+            /*conn_shape=*/conn.inside_shape,
+            /*port_number=*/conn.port_number);
+
+        output_shape_protos.at(conn.port_number) = out_shape;
+        output_shapes.at(conn.port_number) = conn.inside_shape;
+
         if (out_types.size() <= conn.port_number) {
           out_types.resize(conn.port_number + 1);
         }
         out_types.at(conn.port_number) = conn.connection_type;
+        VLOG(2) << "Collected output shape "
+                << output_shape_protos.at(conn.port_number).DebugString();
       } else {
-        // Set the shapes and data types of input edge.
-        if (input_shapes.size() <= conn.port_number) {
-          input_shape_protos.resize(conn.port_number + 1);
-          input_shapes.resize(conn.port_number + 1);
-        }
-        conn.outside_shape.AsProto(&input_shape_protos.at(conn.port_number));
+        // Set the shapes of the input edge.
+        tensorflow::TensorShapeProto in_shape = ComputeTRTNodeIOShape(
+            /*partial_tensorshape_vect=*/input_shapes,
+            /*shape_proto_vect=*/input_shape_protos,
+            /*conn_shape=*/conn.outside_shape,
+            /*port_number=*/conn.port_number);
+
+        input_shape_protos.at(conn.port_number) = in_shape;
         input_shapes.at(conn.port_number) = conn.outside_shape;
+
         // Shape must be fully defined (excluding batch dimension) for static
         // mode.
         if (params.use_implicit_batch &&
@@ -451,7 +483,9 @@ Status CreateTRTNode(const ConversionParams& params,
   NodeDef trt_node;
   NameAttrList function;
   function.set_name(StrCat(info.engine_name, "_native_segment"));
+
   node_builder.Attr("input_shapes", input_shape_protos)
+      .Attr("output_shapes", output_shape_protos)
       .Attr("static_engine",
             info.engine_type == EngineInfo::EngineType::TRTStatic)
       .Attr("segment_func", function)
@@ -463,6 +497,7 @@ Status CreateTRTNode(const ConversionParams& params,
       .Attr("precision_mode", prec_string)
       .Attr("use_calibration", info.use_calibration)
       .Attr("_use_implicit_batch", params.use_implicit_batch)
+      .Attr("use_explicit_precision", params.use_explicit_precision)
       .Attr("_allow_build_at_runtime", info.allow_build_at_runtime)
       .Attr("OutT", out_types);
 
@@ -472,6 +507,7 @@ Status CreateTRTNode(const ConversionParams& params,
   }
 
   Status status = node_builder.Finalize(&trt_node);
+
   if (!status.ok()) {
     LOG(ERROR) << "Node construction failed with" << status;
     return status;
@@ -482,12 +518,8 @@ Status CreateTRTNode(const ConversionParams& params,
   // here, this segment will be skipped
   // TODO(aaroey): let it return proper error status for the following logic
   // instead of checking fail.
-  Node* engine_node = graph->AddNode(trt_node, &status);
+  TF_ASSIGN_OR_RETURN(Node * engine_node, graph->AddNode(trt_node));
   (*engine_nodes)[pos] = engine_node;
-  if (!status.ok()) {
-    LOG(ERROR) << "Adding node failed " << status;
-    return status;
-  }
   // Add control input and input edges to the engine node.
   for (const auto in : control_input_nodes) {
     VLOG(1) << "Connecting control edge from " << in->name() << " to "
@@ -585,8 +617,7 @@ Status MaybeRewriteCastToFp32(GraphDef* graph_def, NodeDef* node_def) {
 }  // namespace
 
 Status RegisterGraphToFunctionLibrary(const GraphDef& segment_graph_def,
-                                      Graph* graph, const string& engine_name,
-                                      bool has_int32_input) {
+                                      Graph* graph, const string& engine_name) {
   Graph segment_graph(graph->flib_def());
   TF_RETURN_IF_ERROR(ConvertGraphDefToGraph(GraphConstructorOptions(),
                                             segment_graph_def, &segment_graph));
@@ -594,16 +625,6 @@ Status RegisterGraphToFunctionLibrary(const GraphDef& segment_graph_def,
   auto segment_func = library.add_function();
   TF_RETURN_IF_ERROR(GraphToFunctionDef(
       segment_graph, StrCat(engine_name, "_native_segment"), segment_func));
-  if (has_int32_input) {
-    // Setting this attribute value informs TensorFlow that the int32 _Arg node
-    // inputs are on device memory during native segment execution. We only set
-    // the attribute value when there is any int32 input because the attribute
-    // is not compatible with is_multi_device_function.
-    SetAttrValue(
-        true,
-        &(*segment_func
-               ->mutable_attr())[FunctionLibraryDefinition::kIntsOnDeviceAttr]);
-  }
   if (VLOG_IS_ON(7)) {
     VLOG(7) << engine_name << " Function_Def ";
     VLOG(7) << segment_func->DebugString();
@@ -695,7 +716,8 @@ Status CreateStaticEngine(const ConversionParams& params,
       max_batch_size, info.max_workspace_size_bytes, input_shapes, trt_logger,
       trt_allocator.get(), /*calibrator=*/nullptr, &engine,
       info.use_calibration, params.use_implicit_batch,
-      /*convert_successfully=*/nullptr, profile, info.engine_name));
+      /*convert_successfully=*/nullptr, profile, info.engine_name,
+      /*use_explicit_precision=*/params.use_explicit_precision));
   TrtUniquePtrType<nvinfer1::IHostMemory> engine_data(engine->serialize());
   *segment_string = string(static_cast<const char*>(engine_data->data()),
                            engine_data->size());
@@ -752,7 +774,7 @@ Status ConvertAfterShapes(const ConversionParams& params) {
   // Segment the graph into subgraphs that can be converted to TensorRT
   segment::SegmentOptions segment_options;
   // TODO(ben,jie,sami): exclude output nodes (DISCUSS IT)
-  for (const auto& node : *(params.output_names)) {
+  for (const auto& node : *(params.input_output_names)) {
     segment_options.exclude_node_list.insert(node);
   }
   segment_options.minimum_segment_size = params.minimum_segment_size;
@@ -764,7 +786,8 @@ Status ConvertAfterShapes(const ConversionParams& params) {
 
   segment::SegmentVector initial_segments;
   TrtNodeValidator validator(static_graph_properties, params.precision_mode,
-                             params.use_calibration, params.use_implicit_batch);
+                             params.use_calibration, params.use_implicit_batch,
+                             params.use_explicit_precision);
   TF_RETURN_IF_ERROR(segment::SegmentGraph(
       &graph, &static_graph_properties,
       std::bind(&TrtNodeValidator::IsTensorRTCandidate, &validator,
@@ -813,7 +836,7 @@ Status ConvertAfterShapes(const ConversionParams& params) {
     // range info cause TRT failure. Avoid this situation by setting the
     // precision to FP16.
     if (int8_no_calib && !has_qdq) {
-      VLOG(1) << "Set engine precision to FP16 due to missing QDQ OP";
+      LOG(WARNING) << "Set engine precision to FP16 due to missing QDQ OP";
       curr_engine.precision_mode = TrtPrecisionMode::FP16;
     } else {
       curr_engine.precision_mode = params.precision_mode;
@@ -825,8 +848,7 @@ Status ConvertAfterShapes(const ConversionParams& params) {
     }
 
     status = RegisterGraphToFunctionLibrary(curr_engine.segment_graph_def,
-                                            &graph, curr_engine.engine_name,
-                                            curr_engine.has_int32_input);
+                                            &graph, curr_engine.engine_name);
 
     if (!status.ok()) {
       LOG_WARNING_WITH_PREFIX
@@ -848,7 +870,7 @@ Status ConvertAfterShapes(const ConversionParams& params) {
     }
   }
 
-  // Save the cuda device if we may need to switch to another cuda device to
+  // Save the cuda device since we may need to switch to another cuda device to
   // build static engines.
   absl::optional<int> old_cuda_device = absl::nullopt;
   if (!params.is_dyn_op) {

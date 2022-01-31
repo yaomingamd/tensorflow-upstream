@@ -39,7 +39,7 @@ limitations under the License.
 
 namespace mlir {
 namespace mhlo {
-
+namespace {
 class AdjustLayout : public PassWrapper<AdjustLayout, FunctionPass> {
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<mhlo::MhloDialect>();
@@ -66,8 +66,8 @@ class AdjustLayout : public PassWrapper<AdjustLayout, FunctionPass> {
     ApiConverter::ToC(old_shape, &old_shape_c);
     executor->TpuTransferManager_GetInfeedLayoutFn(&old_shape_c, &new_shape_c);
     xla::Shape new_shape = ApiConverter::FromC(&new_shape_c);
-    ApiConverter::Free(&old_shape_c);
-    ApiConverter::Free(&new_shape_c);
+    ApiConverter::Destroy(&old_shape_c);
+    ApiConverter::Destroy(&new_shape_c);
 
     auto minor_to_major = new_shape.layout().minor_to_major();
     return std::vector<int64_t>(minor_to_major.begin(), minor_to_major.end());
@@ -77,8 +77,10 @@ class AdjustLayout : public PassWrapper<AdjustLayout, FunctionPass> {
     auto i64_type = rewriter.getIntegerType(64);
     if (type.isa<TupleType>()) {
       auto tuple_type = type.dyn_cast<TupleType>();
-      std::vector<mlir::Attribute> v;
-      for (const mlir::Type &t : tuple_type.getTypes()) {
+      const auto &types = tuple_type.getTypes();
+      llvm::SmallVector<mlir::Attribute> v;
+      v.reserve(types.size());
+      for (const mlir::Type &t : types) {
         auto layout = GetLayout(t, rewriter);
         if (failed(layout)) return failure();
         v.push_back(layout.getValue());
@@ -131,13 +133,14 @@ class AdjustLayout : public PassWrapper<AdjustLayout, FunctionPass> {
 
   void runOnFunction() override { getFunction().walk(runOnInfeedOp); }
 };
-
-static PassRegistration<AdjustLayout> pass;
+}  // anonymous namespace
 
 // Header for this is in passes.h, which pulls into many deps. NOLINTNEXTLINE
 std::unique_ptr<Pass> CreateAdjustLayoutPass() {
   return std::make_unique<AdjustLayout>();
 }
+
+void RegisterAdjustLayoutPass() { static PassRegistration<AdjustLayout> pass; }
 
 }  // namespace mhlo
 }  // namespace mlir

@@ -1,4 +1,4 @@
-// RUN: tf-opt "-xla-legalize-tf-with-tf2xla=device-type=XLA_CPU_JIT legalize-test-only-ops" %s -verify-diagnostics | FileCheck %s
+// RUN: xla-opt "-xla-legalize-tf-with-tf2xla=device-type=XLA_CPU_JIT legalize-test-only-ops" %s -verify-diagnostics | FileCheck %s
 
 module attributes {tf.versions = {bad_consumers = [], min_consumer = 0 : i32, producer = 268 : i32}} {
 
@@ -187,8 +187,8 @@ func @sparse_to_dense(%arg0: tensor<3x2xi32>, %arg1: tensor<3xf32>, %arg2: tenso
 
 // CHECK:      %[[DEFAULT:.*]] = "mhlo.broadcast_in_dim"(%[[ARG2]]) {broadcast_dimensions = dense<> : tensor<0xi64>} : (tensor<f32>) -> tensor<3x3xf32>
 
-// CHECK:      %[[RESULT:.*]] = "mhlo.scatter"(%[[DEFAULT]], %[[ARG0]], %[[ARG1]]) ( {
-// CHECK:      ^bb0(%[[ARG3:.*]]: tensor<f32>, %[[ARG4:.*]]: tensor<f32>):  // no predecessors
+// CHECK:      %[[RESULT:.*]] = "mhlo.scatter"(%[[DEFAULT]], %[[ARG0]], %[[ARG1]]) ({
+// CHECK:      ^bb0(%[[ARG3:.*]]: tensor<f32>, %[[ARG4:.*]]: tensor<f32>):
 // CHECK:        "mhlo.return"(%[[ARG4]]) : (tensor<f32>) -> ()
 // CHECK:      })
 // CHECK-SAME: indices_are_sorted = false

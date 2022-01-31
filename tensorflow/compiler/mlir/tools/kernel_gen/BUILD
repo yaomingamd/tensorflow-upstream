@@ -1,5 +1,4 @@
 # buildifier: disable=same-origin-load
-load("//tensorflow:tensorflow.bzl", "get_compatible_with_cloud")
 load(
     "//tensorflow/stream_executor:build_defs.bzl",
     "if_gpu_is_configured",
@@ -49,6 +48,7 @@ cc_library(
         ":compile_cache_item_proto_cc",
         "//tensorflow/compiler/mlir/hlo",
         "//tensorflow/compiler/mlir/hlo:all_passes",
+        "//tensorflow/compiler/mlir/hlo:hlo_legalize_shape_ops_to_standard",
         "//tensorflow/compiler/mlir/hlo:hlo_legalize_to_lhlo",
         "//tensorflow/compiler/mlir/hlo:legalize_to_linalg",
         "//tensorflow/compiler/mlir/hlo:legalize_trigonometric_to_approximation",
@@ -65,6 +65,8 @@ cc_library(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:AffineToStandard",
         "@llvm-project//mlir:AllPassesAndDialects",
+        "@llvm-project//mlir:ArithmeticTransforms",
+        "@llvm-project//mlir:BufferizationTransforms",
         "@llvm-project//mlir:ComplexToStandard",
         "@llvm-project//mlir:GPUDialect",
         "@llvm-project//mlir:GPUToGPURuntimeTransforms",
@@ -117,6 +119,7 @@ tf_cc_binary(
         "@llvm-project//llvm:ARMCodeGen",  # fixdeps: keep
         "@llvm-project//llvm:CodeGen",
         "@llvm-project//llvm:Core",
+        "@llvm-project//llvm:MC",
         "@llvm-project//llvm:PowerPCCodeGen",  # fixdeps: keep
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:Target",
@@ -168,10 +171,10 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/platform:strcat",
+        "//tensorflow/stream_executor:stream_header",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ExecutionEngine",
         "@llvm-project//mlir:ExecutionEngineUtils",
-        "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:mlir_runner_utils",
     ],
@@ -181,7 +184,6 @@ cc_library(
     name = "tf_jit_cache",
     srcs = ["tf_jit_cache.cc"],
     hdrs = ["tf_jit_cache.h"],
-    compatible_with = get_compatible_with_cloud(),
     deps = [
         "//tensorflow/core:framework",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -198,7 +200,6 @@ cc_library(
         if_gpu_is_configured([
             "tf_gpu_runtime_wrappers.h",
         ]),
-    compatible_with = get_compatible_with_cloud(),
     copts = if_cuda_is_configured(["-DGOOGLE_CUDA=1"]) + if_rocm_is_configured([
         "-DTENSORFLOW_USE_ROCM=1",
     ]),

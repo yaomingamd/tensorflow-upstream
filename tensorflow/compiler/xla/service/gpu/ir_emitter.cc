@@ -16,7 +16,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/ir_emitter.h"
 
 #include <string>
-#include <unordered_map>
 #include <utility>
 
 #include "tensorflow/core/platform/logging.h"
@@ -141,7 +140,7 @@ Status IrEmitter::EmitConstants(const HloComputation& computation) {
     info.symbol_name = global_name;
 
     if (!should_emit_initializer) {
-      auto base = static_cast<const uint8*>(literal.untyped_data());
+      auto base = static_cast<const uint8_t*>(literal.untyped_data());
       info.content.assign(base, base + literal.size_bytes());
     }
     ir_emitter_context_->constants().push_back(std::move(info));
@@ -271,8 +270,10 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
     return false;
   }
 
+  llvm::Triple target_triple = llvm::Triple(module_->getTargetTriple());
+  bool isAMDGPU = target_triple.isAMDGPU();
+
   if (root_opcode == HloOpcode::kAdd) {
-    llvm::Triple target_triple = llvm::Triple(module_->getTargetTriple());
     // NVPTX supports atomicAdd on F32 and integer types.
     if (target_triple.isNVPTX()) {
       // "atom.add.f64 requires sm_60 or higher."
@@ -290,10 +291,8 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
       }
     }
 
-    if (target_triple.isAMDGPU()) {
+    if (isAMDGPU) {
       std::string arch = ir_emitter_context_->amdgpu_arch();
-      bool isGfx908Plus = arch.size()>=6 &&
-          (arch.substr(0,6)=="gfx908" || arch.substr(0,6)=="gfx90a");
       llvm::PointerType* output_address_type =
           llvm::dyn_cast<llvm::PointerType>(output_address->getType());
       CHECK_NE(output_address_type, nullptr);
@@ -311,8 +310,7 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
           AtomicRMW(llvm::AtomicRMWInst::FAdd, cast_output_ptr, source,
                   llvm::MaybeAlign(),
                   llvm::AtomicOrdering::SequentiallyConsistent,
-                  // we really want "agent", but it's not in the enum.
-                  llvm::SyncScope::SingleThread);
+                  b_.getContext().getOrInsertSyncScopeID("agent"));
           return true;
         } else {
           // adds to shared memory are always atomic. Todo: verify that the compiler
@@ -320,7 +318,7 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
           AtomicRMW(llvm::AtomicRMWInst::FAdd, output_address, source,
                   llvm::MaybeAlign(),
                   llvm::AtomicOrdering::SequentiallyConsistent,
-                  llvm::SyncScope::SingleThread);
+                  b_.getContext().getOrInsertSyncScopeID("agent"));
           return true;
         }
       }
@@ -328,9 +326,16 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
 
     if (is_atomic_integral) {
       // integral + integral
-      AtomicRMW(llvm::AtomicRMWInst::Add, output_address, source,
-                llvm::MaybeAlign(),
-                llvm::AtomicOrdering::SequentiallyConsistent);
+      if (isAMDGPU) {
+        AtomicRMW(llvm::AtomicRMWInst::Add, output_address, source,
+            llvm::MaybeAlign(),
+            llvm::AtomicOrdering::SequentiallyConsistent,
+            b_.getContext().getOrInsertSyncScopeID("agent"));
+      } else {
+        AtomicRMW(llvm::AtomicRMWInst::Add, output_address, source,
+            llvm::MaybeAlign(),
+            llvm::AtomicOrdering::SequentiallyConsistent);
+      }
       return true;
     }
   }
@@ -341,8 +346,14 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
     auto opcode = primitive_util::IsSignedIntegralType(element_type)
                       ? llvm::AtomicRMWInst::Max
                       : llvm::AtomicRMWInst::UMax;
-    AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
-              llvm::AtomicOrdering::SequentiallyConsistent);
+    if (isAMDGPU) {
+      AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
+                llvm::AtomicOrdering::SequentiallyConsistent,
+                b_.getContext().getOrInsertSyncScopeID("agent"));
+    } else {
+      AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
+                llvm::AtomicOrdering::SequentiallyConsistent);
+    }
     return true;
   }
 
@@ -351,8 +362,14 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
     auto opcode = primitive_util::IsSignedIntegralType(element_type)
                       ? llvm::AtomicRMWInst::Min
                       : llvm::AtomicRMWInst::UMin;
-    AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
-              llvm::AtomicOrdering::SequentiallyConsistent);
+    if (isAMDGPU) {
+      AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
+                llvm::AtomicOrdering::SequentiallyConsistent,
+                b_.getContext().getOrInsertSyncScopeID("agent"));
+    } else {
+      AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
+                llvm::AtomicOrdering::SequentiallyConsistent);
+    }
     return true;
   }
 
@@ -377,13 +394,14 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
 // On Nvidia GPUs, atomicCAS can only operate on 32 bit and 64 bit integers. If
 // the element type of the binary operation is 32 bits or 64 bits, the integer
 // type of the same size is used for the atomicCAS operation. On the other hand,
-// if the element type is smaller than 32 bits, int32 is used for the atomicCAS
-// operation. In this case, atomicCAS reads and writes 32 bit values from
-// the memory, which is larger than the memory size required by the original
-// atomic binary operation. We mask off the last two bits of the output_address
-// and use the result as an address to read the 32 bit values from the memory.
-// This can avoid out of bound memory accesses if tensor buffers are 4 byte
-// aligned and have a size of 4N, an assumption that the runtime can guarantee.
+// if the element type is smaller than 32 bits, int32_t is used for the
+// atomicCAS operation. In this case, atomicCAS reads and writes 32 bit values
+// from the memory, which is larger than the memory size required by the
+// original atomic binary operation. We mask off the last two bits of the
+// output_address and use the result as an address to read the 32 bit values
+// from the memory. This can avoid out of bound memory accesses if tensor
+// buffers are 4 byte aligned and have a size of 4N, an assumption that the
+// runtime can guarantee.
 //
 // The pseudo code is shown below. Variables *_address are pointers to a memory
 // region with a size equal to the size of the atomicCAS operation, with the
@@ -395,7 +413,7 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
 //   cas_new_output_address = alloca(atomic_size);
 //   cas_old_output_address = alloca(atomic_size);
 //   if (atomic_size != element_size) {
-//     atomic_address = output_address & ((int64)(-4));
+//     atomic_address = output_address & ((int64_t)(-4));
 //     new_output_address = cas_new_output_address + (output_address & 3);
 //   } else {
 //     atomic_address = output_address;
@@ -507,10 +525,21 @@ Status IrEmitter::EmitAtomicOperationUsingCAS(const HloComputation& computation,
   // Emit code to perform the atomicCAS operation
   // (cas_old_output, success) = atomicCAS(memory_address, cas_old_output,
   //                                       cas_new_output);
-  llvm::Value* ret_value = AtomicCmpXchg(
-      atomic_memory_address, cas_old_output, cas_new_output, llvm::MaybeAlign(),
-      llvm::AtomicOrdering::SequentiallyConsistent,
-      llvm::AtomicOrdering::SequentiallyConsistent);
+  llvm::Value* ret_value = [&]() {
+    llvm::Triple target_triple = llvm::Triple(module_->getTargetTriple());
+    if (target_triple.isAMDGPU()) {
+      return AtomicCmpXchg(
+          atomic_memory_address, cas_old_output, cas_new_output, llvm::MaybeAlign(),
+          llvm::AtomicOrdering::SequentiallyConsistent,
+          llvm::AtomicOrdering::SequentiallyConsistent,
+          b_.getContext().getOrInsertSyncScopeID("agent"));
+    } else {
+      return AtomicCmpXchg(
+          atomic_memory_address, cas_old_output, cas_new_output, llvm::MaybeAlign(),
+          llvm::AtomicOrdering::SequentiallyConsistent,
+          llvm::AtomicOrdering::SequentiallyConsistent);
+    }
+  }();
 
   // Extract the memory value returned from atomicCAS and store it as
   // cas_old_output.
@@ -644,23 +673,20 @@ Status IrEmitter::HandleBatchNormInference(HloInstruction*) {
   return Unimplemented(
       "The GPU backend does not implement BatchNormInference directly.  It "
       "should be lowered before IR emission to HLO-soup using "
-      "BatchNormRewriter or to a cudnn CustomCall using "
-      "CudnnBatchNormRewriter.");
+      "BatchNormRewriter.");
 }
 
 Status IrEmitter::HandleBatchNormTraining(HloInstruction*) {
   return Unimplemented(
       "The GPU backend does not implement BatchNormTraining directly.  It "
       "should be lowered before IR emission to HLO-soup using "
-      "BatchNormRewriter or to a cudnn CustomCall using "
-      "CudnnBatchNormRewriter.");
+      "BatchNormRewriter.");
 }
 
 Status IrEmitter::HandleBatchNormGrad(HloInstruction*) {
   return Unimplemented(
       "The GPU backend does not implement BatchNormGrad directly.  It should "
-      "be lowered before IR emission to HLO-soup (using BatchNormRewriter) or "
-      "to a cudnn CustomCall using CudnnBatchNormRewriter.");
+      "be lowered before IR emission to HLO-soup using BatchNormRewriter.");
 }
 
 StatusOr<std::vector<llvm::Value*>> IrEmitter::ComputeNestedElement(

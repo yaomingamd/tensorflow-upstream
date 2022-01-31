@@ -25,7 +25,7 @@ echo "Bazel will use ${N_BUILD_JOBS} concurrent build job(s) and ${N_TEST_JOBS} 
 echo ""
 
 # First positional argument (if any) specifies the ROCM_INSTALL_DIR
-ROCM_INSTALL_DIR=/opt/rocm-4.3.1
+ROCM_INSTALL_DIR=/opt/rocm-4.5.2
 if [[ -n $1 ]]; then
     ROCM_INSTALL_DIR=$1
 fi
@@ -73,16 +73,8 @@ bazel test \
 //tensorflow/python/distribute:tf_function_test_2gpu \
 //tensorflow/python/distribute:vars_test_2gpu \
 //tensorflow/python/distribute:warm_starting_util_test_2gpu \
-//tensorflow/python/keras/layers/preprocessing:category_crossing_distribution_test_2gpu \
-//tensorflow/python/keras/layers/preprocessing:category_encoding_distribution_test_2gpu \
-//tensorflow/python/keras/layers/preprocessing:discretization_distribution_test_2gpu \
-//tensorflow/python/keras/layers/preprocessing:hashing_distribution_test_2gpu \
-//tensorflow/python/keras/layers/preprocessing:image_preprocessing_distribution_test_2gpu \
-//tensorflow/python/keras/layers/preprocessing:index_lookup_distribution_test_2gpu \
-//tensorflow/python/keras/layers/preprocessing:text_vectorization_distribution_test_2gpu \
 //tensorflow/python/keras/utils:multi_gpu_utils_test_2gpu \
 //tensorflow/python/keras/utils:multi_gpu_utils_test_xla_2gpu \
-//tensorflow/python/kernel_tests:dynamic_partition_op_test_2gpu \
 //tensorflow/python/training:saver_test_2gpu \
 
 

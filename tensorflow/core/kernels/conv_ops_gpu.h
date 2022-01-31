@@ -29,6 +29,9 @@ limitations under the License.
 #include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/util/autotune_maps/conv_parameters.h"
 #include "tensorflow/core/util/tensor_format.h"
+#if TENSORFLOW_USE_ROCM
+#include "tensorflow/stream_executor/rocm/rocm_dnn.h"
+#endif
 
 namespace tensorflow {
 
@@ -132,7 +135,7 @@ AllocateScratchOrFallback(se::ScratchAllocator* scratch_allocator,
                           const se::dnn::OpRunner<Sig>* no_scratch_fallback) {
   const se::dnn::OpRunner<Sig>* selected_runner = primary;
 
-  TF_ASSIGN_OR_RETURN(auto workspace_size, selected_runner->GetWorkspaceSize());
+  auto workspace_size = selected_runner->GetWorkspaceSize();
 
   se::DeviceMemoryBase scratch_memory;
   if (workspace_size > 0) {
@@ -140,9 +143,7 @@ AllocateScratchOrFallback(se::ScratchAllocator* scratch_allocator,
     if (scratch_or.ok()) {
       scratch_memory = scratch_or.ValueOrDie();
     } else if ((selected_runner = no_scratch_fallback)) {
-      TF_ASSIGN_OR_RETURN(auto no_scratch_workspace_size,
-                          selected_runner->GetWorkspaceSize());
-      if (no_scratch_workspace_size > 0) {
+      if (selected_runner->GetWorkspaceSize() > 0) {
         return errors::Internal(
             "No-scratch fallback runner requires nonzero scratch space");
       }
@@ -173,14 +174,14 @@ Status LaunchAutotunedConv(const AutotuneEntry<se::dnn::ConvOp>& autotune_entry,
     se::dnn::ConvOp::Config config{kind,       element_type, element_type,
                                    input_desc, filter_desc,  output_desc,
                                    conv_desc};
-    TF_ASSIGN_OR_RETURN(auto* primary, runners.primary->GetOrCreateRunner(
-                                           config, stream->parent()));
+    TF_ASSIGN_OR_RETURN(auto* primary,
+                        runners.primary->GetOrCreateRunner(config, stream));
 
     const se::dnn::ConvRunner* no_scratch_fallback = nullptr;
     if (runners.no_scratch_fallback) {
-      TF_ASSIGN_OR_RETURN(no_scratch_fallback,
-                          runners.no_scratch_fallback->GetOrCreateRunner(
-                              config, stream->parent()));
+      TF_ASSIGN_OR_RETURN(
+          no_scratch_fallback,
+          runners.no_scratch_fallback->GetOrCreateRunner(config, stream));
     }
 
     TF_ASSIGN_OR_RETURN(auto runner_and_scratch,
@@ -196,6 +197,18 @@ Status LaunchAutotunedConv(const AutotuneEntry<se::dnn::ConvOp>& autotune_entry,
         nullptr);
   }
 }
+
+bool UseNhwcLayoutForConvOnRocm(se::Stream* stream);/* {
+#if TENSORFLOW_USE_ROCM
+   bool is_enabled = se::gpu::UseNhwcLayoutForRocm();
+   auto arch_name = stream->GetGcnArchName();
+   return (arch_name.find("gfx908") != std::string::npos  ||
+           arch_name.find("gfx90a") != std::string::npos) &&
+           is_enabled; 
+#else
+   return false;
+#endif
+}*/
 
 }  // namespace tensorflow
 

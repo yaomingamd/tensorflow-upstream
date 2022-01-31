@@ -17,6 +17,7 @@ limitations under the License.
 
 #define EIGEN_USE_GPU
 
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/kernel_def_builder.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -29,7 +30,6 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "tensorflow/core/util/gpu_solvers.h"
-#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 namespace tensorflow {
 
@@ -98,7 +98,11 @@ class CholeskyOpGpu : public AsyncOpKernel {
 #if GOOGLE_CUDA
     cublasFillMode_t fill = CUBLAS_FILL_MODE_UPPER;
 #elif TENSORFLOW_USE_ROCM
+#if TF_ROCM_VERSION >= 40500
+    hipsolverFillMode_t fill = HIPSOLVER_FILL_MODE_UPPER;
+#else
     rocblas_fill fill = rocblas_fill_upper;
+#endif
 #endif
     // Validate inputs.
     OP_REQUIRES_ASYNC(
