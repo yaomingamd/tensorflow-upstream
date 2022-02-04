@@ -43,18 +43,22 @@ yes "" | $PYTHON_BIN_PATH configure.py
 
 # Run bazel test command. Double test timeouts to avoid flakes.
 bazel test \
-      --config=rocm \
-      -k \
-      --jobs=${N_BUILD_JOBS} \
-      --local_test_jobs=${N_TEST_JOBS} \
-      --test_env=TF_GPU_COUNT=$TF_GPU_COUNT \
-      --test_env=TF_TESTS_PER_GPU=$TF_TESTS_PER_GPU \
-      --test_timeout 600,900,2400,7200 \
-      --build_tests_only \
-      --test_output=errors \
-      --test_sharding_strategy=disabled \
-      --test_size_filters=small,medium,large \
-      --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute \
-      -- \
-      //tensorflow/compiler/xla/tests:collective_ops_test \
-      //tensorflow/compiler/xla/tests:all_reduce_test \
+    --config=rocm \
+    -k \
+    --jobs=${N_BUILD_JOBS} \
+    --local_test_jobs=${N_TEST_JOBS} \
+    --test_env=TF_GPU_COUNT=$TF_GPU_COUNT \
+    --test_env=TF_TESTS_PER_GPU=$TF_TESTS_PER_GPU \
+    --test_timeout 600,900,2400,7200 \
+    --build_tests_only \
+    --test_output=errors \
+    --test_sharding_strategy=disabled \
+    --test_size_filters=small,medium,large \
+    --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute \
+    -- \
+    //tensorflow/compiler/xla/tests:all \
+    //tensorflow/compiler/xla/service/gpu/tests:all
+
+#   //tensorflow/compiler/xla/tests:collective_ops_test \
+#   //tensorflow/compiler/xla/tests:all_reduce_test \
+#   //tensorflow/compiler/xla/service/gpu/tests:gpu_reduce_scatter_creator_test \
