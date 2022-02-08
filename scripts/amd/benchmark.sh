@@ -27,6 +27,11 @@ options="$options --print_training_accuracy"
 
 options="$options --num_batches=1"
 
+options="$options --num_gpus=8"
+
+options="$options --variable_update=replicated"
+options="$options --all_reduce_spec=nccl"
+
 export $env_vars
 
 cd /dockerx/benchmarks
