@@ -14,21 +14,12 @@ env_vars=""
 options=""
 
 options="$options --model=resnet50_v1.5"
-
-# options="$options --xla"
 options="$options --xla_compile"
-# options="$options --compute_lr_on_cpu"
-
 options="$options --use_fp16"
-
 options="$options --batch_size=256"
-
 options="$options --print_training_accuracy"
-
 options="$options --num_batches=1"
-
 options="$options --num_gpus=8"
-
 options="$options --variable_update=replicated"
 options="$options --all_reduce_spec=nccl"
 
