@@ -91,6 +91,19 @@ cc_library(
 )
 
 cc_library(
+    name = "rocm_collect_value_distribution",
+    srcs = if_rocm_is_configured(["utils/rocm_collect_value_distribution.cc"]),
+    hdrs = if_rocm_is_configured(["utils/rocm_collect_value_distribution.h"]),
+    deps = if_rocm_is_configured([
+        ":rocm_driver",
+        "//tensorflow/stream_executor:stream_executor_headers",
+        "//tensorflow/stream_executor/gpu:gpu_executor_header",
+        "//tensorflow/stream_executor/gpu:gpu_stream_header",
+        "//tensorflow/stream_executor/lib",
+    ]),
+)
+
+cc_library(
     name = "rocm_gpu_executor",
     srcs = if_rocm_is_configured(["rocm_gpu_executor.cc"]),
     hdrs = [],
