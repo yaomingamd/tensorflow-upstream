@@ -10,4 +10,4 @@ cd "/usr/local/lib/bazel/bin" && curl -fLO https://releases.bazel.build/4.2.2/re
 
 cd $ROOT_DIR
 pip3 uninstall tensorflow -y
-./build_rocm_python3
+scripts/amd/build_rocm_python3.sh

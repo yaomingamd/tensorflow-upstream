@@ -29,6 +29,6 @@ TF_PKG_LOC=/tmp/tensorflow_pkg
 rm -f $TF_PKG_LOC/tf_nightly_rocm*.whl
 
 yes "" | ROCM_PATH=$ROCM_INSTALL_DIR TF_NEED_ROCM=1 PYTHON_BIN_PATH=/usr/bin/python3 ./configure
-bazel build --config=opt --config=rocm //tensorflow/tools/pip_package:build_pip_package --verbose_failures &&
+bazel build --config=dbg --config=rocm //tensorflow/tools/pip_package:build_pip_package --verbose_failures &&
 bazel-bin/tensorflow/tools/pip_package/build_pip_package $TF_PKG_LOC --rocm --nightly_flag &&
 pip3 install --upgrade $TF_PKG_LOC/tf_nightly_rocm*.whl
