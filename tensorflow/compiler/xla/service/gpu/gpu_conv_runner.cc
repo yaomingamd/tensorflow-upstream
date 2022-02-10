@@ -487,7 +487,11 @@ StatusOr<GpuConvConfig> GetGpuConvConfig(
     config.conv_desc.set_zero_padding(static_cast<DimIndex>(dim), 0)
         .set_filter_stride(static_cast<DimIndex>(dim), 1);
   }
-
+  config.conv_desc.set_grad_flags(backend_config.f8_conv_backend_flags());
+  if(!(config.conv_desc.grad_flags() & 256)) {
+    printf("Error: grad_ flags %d in GpuConvConfig\n", config.conv_desc.grad_flags());
+    exit(-1);
+  }
   return config;
 }
 

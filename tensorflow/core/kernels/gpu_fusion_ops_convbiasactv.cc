@@ -69,6 +69,7 @@ class ROCmFusionKernelConvolutionBiasActivation : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("activation_mode", &activation_mode_str));
     OP_REQUIRES_OK(ctx, GetActivationModeFromString(activation_mode_str,
                                                     &activation_mode_));
+    f8_flags_ = ctx->GetFlagsF8();
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -237,7 +238,8 @@ class ROCmFusionKernelConvolutionBiasActivation : public OpKernel {
       conv_desc.set_vertical_filter_stride(stride_rows)
           .set_horizontal_filter_stride(stride_cols)
           .set_zero_padding_height(padding_rows / 2)
-          .set_zero_padding_width(padding_cols / 2);
+          .set_zero_padding_width(padding_cols / 2)
+          .set_grad_flags(256+(f8_flags_&~3));
 
       auto conv_input_data =
           AsDeviceMemory(fusion_input.template flat<T>().data(),
@@ -285,6 +287,7 @@ class ROCmFusionKernelConvolutionBiasActivation : public OpKernel {
   FilterTensorFormat filter_format_;
   std::vector<int32> dilations_;
   ActivationMode activation_mode_;
+  int f8_flags_;
 };
 
 REGISTER_KERNEL_BUILDER(

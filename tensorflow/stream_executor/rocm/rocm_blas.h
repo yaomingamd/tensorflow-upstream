@@ -168,7 +168,7 @@ class ROCMBlas : public blas::BlasSupport {
       const port::ArraySlice<DeviceMemory<T> *> &a_ptrs_to_wrappers, int lda,
       const port::ArraySlice<DeviceMemory<T> *> &b_ptrs_to_wrappers, int ldb,
       T beta, const port::ArraySlice<DeviceMemory<T> *> &c_ptrs_to_wrappers,
-      int ldc, int batch_count, ScratchAllocator *scratch_allocator);
+      int ldc, int batch_count, ScratchAllocator *scratch_allocator, int grad_flags);
 
   // Helper function for implementing DoBlasGemmWithProfiling.
   template <typename T, typename ParamType>
@@ -178,7 +178,7 @@ class ROCMBlas : public blas::BlasSupport {
                                    const DeviceMemory<T> &a, int lda,
                                    const DeviceMemory<T> &b, int ldb,
                                    const ParamType &beta, DeviceMemory<T> *c,
-                                   int ldc,
+                                   int ldc, int grad_flags,
                                    blas::ProfileResult *output_profile_result);
 
   // Helper function for implementing DoBlasGemvWithProfiling.
@@ -187,7 +187,7 @@ class ROCMBlas : public blas::BlasSupport {
                                    uint64_t m, uint64 n, const T &alpha,
                                    const DeviceMemory<T> &a, int lda,
                                    const DeviceMemory<T> &x, int incx,
-                                   const T &beta, DeviceMemory<T> *y, int incy,
+                                   const T &beta, DeviceMemory<T> *y, int incy, int grad_flags,
                                    blas::ProfileResult *output_profile_result);
 
   // mutex that guards the rocBLAS handle for this device.

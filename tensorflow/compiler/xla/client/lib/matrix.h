@@ -91,10 +91,14 @@ XlaOp Symmetrize(XlaOp x, bool lower);
 //     output[..., :, :] = matrix(x[..., :, :]) * matrix(y[..., :, :])
 xla::XlaOp BatchDot(
     xla::XlaOp x, xla::XlaOp y,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
+    xla::PrecisionConfig precision,
     absl::optional<PrimitiveType> preferred_element_type = absl::nullopt);
 xla::XlaOp BatchDot(
     xla::XlaOp x, bool transpose_x, xla::XlaOp y, bool transpose_y,
+    xla::PrecisionConfig precision,
+    absl::optional<PrimitiveType> preferred_element_type = absl::nullopt);
+xla::XlaOp BatchDot(
+    xla::XlaOp x, xla::XlaOp y,
     xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
     absl::optional<PrimitiveType> preferred_element_type = absl::nullopt);
 
@@ -126,11 +130,11 @@ std::string NormalizeEinsumString(absl::string_view einsum_config);
 // Supports two operand einsum notation like "ab,cb->ac".
 xla::XlaOp Einsum(
     xla::XlaOp x, xla::XlaOp y, absl::string_view einsum_config,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
+    xla::PrecisionConfig precision = xla::PrecisionConfig(),
     absl::optional<PrimitiveType> preferred_element_type = absl::nullopt);
 xla::XlaOp Einsum(
     xla::XlaOp x, absl::string_view einsum_config,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT);
+    xla::PrecisionConfig precision = xla::PrecisionConfig());
 
 
 // Same as above but supporting numeric labels on dimensions. So "ab,cb->ac"
@@ -141,7 +145,7 @@ xla::XlaOp Einsum(
 xla::XlaOp Einsum(
     xla::XlaOp x, absl::Span<const int64_t> x_config, xla::XlaOp y,
     absl::Span<const int64_t> y_config, absl::Span<const int64_t> output_config,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
+    xla::PrecisionConfig precision = xla::PrecisionConfig(),
     absl::optional<PrimitiveType> preferred_element_type = absl::nullopt);
 
 // Transposes a stack of matrices `x` by swapping the last two dimensions.

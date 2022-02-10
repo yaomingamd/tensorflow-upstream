@@ -38,6 +38,14 @@ message CudnnConvBackendConfig {
   // The scaling factor multiplied with the side input. If no side input buffer
   // is provided, this field must be 0.
   double side_input_scale = 5;
+
+  // bit 0: input 1 is a gradient
+  // bit 1: input 2 is a gradient
+  // bit 2: F8 is requested
+  // bit 3: disable clipping
+  // bit 4: disable stochastic rounding
+  // bit 8: initialized
+  int64 f8_conv_backend_flags = 7;
 }
 
 // Backend config for the GEMM operation running through cuBLAS.
@@ -60,6 +68,8 @@ message GemmBackendConfig {
 
   int64 lhs_stride = 10;
   int64 rhs_stride = 11;
+
+  int64 f8_gemm_backend_flags = 12;
 }
 
 // Backend config for bitcast operation generated from MLIR MHLO dialect.

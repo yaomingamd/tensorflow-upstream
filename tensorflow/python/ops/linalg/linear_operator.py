@@ -1414,6 +1414,8 @@ def _matmul(  # pylint:disable=missing-docstring
     adjoint_b=False,
     a_is_sparse=False,
     b_is_sparse=False,
+    grad_a=False,
+    grad_b=False,
     output_type=None,  # pylint: disable=unused-argument
     name=None):
   if transpose_a or transpose_b:
@@ -1426,10 +1428,13 @@ def _matmul(  # pylint:disable=missing-docstring
         a,
         adjoint=(not adjoint_b),
         adjoint_arg=(not adjoint_a),
+        grad_a=grad_b,
+        grad_b=grad_a,
         name=name)
     return linalg.adjoint(adjoint_matmul)
   return a.matmul(
-      b, adjoint=adjoint_a, adjoint_arg=adjoint_b, name=name)
+      b, adjoint=adjoint_a, adjoint_arg=adjoint_b, name=name,
+         grad_a=grad_a, grad_b=grad_b)
 
 
 @dispatch.dispatch_for_types(linalg.solve, LinearOperator)

@@ -113,6 +113,7 @@ static Status DoGemmWithAlgorithm(
     int64_t batch_size, MatrixDescriptor lhs, MatrixDescriptor rhs,
     MatrixDescriptor output_matrix, Output alpha, Output beta,
     se::Stream *stream, se::blas::AlgorithmType algorithm,
+    int f8_flags,
     se::blas::ProfileResult *output_profile_result) {
   CHECK(output_matrix.transpose == se::blas::Transpose::kNoTranspose);
   PrimitiveType output_type = primitive_util::NativeToPrimitiveType<Output>();
@@ -130,7 +131,7 @@ static Status DoGemmWithAlgorithm(
         /*leading dim of RHS=*/rhs.num_rows, rhs.stride,
         /*beta=*/beta, &output_data,
         /*leading dim of output=*/output_matrix.num_rows, output_matrix.stride,
-        batch_size, computation_type, algorithm, output_profile_result);
+        batch_size, computation_type, algorithm, f8_flags, output_profile_result);
   } else {
     return stream->ThenBlasGemmWithAlgorithm(
         lhs.transpose, rhs.transpose, output_matrix.num_rows,
@@ -140,7 +141,7 @@ static Status DoGemmWithAlgorithm(
         /*lda=*/lhs.num_rows, rhs.cast<Input>(),
         /*ldb=*/rhs.num_rows,
         /*beta=*/beta, &output_data,
-        /*ldc=*/output_matrix.num_rows, computation_type, algorithm,
+        /*ldc=*/output_matrix.num_rows, computation_type, algorithm, f8_flags,
         output_profile_result);
   }
 }
@@ -151,6 +152,7 @@ static Status DoGemm(int64_t batch_size, const MatrixDescriptor &lhs,
                      const MatrixDescriptor &output_matrix, Input alpha,
                      Input beta, se::Stream *stream,
                      absl::optional<se::blas::AlgorithmType> algorithm,
+                     int f8_flags,
                      se::blas::ProfileResult *output_profile_result) {
   CHECK(output_matrix.transpose == se::blas::Transpose::kNoTranspose);
   se::DeviceMemory<Input> output_data(output_matrix.data);
@@ -158,7 +160,7 @@ static Status DoGemm(int64_t batch_size, const MatrixDescriptor &lhs,
   if (algorithm) {
     return DoGemmWithAlgorithm<Input, Input>(batch_size, lhs, rhs,
                                              output_matrix, alpha, beta, stream,
-                                             *algorithm, output_profile_result);
+                                             *algorithm, f8_flags, output_profile_result);
   }
 
   if (batch_size != 1) {
@@ -170,7 +172,7 @@ static Status DoGemm(int64_t batch_size, const MatrixDescriptor &lhs,
         /*leading dim of RHS=*/rhs.num_rows, rhs.stride,
         /*beta=*/beta, &output_data,
         /*leading dim of output=*/output_matrix.num_rows, output_matrix.stride,
-        batch_size);
+        batch_size, f8_flags);
   }
   return stream->ThenBlasGemm(
       lhs.transpose, rhs.transpose, output_matrix.num_rows,
@@ -179,7 +181,7 @@ static Status DoGemm(int64_t batch_size, const MatrixDescriptor &lhs,
       /*leading dim of LHS=*/lhs.num_rows, rhs.cast<Input>(),
       /*leading dim of RHS=*/rhs.num_rows,
       /*beta=*/beta, &output_data,
-      /*leading dim of output=*/output_matrix.num_rows);
+      /*leading dim of output=*/output_matrix.num_rows, f8_flags);
 }
 
 Status RunGemm(const GpuGemmConfig &gemm_config,
@@ -322,6 +324,7 @@ Status RunGemm(const GpuGemmConfig &gemm_config,
             batch_size, lhs_matrix, rhs_matrix, output_matrix,
             static_cast<int32_t>(alpha.real()), static_cast<int32_t>(beta),
             stream, *best_algorithm,
+            gemm_config.backend_config.f8_gemm_backend_flags(),
             /*output_profile_result=*/profile_result);
       }
       return InternalError(
@@ -335,6 +338,7 @@ Status RunGemm(const GpuGemmConfig &gemm_config,
           batch_size, lhs_matrix, rhs_matrix, output_matrix,
           static_cast<Eigen::half>(alpha.real()),
           static_cast<Eigen::half>(beta), stream, best_algorithm,
+          gemm_config.backend_config.f8_gemm_backend_flags(),
           /*output_profile_result=*/profile_result);
     case BF16:
       CHECK_EQ(alpha.imag(), 0);
@@ -342,27 +346,32 @@ Status RunGemm(const GpuGemmConfig &gemm_config,
           batch_size, lhs_matrix, rhs_matrix, output_matrix,
           static_cast<Eigen::bfloat16>(alpha.real()),
           static_cast<Eigen::bfloat16>(beta), stream, best_algorithm,
+          gemm_config.backend_config.f8_gemm_backend_flags(),
           /*output_profile_result=*/profile_result);
     case F32:
       CHECK_EQ(alpha.imag(), 0);
       return DoGemm<float>(batch_size, lhs_matrix, rhs_matrix, output_matrix,
                            alpha.real(), beta, stream, best_algorithm,
+                           gemm_config.backend_config.f8_gemm_backend_flags(),
                            /*output_profile_result=*/profile_result);
     case F64:
       CHECK_EQ(alpha.imag(), 0);
       return DoGemm<double>(batch_size, lhs_matrix, rhs_matrix, output_matrix,
                             alpha.real(), beta, stream, best_algorithm,
+                           gemm_config.backend_config.f8_gemm_backend_flags(),
                             /*output_profile_result=*/profile_result);
     case C64:
       return DoGemm<complex64>(batch_size, lhs_matrix, rhs_matrix,
                                output_matrix, static_cast<complex64>(alpha),
                                static_cast<complex64>(beta), stream,
                                best_algorithm,
+                               gemm_config.backend_config.f8_gemm_backend_flags(),
                                /*output_profile_result=*/profile_result);
     case C128:
       return DoGemm<complex128>(
           batch_size, lhs_matrix, rhs_matrix, output_matrix, alpha,
           static_cast<complex128>(beta), stream, best_algorithm,
+          gemm_config.backend_config.f8_gemm_backend_flags(),
           /*output_profile_result=*/profile_result);
     default:
       return InternalError("Unexpected GEMM datatype: %s",

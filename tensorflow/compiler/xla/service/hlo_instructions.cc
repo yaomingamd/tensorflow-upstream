@@ -66,9 +66,7 @@ std::string PrecisionConfigToString(const PrecisionConfig& precision_config) {
           })) {
     return "";
   }
-
-  return StrCat(
-      "operand_precision={",
+  return StrCat("operand_precision={",
       StrJoin(
           precision_config.operand_precision(), ",",
           [](std::string* out, int32_t precision) {
@@ -3160,7 +3158,21 @@ HloDotInstruction::HloDotInstruction(
   AppendOperand(rhs);
 }
 
+static bool testPrecisionConfigF8(const PrecisionConfig& cfg) {
+  for(int i=0; i<cfg.operand_precision_size(); i++)
+  {
+      int flag = cfg.operand_precision()[i];
+      if(flag>=PrecisionConfig::F8 && flag<=PrecisionConfig::F8OFF)
+        return true;
+  }
+  return false;
+}
+
 HloInstructionProto HloDotInstruction::ToProto() const {
+  auto attr = frontend_attributes().map();
+  if(attr.find("grad_flags") == attr.end() && !testPrecisionConfigF8(precision_config_)) {
+    LOG(FATAL) << "ERROR: HloDotInstruction::ToProto(): unset grad_flags";
+  }
   HloInstructionProto proto = HloInstruction::ToProto();
   *proto.mutable_dot_dimension_numbers() = dot_dimension_numbers_;
   *proto.mutable_precision_config() = precision_config_;

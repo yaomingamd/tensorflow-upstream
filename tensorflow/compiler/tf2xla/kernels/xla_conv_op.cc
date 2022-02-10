@@ -22,6 +22,8 @@ limitations under the License.
 #include "tensorflow/compiler/xla/xla_data.pb.h"
 #include "tensorflow/core/framework/op_kernel.h"
 
+using xla::PrecisionConfig;
+
 namespace tensorflow {
 namespace {
 
@@ -41,6 +43,12 @@ class XlaConvOp : public XlaOpKernel {
                 errors::InvalidArgument("Error parsing precision config."));
     preferred_element_type_ = absl::nullopt;
     batch_group_count_ = 1;
+    bool grad_a = false, grad_b = false;
+    OP_REQUIRES_OK(context, context->GetAttr("grad_a", &grad_a));
+    OP_REQUIRES_OK(context, context->GetAttr("grad_b", &grad_b));
+    precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
+    precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
+    SetXlaPrecisionConfigF8Flags(precision_config_, context->GetFlagsF8(), grad_a, grad_b);
   }
 
   void Compile(XlaOpKernelContext* context) override {

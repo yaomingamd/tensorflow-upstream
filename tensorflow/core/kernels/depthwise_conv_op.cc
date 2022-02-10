@@ -333,6 +333,7 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
 #else
     use_cudnn_grouped_conv_ = false;
 #endif
+    f8_flags_ = context->GetFlagsF8();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -457,7 +458,7 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
       launcher_(context, /*use_cudnn=*/true, cudnn_use_autotune_, input,
                 reshaped_filter, /*row_dilation=*/1, /*col_dilation=*/1,
                 stride_, stride_, padding_, explicit_paddings_, output,
-                data_format_);
+                data_format_, f8_flags_);
       return;
     }
 
@@ -475,6 +476,7 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
     args.out_rows = out_rows;
     args.out_cols = out_cols;
     args.out_depth = out_depth;
+    args.f8_flags = f8_flags_;
 
     auto input_ptr = input.template flat<T>().data();
     auto filter_ptr = filter.template flat<T>().data();
@@ -498,6 +500,7 @@ class DepthwiseConv2dNativeOp : public BinaryOp<T> {
   LaunchConv2DOp<Device, T> launcher_;
   bool cudnn_use_autotune_;
   DataType dtype_;
+  int f8_flags_ = 0;
 
   TF_DISALLOW_COPY_AND_ASSIGN(DepthwiseConv2dNativeOp);
 };

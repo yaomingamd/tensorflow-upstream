@@ -1342,9 +1342,11 @@ StatusOr<XlaOp> XlaBuilder::DotGeneralInternal(
   HloInstructionProto instr;
   *instr.mutable_shape() = shape.ToProto();
   *instr.mutable_dot_dimension_numbers() = dimension_numbers;
+  int cfg_flags=-1;
   if (precision_config != nullptr) {
     *instr.mutable_precision_config() = *precision_config;
-  }
+    cfg_flags = GetXlaPrecisionConfigF8Flags(precision_config);
+  }  
   return AddInstruction(std::move(instr), HloOpcode::kDot, {lhs, rhs});
 }
 

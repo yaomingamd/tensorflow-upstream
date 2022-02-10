@@ -64,6 +64,16 @@ using absl::StrAppend;
 using absl::StrCat;
 using absl::StrJoin;
 
+static bool testPrecisionConfigF8(const PrecisionConfig& cfg) {
+  for(int i=0; i<cfg.operand_precision_size(); i++)
+  {
+      int flag = cfg.operand_precision()[i];
+      if(flag>=PrecisionConfig::F8 && flag<=PrecisionConfig::F8OFF)
+        return true;
+  }
+  return false;
+}
+
 /* static */
 StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     const HloInstructionProto& proto,
@@ -820,9 +830,12 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     case HloOpcode::kDot: {
       TF_RET_CHECK(proto.has_dot_dimension_numbers())
           << "Dot instruction should have dot_dimension_numbers.";
+      auto attr = proto.frontend_attributes().map();
       PrecisionConfig precision_config = proto.precision_config();
-      precision_config.mutable_operand_precision()->Resize(
-          proto.operand_ids_size(), PrecisionConfig::DEFAULT);
+      if(attr.find("grad_flags") == attr.end() && !testPrecisionConfigF8(precision_config)) {
+        LOG(WARNING) << "FromProto: kDot with no grad_flags";
+      }
+
       instruction = absl::make_unique<HloDotInstruction>(
           shape, operands(0), operands(1), proto.dot_dimension_numbers(),
           precision_config);
@@ -931,6 +944,10 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     TF_ASSIGN_OR_RETURN(const auto& sharding,
                         HloSharding::FromProto(proto.sharding()));
     instruction->set_sharding(sharding);
+  }
+
+  if(opcode == HloOpcode::kDot) 
+  {
   }
 
   if (proto.has_frontend_attributes()) {

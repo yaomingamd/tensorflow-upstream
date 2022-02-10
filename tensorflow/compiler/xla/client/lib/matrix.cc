@@ -383,7 +383,7 @@ void DeleteDimsFromContainer(absl::Span<const int64_t> to_delete, Shape* shape,
 xla::XlaOp Einsum(xla::XlaOp x, absl::Span<const int64_t> x_config,
                   xla::XlaOp y, absl::Span<const int64_t> y_config,
                   absl::Span<const int64_t> output_config,
-                  xla::PrecisionConfig::Precision precision,
+                  xla::PrecisionConfig precision,
                   absl::optional<PrimitiveType> preferred_element_type) {
   XlaBuilder* builder = x.builder();
   return builder->ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
@@ -541,11 +541,8 @@ xla::XlaOp Einsum(xla::XlaOp x, absl::Span<const int64_t> x_config,
                  rhs_delete_dims);
     }
 
-    PrecisionConfig precision_proto;
-    precision_proto.add_operand_precision(precision);
-    precision_proto.add_operand_precision(precision);
     auto dot =
-        DotGeneral(x, y, dnums, &precision_proto, preferred_element_type);
+        DotGeneral(x, y, dnums, &precision, preferred_element_type);
     dot = Transpose(dot, transpose_dims);
     if (transpose_rank == output_rank) {
       return dot;
@@ -570,13 +567,21 @@ xla::XlaOp Einsum(xla::XlaOp x, absl::Span<const int64_t> x_config,
   });
 }
 
-XlaOp BatchDot(XlaOp x, XlaOp y, PrecisionConfig::Precision precision,
+XlaOp BatchDot(XlaOp x, XlaOp y, PrecisionConfig precision,
                absl::optional<PrimitiveType> preferred_element_type) {
   return BatchDot(x, false, y, false, precision, preferred_element_type);
 }
 
+XlaOp BatchDot(XlaOp x, XlaOp y, PrecisionConfig::Precision precision,
+               absl::optional<PrimitiveType> preferred_element_type) {
+  PrecisionConfig cfg;
+  cfg.mutable_operand_precision()->Resize(
+      /*new_size=*/2, precision);
+  return BatchDot(x, false, y, false, cfg, preferred_element_type);
+}
+
 XlaOp BatchDot(XlaOp x, bool transpose_x, XlaOp y, bool transpose_y,
-               PrecisionConfig::Precision precision,
+               PrecisionConfig precision,
                absl::optional<PrimitiveType> preferred_element_type) {
   XlaBuilder* builder = x.builder();
   return builder->ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
@@ -707,7 +712,7 @@ std::string NormalizeEinsumString(absl::string_view einsum_config) {
 }
 
 XlaOp Einsum(XlaOp x, XlaOp y, absl::string_view einsum_config,
-             PrecisionConfig::Precision precision,
+             PrecisionConfig precision,
              absl::optional<PrimitiveType> preferred_element_type) {
   XlaBuilder* builder = x.builder();
   return builder->ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
@@ -726,7 +731,7 @@ XlaOp Einsum(XlaOp x, XlaOp y, absl::string_view einsum_config,
 }
 
 XlaOp Einsum(XlaOp x, absl::string_view einsum_config,
-             PrecisionConfig::Precision precision) {
+             PrecisionConfig precision) {
   return Einsum(ScalarLike(x, 1), x, absl::StrCat(",", einsum_config),
                 precision);
 }

@@ -416,6 +416,7 @@ cc_library(
 cc_library(
         name = "rocm_helpers",
         srcs = ["rocm_helpers.cu.cc"],
+        hdrs = ["fp8/hip_float8.h","fp8/hip_f8_impl.h"],
         deps = 
         ["@local_config_rocm//rocm:rocm_headers",
         ],

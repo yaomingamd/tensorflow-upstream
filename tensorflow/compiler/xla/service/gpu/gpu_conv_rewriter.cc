@@ -709,8 +709,14 @@ StatusOr<bool> RunOnInstruction(HloInstruction* conv) {
     return false;
   }
 
-  TF_RETURN_IF_ERROR(
-      custom_call->set_backend_config(GetDefaultBackendConfig()));
+  auto attr = conv->frontend_attributes().map();
+  if(attr.find("grad_flags") == attr.end()) {
+    printf("ERROR: gpu_conv_rewriter on a convolution with unset grad_flags\n");
+    exit(-1);
+  }
+  auto backend_config = GetDefaultBackendConfig();
+  backend_config.set_f8_conv_backend_flags(std::stoi(attr["grad_flags"]));
+  TF_RETURN_IF_ERROR(custom_call->set_backend_config(backend_config));
 
   VLOG(1) << "Replacing convolution " << conv->ToString() << " with "
           << custom_call->ToString();

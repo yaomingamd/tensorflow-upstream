@@ -39,6 +39,7 @@ struct DepthwiseArgs {
   int out_rows;
   int out_cols;
   int out_depth;
+  int f8_flags;
 
   DepthwiseArgs()
       : batch(0),
@@ -53,7 +54,8 @@ struct DepthwiseArgs {
         pad_cols(0),
         out_rows(0),
         out_cols(0),
-        out_depth(0) {}
+        out_depth(0),
+        f8_flags(0) {}
 };
 
 // Forward declaration.

@@ -48,6 +48,12 @@ class MatMulOp : public XlaOpKernel {
       OP_REQUIRES_OK(ctx, ctx->GetAttr("a_is_sparse", &dummy_is_sparse));
       OP_REQUIRES_OK(ctx, ctx->GetAttr("b_is_sparse", &dummy_is_sparse));
     }
+    bool grad_a = false, grad_b = false;
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_a", &grad_a));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_b", &grad_b));
+    precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
+    precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
+    SetXlaPrecisionConfigF8Flags(precision_config_, ctx->GetFlagsF8(), grad_a, grad_b);
   }
 
   ~MatMulOp() override = default;
@@ -88,7 +94,8 @@ class MatMulOp : public XlaOpKernel {
         b = xla::ConvertElementType(b, xla::F32);
       }
     }
-    ctx->SetOutput(0, xla::BatchDot(a, transpose_a_, b, transpose_b_));
+    auto retval = xla::BatchDot(a, transpose_a_, b, transpose_b_, precision_config_);
+    ctx->SetOutput(0, retval);
   }
 
  private:
@@ -97,6 +104,7 @@ class MatMulOp : public XlaOpKernel {
   bool transpose_b_;
   DataType a_type_;
   DataType b_type_;
+  xla::PrecisionConfig precision_config_; 
 };
 
 REGISTER_XLA_OP(Name("MatMul").TypeConstraint("T", kMatmulTypes), MatMulOp);

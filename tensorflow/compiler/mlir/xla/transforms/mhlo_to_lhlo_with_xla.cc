@@ -803,6 +803,17 @@ StatusOr<Operation*> LhloDialectEmitter::EmitGemm(
     op.batch_sizeAttr(builder_.getI64IntegerAttr(config.batch_size()));
     op.lhs_strideAttr(builder_.getI64IntegerAttr(config.lhs_stride()));
     op.rhs_strideAttr(builder_.getI64IntegerAttr(config.rhs_stride()));
+    auto attr = custom_call->frontend_attributes().map();
+    /*
+    if(attr.find("grad_flags") != attr.end())
+      op.f8_flagsAttr(builder_.getI64IntegerAttr(std::stoi(attr["grad_flags"])));
+    else 
+    */
+    if(config.f8_gemm_backend_flags() & 256)
+       op.f8_flagsAttr(builder_.getI64IntegerAttr(config.f8_gemm_backend_flags()));
+    else {
+      LOG(FATAL) << "Attempting to emit gemm op with unset grad_flags";
+    }
     if (config.algorithm_case() ==
         xla::gpu::GemmBackendConfig::kSelectedAlgorithm) {
       op.algorithmAttr(builder_.getI64IntegerAttr(config.selected_algorithm()));
@@ -912,6 +923,21 @@ StatusOr<Operation*> LhloDialectEmitter::EmitDnnConvolution(
     for (const auto& entry : algorithm.tuning_knobs()) {
       knob_ids.push_back(entry.first);
       knob_values.push_back(entry.second);
+    }
+
+    /*
+    auto attr = custom_call->frontend_attributes().map();
+    if(attr.find("grad_flags") != attr.end()) {
+      printf("mhlo_to_lhlo: EmitDnnConvolution: found grad_flags on frontend\n");
+      fflush(stdout);
+      op.f8_flagsAttr(builder_.getI64IntegerAttr(std::stoi(attr["grad_flags"])));
+    }
+    else 
+    */
+    if(backend_config.f8_conv_backend_flags() & 256) {
+       op.f8_flagsAttr(builder_.getI64IntegerAttr(backend_config.f8_conv_backend_flags()));
+    } else {
+      LOG(FATAL) << "Attempting to emit convolution op with unset grad_flags";
     }
 
     auto config = mlir::lmhlo_gpu::ConvolutionBackendConfig::get(

@@ -70,9 +70,39 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       int64_t batch_size = std::accumulate(output_shape.dimensions().begin(),
                                            output_shape.dimensions().end() - 2,
                                            1, std::multiplies<int64_t>());
+      int f8_flags=0;
+      HloDotInstruction* dot = dynamic_cast<HloDotInstruction*>(instr);
+      const PrecisionConfig& cfg = dot->precision_config();
+      int prec_f8_flags = GetXlaPrecisionConfigF8Flags(&cfg);
+
       std::unique_ptr<HloInstruction> gemm_call =
           HloInstruction::CreateCustomCall(output_shape, {lhs, rhs},
                                            kGemmCallTarget);
+        auto existing_config =
+            gemm_call->backend_config<GemmBackendConfig>().ValueOrDie();
+
+        auto attr = gemm_call->frontend_attributes().map();
+        /*
+        if(attr.find("grad_flags") != attr.end()) {
+          printf("GemmRewriter::HandleDot: found grad_flags on frontend\n");
+          fflush(stdout);
+        }
+        else 
+          if(existing_config.f8_gemm_backend_flags() & 256) {
+           f8_flags = existing_config.f8_gemm_backend_flags();
+           printf("GemmRewriter::HandleDot: found grad_flags %d in backend config\n", existing_config.f8_gemm_backend_flags());
+           fflush(stdout);
+        }
+        else 
+        */
+        if(prec_f8_flags & 256) {
+          f8_flags = prec_f8_flags;
+        }
+        else {
+          LOG(FATAL) << "GemmRewriter::HandleDot: original insn has no frontend attribute or backend flag";
+        }
+
+      gemm_call->add_frontend_attributes(gemm_call->frontend_attributes());
       GemmBackendConfig gemm_config;
       gemm_config.set_alpha_real(1.0);
       gemm_config.set_alpha_imag(0.0);
@@ -80,6 +110,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       *gemm_config.mutable_dot_dimension_numbers() =
           instr->dot_dimension_numbers();
       gemm_config.set_batch_size(batch_size);
+      gemm_config.set_f8_gemm_backend_flags(f8_flags);
 
       int64_t lhs_batch_dims_size =
           instr->dot_dimension_numbers().lhs_batch_dimensions_size();
@@ -144,12 +175,27 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
           bias->shape() == existing_gemm->shape()) {
         config.set_beta(1.0);
         CHECK_EQ(existing_gemm->operand_count(), 2);
+/* 
+        auto attr = instr->frontend_attributes().map();
+        if(attr.find("grad_flags") != attr.end()) {
+          printf("GemmRewriter::HandleAdd: found grad_flags on frontend\n");
+          fflush(stdout);
+        }
+        else 
+*/        
+        if(config.f8_gemm_backend_flags() & 256) {
+        }
+        else {
+           LOG(FATAL) << "GemmRewriter::HandleAdd: original insn has no frontend attribute or backend flag";
+        }
+
         std::unique_ptr<HloInstruction> gemm_call =
             HloInstruction::CreateCustomCall(
                 instr->shape(),
                 {existing_gemm->mutable_operand(0),
                  existing_gemm->mutable_operand(1), bias},
                 kGemmCallTarget);
+        gemm_call->add_frontend_attributes(instr->frontend_attributes());
         TF_RETURN_IF_ERROR(gemm_call->set_backend_config(config));
         TF_RETURN_IF_ERROR(SetName(instr->GetModule(), gemm_call.get()));
         TF_RETURN_IF_ERROR(

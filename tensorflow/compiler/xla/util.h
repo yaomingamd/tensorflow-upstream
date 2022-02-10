@@ -661,6 +661,53 @@ Status EraseElementFromVector(std::vector<T>* container, const T& value) {
 // range that is available in F32s (out of a total of 11 exponent bits in F64s).
 std::pair<float, float> SplitF64ToF32(double x);
 
+inline PrecisionConfig PrecisionConfigHIGHEST()
+{
+  PrecisionConfig cfg; 
+  cfg.add_operand_precision(PrecisionConfig::HIGHEST);
+  cfg.add_operand_precision(PrecisionConfig::HIGHEST);
+  return cfg;
+}
+
+inline void SetXlaPrecisionConfigF8Flags(PrecisionConfig& cfg, bool f8, bool grad_a, bool grad_b, bool noclip=false, bool nosr=false)
+{
+    cfg.add_operand_precision(f8 ? (grad_a ? PrecisionConfig::F8GRAD : PrecisionConfig::F8) : PrecisionConfig::F8OFF );
+    cfg.add_operand_precision(f8 ? (grad_b ? PrecisionConfig::F8GRAD : PrecisionConfig::F8) : PrecisionConfig::F8OFF );
+    if(noclip)
+      cfg.add_operand_precision(PrecisionConfig::F8NOCLIP);
+    if(nosr)
+      cfg.add_operand_precision(PrecisionConfig::F8NOSR);
+}
+
+inline int GetXlaPrecisionConfigF8Flags(const PrecisionConfig* precision_config)
+{
+    int cfg_flags = 0;
+    int f8count = 0;
+    for(int i=0; i<precision_config->operand_precision_size(); i++)
+    {
+        int flag = precision_config->operand_precision()[i];
+        if(flag>=PrecisionConfig::F8 && flag<=PrecisionConfig::F8OFF)
+        {
+          cfg_flags |= 256;
+          if(flag != PrecisionConfig::F8OFF)
+            cfg_flags |= 4;
+          if(f8count<2 && flag == PrecisionConfig::F8GRAD)
+            cfg_flags |= 1 << f8count;
+          f8count++;
+        }
+    }
+    if(f8count!=2)
+    {
+      printf("ERROR: found %d f8 flags in PrecisionConfig\n", f8count);
+      exit(0);
+    }
+    return cfg_flags;
+}
+
+
+
+
+
 }  // namespace xla
 
 #define XLA_LOG_LINES(SEV, STRING) \

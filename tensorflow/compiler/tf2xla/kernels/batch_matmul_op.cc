@@ -38,19 +38,26 @@ class BatchMatMulOp : public XlaOpKernel {
       OP_REQUIRES_OK(ctx, DataTypeToPrimitiveType(output_type, &xla_type));
       preferred_element_type_.emplace(xla_type);
     }
+    bool grad_a = false, grad_b = false;
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_a", &grad_a));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_b", &grad_b));
+    precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
+    precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
+    SetXlaPrecisionConfigF8Flags(precision_config_, ctx->GetFlagsF8(), grad_a, grad_b);
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
     auto result =
         xla::BatchDot(MaybeConjugate(ctx->Input(0), adj_x_), adj_x_,
                       MaybeConjugate(ctx->Input(1), adj_y_), adj_y_,
-                      xla::PrecisionConfig::DEFAULT, preferred_element_type_);
+                      precision_config_, preferred_element_type_);
     ctx->SetOutput(0, result);
   }
 
  private:
   bool adj_x_;
   bool adj_y_;
+  xla::PrecisionConfig precision_config_;  
   absl::optional<xla::PrimitiveType> preferred_element_type_;
 };
 

@@ -391,7 +391,7 @@ StatusOr<AutotuneEntry<se::dnn::ConvOp>> AutotuneUnfusedConv(
             kind, input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
             output_ptr, conv_desc, &scratch_allocator,
             se::dnn::AlgorithmConfig(profile_algorithm,
-                                     miopen_algorithm.scratch_size()),
+            miopen_algorithm.scratch_size()),
             &profile_result);
         if (miopen_launch_status.ok() && profile_result.is_valid()) {
           results.emplace_back();

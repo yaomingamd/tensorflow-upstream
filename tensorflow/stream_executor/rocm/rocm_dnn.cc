@@ -17,7 +17,7 @@ limitations under the License.
 
 #include <functional>
 #include <memory>
-
+#include <random>
 #include "absl/algorithm/container.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
@@ -1703,6 +1703,8 @@ miopenDataType_t ToMIOpenDataType(
       return miopenFloat;
     case dnn::DataType::kHalf:
       return miopenHalf;
+    case dnn::DataType::kBF16:
+      return miopenBFloat16;
     case dnn::DataType::kDouble:
       LOG(FATAL)
           << "Unsupported DNN data type: tf.float64 (dnn::DataType::kDouble)";
@@ -2999,6 +3001,10 @@ port::Status MIOpenSupport::DoPrepareForConvolution(
   return port::Status::OK();
 }
 
+void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152);
+void inplace_fp16_to_bf16(void* data, int nElements, hipStream_t stream);
+void inplace_bf16_to_fp16(void* data, int nElements, hipStream_t stream);
+
 class RocmConvRunner : public dnn::ConvRunner {
  public:
   RocmConvRunner(GpuExecutor* parent, MIOpenAccess* miopen, int64_t algo_id,
@@ -3014,10 +3020,23 @@ class RocmConvRunner : public dnn::ConvRunner {
         workspace_size_(workspace_size),
         kind_(kind),
         use_immediate_mode_(use_immediate_mode),
-        input_desc_{input_descriptor, ToMIOpenDataType(input_type)},
-        output_desc_{output_descriptor, ToMIOpenDataType(input_type)},
-        filter_desc_{filter_descriptor, ToMIOpenDataType(input_type)},
-        conv_desc_{conv_descriptor, ToMIOpenDataType(input_type)} {}
+        input_descriptor_(input_descriptor),
+        output_descriptor_(output_descriptor),
+        filter_descriptor_(filter_descriptor),
+        denorm_fix_(false),
+        input_type_(input_type),
+        fake_element_type_(denorm_fix_ ? miopenBFloat16 : ToMIOpenDataType(input_type)),
+        input_desc_(input_descriptor, fake_element_type_),
+        output_desc_(output_descriptor, fake_element_type_),
+        filter_desc_(filter_descriptor, fake_element_type_),
+        conv_desc_(conv_descriptor, fake_element_type_)
+    {
+      grad_flags_ = conv_descriptor.grad_flags();
+      if(!(grad_flags_ & 256)) {
+        printf("ERROR: uninitialized grad_flags in ConvolutionDescriptor\n");
+        exit(-1);
+      }
+    }
 
   std::string ToString() const override {
     return dnn::AlgorithmDesc{algo_id_, false, workspace_size_}.ToString();
@@ -3042,6 +3061,8 @@ class RocmConvRunner : public dnn::ConvRunner {
 
     const bool is_profiling = profile_result != nullptr;
 
+    bool f8 = (grad_flags_ & 4);
+
     std::unique_ptr<GpuTimer> timer;
     if (is_profiling) {
       timer.reset(new GpuTimer(parent_));
@@ -3056,6 +3077,51 @@ class RocmConvRunner : public dnn::ConvRunner {
         return port::Status(port::error::INTERNAL, "Failed to start timer");
       }
     }
+
+  if(input_type_ == dnn::DataType::kHalf) {
+    __half* p1, *p2;
+    uint64_t sz1=0, sz2=0;
+    int Cin = filter_descriptor_.input_feature_map_count();
+    int Cout = filter_descriptor_.output_feature_map_count();
+    int fh = filter_descriptor_.input_filter_height();
+    int fw = filter_descriptor_.input_filter_width();
+    int nFilterElem = Cin * Cout * fw * fh;
+    if(kind_ == dnn::ConvolutionKind::FORWARD) {
+       p1 = const_cast<__half*>(reinterpret_cast<const __half*>(input_data.opaque()));
+       p2 = const_cast<__half*>(reinterpret_cast<const __half*>(filter_data.opaque()));
+       sz1 = input_descriptor_.ElementCount();
+       sz2 = nFilterElem;
+    } else if(kind_ == dnn::ConvolutionKind::BACKWARD_DATA) {
+       //TODO: Confirm that filter and input data does not need 152 in backward convolution
+       p1 = const_cast<__half*>(reinterpret_cast<const __half*>(output_data.opaque()));
+       p2 = const_cast<__half*>(reinterpret_cast<const __half*>(filter_data.opaque()));
+       sz1 = output_descriptor_.ElementCount();
+       sz2 = nFilterElem;
+    } else {
+       p1 = const_cast<__half*>(reinterpret_cast<const __half*>(output_data.opaque()));
+       p2 = const_cast<__half*>(reinterpret_cast<const __half*>(input_data.opaque()));
+       sz1 = output_descriptor_.ElementCount();
+       sz2 = input_descriptor_.ElementCount();
+     }
+      if(f8) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
+        uint32_t seed = distribution(gen);
+        Quant8_inplace(p1, sz1, seed, AsGpuStreamValue(stream), grad_flags_ & 1);
+        seed = distribution(gen);
+        Quant8_inplace(p2, sz2, seed, AsGpuStreamValue(stream), (grad_flags_>>1) & 1);
+      }
+      if(denorm_fix_) {
+        inplace_fp16_to_bf16(p1, sz1, AsGpuStreamValue(stream));
+        inplace_fp16_to_bf16(p2, sz2, AsGpuStreamValue(stream));
+      }
+      VLOG(3) << "sz1=" << sz1 << ", sz2=" << sz2 
+            << ", input size=" << input_data.size()/sizeof(__half) 
+            << ", filter size=" << filter_data.size()/sizeof(__half)
+            << ", output size=" << output_data.size()/sizeof(__half) ;
+  }
+
 
     miopenStatus_t status = miopenStatusSuccess;
     switch (kind_) {
@@ -3121,6 +3187,17 @@ class RocmConvRunner : public dnn::ConvRunner {
         return port::InternalError(absl::StrCat("Unexpected convolution kind ",
                                                 static_cast<int>(kind_)));
     }
+  if(denorm_fix_) {
+    int Cin = filter_descriptor_.input_feature_map_count();
+    int Cout = filter_descriptor_.output_feature_map_count();
+    int fh = filter_descriptor_.input_filter_height();
+    int fw = filter_descriptor_.input_filter_width();
+    int nFilterElem = Cin * Cout * fw * fh;
+    inplace_bf16_to_fp16(output_data.opaque(), output_descriptor_.ElementCount(), AsGpuStreamValue(stream));
+    inplace_bf16_to_fp16(filter_data.opaque(), fw*fh*Cin*Cout, AsGpuStreamValue(stream));
+    inplace_bf16_to_fp16(input_data.opaque(), input_descriptor_.ElementCount(), AsGpuStreamValue(stream));
+  }
+
 
     if (is_profiling) {
       if (!timer->Stop(AsGpuStream(stream))) {
@@ -3153,10 +3230,17 @@ class RocmConvRunner : public dnn::ConvRunner {
   dnn::ConvolutionKind kind_;
   bool use_immediate_mode_;
 
+  bool denorm_fix_;
+  dnn::DataType input_type_;
+  miopenDataType_t fake_element_type_;
   ScopedTensorDescriptor input_desc_;
   ScopedTensorDescriptor output_desc_;
   ScopedFilterDescriptor filter_desc_;
   ScopedConvolutionDescriptor conv_desc_;
+  BatchDescriptor input_descriptor_;
+  BatchDescriptor output_descriptor_;
+  FilterDescriptor filter_descriptor_;
+  int grad_flags_;
 };
 
 port::Status MIOpenSupport::DoConvolve(
@@ -3930,7 +4014,7 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
     if (!stream
              ->ThenBlasGemm(blas::Transpose::kNoTranspose,
                             blas::Transpose::kNoTranspose, m, n, k, weights, m,
-                            input_data, k, output_data, m)
+                            input_data, k, output_data, m, 0)
              .ok()) {
       return false;
     }
@@ -4013,7 +4097,7 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
     stream->ThenBlasGemmBatched(blas::Transpose::kNoTranspose,
                                 blas::Transpose::kNoTranspose, m, n, k, alpha,
                                 toPtrs(a), lda, toPtrs(b), ldb, beta, toPtrs(c),
-                                ldc, batch_count);
+                                 ldc, batch_count, 0);
   }
 
   return stream->ok();

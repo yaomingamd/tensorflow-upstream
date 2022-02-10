@@ -606,6 +606,7 @@ class DepthwiseConv2dNativeBackpropInputOp : public OpKernel {
 #else
     use_cudnn_grouped_conv_ = false;
 #endif
+    f8_flags_ = context->GetFlagsF8();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -678,7 +679,7 @@ class DepthwiseConv2dNativeBackpropInputOp : public OpKernel {
       launcher_(context, /*use_cudnn=*/true, cudnn_use_autotune_, out_backprop,
                 reshaped_filter, /*row_dilation=*/1, /*col_dilation=*/1,
                 stride_, stride_, padding_, explicit_paddings_, in_backprop,
-                data_format_);
+                data_format_, f8_flags_);
       return;
     }
 
@@ -704,6 +705,7 @@ class DepthwiseConv2dNativeBackpropInputOp : public OpKernel {
   LaunchConv2DBackpropInputOp<Device, T> launcher_;
   bool cudnn_use_autotune_;
   DataType dtype_;
+  int f8_flags_ = 0;
 
   TF_DISALLOW_COPY_AND_ASSIGN(DepthwiseConv2dNativeBackpropInputOp);
 };
@@ -1104,6 +1106,7 @@ class DepthwiseConv2dNativeBackpropFilterOp : public OpKernel {
 #else
     use_cudnn_grouped_conv_ = false;
 #endif
+    f8_flags_ = context->GetFlagsF8();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -1176,7 +1179,7 @@ class DepthwiseConv2dNativeBackpropFilterOp : public OpKernel {
       launcher_(context, /*use_cudnn=*/true, cudnn_use_autotune_, out_backprop,
                 input,
                 /*row_dilation=*/1, /*col_dilation=*/1, stride_, stride_,
-                padding_, explicit_paddings_, &reshaped_filter, data_format_);
+                padding_, explicit_paddings_, &reshaped_filter, data_format_, f8_flags_);
       return;
     }
 
@@ -1235,6 +1238,7 @@ class DepthwiseConv2dNativeBackpropFilterOp : public OpKernel {
   LaunchConv2DBackpropFilterOp<Device, T> launcher_;
   bool cudnn_use_autotune_;
   DataType dtype_;
+  int f8_flags_ = 0;
 
   TF_DISALLOW_COPY_AND_ASSIGN(DepthwiseConv2dNativeBackpropFilterOp);
 };
