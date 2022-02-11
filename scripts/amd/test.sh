@@ -18,16 +18,13 @@ set -e
 set -x
 
 N_BUILD_JOBS=$(grep -c ^processor /proc/cpuinfo)
-TF_GPU_COUNT=$(lspci | grep 'controller' | grep 'AMD/ATI' | wc -l)
-TF_TESTS_PER_GPU=1
-N_TEST_JOBS=$(expr ${TF_GPU_COUNT} \* ${TF_TESTS_PER_GPU})
+N_TEST_JOBS=1 # run tests serially
 
 echo ""
 echo "Bazel will use ${N_BUILD_JOBS} concurrent build job(s) and ${N_TEST_JOBS} concurrent test job(s)."
 echo ""
 
 # First positional argument (if any) specifies the ROCM_INSTALL_DIR
-# ROCM_INSTALL_DIR=/opt/rocm
 ROCM_INSTALL_DIR=/opt/rocm-4.5.2
 if [[ -n $1 ]]; then
     ROCM_INSTALL_DIR=$1
@@ -45,20 +42,22 @@ yes "" | $PYTHON_BIN_PATH configure.py
 bazel test \
     --config=rocm \
     -k \
+    --test_tag_filters=-no_gpu,-no_rocm \
     --jobs=${N_BUILD_JOBS} \
     --local_test_jobs=${N_TEST_JOBS} \
-    --test_env=TF_GPU_COUNT=$TF_GPU_COUNT \
-    --test_env=TF_TESTS_PER_GPU=$TF_TESTS_PER_GPU \
     --test_timeout 600,900,2400,7200 \
     --build_tests_only \
     --test_output=errors \
     --test_sharding_strategy=disabled \
     --test_size_filters=small,medium,large \
-    --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute \
+    --cache_test_results=no \
+    --test_env=TF_PER_DEVICE_MEMORY_LIMIT_MB=2048 \
     -- \
-    //tensorflow/compiler/xla/tests:all \
-    //tensorflow/compiler/xla/service/gpu/tests:all
+    //tensorflow/python/distribute:collective_all_reduce_strategy_test_xla_2gpu \
+    //tensorflow/python/keras/utils:multi_gpu_utils_test_xla_2gpu
 
-#   //tensorflow/compiler/xla/tests:collective_ops_test \
-#   //tensorflow/compiler/xla/tests:all_reduce_test \
-#   //tensorflow/compiler/xla/service/gpu/tests:gpu_reduce_scatter_creator_test \
+
+//tensorflow/core/nccl:nccl_manager_test_2gpu 
+//tensorflow/python/distribute:collective_all_reduce_strategy_test_xla_2gpu \
+//tensorflow/python/keras/utils:multi_gpu_utils_test_xla_2gpu \
+# //tensorflow/core/kernels:collective_nccl_test_2gpu 
