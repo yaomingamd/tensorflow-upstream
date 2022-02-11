@@ -48,4 +48,4 @@ Podfile.lock
 Pods
 xcuserdata
 
-*.log
+enable_rccl*
