@@ -277,6 +277,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = if_rocm_is_configured([
         ":miopen_if_static",
+        ":rocm_collect_value_distribution",
         ":rocm_diagnostics",
         ":rocm_driver",
         ":rocm_gpu_executor",

@@ -14,9 +14,13 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/stream_executor/rocm/rocm_dnn.h"
+#include "tensorflow/stream_executor/rocm/utils/rocm_collect_value_distribution.h"
 
 #include <functional>
 #include <memory>
+
+#include <thread>
+#include <mutex>
 
 #include "absl/algorithm/container.h"
 #include "absl/strings/str_cat.h"
@@ -586,6 +590,43 @@ class MIOpenAccess {
   // MIOpen library handle.
   miopenHandle_t handle_ TF_GUARDED_BY(mutex_);  // Owned.
 };
+
+template<typename T>
+class ScopedDataProcessor {
+
+public:
+  ScopedDataProcessor(uint32_t num_elems)
+    : num_elems_(num_elems) {
+    uint32_t xfer_size = num_elems_ * sizeof(T);
+    host_dst_ = (T*) malloc(xfer_size);
+  }
+
+  ~ScopedDataProcessor() {
+    if (host_dst_ != nullptr) {
+      free(host_dst_);
+      host_dst_ = nullptr;
+    }
+  }
+
+  void copy_data_to_host(hipStream_t stream, void* gpu_src) {
+    uint32_t xfer_size = num_elems_ * sizeof(T);
+    hipMemcpyAsync(host_dst_, gpu_src, xfer_size, hipMemcpyDeviceToHost, stream);
+    hipStreamSynchronize(stream);
+  }
+
+  void process_data(CollectValueDistribution<T>* cvd) {
+    cvd->process_data(host_dst_, num_elems_);
+  }
+
+private:
+
+  uint32_t num_elems_;
+  T* host_dst_;
+};
+
+CollectValueDistribution<half> conv_forward_data_values("conv_fwd");
+CollectValueDistribution<half> conv_backprop_data_grad_values("conv_bwd_data");
+CollectValueDistribution<half> conv_backprop_filter_grad_values("conv_bwd_filter");
 
 MIOpenSupport::MIOpenSupport(GpuExecutor* parent) : parent_(parent) {
   // by default, the Get*Algorithm API will return the list of all applicable
@@ -3017,7 +3058,12 @@ class RocmConvRunner : public dnn::ConvRunner {
         input_desc_{input_descriptor, ToMIOpenDataType(input_type)},
         output_desc_{output_descriptor, ToMIOpenDataType(input_type)},
         filter_desc_{filter_descriptor, ToMIOpenDataType(input_type)},
-        conv_desc_{conv_descriptor, ToMIOpenDataType(input_type)} {}
+        conv_desc_{conv_descriptor, ToMIOpenDataType(input_type)} {
+	  elem_datatype_= input_type;
+	  num_input_elems_ = input_descriptor.ElementCount();
+	  num_filter_elems_ = filter_descriptor.ComputeWeightCount();
+	  num_output_elems_ = output_descriptor.ElementCount();
+	}
 
   std::string ToString() const override {
     return dnn::AlgorithmDesc{algo_id_, false, workspace_size_}.ToString();
@@ -3076,7 +3122,13 @@ class RocmConvRunner : public dnn::ConvRunner {
               output_desc_.handle(), output_data.opaque(),
               scratch_memory.opaque(), scratch_memory.size());
         }
-
+	if (elem_datatype_ == dnn::DataType::kHalf) {
+	  hipStream_t hip_stream = (hipStream_t) AsGpuStreamValue(stream);
+	  ScopedDataProcessor<half> data_processor(num_output_elems_);
+	  data_processor.copy_data_to_host(hip_stream, output_data.opaque());
+	  data_processor.process_data(&conv_forward_data_values);
+	  conv_forward_data_values.dump_data();
+	}
         break;
       }
       case dnn::ConvolutionKind::BACKWARD_DATA: {
@@ -3096,6 +3148,13 @@ class RocmConvRunner : public dnn::ConvRunner {
               input_desc_.handle(), input_data.opaque(),
               scratch_memory.opaque(), scratch_memory.size());
         }
+	if (elem_datatype_ == dnn::DataType::kHalf) {
+	  hipStream_t hip_stream = (hipStream_t) AsGpuStreamValue(stream);
+	  ScopedDataProcessor<half> data_processor(num_input_elems_);
+	  data_processor.copy_data_to_host(hip_stream, input_data.opaque());
+	  data_processor.process_data(&conv_backprop_data_grad_values);
+	  conv_backprop_data_grad_values.dump_data();
+	}
         break;
       }
       case dnn::ConvolutionKind::BACKWARD_FILTER: {
@@ -3115,6 +3174,13 @@ class RocmConvRunner : public dnn::ConvRunner {
               filter_desc_.handle(), filter_data.opaque(),
               scratch_memory.opaque(), scratch_memory.size());
         }
+	if (elem_datatype_ == dnn::DataType::kHalf) {
+	  hipStream_t hip_stream = (hipStream_t) AsGpuStreamValue(stream);
+	  ScopedDataProcessor<half> data_processor(num_filter_elems_);
+	  data_processor.copy_data_to_host(hip_stream, filter_data.opaque());
+	  data_processor.process_data(&conv_backprop_filter_grad_values);
+	  conv_backprop_filter_grad_values.dump_data();
+	}
         break;
       }
       default:
@@ -3157,6 +3223,11 @@ class RocmConvRunner : public dnn::ConvRunner {
   ScopedTensorDescriptor output_desc_;
   ScopedFilterDescriptor filter_desc_;
   ScopedConvolutionDescriptor conv_desc_;
+
+  dnn::DataType elem_datatype_;
+  uint32_t num_input_elems_;
+  uint32_t num_output_elems_;
+  uint32_t num_filter_elems_;
 };
 
 port::Status MIOpenSupport::DoConvolve(
