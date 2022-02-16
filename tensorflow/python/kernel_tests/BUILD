@@ -1980,6 +1980,7 @@ cuda_py_test(
     name = "conv2d_transpose_test",
     size = "small",
     srcs = ["conv2d_transpose_test.py"],
+    tags = ["no_rocm"],
 
     # TODO(b/144432983): S32 convolutions should not be auto-clustered, only
     # crashes tests.
