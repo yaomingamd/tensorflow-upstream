@@ -25,6 +25,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/stream_executor/device_memory.h"
 #include "tensorflow/stream_executor/gpu/gpu_activation.h"
 #include "tensorflow/stream_executor/gpu/gpu_executor.h"
@@ -1415,9 +1416,15 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
         VLOG(1) << "Using rocblas_gemm_ex";
         if(!(grad_flags & 256))
         {
-            printf("GEMM %d %d, flags %x\n", (int)transa, (int)transb, grad_flags);
+            printf("Uninitialized grad_flags in GEMM %d %d, flags %x\n", (int)transa, (int)transb, grad_flags);
             fflush(stdout);
-            exit(0);
+            bool abort_on_uninit=false;
+            tensorflow::ReadBoolFromEnvVar("TF_ROCM_F8_ABORT", false,
+                                 &abort_on_uninit);
+            if(abort_on_uninit)
+              exit(-1);
+
+//            exit(0);
         }
         bool hasFP8 = true;
         bool denorm_fix = false;

@@ -761,7 +761,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     OP_REQUIRES_OK(
         ctx, stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                   se::blas::Transpose::kTranspose, n, m, k,
-                                  a_ptr, n, b_ptr, m, &c_ptr, n, f8_flags));
+                                  a_ptr, n, b_ptr, m, &c_ptr, n, 256|f8_flags));
     return;
   } else if (dims.spatial_dims[0].filter_size ==
                  dims.spatial_dims[0].input_size &&
@@ -786,7 +786,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     OP_REQUIRES_OK(
         ctx, stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                   se::blas::Transpose::kTranspose, n, m, k,
-                                  b_ptr, n, a_ptr, m, &c_ptr, n, f8_flags));
+                                  b_ptr, n, a_ptr, m, &c_ptr, n, 256|f8_flags));
     return;
   }
 

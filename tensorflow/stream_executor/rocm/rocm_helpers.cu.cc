@@ -47,7 +47,7 @@ __global__ void Quant8_inplace(T* _p, int32_t count, bool stoch, uint32_t seed) 
   IT* p = (IT*) _p;
   FT* fp = (FT*) _p;
   IT x = p[i];
-  constexpr bool nanoo=false;
+  constexpr bool nanoo=true;
   uint8_t y;
 
   T fx = fp[i];
@@ -73,7 +73,7 @@ void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream
         auto fun = f152 ? Quant8_inplace<__half,5,2> : Quant8_inplace<__half,4,3>;
         uint32_t dim_a = count; 
         uint32_t grid_a = (dim_a+255)/256;
-        bool stoch=true;
+        bool stoch=false;//true;
         hipLaunchKernelGGL(fun,
            dim3(grid_a,1,1), dim3(256,1,1), 0, stream, _p, dim_a, stoch, seed);
 }

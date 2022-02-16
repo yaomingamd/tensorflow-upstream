@@ -3034,7 +3034,11 @@ class RocmConvRunner : public dnn::ConvRunner {
       grad_flags_ = conv_descriptor.grad_flags();
       if(!(grad_flags_ & 256)) {
         printf("ERROR: uninitialized grad_flags in ConvolutionDescriptor\n");
-        exit(-1);
+        bool abort_on_uninit=false;
+        tensorflow::ReadBoolFromEnvVar("TF_ROCM_F8_ABORT", false,
+                                 &abort_on_uninit);
+        if(abort_on_uninit)
+          exit(-1);
       }
     }
 

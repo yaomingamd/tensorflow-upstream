@@ -335,78 +335,22 @@ struct GeluGrad<GPUDevice, T> {
   }
 };
 
-// fairly expensive, especially in case of float; could use improvement
-template <typename T>
-__launch_bounds__(256)
-__global__ void doFrequencies_kernel(const T* _in, int* out, int32 count)
-{
-  //__shared__ acc_part_counts[32];
-  constexpr int W = (sizeof(T)==2) ? 5 : 8;
-  uint16_t part_counts[1<<W];
-  for(int i=0; i<(1<<W); i++)
-    part_counts[i]=0;
-  //if(threadIdx.x < 32)
-  //  acc_part_counts[threadIdx.x] = 0;
-  typedef typename std::conditional<sizeof(T)==2, uint16_t, uint32_t>::type IT;
-  const IT* in = (const IT*) _in;
-  for(int i = threadIdx.x + blockIdx.x * blockDim.x; i < count; i+=gridDim.x * blockDim.x) {
-    int exponent;
-    if(sizeof(T)==2)
-      exponent = (in[i] >> 10) & 0x1F;
-    else
-      exponent = (in[i] >> 23) & 0xFF;
-    part_counts[exponent] += 1;
-  }
-  for(int i=1; i<64; i*=2)
-    for(int j=0; j<(1<<W); j++)
-      part_counts[j] += __shfl_xor(part_counts[j], i);
-  for(int i=(threadIdx.x & 63); i<(1<<W); i+=64)
-    atomicAdd(out+i, part_counts[i]);
-}
-
 template <typename T, int we, int wm>
-__global__ void Quant8FwdKernel(const T* _in,
-                                T* _out, int32 count, int exp_low_cutoff, bool stoch, uint32_t seed) {
+__global__ void Quant8FwdKernel(const T* _p, T* _pOut, int32_t count, bool stoch, uint32_t seed) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   if (i >= count) return;
   typedef typename std::conditional<sizeof(T)==2, uint16_t, uint32_t>::type IT;
   typedef typename std::conditional<sizeof(T)==2, __half, float>::type FT;
-  const IT* in = (const IT*) _in;
-  const FT* fin = (const FT*) _in;
-  //IT* out = (IT*)_out;
-  FT* fout = (FT*)_out;
-  IT x = in[i];
-
-  uint16_t y;
-  if(!stoch)
-    y = hip_f8_impl::cast_to_f8x<wm,we,FT,false,true>(fin[i]);
-  else {
-    uint32_t drop_bits = uint32_t(x) & 0xFFFFu;
-    if(sizeof(x)==4)
-      drop_bits ^= x>>16;
-    drop_bits = ((drop_bits & 31)<<11) | (drop_bits>>5);
-    drop_bits *= 0x7000149;
-    uint32_t rng = (drop_bits ^ 0x13371337 ^ (i*229791) ^ seed);
-    y = hip_f8_impl::cast_to_f8x<wm,we,FT,false,true,true>(fin[i], rng);
-  }
-}
-
-template <typename T>
-__global__ void Quant8FwdKernel_52(const T* _in,
-                                T* _out, int32 count, int exp_low_cutoff, bool stoch, uint32_t seed) {
-  int i = threadIdx.x + blockIdx.x * blockDim.x;
-  if (i >= count) return;
-  typedef typename std::conditional<sizeof(T)==2, uint16_t, uint32_t>::type IT;
-  typedef typename std::conditional<sizeof(T)==2, __half, float>::type FT;
-  const IT* in = (const IT*) _in;
-  const FT* fin = (const FT*) _in;
-  FT* fout = (FT*)_out;
-  IT x = in[i];
-  const int we=5, wm=2;
-
+  IT* p = (IT*) _p;
+  const FT* fp = (const FT*) _p;
+  FT* fpOut = (FT*) _pOut;
+  IT x = p[i];
+  constexpr bool nanoo=true;
   uint8_t y;
+
+  T fx = fp[i];
   if(!stoch)
-    y = hip_f8_impl::cast_to_f8<wm,we,FT,false,true>(fin[i]);
+    y = hip_f8_impl::cast_to_f8<wm,we,float,nanoo,true>(float(fx), false);
   else {
     uint32_t drop_bits = uint32_t(x) & 0xFFFFu;
     if(sizeof(x)==4)
@@ -414,38 +358,10 @@ __global__ void Quant8FwdKernel_52(const T* _in,
     drop_bits = ((drop_bits & 31)<<11) | (drop_bits>>5);
     drop_bits *= 0x7000149;
     uint32_t rng = (drop_bits ^ 0x13371337 ^ (i*229791) ^ seed);
-    y = hip_f8_impl::cast_to_f8<wm,we,FT,false,true,true>(fin[i], rng);
+    y = hip_f8_impl::cast_to_f8<wm,we,float,nanoo,true>(fx, true, rng);
   }
-  fout[i] = hip_f8_impl::cast_from_f8<wm,we,FT,false>(y);
-}
-
-template <typename T>
-__global__ void Quant8FwdKernel_43(const T* _in,
-                                T* _out, int32 count, int exp_low_cutoff, bool stoch, uint32_t seed) {
-  int i = threadIdx.x + blockIdx.x * blockDim.x;
-  if (i >= count) return;
-  typedef typename std::conditional<sizeof(T)==2, uint16_t, uint32_t>::type IT;
-  typedef typename std::conditional<sizeof(T)==2, __half, float>::type FT;
-  const IT* in = (const IT*) _in;
-  const FT* fin = (const FT*) _in;
-  FT* fout = (FT*)_out;
-  IT x = in[i];
-  const int we=4, wm=3;
-
-  uint8_t y;
-  if(!stoch)
-    y = hip_f8_impl::cast_to_f8<wm,we,FT,false,true>(fin[i]);
-  else {
-    uint32_t drop_bits = uint32_t(x) & 0xFFFFu;
-    if(sizeof(x)==4)
-      drop_bits ^= x>>16;
-    drop_bits = ((drop_bits & 31)<<11) | (drop_bits>>5);
-    drop_bits += i;
-    drop_bits *= 0x7000149;
-    uint32_t rng = (drop_bits ^ 0x13371337 ^ (i*229791) ^ seed);
-    y = hip_f8_impl::cast_to_f8<wm,we,FT,false,true,true>(fin[i], rng);
-  }
-  fout[i] = hip_f8_impl::cast_from_f8<wm,we,FT,false>(y);
+  float newfp = hip_f8_impl::cast_from_f8<wm,we,float,nanoo>(y);
+  fpOut[i]=T(newfp);
 }
 
 template <typename T>
@@ -473,51 +389,19 @@ struct Quant8Fwd<GPUDevice, T> {
 
     const int exp_width = W1;
     const int mant_width = W2;
-
-    constexpr int logEmax = (sizeof(T)==4) ? 8 : 5;
-    constexpr int Emax = 1<<logEmax;
-    int exp_low_cutoff = (Emax/2) - (1<<(exp_width-1)) + 1;
-    auto op = Quant8FwdKernel<T,5,3>;
-    if(W1==4) {
-      if(W2==1)
-        op=Quant8FwdKernel<T,4,1>;
-      else if(W2==2)
-        op=Quant8FwdKernel<T,4,2>;
-      else if(W2==3)
+    auto op = Quant8FwdKernel<T,5,2>;
+    if(W1==4 && W2==3)
         op=Quant8FwdKernel<T,4,3>;
-      else
-        printf("ERROR: bad W1,W2 values\n"); //shouldn't happen, should be tested up the stack
-    }
-    else if(W1==5 || (W1==8 && sizeof(T)==2)) {
-      if(W2==1)
-        op=Quant8FwdKernel<T,5,1>;
-      else if(W2==2)
-        op=Quant8FwdKernel<T,5,2>;
-      else if(W2==3)
-        op=Quant8FwdKernel<T,5,3>;
-      else
-        printf("ERROR: bad W1,W2 values\n"); //shouldn't happen, should be tested up the stack
-    }
-    /*
-    else if(W1==8) {
-      if(W2==1)
-        op=Quant8FwdKernel<T,8,1>;
-      else if(W2==2)
-        op=Quant8FwdKernel<T,8,2>;
-      else if(W2==3)
-        op=Quant8FwdKernel<T,8,3>;
-      else
-        printf("ERROR: bad W1,W2 values\n"); //shouldn't happen, should be tested up the stack
-    }
-    */
+    else if((W1==5 || (W1==8 && sizeof(T)==2)) && W2==2)
+      op=Quant8FwdKernel<T,5,2>;
     else
-       printf("ERROR: bad W1 value\n");
+      printf("ERROR: bad W1,W2 values\n");
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
     uint32_t seed = distribution(gen); 
     TF_CHECK_OK(GpuLaunchKernel(op, (count + kThreadInBlock - 1) / kThreadInBlock,
-        kThreadInBlock, 0, d.stream(), input.data(), output.data(), count, exp_low_cutoff, stoch, seed));
+        kThreadInBlock, 0, d.stream(), input.data(), output.data(), count, stoch, seed));
   }
 };
 

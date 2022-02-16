@@ -4269,7 +4269,7 @@ tf_kernel_library(
 
 tf_kernel_library(
     name = "relu_op",
-    gpu_srcs = ["hip_float8.h"],
+    gpu_srcs = ["hip_float8.h", "hip_f8_impl.h"],
     copts = if_mlir_generated_experimental_kernels_enabled(
         ["-DMLIR_GENERATED_EXPERIMENTAL_KERNELS_ENABLED"],
     ) + if_mlir_generated_gpu_kernels_enabled(

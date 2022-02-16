@@ -1303,7 +1303,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
 
       OP_REQUIRES_OK(
           context, stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr,
-                                        k, a_ptr, k, &c_ptr, n, 2+f8_flags_));
+                                        k, a_ptr, k, &c_ptr, n, 2|256|f8_flags_));
       return;
     } else if (!is_grouped_convolution &&
                dims.filter_size(0) == dims.input_size(0) &&
@@ -1327,7 +1327,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
 
       OP_REQUIRES_OK(
           context, stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr,
-                                        k, a_ptr, k, &c_ptr, n, 2+f8_flags_));
+                                        k, a_ptr, k, &c_ptr, n, 2|256|f8_flags_));
       return;
     }
 
@@ -1418,7 +1418,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
         .set_zero_padding(DimIndex::Y, padding_rows / 2)
         .set_zero_padding(DimIndex::Z, padding_planes / 2)
         .set_group_count(dims.in_depth / filter_shape.dim_size(3))
-        .set_grad_flags(256+2+f8_flags_);
+        .set_grad_flags(256|2|f8_flags_);
 
     // Shape: out, in, z, y, x.
     Tensor transformed_filter;
@@ -1694,7 +1694,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       OP_REQUIRES_OK(context,
                      stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                           se::blas::Transpose::kTranspose, n, m,
-                                          k, a_ptr, n, b_ptr, m, &c_ptr, n, 1+f8_flags_));
+                                          k, a_ptr, n, b_ptr, m, &c_ptr, n, 256|1|f8_flags_));
       return;
     } else if (!is_grouped_convolution &&
                dims.filter_size(0) == dims.input_size(0) &&
@@ -1716,7 +1716,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       OP_REQUIRES_OK(context,
                      stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                           se::blas::Transpose::kTranspose, n, m,
-                                          k, b_ptr, n, a_ptr, m, &c_ptr, n, 1+f8_flags_));
+                                          k, b_ptr, n, a_ptr, m, &c_ptr, n, 256|1|f8_flags_));
       return;
     }
 
@@ -1814,7 +1814,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
         .set_zero_padding(DimIndex::Y, padding_rows / 2)
         .set_zero_padding(DimIndex::Z, padding_planes / 2)
         .set_group_count(dims.in_depth / filter_shape.dim_size(3))
-        .set_grad_flags(256+2+f8_flags_);
+        .set_grad_flags(256|2|f8_flags_);
 
     Tensor pre_transformed_filter_backprop;
     auto dst_format =
