@@ -101,9 +101,10 @@ REQUIRED_PACKAGES = [
     # These need to be in sync with the existing TF version
     # They are updated during the release process
     # When updating these, please also update the nightly versions below
-    'tensorboard ~= 2.6',
-    'tensorflow_estimator ~= 2.6',
-    'keras ~= 2.6',
+    # Kerase ~= installs 2.8
+    'tensorboard == 2.6',
+    'tensorflow_estimator == 2.6',
+    'keras == 2.6',
 ]
 
 
