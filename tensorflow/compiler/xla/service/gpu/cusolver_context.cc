@@ -394,8 +394,10 @@ Status GpuSolverContext::Potrf(se::blas::UpperLower uplo, int n,
       handle(), GpuBlasUpperLower(uplo), n, ToDevicePointer(as), lda, \
       ToDevicePointer(lapack_info), batch_size));
 #else
-#define CALL_POTRF_BATCHED(T, suffix_lower, suffix_upper) \
-  Unimplemented("potrf_batched not implemented on rocm");
+#define CALL_POTRF_BATCHED(T, suffix_lower, suffix_upper)                  \
+  ConvertStatus(tensorflow::wrap::rocsolver_##suffix_lower##potrf_batched( \
+      handle(), GpuBlasUpperLower(uplo), n, ToDevicePointer(as), lda,      \
+      ToDevicePointer(lapack_info), batch_size));
 #endif
 
 Status GpuSolverContext::PotrfBatched(se::blas::UpperLower uplo, int n,

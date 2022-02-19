@@ -50,11 +50,7 @@ class GpuSolverContext {
   GpuSolverContext& operator=(GpuSolverContext&&);
 
   bool SupportsPotrfBatched() const {
-#if defined(TENSORFLOW_USE_ROCM)
-    return false;
-#else
     return true;
-#endif
   }
 
   // Computes the Cholesky factorization A = L * L^T for a single matrix.

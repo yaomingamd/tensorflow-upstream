@@ -122,17 +122,34 @@ Status CholeskyThunk::DoPotrfBatched(const ExecuteParams& params,
       params.buffer_allocations->GetDeviceAddress(a_buffer_).opaque());
   se::DeviceMemory<int> infos(
       params.buffer_allocations->GetDeviceAddress(info_buffer_));
+#if TENSORFLOW_USE_ROCM
+  se::StreamExecutor* executor = stream->parent();
+  const int64_t stride = n_ * n_;
+  std::vector<T*> ptrs;
+  for (int64_t i = 0; i < batch_size_; ++i) {
+    ptrs.push_back(&a_base[i * stride]);
+  }
+  se::ScopedDeviceMemory<T*> ptrs_device =
+      executor->AllocateOwnedArray<T*>(batch_size_);
+  executor->SynchronousMemcpyH2D(ptrs.data(),
+                                 sizeof(T*) * batch_size_,
+                                 ptrs_device.ptr());
+  auto as = *ptrs_device;
+#else
   se::DeviceMemory<T*> as(
       params.buffer_allocations->GetDeviceAddress(workspace_buffer_));
+#endif
 
   CHECK_GE(as.size(), batch_size_);
   CHECK_GE(infos.size(), batch_size_);
 
+#if !TENSORFLOW_USE_ROCM
   // Run a kernel that sets as[i] = &a_base[i * stride].
   const int64_t stride_bytes = n_ * n_ * sizeof(T);
   TF_RETURN_IF_ERROR(MakeBatchPointers(
       stream, asm_opts_, se::DeviceMemoryBase(a_base), stride_bytes,
       static_cast<int>(batch_size_), se::DeviceMemoryBase(as)));
+#endif
 
   // Now that we've set up the `as` array, we can call cusolver.
   return context->PotrfBatched(uplo_, n_, as, n_, infos, batch_size_);
