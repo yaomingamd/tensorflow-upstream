@@ -669,14 +669,16 @@ inline PrecisionConfig PrecisionConfigHIGHEST()
   return cfg;
 }
 
-inline void SetXlaPrecisionConfigF8Flags(PrecisionConfig& cfg, bool f8, bool grad_a, bool grad_b, bool noclip=false, bool nosr=false)
+inline void SetXlaPrecisionConfigF8Flags(PrecisionConfig& cfg, int f8, bool grad_a, bool grad_b, bool noclip=false, bool sr=false, bool nano=false)
 {
     cfg.add_operand_precision(f8 ? (grad_a ? PrecisionConfig::F8GRAD : PrecisionConfig::F8) : PrecisionConfig::F8OFF );
     cfg.add_operand_precision(f8 ? (grad_b ? PrecisionConfig::F8GRAD : PrecisionConfig::F8) : PrecisionConfig::F8OFF );
-    if(noclip)
+    if(sr || (f8 & 8))
+      cfg.add_operand_precision(PrecisionConfig::F8SR);
+    if(nano || (f8 & 16))
+      cfg.add_operand_precision(PrecisionConfig::F8NANO);
+    if(noclip || (f8 & 32))
       cfg.add_operand_precision(PrecisionConfig::F8NOCLIP);
-    if(nosr)
-      cfg.add_operand_precision(PrecisionConfig::F8NOSR);
 }
 
 inline int GetXlaPrecisionConfigF8Flags(const PrecisionConfig* precision_config)
@@ -695,6 +697,12 @@ inline int GetXlaPrecisionConfigF8Flags(const PrecisionConfig* precision_config)
             cfg_flags |= 1 << f8count;
           f8count++;
         }
+        if(flag==PrecisionConfig::F8SR)
+          cfg_flags |= 8;
+        if(flag==PrecisionConfig::F8NANO)
+          cfg_flags |= 16;
+        if(flag==PrecisionConfig::F8NOCLIP)
+          cfg_flags |= 32;
     }
     if(f8count!=2)
     {

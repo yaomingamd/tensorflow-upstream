@@ -340,20 +340,24 @@ class OpKernelConstruction {
   DeviceBase* device() const { return device_; }
 
   inline int GetFlagsF8() const {
-    bool f8 = false, f8_2 = false;
+    bool f8 = false;
+    int64_t f8_2 = 0;
     bool clip = true;
-    bool sr = true;
-    ReadBoolFromEnvVar("TF_ROCM_F8", false, &f8_2);
+    bool sr = false;
+    bool nanoo = false;
+    ReadInt64FromEnvVar("TF_ROCM_F8", 0, &f8_2);
     GetAttr("_f8", &f8);
     GetAttr("_clip", &clip);
     GetAttr("_sr", &sr);
     int flags = 0;
-    if(f8 || f8_2) {
+    if(f8 || (f8_2 & 1)) {
       flags |= 4;
-      if(!clip)
+      if(sr || (f8_2 & 2))
         flags |= 8;
-      if(!sr)
+      if(nanoo || (f8_2 & 4))
         flags |= 16;
+      if(!clip || (f8_2 & 8))
+        flags |= 32;
     }
     return flags;
   }

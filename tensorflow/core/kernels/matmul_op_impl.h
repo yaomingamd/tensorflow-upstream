@@ -639,6 +639,10 @@ class BaseBatchMatMulOp : public OpKernel {
     OP_REQUIRES_OK(context, context->GetAttr("grad_a", &grad_a));
     OP_REQUIRES_OK(context, context->GetAttr("grad_b", &grad_b));
     f8_flags_ = (grad_a?1:0) + (grad_b?2:0) + context->GetFlagsF8() + 256;
+    bool f8_matmul=true;
+    tensorflow::ReadBoolFromEnvVar("F8_MM", true, &f8_matmul);
+    if(!f8_matmul)
+      f8_flags_ = 256;
   }
 
   ~BaseBatchMatMulOp() override {}

@@ -1363,7 +1363,7 @@ bool ROCMBlas::DoBlasTrsv(Stream *stream, blas::UpperLower uplo,
       ROCMBlasDiagonal(diag), n, complex_cast(a), lda, complex_cast(x), incx);
 }
 
-void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152);
+void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152, bool stoch, bool nanoo);
 
 void inplace_fp16_to_bf16(void* data, int nElements, hipStream_t stream);
 void inplace_bf16_to_fp16(void* data, int nElements, hipStream_t stream);
@@ -1429,15 +1429,27 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
         bool hasFP8 = true;
         bool denorm_fix = false;
         port::Status retval;
-
+//        bool stoch=true, nanoo=true;
+//        tensorflow::ReadBoolFromEnvVar("F8_SR", false, &stoch);
+//        tensorflow::ReadBoolFromEnvVar("F8_NANO", false, &nanoo);
         if(hasFP8 && (grad_flags & 4)) {
+          int64_t env_f8;
+          tensorflow::ReadInt64FromEnvVar("TF_ROCM_F8", 0, &env_f8);
+          env_f8 >>= 1;
+          if((env_f8 & 3) != ((grad_flags>>3) & 3)) {
+            printf("ERROR: f8 auxiliary flags lost in BLAS: %d (env) vs %d (descriptor)\n",
+               env_f8 & 3, (grad_flags>>3) & 3);
+            exit(-1);
+          }
+          bool stoch = (grad_flags & 8);
+          bool nanoo = (grad_flags & 16);
           std::random_device rd;
           std::mt19937 gen(rd());
           std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
           uint32_t seed = distribution(gen);
-          Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(a.opaque())), m*k, seed, AsGpuStreamValue(stream), (grad_flags>>0) & 1);
+          Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(a.opaque())), m*k, seed, AsGpuStreamValue(stream), (grad_flags>>0) & 1, stoch, nanoo);
           seed = distribution(gen);
-          Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(b.opaque())), n*k, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1);
+          Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(b.opaque())), n*k, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1, stoch, nanoo);
         }
         else {
           //printf("ERROR: not doing f8 gemm\n");

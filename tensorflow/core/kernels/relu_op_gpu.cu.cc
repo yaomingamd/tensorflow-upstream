@@ -336,7 +336,7 @@ struct GeluGrad<GPUDevice, T> {
 };
 
 template <typename T, int we, int wm>
-__global__ void Quant8FwdKernel(const T* _p, T* _pOut, int32_t count, bool stoch, uint32_t seed) {
+__global__ void Quant8FwdKernel(const T* _p, T* _pOut, int32_t count, bool stoch, bool nanoo, uint32_t seed) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   if (i >= count) return;
   typedef typename std::conditional<sizeof(T)==2, uint16_t, uint32_t>::type IT;
@@ -345,12 +345,17 @@ __global__ void Quant8FwdKernel(const T* _p, T* _pOut, int32_t count, bool stoch
   const FT* fp = (const FT*) _p;
   FT* fpOut = (FT*) _pOut;
   IT x = p[i];
-  constexpr bool nanoo=true;
+//  constexpr bool nanoo=true;
   uint8_t y;
 
   T fx = fp[i];
   if(!stoch)
-    y = hip_f8_impl::cast_to_f8<wm,we,float,nanoo,true>(float(fx), false);
+  {
+    if(nanoo)
+      y = hip_f8_impl::cast_to_f8<wm,we,float,true,true>(float(fx), false);
+    else
+      y = hip_f8_impl::cast_to_f8<wm,we,float,false,true>(float(fx), false);
+   }
   else {
     uint32_t drop_bits = uint32_t(x) & 0xFFFFu;
     if(sizeof(x)==4)
@@ -358,9 +363,16 @@ __global__ void Quant8FwdKernel(const T* _p, T* _pOut, int32_t count, bool stoch
     drop_bits = ((drop_bits & 31)<<11) | (drop_bits>>5);
     drop_bits *= 0x7000149;
     uint32_t rng = (drop_bits ^ 0x13371337 ^ (i*229791) ^ seed);
-    y = hip_f8_impl::cast_to_f8<wm,we,float,nanoo,true>(fx, true, rng);
+    if(nanoo)
+      y = hip_f8_impl::cast_to_f8<wm,we,float,true,true>(fx, true, rng);
+    else
+      y = hip_f8_impl::cast_to_f8<wm,we,float,false,true>(fx, true, rng);
   }
-  float newfp = hip_f8_impl::cast_from_f8<wm,we,float,nanoo>(y);
+  float newfp;
+  if(nanoo)
+    newfp = hip_f8_impl::cast_from_f8<wm,we,float,true>(y);
+  else
+    newfp = hip_f8_impl::cast_from_f8<wm,we,float,false>(y);
   fpOut[i]=T(newfp);
 }
 
@@ -401,7 +413,7 @@ struct Quant8Fwd<GPUDevice, T> {
     std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
     uint32_t seed = distribution(gen); 
     TF_CHECK_OK(GpuLaunchKernel(op, (count + kThreadInBlock - 1) / kThreadInBlock,
-        kThreadInBlock, 0, d.stream(), input.data(), output.data(), count, stoch, seed));
+        kThreadInBlock, 0, d.stream(), input.data(), output.data(), count, stoch, dynamic, seed));
   }
 };
 

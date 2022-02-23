@@ -39,7 +39,7 @@ __device__ bool nonfinite(__half x) { return __hisnan(x) || __hisinf(x); }
 __device__ bool nonfinite(float x) { return isnan(x) || isinf(x); }
 
 template <typename T, int we, int wm>
-__global__ void Quant8_inplace(T* _p, int32_t count, bool stoch, uint32_t seed) {
+__global__ void Quant8_inplace(T* _p, int32_t count, bool stoch, bool nanoo, uint32_t seed) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   if (i >= count) return;
   typedef typename std::conditional<sizeof(T)==2, uint16_t, uint32_t>::type IT;
@@ -47,12 +47,17 @@ __global__ void Quant8_inplace(T* _p, int32_t count, bool stoch, uint32_t seed) 
   IT* p = (IT*) _p;
   FT* fp = (FT*) _p;
   IT x = p[i];
-  constexpr bool nanoo=true;
+///  constexpr bool nanoo=false;
   uint8_t y;
 
   T fx = fp[i];
   if(!stoch)
-    y = hip_f8_impl::cast_to_f8<wm,we,float,nanoo,true>(float(fx), false);
+  {
+    if(nanoo)
+      y = hip_f8_impl::cast_to_f8<wm,we,float,true,true>(float(fx), false);
+    else
+      y = hip_f8_impl::cast_to_f8<wm,we,float,false,true>(float(fx), false);
+  }
   else {
     uint32_t drop_bits = uint32_t(x) & 0xFFFFu;
     if(sizeof(x)==4)
@@ -60,22 +65,29 @@ __global__ void Quant8_inplace(T* _p, int32_t count, bool stoch, uint32_t seed) 
     drop_bits = ((drop_bits & 31)<<11) | (drop_bits>>5);
     drop_bits *= 0x7000149;
     uint32_t rng = (drop_bits ^ 0x13371337 ^ (i*229791) ^ seed);
-    y = hip_f8_impl::cast_to_f8<wm,we,float,nanoo,true>(fx, true, rng);
+    if(nanoo)
+      y = hip_f8_impl::cast_to_f8<wm,we,float,true,true>(fx, true, rng);
+    else
+      y = hip_f8_impl::cast_to_f8<wm,we,float,false,true>(fx, true, rng);
   }
-  float newfp = hip_f8_impl::cast_from_f8<wm,we,float,nanoo>(y);
+  float newfp;
+  if(nanoo)
+    newfp = hip_f8_impl::cast_from_f8<wm,we,float,true>(y);
+  else
+    newfp = hip_f8_impl::cast_from_f8<wm,we,float,false>(y);
   fp[i]=T(newfp);
 }
 
-template __global__ void Quant8_inplace<__half,5,2>(__half* _p, int32_t count, bool stoch, uint32_t seed);
-template __global__ void Quant8_inplace<__half,4,3>(__half* _p, int32_t count, bool stoch, uint32_t seed);
+template __global__ void Quant8_inplace<__half,5,2>(__half* _p, int32_t count, bool stoch, bool nanoo, uint32_t seed);
+template __global__ void Quant8_inplace<__half,4,3>(__half* _p, int32_t count, bool stoch, bool nanoo, uint32_t seed);
 
-void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152) {
+void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream, bool f152, bool stoch, bool nanoo) {
         auto fun = f152 ? Quant8_inplace<__half,5,2> : Quant8_inplace<__half,4,3>;
         uint32_t dim_a = count; 
         uint32_t grid_a = (dim_a+255)/256;
-        bool stoch=false;//true;
+//        bool stoch=false;//true;
         hipLaunchKernelGGL(fun,
-           dim3(grid_a,1,1), dim3(256,1,1), 0, stream, _p, dim_a, stoch, seed);
+           dim3(grid_a,1,1), dim3(256,1,1), 0, stream, _p, dim_a, stoch, nanoo, seed);
 }
 
 

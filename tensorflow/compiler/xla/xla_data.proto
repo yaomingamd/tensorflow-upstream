@@ -709,8 +709,9 @@ message PrecisionConfig {
     F8GRAD = 4;
     F8OFF = 5;
     F8NOCLIP = 6;
-    F8NOSR = 7;
-    // Next: 8
+    F8SR = 7;
+    F8NANO = 8;
+    // Next: 9
   }
   repeated Precision operand_precision = 1;
 
