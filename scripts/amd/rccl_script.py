@@ -9,6 +9,7 @@ def scale(image, label):
     image /= 255
     return image, label
 
+
 def decay(epoch):
     if epoch < 3:
         return 1e-3
@@ -17,18 +18,23 @@ def decay(epoch):
     else:
         return 1e-5
 
+
 class PrintLR(tf.keras.callbacks.Callback):
+    def __init__(self, model):
+        self.model=model
     def on_epoch_end(self, epoch, logs=None):
         print('\nLearning rate for epoch {} is {}'.format(epoch + 1,
-                                                          model.optimizer.lr.numpy()))
+                                                          self.model.optimizer.lr.numpy()))
 
 
+# def main():
 # pick distributed strategy
 strategy = tf.distribute.MirroredStrategy()
 print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 # load data
-datasets, info = tfds.load(name='mnist', with_info=True, as_supervised=True)
+datasets, info = tfds.load(
+    name='mnist', with_info=True, as_supervised=True)
 mnist_train, mnist_test = datasets['train'], datasets['test']
 num_train_examples = info.splits['train'].num_examples
 num_test_examples = info.splits['test'].num_examples
@@ -39,34 +45,35 @@ train_dataset = mnist_train.map(scale).cache().shuffle(
     BUFFER_SIZE).batch(BATCH_SIZE)
 eval_dataset = mnist_test.map(scale).batch(BATCH_SIZE)
 
-
 # create model
 with strategy.scope():
     model = tf.keras.Sequential([
         tf.keras.layers.Conv2D(32, 3, activation='relu',
-                               input_shape=(28, 28, 1)),
-        tf.keras.layers.MaxPooling2D(),
+                                input_shape=(28, 28, 1)),
         tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(64, activation='relu'),
         tf.keras.layers.Dense(10)
     ])
 
     model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-                  optimizer=tf.keras.optimizers.Adam(),
-                  metrics=['accuracy'])
+                    optimizer=tf.keras.optimizers.Adam(),
+                    metrics=['accuracy'])
 
 # Define the checkpoint directory to store the checkpoints.
 checkpoint_dir = './training_checkpoints'
 # Define the name of the checkpoint files.
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
 
-
 # train model
+# STEPS_PER_EPOCH = 1000 # accuracy: 0.87
 STEPS_PER_EPOCH = 1
 model.fit(train_dataset, steps_per_epoch=STEPS_PER_EPOCH, callbacks=[
     tf.keras.callbacks.TensorBoard(log_dir='./logs'),
     tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_prefix,
-                                       save_weights_only=True),
+                                        save_weights_only=True),
     tf.keras.callbacks.LearningRateScheduler(decay),
-    PrintLR()
+    PrintLR(model)
 ])
+
+
+# if __name__ == '__main__':
+#     main()
