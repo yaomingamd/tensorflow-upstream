@@ -4,7 +4,8 @@ import tensorflow as tf
 import os
 import argparse
 
-
+# enable xla
+tf.config.optimizer.set_jit(True)
 
 # helper functions
 def scale(image, label):
@@ -30,9 +31,8 @@ class PrintLR(tf.keras.callbacks.Callback):
                                                           self.model.optimizer.lr.numpy()))
 
 
-# def main():
 # pick distributed strategy
-strategy = tf.distribute.MirroredStrategy()
+strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0", "/gpu:1"])
 print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 # load data
@@ -82,7 +82,3 @@ model.fit(train_dataset, steps_per_epoch=STEPS_PER_EPOCH, callbacks=[
     tf.keras.callbacks.LearningRateScheduler(decay),
     PrintLR(model)
 ])
-
-
-# if __name__ == '__main__':
-#     main()
