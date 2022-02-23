@@ -2,6 +2,9 @@ import tensorflow_datasets as tfds
 import tensorflow as tf
 
 import os
+import argparse
+
+
 
 # helper functions
 def scale(image, label):
@@ -58,8 +61,14 @@ with strategy.scope():
                     optimizer=tf.keras.optimizers.Adam(),
                     metrics=['accuracy'])
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--log_dir")
+args = parser.parse_args()
+print(args.log_dir)
+
 # Define the checkpoint directory to store the checkpoints.
-checkpoint_dir = './training_checkpoints'
+checkpoint_dir = os.path.join(args.log_dir,"training_checkpoints")
+logs_dir = os.path.join(args.log_dir,"logs")
 # Define the name of the checkpoint files.
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
 
@@ -67,7 +76,7 @@ checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
 # STEPS_PER_EPOCH = 1000 # accuracy: 0.87
 STEPS_PER_EPOCH = 1
 model.fit(train_dataset, steps_per_epoch=STEPS_PER_EPOCH, callbacks=[
-    tf.keras.callbacks.TensorBoard(log_dir='./logs'),
+    tf.keras.callbacks.TensorBoard(log_dir=logs_dir),
     tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_prefix,
                                         save_weights_only=True),
     tf.keras.callbacks.LearningRateScheduler(decay),

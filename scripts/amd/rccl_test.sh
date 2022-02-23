@@ -22,6 +22,4 @@ chmod -R 777 $LOG_DIR
 # run model
 # pip3 install tensorflow_datasets ipywidgets
 # export XLA_FLAGS="--xla_dump_hlo_as_text --xla_dump_to=$LOG_DIR" 
-rm -rf logs
-rm -rf training_checkpoints
-python3 scripts/amd/rccl_script.py 2>&1 | tee $LOG_DIR/rccl_script.log
+python3 scripts/amd/rccl_script.py --log_dir $LOG_DIR 2>&1 | tee $LOG_DIR/rccl_script.log
