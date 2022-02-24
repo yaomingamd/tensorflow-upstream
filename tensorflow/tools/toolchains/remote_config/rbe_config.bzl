@@ -80,7 +80,6 @@ def _tensorflow_rbe_config(name, compiler, python_versions, os, rocm_version = N
         # so we do not fetch local_config_cc.
         env.update({
             "TF_NEED_ROCM": "1",
-            "TF_ENABLE_XLA": "0",
         })
 
         container_name = "rocm-%s" % (os)

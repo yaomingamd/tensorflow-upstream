@@ -246,11 +246,34 @@ def initialize_rbe_configs():
         python_install_path = "/usr/local",
     )
 
+    # Experimental ROCm RBE configs. 
+    tensorflow_rbe_config(
+        name ="ubuntu20.04-gcc7_manylinux2010-rocm5.0.0",
+        compiler = "/dt7/usr/bin/gcc",
+        compiler_prefix = "/usr/bin",
+        rocm_version = "5.0.0",
+        os = "ubuntu20.04-manylinux2014-multipython",
+        python_version = ["3.7", "3.8", "3.9"],
+        sysroot = "/dt7",
+        python_install_path = "/usr/local",
+    )
+
+    tensorflow_rbe_config(
+        name ="ubuntu20.04-gcc9_manylinux2014-rocm5.0.0",
+        compiler = "/dt9/usr/bin/gcc",
+        compiler_prefix = "/usr/bin",
+        rocm_version = "5.0.0",
+        os = "ubuntu20.04-manylinux2014-multipython",
+        python_version = ["3.7", "3.8", "3.9"],
+        sysroot = "/dt9",
+        python_install_path = "/usr/local",
+    )
+
     tensorflow_rbe_win_config(
         name = "windows_py37",
         python_bin_path = "C:/Python37/python.exe",
     )
-
+    
     # Experimental SIG Build RBE Config. The crosstool generated from this
     # config is python-version-independent because it only cares about the
     # tooling paths; the container mapping is useful only so that TF RBE users
