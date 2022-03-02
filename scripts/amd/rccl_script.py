@@ -51,8 +51,6 @@ eval_dataset = mnist_test.map(scale).batch(BATCH_SIZE)
 # create model
 with strategy.scope():
     model = tf.keras.Sequential([
-        tf.keras.layers.Conv2D(32, 3, activation='relu',
-                                input_shape=(28, 28, 1)),
         tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(10)
     ])
