@@ -1,82 +1,48 @@
-import tensorflow_datasets as tfds
 import tensorflow as tf
 
 import os
 import argparse
 
 # enable xla
-tf.config.optimizer.set_jit(True)
-
-# helper functions
-def scale(image, label):
-    image = tf.cast(image, tf.float32)
-    image /= 255
-    return image, label
-
-
-def decay(epoch):
-    if epoch < 3:
-        return 1e-3
-    elif epoch >= 3 and epoch < 7:
-        return 1e-4
-    else:
-        return 1e-5
-
-
-class PrintLR(tf.keras.callbacks.Callback):
-    def __init__(self, model):
-        self.model=model
-    def on_epoch_end(self, epoch, logs=None):
-        print('\nLearning rate for epoch {} is {}'.format(epoch + 1,
-                                                          self.model.optimizer.lr.numpy()))
-
+# tf.config.optimizer.set_jit(True)
 
 # pick distributed strategy
-strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0", "/gpu:1"])
+strategy = tf.distribute.MirroredStrategy(
+    cross_device_ops=tf.distribute.NcclAllReduce(), devices=["/gpu:0", "/gpu:1"])
 print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 # load data
-datasets, info = tfds.load(
-    name='mnist', with_info=True, as_supervised=True)
-mnist_train, mnist_test = datasets['train'], datasets['test']
-num_train_examples = info.splits['train'].num_examples
-num_test_examples = info.splits['test'].num_examples
-BUFFER_SIZE = 10000
-BATCH_SIZE_PER_REPLICA = 64
-BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
-train_dataset = mnist_train.map(scale).cache().shuffle(
-    BUFFER_SIZE).batch(BATCH_SIZE)
-eval_dataset = mnist_test.map(scale).batch(BATCH_SIZE)
+with tf.device("/gpu:0"):
+    data_1 = tf.random.uniform([4])
+with tf.device("/gpu:1"):
+    data_2 = tf.random.uniform([4])
+
+print(data_1.device, data_1)
+print(data_2.device, data_2)
 
 # create model
 with strategy.scope():
-    model = tf.keras.Sequential([
-        tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(10)
-    ])
+    # ret = tf.distribute.NcclAllReduce([data_1, data_2])
+    ret = data_1+data_2
 
-    model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-                    optimizer=tf.keras.optimizers.Adam(),
-                    metrics=['accuracy'])
+print(ret.device, ret)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--log_dir")
 args = parser.parse_args()
-print(args.log_dir)
+# print(args.log_dir)
 
 # Define the checkpoint directory to store the checkpoints.
-checkpoint_dir = os.path.join(args.log_dir,"training_checkpoints")
-logs_dir = os.path.join(args.log_dir,"logs")
-# Define the name of the checkpoint files.
-checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
+# checkpoint_dir = os.path.join(args.log_dir, "training_checkpoints")
+# logs_dir = os.path.join(args.log_dir, "logs")
+# # Define the name of the checkpoint files.
+# checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
 
 # train model
 # STEPS_PER_EPOCH = 1000 # accuracy: 0.87
-STEPS_PER_EPOCH = 1
-model.fit(train_dataset, steps_per_epoch=STEPS_PER_EPOCH, callbacks=[
-    tf.keras.callbacks.TensorBoard(log_dir=logs_dir),
-    tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_prefix,
-                                        save_weights_only=True),
-    tf.keras.callbacks.LearningRateScheduler(decay),
-    PrintLR(model)
-])
+# STEPS_PER_EPOCH = 1
+# model.fit(data, steps_per_epoch=STEPS_PER_EPOCH, callbacks=[
+#     tf.keras.callbacks.TensorBoard(log_dir=logs_dir),
+#     tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_prefix,
+#                                        save_weights_only=True),
+# ])

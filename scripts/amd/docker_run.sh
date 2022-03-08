@@ -13,9 +13,9 @@ WORK_DIR="/dockerx/$(basename $(pwd))"
 # WORK_DIR="/root/$(basename $(pwd))"
 
 # IMAGE_NAME=rocm/tensorflow
-# IMAGE_NAME=rocm/tensorflow-autobuilds:latest
+IMAGE_NAME=rocm/tensorflow-autobuilds:latest
 # IMAGE_NAME=tensorflow/tensorflow:devel-gpu
-IMAGE_NAME=rocm/tensorflow-private:enable_rccl_debug_build
+# IMAGE_NAME=rocm/tensorflow-private:enable_rccl_debug_build
 
 CONTAINER_NAME=tensorflow
 
