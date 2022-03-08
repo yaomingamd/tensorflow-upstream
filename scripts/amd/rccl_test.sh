@@ -1,8 +1,8 @@
 clear
 
-export AMD_OCL_WAIT_COMMAND=1
-export AMD_LOG_LEVEL=3
-export HIP_LAUNCH_BLOCKING=1
+# export AMD_OCL_WAIT_COMMAND=1
+# export AMD_LOG_LEVEL=3
+# export HIP_LAUNCH_BLOCKING=1
 
 export NCCL_DEBUG=INFO
 # export NCCL_SHM_DISABLE=1
