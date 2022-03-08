@@ -4,7 +4,7 @@ import os
 import argparse
 
 # enable xla
-# tf.config.optimizer.set_jit(True)
+tf.config.optimizer.set_jit(True)
 
 # pick distributed strategy
 strategy = tf.distribute.MirroredStrategy(
@@ -13,9 +13,11 @@ print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 # load data
 with tf.device("/gpu:0"):
-    data_1 = tf.random.uniform([4])
+    # data_1 = tf.random.uniform([4])
+    data_1 = tf.convert_to_tensor([1.0, 2.0, 3.0, 4.0])
 with tf.device("/gpu:1"):
-    data_2 = tf.random.uniform([4])
+    # data_2 = tf.random.uniform([4])
+    data_2 = tf.convert_to_tensor([9.0, 8.0, 7.0, 6.0])
 
 print(data_1.device, data_1)
 print(data_2.device, data_2)
