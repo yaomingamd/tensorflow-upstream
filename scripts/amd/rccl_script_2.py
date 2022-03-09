@@ -18,18 +18,24 @@ with tf.device("/gpu:0"):
 with tf.device("/gpu:1"):
     # data_2 = tf.random.uniform([4])
     data_2 = tf.convert_to_tensor([[9.0, 8.0, 7.0, 6.0]])
+    label = tf.convert_to_tensor([[10.0]])
 
 print(data_1.device, data_1)
 print(data_2.device, data_2)
 
 # create model
 with strategy.scope():
-    # ret = tf.distribute.NcclAllReduce([data_1, data_2])
-    # ret = data_1+data_2
-    model = tf.keras.Sequential([tf.keras.layers.Dense(1, 4)])
-    model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True))
+    model = tf.keras.Sequential([tf.keras.layers.Dense(4)])
+    model.compile(
+        loss=tf.keras.losses.SparseCategoricalCrossentropy())
+model.fit(data_1, label)
 
-model.fit(data_1, data_2)
+# with strategy.scope():
+#     model = tf.keras.Sequential([tf.keras.layers.Dense(4)])
+#     model.compile(
+#         loss=tf.keras.losses.SparseCategoricalCrossentropy())
+# model.fit(data_1, label)
+
 
 # print(ret.device, ret)
 
