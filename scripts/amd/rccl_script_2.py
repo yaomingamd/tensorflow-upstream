@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 import os
 import argparse
@@ -11,50 +12,26 @@ strategy = tf.distribute.MirroredStrategy(
     cross_device_ops=tf.distribute.NcclAllReduce(), devices=["/gpu:0", "/gpu:1"])
 print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
-# load data
-with tf.device("/gpu:0"):
-    # data_1 = tf.random.uniform([4])
-    data_1 = tf.convert_to_tensor([[1.0, 2.0, 3.0, 4.0]])
-with tf.device("/gpu:1"):
-    # data_2 = tf.random.uniform([4])
-    data_2 = tf.convert_to_tensor([[9.0, 8.0, 7.0, 6.0]])
-    label = tf.convert_to_tensor([[10.0]])
-
-print(data_1.device, data_1)
-print(data_2.device, data_2)
-
-# create model
 with strategy.scope():
-    model = tf.keras.Sequential([tf.keras.layers.Dense(4)])
-    model.compile(
-        loss=tf.keras.losses.SparseCategoricalCrossentropy())
-model.fit(data_1, label)
+    tf.compat.v1.disable_eager_execution()
 
-# with strategy.scope():
-#     model = tf.keras.Sequential([tf.keras.layers.Dense(4)])
-#     model.compile(
-#         loss=tf.keras.losses.SparseCategoricalCrossentropy())
-# model.fit(data_1, label)
+    # cluster = tf.train.ClusterSpec({"local": ["localhost:2222", "localhost:2223"]})
+    
+    x = tf.compat.v1.placeholder(tf.float32, 100)
 
+    with tf.device("/gpu:0"):
+        first_batch = tf.slice(x, [0], [50])
+        mean1 = tf.reduce_mean(first_batch)
 
-# print(ret.device, ret)
+    with tf.device("/gpu:1"):
+        second_batch = tf.slice(x, [50], [-1])
+        mean2 = tf.reduce_mean(second_batch)
+        mean = (mean1 + mean2) / 2
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--log_dir")
-args = parser.parse_args()
-# print(args.log_dir)
+    print(mean1.device, mean1)
+    print(mean2.device, mean2)
+    print(mean.device, mean)
 
-# Define the checkpoint directory to store the checkpoints.
-# checkpoint_dir = os.path.join(args.log_dir, "training_checkpoints")
-# logs_dir = os.path.join(args.log_dir, "logs")
-# # Define the name of the checkpoint files.
-# checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
-
-# train model
-# STEPS_PER_EPOCH = 1000 # accuracy: 0.87
-# STEPS_PER_EPOCH = 1
-# model.fit(data, steps_per_epoch=STEPS_PER_EPOCH, callbacks=[
-#     tf.keras.callbacks.TensorBoard(log_dir=logs_dir),
-#     tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_prefix,
-#                                        save_weights_only=True),
-# ])
+    with tf.compat.v1.Session() as sess:
+        result = sess.run(mean, feed_dict={x: np.random.random(100)})
+        print(result)
