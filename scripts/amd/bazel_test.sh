@@ -38,11 +38,20 @@ export ROCM_PATH=$ROCM_INSTALL_DIR
 
 yes "" | $PYTHON_BIN_PATH configure.py
 
+# log dir
+ROOT_DIR=$(pwd)
+DEFAULT_LOG_DIR=$ROOT_DIR/$(git rev-parse --symbolic-full-name --abbrev-ref HEAD)
+LOG_DIR="${1:-$DEFAULT_LOG_DIR}"
+rm -rf $LOG_DIR
+mkdir -p $LOG_DIR
+mkdir -p $LOG_DIR/xla
+chmod -R 777 $LOG_DIR
+
 # Run bazel test command. Double test timeouts to avoid flakes.
 bazel test \
     --config=rocm \
     -k \
-    --test_tag_filters=-no_gpu,-no_rocm \
+    --test_tag_filters= \
     --jobs=${N_BUILD_JOBS} \
     --local_test_jobs=${N_TEST_JOBS} \
     --test_timeout 600,900,2400,7200 \
@@ -53,11 +62,10 @@ bazel test \
     --cache_test_results=no \
     --test_env=TF_PER_DEVICE_MEMORY_LIMIT_MB=2048 \
     -- \
-    //tensorflow/python/distribute:collective_all_reduce_strategy_test_xla_2gpu \
-    //tensorflow/python/keras/utils:multi_gpu_utils_test_xla_2gpu
+    //tensorflow/python/distribute:cross_device_ops_test 2>&1 | tee $LOG_DIR/cross_device_ops_test.log
 
 
-//tensorflow/core/nccl:nccl_manager_test_2gpu 
-//tensorflow/python/distribute:collective_all_reduce_strategy_test_xla_2gpu \
-//tensorflow/python/keras/utils:multi_gpu_utils_test_xla_2gpu \
-# //tensorflow/core/kernels:collective_nccl_test_2gpu 
+# //tensorflow/core/nccl:nccl_manager_test_2gpu
+# //tensorflow/python/distribute:collective_all_reduce_strategy_test_xla_2gpu
+# //tensorflow/python/keras/utils:multi_gpu_utils_test_xla_2gpu
+# //tensorflow/core/kernels:collective_nccl_test_2gpu
