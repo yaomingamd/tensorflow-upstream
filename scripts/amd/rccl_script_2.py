@@ -1,12 +1,60 @@
 import tensorflow as tf
-import numpy as np
 
-import os
-import argparse
+from tensorflow.python.distribute import reduce_util, cross_device_utils, collective_util, cross_device_ops
+from tensorflow.python.framework import indexed_slices, ops
+from tensorflow.python.distribute import values as value_lib
+from tensorflow.python.ops import array_ops
 
-from tensorflow.python.distribute import cluster_resolver as cluster_resolver_lib
-from tensorflow.python.distribute import cross_device_ops as cross_device_ops_lib
-from tensorflow.python.distribute import collective_util
+CollectiveReplicaLauncher = cross_device_utils.CollectiveReplicaLauncher
+CommunicationImplementation = collective_util.CommunicationImplementation
+ReduceOp = reduce_util.ReduceOp
+IndexedSlicesValue = indexed_slices.IndexedSlicesValue
+IndexedSlices = indexed_slices.IndexedSlices
+
+
+def as_list(value):
+    if isinstance(value, ops.Tensor):
+        return [value]
+    elif isinstance(value, IndexedSlices):
+        return [value]
+    elif isinstance(value, value_lib.Mirrored):
+        return value.values
+    else:
+        raise ValueError(
+            "unwrap: unsupported input type: %s" % type(value))
+
+
+def make_per_replica_value(value, devices):
+    """Creates a `PerReplica` object whose values reside in `devices`.
+
+    Args:
+      value: a tensor-convertible value or a `IndexedSlicesValue`, or a callable
+        that takes one argument (`device_idx`) and should return the value that is
+        going to be created on devices[device_idx].
+      devices: a list of device strings to create `PerReplica` values on.
+
+    Returns:
+      A `PerReplica` object.
+    """
+    values = []
+    for device_idx, device in enumerate(devices):
+        if callable(value):
+            v = value(device_idx)
+        elif isinstance(value, list):
+            v = value[device_idx]
+        else:
+            v = value
+        if isinstance(v, IndexedSlicesValue):
+            with ops.device(device):
+                values.append(
+                    IndexedSlices(
+                        values=array_ops.identity(v.values),
+                        indices=array_ops.identity(v.indices),
+                        dense_shape=array_ops.identity(v.dense_shape)))
+        else:
+            with ops.device(device):
+                values.append(array_ops.identity(v))
+    return value_lib.PerReplica(values)
 
 
 def make_collective(num_processes, gpu_per_process):
@@ -26,7 +74,7 @@ def make_collective(num_processes, gpu_per_process):
 
     # cluster_resolver = cluster_resolver_lib.TFConfigClusterResolver()  # not needed locally
     # task_id=cluster_resolver.task_id
-    task_id=0
+    task_id = 0
     devices = [
         "/job:localhost/replica:0/task:%d/device:CPU:0" % task_id
     ]
@@ -36,55 +84,36 @@ def make_collective(num_processes, gpu_per_process):
             (task_id, i) for i in range(gpu_per_process)
         ]
     group_size = num_processes * len(devices)
-    collective = cross_device_ops_lib.CollectiveAllReduce(
+    collective = cross_device_ops.CollectiveAllReduce(
         devices=devices,
         group_size=group_size,
         options=collective_util.Options())
     return collective, devices, task_id
 
 
-collective, devices, pid = make_collective(1, 2)
+num_processes = 1
+reduce_op = ReduceOp.SUM
+communication_options = collective_util.Options(
+    implementation=CommunicationImplementation.NCCL)
+gpus_per_process = 2
+
+collective, devices, pid = make_collective(num_processes, gpus_per_process)
 print(collective, devices, pid)
 
+data_1 = tf.convert_to_tensor([[1.0, 2.0, 3.0, 4.0]])
+data_2 = tf.convert_to_tensor([[9.0, 8.0, 7.0, 6.0]])
+inputs = [data_1, data_2]
 
-# enable xla
-# tf.config.optimizer.set_jit(True)
+def reduce_fn():
+    def value_fn(device_idx): return inputs[pid * len(devices) + device_idx]
+    per_replica_value = make_per_replica_value(value_fn, devices)
+    reduced_values = collective.reduce(reduce_op, per_replica_value,
+                                       per_replica_value,
+                                       communication_options)
+    reduced_values = as_list(reduced_values)
+    print(reduced_values)
+    return [ops.convert_to_tensor(v) for v in reduced_values]
 
 
-# pick distributed strategy
-strategy = tf.distribute.MirroredStrategy(
-    cross_device_ops=tf.distribute.NcclAllReduce(), devices=["/gpu:0", "/gpu:1", "/gpu:2"])
-print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
-
-with strategy.scope():
-    tf.compat.v1.disable_eager_execution()
-
-    # cluster = tf.train.ClusterSpec({"local": ["localhost:2222", "localhost:2223"]})
-    size = 1000000000
-    x = tf.compat.v1.placeholder(tf.float32, size)
-
-    with tf.device("/gpu:0"):
-        first_batch = tf.slice(x, [0], [size//2])
-        mean1 = tf.reduce_sum(first_batch)
-        # mean1 = tf.raw_ops.NcclReduce(input=[first_batch], reduction="sum")
-
-    with tf.device("/gpu:1"):
-        second_batch = tf.slice(x, [size//2], [-1])
-        mean2 = tf.reduce_sum(second_batch)
-        # mean = tf.raw_ops.NcclReduce(
-        #     input=[first_batch, second_batch], reduction="sum")
-        # mean = tf.raw_ops.NcclAllReduce(
-        #     input=[first_batch, second_batch], reduction="sum", num_devices=2, shared_name="ncclallreduce")
-        #
-
-    with tf.device("/gpu:2"):
-        mean = (mean1 + mean2) / 2
-        # mean = tf.reduce_mean([first_batch, second_batch])
-
-    print(first_batch.device, first_batch)
-    print(second_batch.device, second_batch)
-    print(mean.device, mean)
-
-    with tf.compat.v1.Session() as sess:
-        result = sess.run(mean, feed_dict={x: np.random.random(size)})
-        print(result)
+ans = reduce_fn()
+print(ans)
