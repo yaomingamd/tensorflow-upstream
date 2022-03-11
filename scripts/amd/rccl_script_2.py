@@ -5,17 +5,15 @@ from tensorflow.python.framework import indexed_slices, ops
 from tensorflow.python.distribute import values as value_lib
 from tensorflow.python.ops import array_ops
 
-CollectiveReplicaLauncher = cross_device_utils.CollectiveReplicaLauncher
-CommunicationImplementation = collective_util.CommunicationImplementation
-ReduceOp = reduce_util.ReduceOp
-IndexedSlicesValue = indexed_slices.IndexedSlicesValue
-IndexedSlices = indexed_slices.IndexedSlices
 
+# enable xla
+tf.config.optimizer.set_jit(True)
 
+# def helper functions
 def as_list(value):
     if isinstance(value, ops.Tensor):
         return [value]
-    elif isinstance(value, IndexedSlices):
+    elif isinstance(value, indexed_slices.IndexedSlices):
         return [value]
     elif isinstance(value, value_lib.Mirrored):
         return value.values
@@ -44,10 +42,10 @@ def make_per_replica_value(value, devices):
             v = value[device_idx]
         else:
             v = value
-        if isinstance(v, IndexedSlicesValue):
+        if isinstance(v, indexed_slices.IndexedSlicesValue):
             with ops.device(device):
                 values.append(
-                    IndexedSlices(
+                    indexed_slices.IndexedSlices(
                         values=array_ops.identity(v.values),
                         indices=array_ops.identity(v.indices),
                         dense_shape=array_ops.identity(v.dense_shape)))
@@ -92,9 +90,9 @@ def make_collective(num_processes, gpu_per_process):
 
 
 num_processes = 1
-reduce_op = ReduceOp.SUM
+reduce_op = reduce_util.ReduceOp.SUM
 communication_options = collective_util.Options(
-    implementation=CommunicationImplementation.NCCL)
+    implementation=collective_util.CommunicationImplementation.NCCL)
 gpus_per_process = 2
 
 collective, devices, pid = make_collective(num_processes, gpus_per_process)
