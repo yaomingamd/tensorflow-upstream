@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from tensorflow.python.distribute import reduce_util, cross_device_utils, collective_util, cross_device_ops
+from tensorflow.python.distribute import reduce_util, collective_util, cross_device_ops
 from tensorflow.python.framework import indexed_slices, ops
 from tensorflow.python.distribute import values as value_lib
 from tensorflow.python.ops import array_ops
