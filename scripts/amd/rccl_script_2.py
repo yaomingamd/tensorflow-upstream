@@ -107,28 +107,26 @@ def reduce_fn(input_tensor_list, collective, devices, pid,
 
 
 def main(log_dir):
-    num_processes = 1
-    gpus_per_process = 2
-    collective, devices, pid = make_collective(num_processes, gpus_per_process)
-    print(collective, devices, pid)
-
+    # create input
     size = 4
     x = tf.random.uniform([size])
     data_1 = tf.slice(x, [0], [size//2])
     data_2 = tf.slice(x, [size//2], [-1])
-
-    print("Input")
-    print(data_1)
-    print(data_2)
-
     inputs = [data_1, data_2]
+    print("Inputs:")
+    for i in inputs:
+        print(i)
 
-    ans = reduce_fn(inputs, collective, devices, pid)
+    # get outputs
+    num_processes = 1
+    gpus_per_process = 2
+    collective, devices, pid = make_collective(num_processes, gpus_per_process)
+    outputs = reduce_fn(inputs, collective, devices, pid)
+    print("Outputs:")
+    for o in outputs:
+        print(o)
 
-    print("Output")
-    for a in ans:
-        print(a)
-
+    # write tf graph
     sess = tf.compat.v1.Session()
     tf.io.write_graph(sess.graph, log_dir, 'train.pbtxt')
 
