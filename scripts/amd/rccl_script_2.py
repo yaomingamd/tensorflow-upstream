@@ -5,11 +5,15 @@ from tensorflow.python.framework import indexed_slices, ops
 from tensorflow.python.distribute import values as value_lib
 from tensorflow.python.ops import array_ops
 
+# disable eager execution
+# tf.compat.v1.disable_eager_execution()
 
 # enable xla
 tf.config.optimizer.set_jit(True)
 
 # def helper functions
+
+
 def as_list(value):
     if isinstance(value, ops.Tensor):
         return [value]
@@ -90,28 +94,37 @@ def make_collective(num_processes, gpu_per_process):
 
 
 num_processes = 1
-reduce_op = reduce_util.ReduceOp.SUM
-communication_options = collective_util.Options(
-    implementation=collective_util.CommunicationImplementation.NCCL)
 gpus_per_process = 2
-
 collective, devices, pid = make_collective(num_processes, gpus_per_process)
 print(collective, devices, pid)
 
-data_1 = tf.convert_to_tensor([[1.0, 2.0, 3.0, 4.0]])
-data_2 = tf.convert_to_tensor([[9.0, 8.0, 7.0, 6.0]])
+size = 4
+x = tf.random.uniform([size])
+data_1 = tf.slice(x, [0], [size//2])
+data_2 = tf.slice(x, [size//2], [-1])
+
+print(data_1)
+print(data_2)
+
 inputs = [data_1, data_2]
 
-def reduce_fn():
-    def value_fn(device_idx): return inputs[pid * len(devices) + device_idx]
+
+def reduce_fn(input_tensor_list,
+              reduce_op=reduce_util.ReduceOp.SUM,
+              communication_options=collective_util.Options(implementation=collective_util.CommunicationImplementation.NCCL)):
+    def value_fn(
+        device_idx): return input_tensor_list[pid * len(devices) + device_idx]
     per_replica_value = make_per_replica_value(value_fn, devices)
     reduced_values = collective.reduce(reduce_op, per_replica_value,
                                        per_replica_value,
                                        communication_options)
     reduced_values = as_list(reduced_values)
-    print(reduced_values)
     return [ops.convert_to_tensor(v) for v in reduced_values]
 
 
-ans = reduce_fn()
+ans = reduce_fn(inputs)
 print(ans)
+
+# with tf.compat.v1.Session() as sess:
+#         result = sess.run(ans, feed_dict={x: np.random.random(size)})
+#         print(result)
