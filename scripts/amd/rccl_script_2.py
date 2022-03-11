@@ -1,3 +1,5 @@
+import os
+import argparse
 import tensorflow as tf
 
 from tensorflow.python.distribute import reduce_util, collective_util, cross_device_ops
@@ -10,8 +12,6 @@ from tensorflow.python.ops import array_ops
 
 # enable xla
 tf.config.optimizer.set_jit(True)
-
-# def helper functions
 
 
 def as_list(value):
@@ -93,23 +93,7 @@ def make_collective(num_processes, gpu_per_process):
     return collective, devices, task_id
 
 
-num_processes = 1
-gpus_per_process = 2
-collective, devices, pid = make_collective(num_processes, gpus_per_process)
-print(collective, devices, pid)
-
-size = 4
-x = tf.random.uniform([size])
-data_1 = tf.slice(x, [0], [size//2])
-data_2 = tf.slice(x, [size//2], [-1])
-
-print(data_1)
-print(data_2)
-
-inputs = [data_1, data_2]
-
-
-def reduce_fn(input_tensor_list,
+def reduce_fn(input_tensor_list, collective, devices, pid,
               reduce_op=reduce_util.ReduceOp.SUM,
               communication_options=collective_util.Options(implementation=collective_util.CommunicationImplementation.NCCL)):
     def value_fn(
@@ -122,9 +106,36 @@ def reduce_fn(input_tensor_list,
     return [ops.convert_to_tensor(v) for v in reduced_values]
 
 
-ans = reduce_fn(inputs)
-print(ans)
+def main(log_dir):
+    num_processes = 1
+    gpus_per_process = 2
+    collective, devices, pid = make_collective(num_processes, gpus_per_process)
+    print(collective, devices, pid)
 
-# with tf.compat.v1.Session() as sess:
-#         result = sess.run(ans, feed_dict={x: np.random.random(size)})
-#         print(result)
+    size = 4
+    x = tf.random.uniform([size])
+    data_1 = tf.slice(x, [0], [size//2])
+    data_2 = tf.slice(x, [size//2], [-1])
+
+    print("Input")
+    print(data_1)
+    print(data_2)
+
+    inputs = [data_1, data_2]
+
+    ans = reduce_fn(inputs, collective, devices, pid)
+
+    print("Output")
+    for a in ans:
+        print(a)
+
+    sess = tf.compat.v1.Session()
+    tf.io.write_graph(sess.graph, log_dir, 'train.pbtxt')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--log_dir")
+    args = parser.parse_args()
+
+    main(args.log_dir)
