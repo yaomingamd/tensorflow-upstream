@@ -108,18 +108,17 @@ def reduce_fn(input_tensor_list, collective, devices, pid,
 
 def main(log_dir):
     # create input
-    size = 4
-    x = tf.random.uniform([size])
-    data_1 = tf.slice(x, [0], [size//2])
-    data_2 = tf.slice(x, [size//2], [-1])
-    inputs = [data_1, data_2]
+    data_1 = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0])
+    data_2 = tf.constant([10.0, 9.0, 8.0, 7.0, 6.0])
+    data_3 = data_1 + data_2
+    inputs = [data_1, data_2, data_3]
     print("Inputs:")
     for i in inputs:
         print(i)
 
     # get outputs
     num_processes = 1
-    gpus_per_process = 2
+    gpus_per_process = len(inputs)
     collective, devices, pid = make_collective(num_processes, gpus_per_process)
     outputs = reduce_fn(inputs, collective, devices, pid)
     print("Outputs:")
