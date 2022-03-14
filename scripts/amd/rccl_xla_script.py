@@ -8,7 +8,7 @@ from tensorflow.python.distribute import values as value_lib
 from tensorflow.python.ops import array_ops
 
 # disable eager execution
-# tf.compat.v1.disable_eager_execution()
+tf.compat.v1.disable_eager_execution()
 
 # enable xla
 tf.config.optimizer.set_jit(True)
@@ -110,8 +110,7 @@ def main(log_dir):
     # create input
     data_1 = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0])
     data_2 = tf.constant([10.0, 9.0, 8.0, 7.0, 6.0])
-    data_3 = data_1 + data_2
-    inputs = [data_1, data_2, data_3]
+    inputs = [data_1, data_2]
     print("Inputs:")
     for i in inputs:
         print(i)

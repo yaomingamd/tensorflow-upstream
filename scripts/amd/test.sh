@@ -1,1 +1,1 @@
-bash scripts/amd/rccl_test.sh
+bash scripts/amd/rccl_xla_test.sh
