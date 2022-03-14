@@ -108,12 +108,13 @@ def reduce_fn(input_tensor_list, collective, devices, pid,
 
 def main(log_dir):
     # create input
-    data_1 = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0])
-    data_2 = tf.constant([10.0, 9.0, 8.0, 7.0, 6.0])
-    inputs = [data_1, data_2]
-    print("Inputs:")
-    for i in inputs:
-        print(i)
+    with tf.name_scope("Inputs") as scope:
+        data_1 = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0], name="data_1")
+        data_2 = tf.constant([10.0, 9.0, 8.0, 7.0, 6.0], name="data_2")
+        inputs = [data_1, data_2]
+        print("Inputs:")
+        for i in inputs:
+            print(i)
 
     # get outputs
     num_processes = 1
