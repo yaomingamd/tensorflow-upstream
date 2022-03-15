@@ -34,4 +34,4 @@ cat $LOG_DIR/rccl_script.log | grep ShaderName
 chmod -R 777 $LOG_DIR
 
 # visualize graph
-bash scripts/amd/vis_graph.sh
+# bash scripts/amd/vis.sh

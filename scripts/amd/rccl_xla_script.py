@@ -7,11 +7,15 @@ from tensorflow.python.framework import indexed_slices, ops
 from tensorflow.python.distribute import values as value_lib
 from tensorflow.python.ops import array_ops
 
-# disable eager execution
-tf.compat.v1.disable_eager_execution()
+DISABLE_EAGER_EXECUTION = True
+# DISABLE_EAGER_EXECUTION = False
+
+if DISABLE_EAGER_EXECUTION:
+    # NOTE: make sure to run session to launch kernels
+    tf.compat.v1.disable_eager_execution()
 
 # enable xla
-tf.config.optimizer.set_jit(True)
+# tf.config.optimizer.set_jit(True)
 
 
 def as_list(value):
@@ -108,13 +112,12 @@ def reduce_fn(input_tensor_list, collective, devices, pid,
 
 def main(log_dir):
     # create input
-    with tf.name_scope("Inputs") as scope:
-        data_1 = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0], name="data_1")
-        data_2 = tf.constant([10.0, 9.0, 8.0, 7.0, 6.0], name="data_2")
-        inputs = [data_1, data_2]
-        print("Inputs:")
-        for i in inputs:
-            print(i)
+    data_1 = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0])
+    data_2 = tf.constant([10.0, 9.0, 8.0, 7.0, 6.0])
+    inputs = [data_1, data_2]
+    print("Inputs:")
+    for i in inputs:
+        print(i)
 
     # get outputs
     num_processes = 1
@@ -124,10 +127,16 @@ def main(log_dir):
     print("Outputs:")
     for o in outputs:
         print(o)
-
-    # write tf graph
-    sess = tf.compat.v1.Session()
-    tf.io.write_graph(sess.graph, log_dir, 'train.pbtxt')
+    final = tf.add_n(outputs)
+    
+    print("Final")
+    if DISABLE_EAGER_EXECUTION:
+        # write tf graph
+        sess = tf.compat.v1.Session()
+        tf.io.write_graph(sess.graph, log_dir, 'train.pbtxt')
+        print(sess.run(final))
+    else:
+        print(final)
 
 
 if __name__ == '__main__':
