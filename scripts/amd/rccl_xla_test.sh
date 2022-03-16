@@ -20,13 +20,14 @@ LOG_DIR="${1:-$DEFAULT_LOG_DIR}"
 rm -rf $LOG_DIR
 mkdir -p $LOG_DIR
 mkdir -p $LOG_DIR/xla
+mkdir -p $LOG_DIR/ckpts
 chmod -R 777 $LOG_DIR
 
 # run model
 # pip3 install tensorflow_datasets ipywidgets
 # export XLA_FLAGS="--xla_dump_hlo_as_text" 
 export XLA_FLAGS="--xla_dump_hlo_as_text --xla_dump_to=$LOG_DIR/xla" 
-python3 scripts/amd/rccl_xla_script.py --log_dir $LOG_DIR 2>&1 | tee $LOG_DIR/rccl_script.log
+python3 scripts/amd/rccl_xla_script_new.py --log_dir $LOG_DIR 2>&1 | tee $LOG_DIR/rccl_script.log
 
 echo "KERNELS:"
 cat $LOG_DIR/rccl_script.log | grep ShaderName
