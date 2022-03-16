@@ -1,8 +1,3 @@
-from distutils.log import log
-from tensorflow.python.ops import array_ops
-from tensorflow.python.distribute import values as value_lib
-from tensorflow.python.framework import indexed_slices, ops
-from tensorflow.python.distribute import reduce_util, collective_util, cross_device_ops
 import os
 import argparse
 import numpy as np
@@ -31,12 +26,11 @@ def main(log_dir):
     # We are doing this because the first layer in our model is a convolutional
     # layer and it requires a 4D input (batch_size, height, width, channels).
     # batch_size dimension will be added later on.
-    train_images = train_images[..., None]
-    test_images = test_images[..., None]
+    train_images = train_images[1:2, ..., None]
+    train_labels = train_labels[1:2, ...]
 
     # Getting the images in [0, 1] range.
     train_images = train_images / np.float32(255)
-    test_images = test_images / np.float32(255)
 
     # get outputs
     strategy = tf.distribute.MirroredStrategy(
@@ -52,27 +46,16 @@ def main(log_dir):
     # data
     train_dataset = tf.data.Dataset.from_tensor_slices(
         (train_images, train_labels)).shuffle(BUFFER_SIZE).batch(GLOBAL_BATCH_SIZE)
-    test_dataset = tf.data.Dataset.from_tensor_slices(
-        (test_images, test_labels)).batch(GLOBAL_BATCH_SIZE)
     train_dist_dataset = strategy.experimental_distribute_dataset(
         train_dataset)
-    test_dist_dataset = strategy.experimental_distribute_dataset(test_dataset)
 
     def create_model():
         model = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(32, 3, activation='relu'),
-            tf.keras.layers.MaxPooling2D(),
-            tf.keras.layers.Conv2D(64, 3, activation='relu'),
-            tf.keras.layers.MaxPooling2D(),
             tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(64, activation='relu'),
             tf.keras.layers.Dense(10)
         ])
 
         return model
-
-    # Create a checkpoint directory to store the checkpoints.
-    checkpoint_prefix = os.path.join(os.path.join(log_dir, "ckpts"), "ckpt")
 
     # model, optimizer, and checkpoint must be created under `strategy.scope`.
     with strategy.scope():
@@ -86,16 +69,9 @@ def main(log_dir):
             per_example_loss = loss_object(labels, predictions)
             return tf.nn.compute_average_loss(per_example_loss, global_batch_size=GLOBAL_BATCH_SIZE)
 
-        test_loss = tf.keras.metrics.Mean(name='test_loss')
-        train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-            name='train_accuracy')
-        test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-            name='test_accuracy')
-
         # create model
         model = create_model()
         optimizer = tf.keras.optimizers.Adam()
-        checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
 
         def train_step(inputs):
             images, labels = inputs
@@ -108,7 +84,6 @@ def main(log_dir):
             optimizer.apply_gradients(
                 zip(gradients, model.trainable_variables))
 
-            train_accuracy.update_state(labels, predictions)
             return loss
 
         # `run` replicates the provided computation and runs it
@@ -117,6 +92,7 @@ def main(log_dir):
         def distributed_train_step(dataset_inputs):
             per_replica_losses = strategy.run(
                 train_step, args=(dataset_inputs,))
+            # print("per_replica_losses", per_replica_losses)
             return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
                                    axis=None)
 
@@ -125,26 +101,13 @@ def main(log_dir):
             total_loss = 0.0
             num_batches = 0
             for x in train_dist_dataset:
+                # print("x", x)
                 total_loss += distributed_train_step(x)
                 num_batches += 1
             train_loss = total_loss / num_batches
 
-            # # TEST LOOP
-            # for x in test_dist_dataset:
-            #     distributed_test_step(x)
-
-            # if epoch % 2 == 0:
-            #     checkpoint.save(checkpoint_prefix)
-
-            template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
-                        "Test Accuracy: {}")
-            print(template.format(epoch+1, train_loss,
-                                  train_accuracy.result()*100, test_loss.result(),
-                                  test_accuracy.result()*100))
-
-            test_loss.reset_states()
-            train_accuracy.reset_states()
-            test_accuracy.reset_states()
+            template = "Epoch {}, Loss: {}"
+            print(template.format(epoch+1, train_loss))
 
 
 if __name__ == '__main__':
