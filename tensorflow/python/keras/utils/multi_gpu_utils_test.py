@@ -137,8 +137,9 @@ class TestMultiGPUModel(test.TestCase):
         parallel_model.fit(x, y, epochs=2)
 
       with self.assertRaises(ValueError):
+        invalid_device_id = len(keras.backend._get_available_gpus()) + 1
         parallel_model = multi_gpu_utils.multi_gpu_model(
-            model, gpus=[0, 2, 4, 6, 8])
+            model, gpus=[0, 2, 4, 6, 8, invalid_device_id])
         parallel_model.fit(x, y, epochs=2)
 
       with self.assertRaises(ValueError):
