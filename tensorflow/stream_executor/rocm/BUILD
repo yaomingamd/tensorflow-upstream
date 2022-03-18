@@ -95,12 +95,15 @@ cc_library(
     srcs = if_rocm_is_configured(["utils/rocm_collect_value_distribution.cc"]),
     hdrs = if_rocm_is_configured(["utils/rocm_collect_value_distribution.h"]),
     deps = if_rocm_is_configured([
+        "@local_config_rocm//rocm:rocm_headers",
         ":rocm_driver",
         "//tensorflow/stream_executor:stream_executor_headers",
         "//tensorflow/stream_executor/gpu:gpu_executor_header",
         "//tensorflow/stream_executor/gpu:gpu_stream_header",
         "//tensorflow/stream_executor/lib",
     ]),
+    copts = rocm_copts(),
+    alwayslink = True,
 )
 
 cc_library(

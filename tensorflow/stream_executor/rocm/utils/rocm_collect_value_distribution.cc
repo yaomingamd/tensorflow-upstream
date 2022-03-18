@@ -2,6 +2,8 @@
 #include <tuple>
 
 #include "rocm/include/hip/hip_fp16.h"
+//#include "rocm/include/hip/hip_runtime.h"
+#include "hip/hip_runtime.h"
 
 #include "tensorflow/stream_executor/rocm/utils/rocm_collect_value_distribution.h"
 
@@ -15,7 +17,7 @@ struct type_info;
 //  +    1  zero                                    0
 //      23  "denormal buckets", 2^-149 - 2^-127 ,   1 - 23
 //  +  254  "normal buckets",   2^-126 - 2^127  ,  24 - 277
-//  +    3  zero,                                 278 = 279
+//  +    2  inf, nan,,                             278 = 279
 //     ---
 //     280
 
@@ -45,7 +47,7 @@ struct type_info<float> {
 //  +    1  zero                                  0
 //      10  "denormal buckets", 2^-24 - 2^-15 ,   1 - 10
 //  +   30  "normal buckets",   2^-14 - 2^15  ,  11 - 40
-//  +    3  inf, nan,                            41 - 42
+//  +    2  inf, nan,                            41 - 42
 //     ---
 //      43
 
@@ -83,6 +85,7 @@ struct type_utils {
     return *((T*)&bit_pattern);
   }
 
+  __host__ __device__ 
   static std::tuple<uint32_t, uint32_t, uint32_t> get_sign_exponent_mantissa(
       T value) {
     bit_pattern_type bit_pattern = *((bit_pattern_type*)&value);
@@ -95,6 +98,7 @@ struct type_utils {
     return std::tie(sign, exponent, mantissa);
   }
 
+  __host__ __device__ 
   static uint32_t get_bucket_id(uint32_t sign, uint32_t exponent,
                                 uint32_t mantissa) {
     uint32_t bucket_id = 0;
@@ -121,6 +125,7 @@ struct type_utils {
     return bucket_id;
   }
 
+  __host__ __device__ 
   static std::tuple<uint32_t, uint32_t, uint32_t> get_sign_exponent_mantissa(
       uint32_t bucket_id) {
     uint32_t sign = std::rand() % 2;
@@ -172,8 +177,8 @@ uint32_t CollectValueDistribution<T>::get_num_buckets() {
 }
 
 template <typename T>
-uint32_t CollectValueDistribution<T>::get_bucket_count(int bucket_id) {
-  uint32_t count = 0;
+uint64_t CollectValueDistribution<T>::get_bucket_count(int bucket_id) {
+  uint64_t count = 0;
   if (bucket_id < num_buckets_) {
     count = bucket_counts_[bucket_id];
   }
@@ -200,18 +205,53 @@ void CollectValueDistribution<T>::process_data(T* data, int num_elems) {
 }
 
 template <typename T>
+__global__ void exponent_bucket_count_gpu_kernel(T* data, int num_elems, uint64_t* result) {
+  int idx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (idx < num_elems) {
+    uint32_t sign, exponent, mantissa;
+    auto tmp = type_utils<T>::get_sign_exponent_mantissa(data[idx]);
+    sign = std::get<0>(tmp);
+    exponent = std::get<1>(tmp);
+    mantissa = std::get<2>(tmp);
+    uint32_t bucket_id = type_utils<T>::get_bucket_id(sign, exponent, mantissa);
+    atomicAdd(&result[bucket_id], 1);
+  }
+}
+
+template <typename T>
+void CollectValueDistribution<T>::process_data_gpu(hipStream_t stream, void* data, int num_elems) {
+  bucket_counts_mutex_.lock();
+
+  uint64_t* result;
+  size_t result_size = sizeof(uint64_t)*get_num_buckets();
+  hipMalloc(&result, result_size);
+  hipMemcpyAsync(result, bucket_counts_, result_size, hipMemcpyHostToDevice, stream);
+
+  T* data_T = reinterpret_cast<T*>(data);
+
+  int threads_per_block = 256;
+  int num_blocks = (num_elems + threads_per_block -1 ) / threads_per_block;
+  hipLaunchKernelGGL(exponent_bucket_count_gpu_kernel, dim3(num_blocks,1,1), dim3(threads_per_block,1,1), 0, stream, data_T, num_elems, result); 
+  hipMemcpyAsync(bucket_counts_, result, result_size, hipMemcpyDeviceToHost, stream);
+  hipStreamSynchronize(stream);
+  hipFree(result);
+
+  bucket_counts_mutex_.unlock();
+}
+
+template <typename T>
 void CollectValueDistribution<T>::dump_data() {
   bucket_counts_mutex_.lock();
   std::printf("%s_bucket_counts = [", name_.c_str());
   for (int i = 0; i < num_buckets_; i++) {
-    std::printf("%u,", bucket_counts_[i]);
+    std::printf("%lu,", bucket_counts_[i]);
   }
   std::printf("]\n");
   bucket_counts_mutex_.unlock();
 }
 
 template <typename T>
-void generate_test_data(T* test_data, int N, int* bucket_counts) {
+void generate_test_data(T* test_data, int N, uint64_t* bucket_counts) {
   for (int i = 0; i < N; i++) {
     uint32_t sign = 0;
     uint32_t exponent = 0;
@@ -240,7 +280,7 @@ template class CollectValueDistribution<float>;
 template class CollectValueDistribution<half>;
 
 template void generate_test_data<float>(float* test_data, int N,
-                                        int* expected_bucket_counts);
+                                        uint64_t* expected_bucket_counts);
 
 template void generate_test_data<half>(half* test_data, int N,
-                                       int* expected_bucket_counts);
+                                       uint64_t* expected_bucket_counts);

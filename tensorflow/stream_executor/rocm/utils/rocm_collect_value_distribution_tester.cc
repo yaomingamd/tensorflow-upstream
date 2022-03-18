@@ -6,9 +6,10 @@
 #define NUM_TEST_VALUES 10000
 #define BUCKET_ARRAY_SIZE 512
 
-int test_fp32() {
-  float test_data[NUM_TEST_VALUES];
-  int expected_bucket_counts[BUCKET_ARRAY_SIZE];
+template <typename T>
+int test_rocm_collect_value_distribution(bool test_gpu=false) {
+  T test_data[NUM_TEST_VALUES];
+  uint64_t expected_bucket_counts[BUCKET_ARRAY_SIZE];
 
   for (int i = 0; i < BUCKET_ARRAY_SIZE; i++) {
     expected_bucket_counts[i] = 0;
@@ -16,50 +17,33 @@ int test_fp32() {
 
   generate_test_data(test_data, NUM_TEST_VALUES, expected_bucket_counts);
 
-  CollectValueDistribution<float> actual_data("cvd");
+  CollectValueDistribution<T> actual_data("cvd");
   uint32_t num_buckets = actual_data.get_num_buckets();
 
-  actual_data.process_data(test_data, NUM_TEST_VALUES);
+  if (test_gpu) {
+    hipStream_t stream;
+    hipStreamCreate(&stream);
+    T* test_data_gpu;
+    hipMalloc(&test_data_gpu, sizeof(T)*NUM_TEST_VALUES);
+    hipMemcpyAsync(test_data_gpu, test_data, sizeof(T)*NUM_TEST_VALUES, hipMemcpyHostToDevice, stream);
+    actual_data.process_data_gpu(stream, test_data_gpu, NUM_TEST_VALUES);
+    hipFree(test_data_gpu);
+    hipStreamDestroy(stream);
+  }
+  else {
+    actual_data.process_data(test_data, NUM_TEST_VALUES);
+  }
 
   bool found_mismatch = false;
   for (int i = 0; i < num_buckets; i++) {
     if (actual_data.get_bucket_count(i) != expected_bucket_counts[i]) {
-      std::printf("mismatch for %d, %d != %d\n", i,
+      std::printf("mismatch for %d, %lu != %lu\n", i,
                   actual_data.get_bucket_count(i), expected_bucket_counts[i]);
       found_mismatch = true;
     }
   }
 
-  std::printf("%s\n",
-              (found_mismatch ? "TEST ***** FAILED *****" : "TEST  PASSED"));
-
-  return found_mismatch;
-}
-
-int test_fp16() {
-  half test_data[NUM_TEST_VALUES];
-  int expected_bucket_counts[BUCKET_ARRAY_SIZE];
-
-  for (int i = 0; i < BUCKET_ARRAY_SIZE; i++) {
-    expected_bucket_counts[i] = 0;
-  }
-  generate_test_data(test_data, NUM_TEST_VALUES, expected_bucket_counts);
-
-  CollectValueDistribution<half> actual_data("cvd");
-  uint32_t num_buckets = actual_data.get_num_buckets();
-
-  actual_data.process_data(test_data, NUM_TEST_VALUES);
-
-  bool found_mismatch = false;
-  for (int i = 0; i < num_buckets; i++) {
-    if (actual_data.get_bucket_count(i) != expected_bucket_counts[i]) {
-      std::printf("mismatch for %d, %d != %d\n", i,
-                  actual_data.get_bucket_count(i), expected_bucket_counts[i]);
-      found_mismatch = true;
-    }
-  }
-
-  std::printf("%s\n",
+  std::printf("%s %s\n", (test_gpu ? "GPU" : "CPU"),
               (found_mismatch ? "TEST ***** FAILED *****" : "TEST  PASSED"));
 
   return found_mismatch;
@@ -68,9 +52,17 @@ int test_fp16() {
 int main() {
   int errors = 0;
 
-  errors += test_fp32();
+  std::printf("Testing for fp32\n");
 
-  errors += test_fp16();
+  errors += test_rocm_collect_value_distribution<float>();
+
+  errors += test_rocm_collect_value_distribution<float>(true);
+
+  std::printf("Testing for fp16\n");
+
+  errors += test_rocm_collect_value_distribution<half>();
+
+  errors += test_rocm_collect_value_distribution<half>(true);
 
   return errors;
 }
