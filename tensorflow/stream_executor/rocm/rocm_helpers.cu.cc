@@ -49,14 +49,16 @@ __global__ void Quant8_inplace(T* _p, int32_t count, bool stoch, bool nanoo, uin
   IT x = p[i];
 ///  constexpr bool nanoo=false;
   uint8_t y;
-
+  typedef FT dtype;
   T fx = fp[i];
+  if(__hisinf(fx) || __hisnan(fx))
+    return;
   if(!stoch)
   {
     if(nanoo)
-      y = hip_f8_impl::cast_to_f8<wm,we,float,true,true>(float(fx), false);
+      y = hip_f8_impl::cast_to_f8<wm,we,dtype,true,true>(fx, false);
     else
-      y = hip_f8_impl::cast_to_f8<wm,we,float,false,true>(float(fx), false);
+      y = hip_f8_impl::cast_to_f8<wm,we,dtype,false,true>(fx, false);
   }
   else {
     uint32_t drop_bits = uint32_t(x) & 0xFFFFu;
@@ -70,12 +72,15 @@ __global__ void Quant8_inplace(T* _p, int32_t count, bool stoch, bool nanoo, uin
     else
       y = hip_f8_impl::cast_to_f8<wm,we,float,false,true>(fx, true, rng);
   }
-  float newfp;
+  dtype newfp;
   if(nanoo)
-    newfp = hip_f8_impl::cast_from_f8<wm,we,float,true>(y);
+    newfp = hip_f8_impl::cast_from_f8<wm,we,dtype,true>(y);
   else
-    newfp = hip_f8_impl::cast_from_f8<wm,we,float,false>(y);
-  fp[i]=T(newfp);
+    newfp = hip_f8_impl::cast_from_f8<wm,we,dtype,false>(y);
+  fx=T(newfp);
+  if(__hisinf(fx) || __hisnan(fx))
+    return;
+  fp[i]=fx;
 }
 
 template __global__ void Quant8_inplace<__half,5,2>(__half* _p, int32_t count, bool stoch, bool nanoo, uint32_t seed);

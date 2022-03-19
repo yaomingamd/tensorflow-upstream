@@ -274,6 +274,11 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
         &padding[i].first, &padding[i].second));
   }
 
+  xla::PrecisionConfig cfg;
+  if(precision_config)
+    cfg = *precision_config;
+  SetXlaPrecisionConfigF8Flags(cfg, grad_flags, grad_flags & 1, grad_flags & 2);
+  precision_config = &cfg;
   if (padding_type != xla::PaddingType::PADDING_INVALID) {
     auto retval = xla::DynamicConvForward(
         conv_input, filter, window_strides, padding, lhs_dilation, rhs_dilation,
@@ -284,7 +289,6 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
     builder->SetInstructionFrontendAttribute(retval, "grad_flags", std::to_string(grad_flags));
     return retval;
   }
-
   auto retval = xla::ConvGeneralDilated(
       conv_input, filter, window_strides, padding, lhs_dilation, rhs_dilation,
       dims,
@@ -299,6 +303,12 @@ StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(
     xla::XlaOp out_backprop, const ConvOpAttrs& attrs,
     const xla::PrecisionConfig* precision_config, xla::XlaOp* input_sizes, int grad_flags) {
   TF_RETURN_IF_ERROR(CheckConvAttrs(attrs));
+
+  xla::PrecisionConfig cfg;
+  if(precision_config)
+    cfg = *precision_config;
+  SetXlaPrecisionConfigF8Flags(cfg, grad_flags, grad_flags & 1, grad_flags & 2);
+  precision_config = &cfg;
 
   int num_dims = attrs.num_spatial_dims + 2;
   int batch_dim = GetTensorBatchDimIndex(num_dims, attrs.data_format);
@@ -401,6 +411,12 @@ StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(
     const xla::Shape& filter_shape, xla::XlaOp gradients,
     const ConvOpAttrs& attrs, const xla::PrecisionConfig* precision_config, int grad_flags) {
   TF_RETURN_IF_ERROR(CheckConvAttrs(attrs));
+
+  xla::PrecisionConfig cfg;
+  if(precision_config)
+    cfg = *precision_config;
+  SetXlaPrecisionConfigF8Flags(cfg, grad_flags, grad_flags & 1, grad_flags & 2);
+  precision_config = &cfg;
 
   auto* builder = activations.builder();
   TF_ASSIGN_OR_RETURN(xla::Shape activations_shape,

@@ -634,7 +634,8 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
       TF_RET_CHECK(proto.has_window());
       TF_RET_CHECK(proto.has_convolution_dimension_numbers());
       PrecisionConfig precision_config = proto.precision_config();
-      precision_config.mutable_operand_precision()->Resize(
+      if(precision_config.mutable_operand_precision()->size() < proto.operand_ids_size())
+        precision_config.mutable_operand_precision()->Resize(
           proto.operand_ids_size(), PrecisionConfig::DEFAULT);
       instruction = CreateConvolve(
           shape, operands(0), operands(1),
@@ -725,7 +726,8 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
       custom_call_instr->set_padding_type(proto.padding_type());
 
       PrecisionConfig precision_config = proto.precision_config();
-      precision_config.mutable_operand_precision()->Resize(
+      if(precision_config.mutable_operand_precision()->size() < proto.operand_ids_size())
+        precision_config.mutable_operand_precision()->Resize(
           proto.operand_ids_size(), PrecisionConfig::DEFAULT);
       *custom_call_instr->mutable_precision_config() = precision_config;
       std::vector<std::pair<ShapeIndex, std::pair<int64_t, ShapeIndex>>>

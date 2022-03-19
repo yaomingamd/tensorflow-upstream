@@ -1368,7 +1368,6 @@ void Quant8_inplace(__half* _p, int32_t count, uint32_t seed, hipStream_t stream
 void inplace_fp16_to_bf16(void* data, int nElements, hipStream_t stream);
 void inplace_bf16_to_fp16(void* data, int nElements, hipStream_t stream);
 
-
 port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                                   blas::Transpose transb, uint64_t m, uint64 n,
                                   uint64_t k, blas::DataType dtype,
@@ -1423,15 +1422,19 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                                  &abort_on_uninit);
             if(abort_on_uninit)
               exit(-1);
-
-//            exit(0);
         }
         bool hasFP8 = true;
-        bool denorm_fix = false;
+        int64_t env_f8_ext=0;
+        tensorflow::ReadInt64FromEnvVar("TF_ROCM_F8_EXT", 0, &env_f8_ext);
+        bool denorm_fix = !(env_f8_ext & 1);
+        int save_grad_flags = grad_flags;
         port::Status retval;
-//        bool stoch=true, nanoo=true;
-//        tensorflow::ReadBoolFromEnvVar("F8_SR", false, &stoch);
-//        tensorflow::ReadBoolFromEnvVar("F8_NANO", false, &nanoo);
+        __half* pA = 0;
+        __half* pB = 0;
+        __half* pC = 0;
+        pA = const_cast<__half*>(reinterpret_cast<const __half*>(a.opaque()));
+        pB = const_cast<__half*>(reinterpret_cast<const __half*>(b.opaque()));
+        pC = const_cast<__half*>(reinterpret_cast<const __half*>(c->opaque()));
         if(hasFP8 && (grad_flags & 4)) {
           int64_t env_f8;
           tensorflow::ReadInt64FromEnvVar("TF_ROCM_F8", 0, &env_f8);
@@ -1443,28 +1446,43 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
           }
           bool stoch = (grad_flags & 8);
           bool nanoo = (grad_flags & 16);
+
           std::random_device rd;
           std::mt19937 gen(rd());
           std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
           uint32_t seed = distribution(gen);
-          Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(a.opaque())), m*k, seed, AsGpuStreamValue(stream), (grad_flags>>0) & 1, stoch, nanoo);
+          uint32_t* p;
+          env_f8_ext >>= 6; // 2048 -> 32
+          bool stoch1 = stoch, stoch2 = stoch;
+          if((env_f8_ext & 32) && ((grad_flags&3)==0))
+            stoch1=false;
+          if((env_f8_ext & 64) && ((grad_flags&3)==0))
+            stoch2=false;
+          if((env_f8_ext & 128) && ((grad_flags&3)==1))
+            stoch1=false;
+          if((env_f8_ext & 256) && ((grad_flags&3)==1))
+            stoch2=false;
+          if((env_f8_ext & 512) && ((grad_flags&3)==2))
+            stoch1=false;
+          if((env_f8_ext & 1024) && ((grad_flags&3)==2))
+            stoch2=false;
+          Quant8_inplace(pA, m*k, seed, AsGpuStreamValue(stream), (grad_flags>>0) & 1, stoch1, nanoo);
           seed = distribution(gen);
-          Quant8_inplace(const_cast<__half*>(reinterpret_cast<const __half*>(b.opaque())), n*k, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1, stoch, nanoo);
+          Quant8_inplace(pB, n*k, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1, stoch2, nanoo);
         }
-        else {
-          //printf("ERROR: not doing f8 gemm\n");
-          //exit(0);
-        } 
+
         if(denorm_fix) {
-          inplace_fp16_to_bf16((void*)a.opaque(), m*k, AsGpuStreamValue(stream));
-          inplace_fp16_to_bf16((void*)b.opaque(), n*k, AsGpuStreamValue(stream));
+          inplace_fp16_to_bf16((void*)pA, m*k, AsGpuStreamValue(stream));
+          inplace_fp16_to_bf16((void*)pB, n*k, AsGpuStreamValue(stream));
+          if(*(const float*)beta != 0.0f)
+            inplace_fp16_to_bf16((void*)pC, m*n, AsGpuStreamValue(stream));
         }
         auto dtype = denorm_fix ? rocblas_datatype_bf16_r : rocblas_datatype_f16_r;
         retval = DoBlasInternalStatus(
             wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
             ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
-            (rocblas_int)m, (rocblas_int)n, (rocblas_int)k, alpha, a.opaque(),
-            dtype, lda, b.opaque(), dtype,
+            (rocblas_int)m, (rocblas_int)n, (rocblas_int)k, alpha, pA,
+            dtype, lda, pB, dtype,
             ldb, beta, c->opaque(), dtype, ldc, c->opaque(),
             dtype, ldc, rocblas_datatype_f32_r,
             rocblas_gemm_algo_standard, 0, 0);

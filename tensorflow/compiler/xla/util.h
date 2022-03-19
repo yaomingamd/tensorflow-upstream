@@ -671,8 +671,8 @@ inline PrecisionConfig PrecisionConfigHIGHEST()
 
 inline void SetXlaPrecisionConfigF8Flags(PrecisionConfig& cfg, int f8, bool grad_a, bool grad_b, bool noclip=false, bool sr=false, bool nano=false)
 {
-    cfg.add_operand_precision(f8 ? (grad_a ? PrecisionConfig::F8GRAD : PrecisionConfig::F8) : PrecisionConfig::F8OFF );
-    cfg.add_operand_precision(f8 ? (grad_b ? PrecisionConfig::F8GRAD : PrecisionConfig::F8) : PrecisionConfig::F8OFF );
+    cfg.add_operand_precision((f8&4) ? (grad_a ? PrecisionConfig::F8GRAD : PrecisionConfig::F8) : PrecisionConfig::F8OFF );
+    cfg.add_operand_precision((f8&4) ? (grad_b ? PrecisionConfig::F8GRAD : PrecisionConfig::F8) : PrecisionConfig::F8OFF );
     if(sr || (f8 & 8))
       cfg.add_operand_precision(PrecisionConfig::F8SR);
     if(nano || (f8 & 16))

@@ -3013,7 +3013,9 @@ class RocmConvRunner : public dnn::ConvRunner {
                  BatchDescriptor input_descriptor,
                  BatchDescriptor output_descriptor,
                  FilterDescriptor filter_descriptor,
-                 ConvolutionDescriptor conv_descriptor)
+                 ConvolutionDescriptor conv_descriptor,
+                 bool denorm_fix,
+                 ScratchAllocator* allocator)
       : parent_(parent),
         miopen_(miopen),
         algo_id_(algo_id),
@@ -3023,14 +3025,16 @@ class RocmConvRunner : public dnn::ConvRunner {
         input_descriptor_(input_descriptor),
         output_descriptor_(output_descriptor),
         filter_descriptor_(filter_descriptor),
-        denorm_fix_(false),
         input_type_(input_type),
+        denorm_fix_(denorm_fix),
         fake_element_type_(denorm_fix_ ? miopenBFloat16 : ToMIOpenDataType(input_type)),
         input_desc_(input_descriptor, fake_element_type_),
         output_desc_(output_descriptor, fake_element_type_),
         filter_desc_(filter_descriptor, fake_element_type_),
-        conv_desc_(conv_descriptor, fake_element_type_)
+        conv_desc_(conv_descriptor, fake_element_type_),
+        _allocator(allocator)
     {
+
       grad_flags_ = conv_descriptor.grad_flags();
       if(!(grad_flags_ & 256)) {
         printf("ERROR: uninitialized grad_flags in ConvolutionDescriptor\n");
@@ -3082,10 +3086,11 @@ class RocmConvRunner : public dnn::ConvRunner {
       }
     }
 
-
-  if(input_type_ == dnn::DataType::kHalf) {
-    __half* p1, *p2;
-    uint64_t sz1=0, sz2=0;
+    int64_t env_f8_ext=0;
+    tensorflow::ReadInt64FromEnvVar("TF_ROCM_F8_EXT", 0, &env_f8_ext);
+    int grad_flags = grad_flags_;
+    __half* p1, *p2, *p3;
+    uint64_t sz1=0, sz2=0, sz3=0;
     int Cin = filter_descriptor_.input_feature_map_count();
     int Cout = filter_descriptor_.output_feature_map_count();
     int fh = filter_descriptor_.input_filter_height();
@@ -3094,21 +3099,30 @@ class RocmConvRunner : public dnn::ConvRunner {
     if(kind_ == dnn::ConvolutionKind::FORWARD) {
        p1 = const_cast<__half*>(reinterpret_cast<const __half*>(input_data.opaque()));
        p2 = const_cast<__half*>(reinterpret_cast<const __half*>(filter_data.opaque()));
+       p3 = const_cast<__half*>(reinterpret_cast<const __half*>(output_data.opaque()));
        sz1 = input_descriptor_.ElementCount();
        sz2 = nFilterElem;
+       sz3 = output_descriptor_.ElementCount();
     } else if(kind_ == dnn::ConvolutionKind::BACKWARD_DATA) {
-       //TODO: Confirm that filter and input data does not need 152 in backward convolution
        p1 = const_cast<__half*>(reinterpret_cast<const __half*>(output_data.opaque()));
        p2 = const_cast<__half*>(reinterpret_cast<const __half*>(filter_data.opaque()));
+       p3 = const_cast<__half*>(reinterpret_cast<const __half*>(input_data.opaque()));
        sz1 = output_descriptor_.ElementCount();
        sz2 = nFilterElem;
+       sz3 = input_descriptor_.ElementCount();
     } else {
        p1 = const_cast<__half*>(reinterpret_cast<const __half*>(output_data.opaque()));
        p2 = const_cast<__half*>(reinterpret_cast<const __half*>(input_data.opaque()));
+       p3 = const_cast<__half*>(reinterpret_cast<const __half*>(filter_data.opaque()));
        sz1 = output_descriptor_.ElementCount();
        sz2 = input_descriptor_.ElementCount();
-     }
-      if(f8) {
+       sz3 = nFilterElem;
+    }
+    void* input1 = p1;
+    void* input2 = p2;
+    void* output = p3;
+    if(input_type_ == dnn::DataType::kHalf) {
+    if(f8) {
         int64_t env_f8;
         tensorflow::ReadInt64FromEnvVar("TF_ROCM_F8", 0, &env_f8);
         env_f8 >>= 1;
@@ -3119,26 +3133,37 @@ class RocmConvRunner : public dnn::ConvRunner {
         }
         bool stoch = (grad_flags_ & 8);
         bool nanoo = (grad_flags_ & 16);
-//        bool stoch=true, nanoo=true;
-//        tensorflow::ReadBoolFromEnvVar("F8_SR", false, &stoch);
-//        tensorflow::ReadBoolFromEnvVar("F8_NANO", false, &nanoo);
+        bool stoch1 = stoch, stoch2 = stoch;
+        if((env_f8_ext & 32) && ((grad_flags&3)==0))
+          stoch1=false;
+        if((env_f8_ext & 64) && ((grad_flags&3)==0))
+          stoch2=false;
+        if((env_f8_ext & 128) && ((grad_flags&3)==1))
+          stoch1=false;
+        if((env_f8_ext & 256) && ((grad_flags&3)==1))
+          stoch2=false;
+        if((env_f8_ext & 512) && ((grad_flags&3)==2))
+          stoch1=false;
+        if((env_f8_ext & 1024) && ((grad_flags&3)==2))
+          stoch2=false;
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<uint32_t> distribution(0,0xFFFFFFFF);
         uint32_t seed = distribution(gen);
-        Quant8_inplace(p1, sz1, seed, AsGpuStreamValue(stream), grad_flags_ & 1, stoch, nanoo);
+        uint32_t* p;
+        Quant8_inplace((__half*)input1, sz1, seed, AsGpuStreamValue(stream), grad_flags & 1, stoch1, nanoo);
         seed = distribution(gen);
-        Quant8_inplace(p2, sz2, seed, AsGpuStreamValue(stream), (grad_flags_>>1) & 1, stoch , nanoo);
+        Quant8_inplace((__half*)input2, sz2, seed, AsGpuStreamValue(stream), (grad_flags>>1) & 1, stoch2, nanoo);
       }
       if(denorm_fix_) {
-        inplace_fp16_to_bf16(p1, sz1, AsGpuStreamValue(stream));
-        inplace_fp16_to_bf16(p2, sz2, AsGpuStreamValue(stream));
+        inplace_fp16_to_bf16(input1, sz1, AsGpuStreamValue(stream));
+        inplace_fp16_to_bf16(input2, sz2, AsGpuStreamValue(stream));
       }
       VLOG(3) << "sz1=" << sz1 << ", sz2=" << sz2 
             << ", input size=" << input_data.size()/sizeof(__half) 
             << ", filter size=" << filter_data.size()/sizeof(__half)
             << ", output size=" << output_data.size()/sizeof(__half) ;
-  }
+    }
 
 
     miopenStatus_t status = miopenStatusSuccess;
@@ -3146,18 +3171,18 @@ class RocmConvRunner : public dnn::ConvRunner {
       case dnn::ConvolutionKind::FORWARD: {
         if (use_immediate_mode_) {
           status = wrap::miopenConvolutionForwardImmediate(
-              miopen.handle(), filter_desc_.handle(), filter_data.opaque(),
-              input_desc_.handle(), input_data.opaque(), conv_desc_.handle(),
-              output_desc_.handle(), output_data.opaque(),
+              miopen.handle(), filter_desc_.handle(), input2,
+              input_desc_.handle(), input1, conv_desc_.handle(),
+              output_desc_.handle(), output,
               scratch_memory.opaque(), scratch_memory.size(),
               static_cast<uint64_t>(algo_id_));
         } else {
           status = wrap::miopenConvolutionForward(
               miopen.handle(), &alpha, input_desc_.handle(),
-              input_data.opaque(), filter_desc_.handle(), filter_data.opaque(),
+              input1, filter_desc_.handle(), input2,
               conv_desc_.handle(),
               static_cast<miopenConvFwdAlgorithm_t>(algo_id_), &beta,
-              output_desc_.handle(), output_data.opaque(),
+              output_desc_.handle(), output,
               scratch_memory.opaque(), scratch_memory.size());
         }
 
@@ -3166,18 +3191,18 @@ class RocmConvRunner : public dnn::ConvRunner {
       case dnn::ConvolutionKind::BACKWARD_DATA: {
         if (use_immediate_mode_) {
           status = wrap::miopenConvolutionBackwardDataImmediate(
-              miopen.handle(), output_desc_.handle(), output_data.opaque(),
-              filter_desc_.handle(), filter_data.opaque(), conv_desc_.handle(),
-              input_desc_.handle(), input_data.opaque(),
+              miopen.handle(), output_desc_.handle(), input1,
+              filter_desc_.handle(), input2, conv_desc_.handle(),
+              input_desc_.handle(), output,
               scratch_memory.opaque(), scratch_memory.size(),
               static_cast<uint64_t>(algo_id_));
         } else {
           status = wrap::miopenConvolutionBackwardData(
               miopen.handle(), &alpha, output_desc_.handle(),
-              output_data.opaque(), filter_desc_.handle(), filter_data.opaque(),
+              input1, filter_desc_.handle(), input2,
               conv_desc_.handle(),
               static_cast<miopenConvBwdDataAlgorithm_t>(algo_id_), &beta,
-              input_desc_.handle(), input_data.opaque(),
+              input_desc_.handle(), output,
               scratch_memory.opaque(), scratch_memory.size());
         }
         break;
@@ -3185,18 +3210,18 @@ class RocmConvRunner : public dnn::ConvRunner {
       case dnn::ConvolutionKind::BACKWARD_FILTER: {
         if (use_immediate_mode_) {
           status = wrap::miopenConvolutionBackwardWeightsImmediate(
-              miopen.handle(), output_desc_.handle(), output_data.opaque(),
-              input_desc_.handle(), input_data.opaque(), conv_desc_.handle(),
-              filter_desc_.handle(), filter_data.opaque(),
+              miopen.handle(), output_desc_.handle(), input1,
+              input_desc_.handle(), input2, conv_desc_.handle(),
+              filter_desc_.handle(), output,
               scratch_memory.opaque(), scratch_memory.size(),
               static_cast<uint64_t>(algo_id_));
         } else {
           status = wrap::miopenConvolutionBackwardWeights(
               miopen.handle(), &alpha, output_desc_.handle(),
-              output_data.opaque(), input_desc_.handle(), input_data.opaque(),
+              input1, input_desc_.handle(), input2,
               conv_desc_.handle(),
               static_cast<miopenConvBwdWeightsAlgorithm_t>(algo_id_), &beta,
-              filter_desc_.handle(), filter_data.opaque(),
+              filter_desc_.handle(), output,
               scratch_memory.opaque(), scratch_memory.size());
         }
         break;
@@ -3205,18 +3230,11 @@ class RocmConvRunner : public dnn::ConvRunner {
         return port::InternalError(absl::StrCat("Unexpected convolution kind ",
                                                 static_cast<int>(kind_)));
     }
-  if(denorm_fix_) {
-    int Cin = filter_descriptor_.input_feature_map_count();
-    int Cout = filter_descriptor_.output_feature_map_count();
-    int fh = filter_descriptor_.input_filter_height();
-    int fw = filter_descriptor_.input_filter_width();
-    int nFilterElem = Cin * Cout * fw * fh;
-    inplace_bf16_to_fp16(output_data.opaque(), output_descriptor_.ElementCount(), AsGpuStreamValue(stream));
-    inplace_bf16_to_fp16(filter_data.opaque(), fw*fh*Cin*Cout, AsGpuStreamValue(stream));
-    inplace_bf16_to_fp16(input_data.opaque(), input_descriptor_.ElementCount(), AsGpuStreamValue(stream));
-  }
-
-
+    if(denorm_fix_) {
+      inplace_bf16_to_fp16(input1, sz1, AsGpuStreamValue(stream));
+      inplace_bf16_to_fp16(input2, sz2, AsGpuStreamValue(stream));
+      inplace_bf16_to_fp16(output, sz3, AsGpuStreamValue(stream));
+    }
     if (is_profiling) {
       if (!timer->Stop(AsGpuStream(stream))) {
         timer->Destroy();
@@ -3240,6 +3258,10 @@ class RocmConvRunner : public dnn::ConvRunner {
     return port::Status::OK();
   }
 
+  ~RocmConvRunner()
+  {
+  }
+
  private:
   GpuExecutor* parent_;
   MIOpenAccess* miopen_;
@@ -3258,7 +3280,9 @@ class RocmConvRunner : public dnn::ConvRunner {
   BatchDescriptor input_descriptor_;
   BatchDescriptor output_descriptor_;
   FilterDescriptor filter_descriptor_;
+  ScratchAllocator* _allocator;
   int grad_flags_;
+  mutable DeviceMemory<__half> allocated;
 };
 
 port::Status MIOpenSupport::DoConvolve(
@@ -3275,7 +3299,7 @@ port::Status MIOpenSupport::DoConvolve(
       auto runner,
       ConvolveRunnerFromDesc(stream, algorithm_desc, kind, element_type,
                              output_type, input_descriptor, filter_descriptor,
-                             output_descriptor, convolution_descriptor));
+                             output_descriptor, convolution_descriptor, 0));
 
   return (*runner)(stream, input_data, filter_data, output_data, scratch_memory,
                    output_profile_result);
@@ -3328,7 +3352,7 @@ port::Status MIOpenSupport::GetConvolveRunners(
         auto runner, ConvolveRunnerFromDesc(
                          stream, profile_result.algorithm(), kind, input_type,
                          output_type, input_descriptor, filter_descriptor,
-                         output_descriptor, convolution_descriptor));
+                         output_descriptor, convolution_descriptor, scratch_allocator));
     out_runners->push_back(std::move(runner));
   }
 
@@ -3342,7 +3366,7 @@ MIOpenSupport::ConvolveRunnerFromDesc(
     dnn::DataType output_type, const dnn::BatchDescriptor& input_descriptor,
     const dnn::FilterDescriptor& filter_descriptor,
     const dnn::BatchDescriptor& output_descriptor,
-    const dnn::ConvolutionDescriptor& convolution_descriptor) {
+    const dnn::ConvolutionDescriptor& convolution_descriptor, ScratchAllocator* scratch_allocator) {
   if (input_type != output_type) {
     return port::UnimplementedError(
         absl::StrFormat("MIOpen backend does not support different input and "
@@ -3356,10 +3380,26 @@ MIOpenSupport::ConvolveRunnerFromDesc(
         "MIOpenSupport::ConvolveRunnerFromDesc requires "
         "AlgorithmProto.workspace_size, but it was missing.");
   }
+  int64_t env_f8_ext=0;
+  tensorflow::ReadInt64FromEnvVar("TF_ROCM_F8_EXT", 0, &env_f8_ext);
+  bool denorm_fix = !(env_f8_ext & 1);
+
   return {std::make_unique<RocmConvRunner>(
       parent_, miopen_.get(), algorithm_desc.algo_id(), *workspace_size, kind,
       input_type, use_immediate_mode_, input_descriptor, output_descriptor,
-      filter_descriptor, convolution_descriptor)};
+      filter_descriptor, convolution_descriptor, denorm_fix, scratch_allocator)};
+}
+
+port::StatusOr<std::unique_ptr<const dnn::ConvRunner>>
+MIOpenSupport::ConvolveRunnerFromDesc(
+    Stream* stream, const dnn::AlgorithmDesc& algorithm_desc,
+    dnn::ConvolutionKind kind, dnn::DataType input_type,
+    dnn::DataType output_type, const dnn::BatchDescriptor& input_descriptor,
+    const dnn::FilterDescriptor& filter_descriptor,
+    const dnn::BatchDescriptor& output_descriptor,
+    const dnn::ConvolutionDescriptor& convolution_descriptor) {
+    return ConvolveRunnerFromDesc(stream, algorithm_desc, kind, input_type, output_type,
+        input_descriptor, filter_descriptor, output_descriptor, convolution_descriptor, 0);
 }
 
 bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
@@ -3395,14 +3435,15 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
-  ScopedTensorDescriptor input_nd{input_descriptor,
-                                  ToMIOpenDataType(element_type)};
-  ScopedTensorDescriptor output_nd{output_descriptor,
-                                   ToMIOpenDataType(element_type)};
-  ScopedFilterDescriptor filter{filter_descriptor,
-                                ToMIOpenDataType(element_type)};
-  ScopedConvolutionDescriptor conv{convolution_descriptor,
-                                   ToMIOpenDataType(element_type)};
+  int64_t env_f8_ext=0;
+  tensorflow::ReadInt64FromEnvVar("TF_ROCM_F8_EXT", 0, &env_f8_ext);                                                                                                                                                                                                                                                                             
+  bool denorm_fix = !(env_f8_ext & 1);
+
+  auto datatype = (denorm_fix && element_type == dnn::DataType::kHalf) ? miopenBFloat16 : ToMIOpenDataType(element_type);
+  ScopedTensorDescriptor input_nd{input_descriptor, datatype};
+  ScopedTensorDescriptor output_nd{output_descriptor, datatype};
+  ScopedFilterDescriptor filter{filter_descriptor, datatype};
+  ScopedConvolutionDescriptor conv{convolution_descriptor, datatype};
 
   // First determine the number of algorityhms available
   size_t maxSolutionCount = 0;
@@ -3604,14 +3645,14 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
-  ScopedTensorDescriptor input_nd{input_descriptor,
-                                  ToMIOpenDataType(element_type)};
-  ScopedTensorDescriptor output_nd{output_descriptor,
-                                   ToMIOpenDataType(element_type)};
-  ScopedFilterDescriptor filter{filter_descriptor,
-                                ToMIOpenDataType(element_type)};
-  ScopedConvolutionDescriptor conv{convolution_descriptor,
-                                   ToMIOpenDataType(element_type)};
+  int64_t env_f8_ext=0;
+  tensorflow::ReadInt64FromEnvVar("TF_ROCM_F8_EXT", 0, &env_f8_ext);                                                                                                                                                                                                                                                                             
+  bool denorm_fix = !(env_f8_ext & 1);
+  auto datatype = (denorm_fix && element_type == dnn::DataType::kHalf) ? miopenBFloat16 : ToMIOpenDataType(element_type);
+  ScopedTensorDescriptor input_nd{input_descriptor, datatype};
+  ScopedTensorDescriptor output_nd{output_descriptor, datatype};
+  ScopedFilterDescriptor filter{filter_descriptor, datatype};
+  ScopedConvolutionDescriptor conv{convolution_descriptor, datatype};
 
   // Determine the workspace memory size that will need by the call to Find
   size_t scratch_memory_size = 0;

@@ -20,6 +20,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/client/lib/math.h"
 #include "tensorflow/compiler/xla/client/lib/matrix.h"
 #include "tensorflow/compiler/xla/xla_data.pb.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 namespace {
@@ -43,7 +44,12 @@ class BatchMatMulOp : public XlaOpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("grad_b", &grad_b));
     precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
     precision_config_.add_operand_precision(xla::PrecisionConfig::DEFAULT);
-    SetXlaPrecisionConfigF8Flags(precision_config_, ctx->GetFlagsF8(), grad_a, grad_b);
+    int f8_flags = ctx->GetFlagsF8();
+    bool f8_matmul=true;
+    tensorflow::ReadBoolFromEnvVar("F8_MM", true, &f8_matmul);
+    if(!f8_matmul)
+      f8_flags = 256;
+    SetXlaPrecisionConfigF8Flags(precision_config_, f8_flags, grad_a, grad_b);
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
