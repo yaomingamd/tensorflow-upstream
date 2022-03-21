@@ -86,6 +86,21 @@ namespace gpuprim = ::hipcub;
 namespace rocprim {
 namespace detail {
 template <>
+struct float_bit_mask<Eigen::half> {
+  static constexpr uint16_t sign_bit = 0x8000;
+  static constexpr uint16_t exponent = 0x7C00;
+  static constexpr uint16_t mantissa = 0x03FF;
+  using bit_type = uint16_t;
+};
+
+template <>
+struct float_bit_mask<Eigen::bfloat16> {
+  static constexpr uint16_t sign_bit = 0x8000;
+  static constexpr uint16_t exponent = 0x7F80;
+  static constexpr uint16_t mantissa = 0x007F;
+  using bit_type = uint16_t;
+};
+template <>
 struct radix_key_codec_base<Eigen::half>
     : radix_key_codec_floating<Eigen::half, uint16_t> {};
 template <>
