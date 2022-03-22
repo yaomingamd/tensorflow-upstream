@@ -3128,7 +3128,7 @@ class RocmConvRunner : public dnn::ConvRunner {
 	  //data_processor.copy_data_to_host(hip_stream, output_data.opaque());
 	  //data_processor.process_data(&conv_forward_data_values);
 	  conv_forward_data_values.process_data_gpu(hip_stream, output_data.opaque(), num_output_elems_);
-	  conv_forward_data_values.dump_data();
+	  //conv_forward_data_values.dump_data();
 	}
         break;
       }
@@ -3155,7 +3155,7 @@ class RocmConvRunner : public dnn::ConvRunner {
 	  //data_processor.copy_data_to_host(hip_stream, input_data.opaque());
 	  //data_processor.process_data(&conv_backprop_data_grad_values);
           conv_backprop_data_grad_values.process_data_gpu(hip_stream, input_data.opaque(), num_input_elems_);
-	  conv_backprop_data_grad_values.dump_data();
+	  //conv_backprop_data_grad_values.dump_data();
 	}
         break;
       }
@@ -3182,7 +3182,7 @@ class RocmConvRunner : public dnn::ConvRunner {
 	  //data_processor.copy_data_to_host(hip_stream, filter_data.opaque());
 	  //data_processor.process_data(&conv_backprop_filter_grad_values);
 	  conv_backprop_filter_grad_values.process_data_gpu(hip_stream, filter_data.opaque(), num_filter_elems_);
-	  conv_backprop_filter_grad_values.dump_data();
+	  //conv_backprop_filter_grad_values.dump_data();
 	}
         break;
       }

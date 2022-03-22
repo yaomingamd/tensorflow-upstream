@@ -85,7 +85,7 @@ struct type_utils {
     return *((T*)&bit_pattern);
   }
 
-  __host__ __device__ 
+  __host__ __device__  __forceinline__
   static std::tuple<uint32_t, uint32_t, uint32_t> get_sign_exponent_mantissa(
       T value) {
     bit_pattern_type bit_pattern = *((bit_pattern_type*)&value);
@@ -98,7 +98,7 @@ struct type_utils {
     return std::tie(sign, exponent, mantissa);
   }
 
-  __host__ __device__ 
+  __host__ __device__  __forceinline__
   static uint32_t get_bucket_id(uint32_t sign, uint32_t exponent,
                                 uint32_t mantissa) {
     uint32_t bucket_id = 0;
@@ -169,6 +169,7 @@ CollectValueDistribution<T>::CollectValueDistribution(std::string name) {
 
 template <typename T>
 CollectValueDistribution<T>::~CollectValueDistribution() {
+  dump_data();
 }
 
 template <typename T>
@@ -205,7 +206,7 @@ void CollectValueDistribution<T>::process_data(T* data, int num_elems) {
 }
 
 template <typename T>
-__global__ void exponent_bucket_count_gpu_kernel(T* data, int num_elems, uint64_t* result) {
+__global__ void exponent_bucket_count_gpu_kernel(T* data, int num_elems, uint32_t* result) {
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
   if (idx < num_elems) {
     uint32_t sign, exponent, mantissa;
@@ -220,22 +221,25 @@ __global__ void exponent_bucket_count_gpu_kernel(T* data, int num_elems, uint64_
 
 template <typename T>
 void CollectValueDistribution<T>::process_data_gpu(hipStream_t stream, void* data, int num_elems) {
-  bucket_counts_mutex_.lock();
 
-  uint64_t* result;
-  size_t result_size = sizeof(uint64_t)*get_num_buckets();
+  uint32_t* result;
+  size_t result_size = sizeof(uint32_t)*get_num_buckets();
   hipMalloc(&result, result_size);
-  hipMemcpyAsync(result, bucket_counts_, result_size, hipMemcpyHostToDevice, stream);
+  hipMemsetAsync(result, 0, result_size, stream);
 
   T* data_T = reinterpret_cast<T*>(data);
 
   int threads_per_block = 256;
   int num_blocks = (num_elems + threads_per_block -1 ) / threads_per_block;
   hipLaunchKernelGGL(exponent_bucket_count_gpu_kernel, dim3(num_blocks,1,1), dim3(threads_per_block,1,1), 0, stream, data_T, num_elems, result); 
-  hipMemcpyAsync(bucket_counts_, result, result_size, hipMemcpyDeviceToHost, stream);
+  hipMemcpyAsync(result_host_, result, result_size, hipMemcpyDeviceToHost, stream);
   hipStreamSynchronize(stream);
   hipFree(result);
 
+  bucket_counts_mutex_.lock();
+  for (int i=0;i<get_num_buckets();i++) {
+    bucket_counts_[i] += result_host_[i];
+  }
   bucket_counts_mutex_.unlock();
 }
 

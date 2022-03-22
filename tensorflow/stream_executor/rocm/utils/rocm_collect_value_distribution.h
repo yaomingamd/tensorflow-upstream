@@ -27,6 +27,7 @@ class CollectValueDistribution {
   std::string name_;
   uint32_t num_buckets_;
   uint64_t bucket_counts_[512];
+  uint32_t result_host_[512];
   std::mutex bucket_counts_mutex_;
 };
 
