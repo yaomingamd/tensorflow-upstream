@@ -335,12 +335,11 @@ def _find_libs(repository_ctx, rocm_config, hipfft_or_rocfft, bash_bin):
             ("hiprand", rocm_config.rocm_toolkit_path),
             ("MIOpen", rocm_config.rocm_toolkit_path + "/miopen"),
             ("rccl", rocm_config.rocm_toolkit_path + "/rccl"),
-            ("hipsparse", rocm_config.rocm_toolkit_path + "/hipsparse"),
+            ("hipsparse", rocm_config.rocm_toolkit_path),
             ("roctracer64", rocm_config.rocm_toolkit_path + "/roctracer"),
             ("rocsolver", rocm_config.rocm_toolkit_path),
         ]
     ]
-
     return _select_rocm_lib_paths(repository_ctx, libs_paths, bash_bin)
 
 def _exec_find_rocm_config(repository_ctx, script_path):
@@ -576,12 +575,6 @@ def _create_local_rocm_repository(repository_ctx):
             src_dir = rocm_toolkit_path + "/rccl/include",
             out_dir = "rocm/include/rccl",
         ),
-        make_copy_dir_rule(
-            repository_ctx,
-            name = "hipsparse-include",
-            src_dir = rocm_toolkit_path + "/hipsparse/include",
-            out_dir = "rocm/include/hipsparse",
-        ),
     ]
 
     # explicitly copy (into the local_config_rocm repo) the $ROCM_PATH/hiprand/include and
@@ -676,8 +669,7 @@ def _create_local_rocm_repository(repository_ctx):
                                 '":miopen-include",\n' +
                                 '":rccl-include",\n' +
                                 hiprand_include +
-                                rocrand_include +
-                                '":hipsparse-include"'),
+                                rocrand_include),
         },
     )
 
