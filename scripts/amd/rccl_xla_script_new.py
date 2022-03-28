@@ -1,15 +1,9 @@
 import os
 import argparse
+from pickletools import optimize
 import numpy as np
 import tensorflow as tf
 
-
-# DISABLE_EAGER_EXECUTION = True
-DISABLE_EAGER_EXECUTION = False
-
-if DISABLE_EAGER_EXECUTION:
-    # NOTE: make sure to run session to launch kernels
-    tf.compat.v1.disable_eager_execution()
 
 # enable xla
 tf.config.optimizer.set_jit(True)
@@ -22,34 +16,24 @@ def main(log_dir):
         cross_device_ops=tf.distribute.NcclAllReduce(), devices=["GPU:0", "GPU:1"])
     print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
-    def create_model():
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(3)
-        ])
-        return model
-
     # model, optimizer, and checkpoint must be created under `strategy.scope`.
     with strategy.scope():
-        # Set reduction to `none` so we can do the reduction afterwards and divide by
-        # global batch size.
-        loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-            from_logits=True,
-            reduction=tf.keras.losses.Reduction.NONE)
-
-        def compute_loss(labels, predictions):
-            per_example_loss = loss_object(labels, predictions)
-            return tf.nn.compute_average_loss(per_example_loss, global_batch_size=strategy.num_replicas_in_sync)
 
         # create model
-        model = create_model()
-        optimizer = tf.keras.optimizers.Adam()
+        model = tf.keras.Sequential([
+            tf.keras.layers.Dense(2)
+        ])
+        optimizer = tf.keras.optimizers.SGD()
 
         def train_step(inputs):
             images, labels = inputs
+            loss_object = tf.keras.losses.MeanSquaredError(
+                reduction=tf.keras.losses.Reduction.NONE)
 
             with tf.GradientTape() as tape:
                 predictions = model(images, training=True)
-                loss = compute_loss(labels, predictions)
+                loss = tf.nn.compute_average_loss(loss_object(
+                    labels, predictions), global_batch_size=strategy.num_replicas_in_sync)
 
             gradients = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(
@@ -78,10 +62,9 @@ def main(log_dir):
         print("Step {}, Loss: {}".format(step, loss))
 
         with train_summary_writer.as_default():
-            tf.summary.scalar("loss", loss, step=step)
             tf.summary.trace_export(
                 name="my_func_trace",
-                step=0,
+                step=step,
                 profiler_outdir=train_log_dir)
 
 
