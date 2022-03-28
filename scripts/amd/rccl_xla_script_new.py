@@ -17,20 +17,10 @@ tf.config.optimizer.set_jit(True)
 
 def main(log_dir):
     # input
-    fashion_mnist = tf.keras.datasets.fashion_mnist
+    train_images = tf.constant([[1.0, 2.0, 3.0, 4.0, 5.0]])
+    train_labels = tf.constant([2.0])
 
-    (train_images, train_labels), (test_images,
-                                   test_labels) = fashion_mnist.load_data()
-
-    # Adding a dimension to the array -> new shape == (28, 28, 1)
-    # We are doing this because the first layer in our model is a convolutional
-    # layer and it requires a 4D input (batch_size, height, width, channels).
-    # batch_size dimension will be added later on.
-    train_images = train_images[1:2, ..., None]
-    train_labels = train_labels[1:2, ...]
-
-    # Getting the images in [0, 1] range.
-    train_images = train_images / np.float32(255)
+    print(train_images.shape, train_labels.shape)
 
     # get outputs
     strategy = tf.distribute.MirroredStrategy(
@@ -38,8 +28,8 @@ def main(log_dir):
     print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
     # constants
-    BUFFER_SIZE = len(train_images)
-    BATCH_SIZE_PER_REPLICA = 64
+    BUFFER_SIZE = 1
+    BATCH_SIZE_PER_REPLICA = 1
     GLOBAL_BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
     EPOCHS = 1
 
@@ -51,7 +41,6 @@ def main(log_dir):
 
     def create_model():
         model = tf.keras.Sequential([
-            tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(10)
         ])
 
@@ -83,7 +72,6 @@ def main(log_dir):
             gradients = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(
                 zip(gradients, model.trainable_variables))
-
             return loss
 
         # `run` replicates the provided computation and runs it
@@ -101,7 +89,6 @@ def main(log_dir):
             total_loss = 0.0
             num_batches = 0
             for x in train_dist_dataset:
-                # print("x", x)
                 total_loss += distributed_train_step(x)
                 num_batches += 1
             train_loss = total_loss / num_batches
