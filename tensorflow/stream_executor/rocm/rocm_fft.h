@@ -29,8 +29,6 @@ limitations under the License.
 #include "rocm/include/hipfft.h"
 #endif
 
-#include "rocm/include/hipfft/hipfft.h"
-
 #endif
 
 #include "tensorflow/stream_executor/fft.h"
