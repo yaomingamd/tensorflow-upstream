@@ -16,34 +16,16 @@ tf.config.optimizer.set_jit(True)
 
 
 def main(log_dir):
-    # input
-    train_images = tf.constant([[1.0, 2.0, 3.0, 4.0, 5.0]])
-    train_labels = tf.constant([2.0])
 
-    print(train_images.shape, train_labels.shape)
-
-    # get outputs
+    # set strategy
     strategy = tf.distribute.MirroredStrategy(
         cross_device_ops=tf.distribute.NcclAllReduce(), devices=["GPU:0", "GPU:1"])
     print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
-    # constants
-    BUFFER_SIZE = 1
-    BATCH_SIZE_PER_REPLICA = 1
-    GLOBAL_BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
-    EPOCHS = 1
-
-    # data
-    train_dataset = tf.data.Dataset.from_tensor_slices(
-        (train_images, train_labels)).shuffle(BUFFER_SIZE).batch(GLOBAL_BATCH_SIZE)
-    train_dist_dataset = strategy.experimental_distribute_dataset(
-        train_dataset)
-
     def create_model():
         model = tf.keras.Sequential([
-            tf.keras.layers.Dense(10)
+            tf.keras.layers.Dense(3)
         ])
-
         return model
 
     # model, optimizer, and checkpoint must be created under `strategy.scope`.
@@ -56,7 +38,7 @@ def main(log_dir):
 
         def compute_loss(labels, predictions):
             per_example_loss = loss_object(labels, predictions)
-            return tf.nn.compute_average_loss(per_example_loss, global_batch_size=GLOBAL_BATCH_SIZE)
+            return tf.nn.compute_average_loss(per_example_loss, global_batch_size=strategy.num_replicas_in_sync)
 
         # create model
         model = create_model()
@@ -84,17 +66,23 @@ def main(log_dir):
             return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
                                    axis=None)
 
-        for epoch in range(EPOCHS):
-            # TRAIN LOOP
-            total_loss = 0.0
-            num_batches = 0
-            for x in train_dist_dataset:
-                total_loss += distributed_train_step(x)
-                num_batches += 1
-            train_loss = total_loss / num_batches
+        train_log_dir = os.path.join(log_dir, "ckpts")
+        train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 
-            template = "Epoch {}, Loss: {}"
-            print(template.format(epoch+1, train_loss))
+        # Bracket the function call with
+        tf.summary.trace_on(graph=True, profiler=True)
+        dataset_inputs = tf.constant(
+            [[1.0, 2.0, 3.0, 4.0, 5.0]]), tf.constant([2.0])
+        loss = distributed_train_step(dataset_inputs)
+        step = 1
+        print("Step {}, Loss: {}".format(step, loss))
+
+        with train_summary_writer.as_default():
+            tf.summary.scalar("loss", loss, step=step)
+            tf.summary.trace_export(
+                name="my_func_trace",
+                step=0,
+                profiler_outdir=train_log_dir)
 
 
 if __name__ == '__main__':
