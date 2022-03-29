@@ -2,14 +2,6 @@ import os
 import argparse
 import tensorflow as tf
 
-
-# DISABLE_EAGER_EXECUTION = True
-# # DISABLE_EAGER_EXECUTION = False
-
-# if DISABLE_EAGER_EXECUTION:
-#     # NOTE: make sure to run session to launch kernels
-#     tf.compat.v1.disable_eager_execution()
-
 # enable xla
 tf.config.optimizer.set_jit(True)
 
