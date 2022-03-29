@@ -5,6 +5,13 @@ import numpy as np
 import tensorflow as tf
 
 
+# DISABLE_EAGER_EXECUTION = True
+# # DISABLE_EAGER_EXECUTION = False
+
+# if DISABLE_EAGER_EXECUTION:
+#     # NOTE: make sure to run session to launch kernels
+#     tf.compat.v1.disable_eager_execution()
+
 # enable xla
 tf.config.optimizer.set_jit(True)
 
@@ -12,59 +19,30 @@ tf.config.optimizer.set_jit(True)
 def main(log_dir):
 
     # set strategy
-    gpus = ["GPU:0", "GPU:1", "GPU:2", "GPU:3"][:2]
     strategy = tf.distribute.MirroredStrategy(
-        cross_device_ops=tf.distribute.NcclAllReduce(), devices=gpus)
+        cross_device_ops=tf.distribute.NcclAllReduce(), devices=["GPU:0", "GPU:1"])
     print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
     # model, optimizer, and checkpoint must be created under `strategy.scope`.
     with strategy.scope():
-        # create model
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(2)
-        ])
-        optimizer = tf.keras.optimizers.SGD()
-
-        # train function
+        dense = tf.keras.layers.Dense(2)
         @tf.function
-        def distributed_train_step(dataset_inputs):
-            def train_step(inputs):
-                images, labels = inputs
-                loss_object = tf.keras.losses.MeanSquaredError(
-                    reduction=tf.keras.losses.Reduction.NONE)
-
-                with tf.GradientTape() as tape:
-                    predictions = model(images, training=True)
-                    loss = tf.nn.compute_average_loss(loss_object(
-                        labels, predictions), global_batch_size=strategy.num_replicas_in_sync)
-
-                gradients = tape.gradient(loss, model.trainable_variables)
-                optimizer.apply_gradients(
-                    zip(gradients, model.trainable_variables))
-                return loss
-
-            per_replica_losses = strategy.run(
-                train_step, args=(dataset_inputs,))
-            return strategy.reduce(tf.distribute.ReduceOp.MEAN, per_replica_losses,
-                                   axis=None)
+        def reduce_fn():
+            ctx = tf.distribute.get_replica_context()
+            output = dense(tf.constant([[1.]]))
+            return ctx.all_reduce(tf.distribute.ReduceOp.SUM, output)
 
         # run train function
         train_log_dir = os.path.join(log_dir, "ckpts")
         train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-
-        dataset_inputs = tf.constant(
-            [[1.0]]), tf.constant([2.0])
         tf.summary.trace_on(graph=True, profiler=True)
-        loss = distributed_train_step(dataset_inputs)
-        step = 1
-
+        result = strategy.run(reduce_fn)
+        print(result)
         with train_summary_writer.as_default():
             tf.summary.trace_export(
                 name="my_func_trace",
-                step=step,
+                step=1,
                 profiler_outdir=train_log_dir)
-
-        print("Step {}, Loss: {}".format(step, loss))
 
 
 if __name__ == '__main__':
