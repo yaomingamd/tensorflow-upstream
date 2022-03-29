@@ -1,7 +1,5 @@
 import os
 import argparse
-from pickletools import optimize
-import numpy as np
 import tensorflow as tf
 
 
@@ -25,11 +23,14 @@ def main(log_dir):
 
     # model, optimizer, and checkpoint must be created under `strategy.scope`.
     with strategy.scope():
-        dense = tf.keras.layers.Dense(2)
+        weights = tf.Variable([[1.]])
+
         @tf.function
         def reduce_fn():
             ctx = tf.distribute.get_replica_context()
-            output = dense(tf.constant([[1.]]))
+            input = tf.constant([[1.]])
+            matmul_output = tf.linalg.matmul(input, weights)
+            output = tf.math.add(matmul_output, tf.constant([[2.]]))
             return ctx.all_reduce(tf.distribute.ReduceOp.SUM, output)
 
         # run train function
