@@ -20,7 +20,12 @@ limitations under the License.
 #ifndef TENSORFLOW_STREAM_EXECUTOR_ROCM_HIPSPARSE_WRAPPER_H_
 #define TENSORFLOW_STREAM_EXECUTOR_ROCM_HIPSPARSE_WRAPPER_H_
 
+#include "rocm/rocm_config.h"
+#if (TF_ROCM_VERSION >= 50200)
 #include "rocm/include/hipsparse/hipsparse.h"
+#else
+#include "rocm/include/hipsparse.h"
+#endif
 #include "tensorflow/stream_executor/lib/env.h"
 #include "tensorflow/stream_executor/platform/dso_loader.h"
 #include "tensorflow/stream_executor/platform/port.h"
@@ -123,10 +128,8 @@ namespace wrap {
   __macro(hipsparseDestroySpMat)                \
   __macro(hipsparseDcsru2csr_bufferSizeExt)     \
   __macro(hipsparseDcsru2csr)                   \
-  __macro(hipsparseSpMM_bufferSize)             \
-  __macro(hipsparseSpMM)                        \
   __macro(hipsparseScsru2csr_bufferSizeExt)     \
-  __macro(hipsparseScsru2csr)                   \  
+  __macro(hipsparseScsru2csr)                   \
   __macro(hipsparseSpMM_bufferSize)             \
   __macro(hipsparseSpMM)                        \
   __macro(hipsparseZcsru2csr_bufferSizeExt)     \
