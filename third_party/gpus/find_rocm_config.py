@@ -70,16 +70,24 @@ def _get_header_version(path, name):
 def _find_rocm_config(rocm_install_path):
 
   def rocm_version_numbers(path):
-    version_file = os.path.join(path, ".info/version-dev")
-    if not os.path.exists(version_file):
-      raise ConfigError('ROCm version file "{}" not found'.format(version_file))
-    version_numbers = []
-    with open(version_file) as f:
-      version_string = f.read().strip()
-      version_numbers = version_string.split(".")
-    major = int(version_numbers[0])
-    minor = int(version_numbers[1])
-    patch = int(version_numbers[2].split("-")[0])
+    possible_version_files = [
+        "include/rocm-core/rocm_version.h",  # ROCm 5.2
+        "include/rocm_version.h",  # ROCm 5.1 and prior
+    ]
+    version_file = None
+    for f in possible_version_files:
+      version_file_path = os.path.join(path, f)
+      if os.path.exists(version_file_path):
+        version_file = version_file_path
+        break
+    if not version_file:
+      raise ConfigError(
+          "ROCm version file not found in {}".format(
+              possible_version_files))
+
+    major = _get_header_version(version_file, "ROCM_VERSION_MAJOR")
+    minor = _get_header_version(version_file, "ROCM_VERSION_MINOR")
+    patch = _get_header_version(version_file, "ROCM_VERSION_PATCH")
     return major, minor, patch
 
   major, minor, patch = rocm_version_numbers(rocm_install_path)
