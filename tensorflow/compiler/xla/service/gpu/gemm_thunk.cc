@@ -25,7 +25,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/stream_executor_util.h"
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/stream_executor/blas.h"
 #include "tensorflow/stream_executor/device_memory.h"
 
@@ -94,6 +93,7 @@ static absl::optional<se::blas::ComputationType> ComputationTypeFromPrimitive(
   switch (type) {
     case F16:  // Use F32 computation for higher precision.
     case BF16:
+      return se::blas::ComputationType::kBF16AsF32;
     case F32:
       return se::blas::ComputationType::kF32;
     case F64:

@@ -22,7 +22,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_module.h"
 #include "tensorflow/compiler/xla/service/logical_buffer.h"
 #include "tensorflow/compiler/xla/statusor.h"
-#include "tensorflow/core/lib/hash/hash.h"
 
 namespace xla {
 // A class to create all the logical buffers defined by the HLO ops in a module.
@@ -43,7 +42,7 @@ class LogicalBufferAnalysis : public DfsHloVisitorWithDefault {
   const std::vector<std::unique_ptr<LogicalBuffer>>& logical_buffers() const {
     return logical_buffers_;
   }
-  LogicalBuffer::Id num_logical_buffers() const { return next_buffer_id_; }
+  size_t num_logical_buffers() const { return logical_buffers_.size(); }
 
  private:
   explicit LogicalBufferAnalysis(const HloModule* module) : module_(module) {}
@@ -74,25 +73,11 @@ class LogicalBufferAnalysis : public DfsHloVisitorWithDefault {
   // A map from the buffer ID to the logical buffer
   std::vector<std::unique_ptr<LogicalBuffer>> logical_buffers_;
 
-  struct Hasher {
-    size_t operator()(
-        std::pair<const HloInstruction*, const ShapeIndex> p) const {
-      size_t inst_hash = tensorflow::hash<const HloInstruction*>()(p.first);
-      for (auto index = p.second.begin(); index != p.second.end(); ++index) {
-        inst_hash = tensorflow::Hash64Combine(*index, inst_hash);
-      }
-      return inst_hash;
-    }
-  };
-
   // A map from an hlo + shape index to the logical buffer representing
   // the appropriate output.
   absl::flat_hash_map<std::pair<const HloInstruction*, const ShapeIndex>,
-                      LogicalBuffer*, Hasher>
+                      LogicalBuffer*>
       output_buffers_;
-
-  // The ID of the next logical buffer created.
-  LogicalBuffer::Id next_buffer_id_ = 0;
 };
 
 }  // namespace xla

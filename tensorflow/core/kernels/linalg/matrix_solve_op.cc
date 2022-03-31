@@ -32,6 +32,7 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#include "rocm/rocm_config.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/kernels/transpose_functor.h"
 #include "tensorflow/core/util/gpu_solvers.h"
@@ -283,7 +284,7 @@ class MatrixSolveOpGpu : public AsyncOpKernel {
     auto opbatch_t = op_t;
 #else  // TENSORFLOW_USE_ROCM
     auto opbatch_t = adjoint_ ? rocblas_operation_conjugate_transpose
-                         : rocblas_operation_transpose;
+                              : rocblas_operation_transpose;
 #if TF_ROCM_VERSION >= 40500
     auto op_t = adjoint_ ? HIPSOLVER_OP_C : HIPSOLVER_OP_T;
 #else

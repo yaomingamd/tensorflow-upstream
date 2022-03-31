@@ -25,6 +25,7 @@ limitations under the License.
 #include "absl/types/optional.h"
 #include "absl/types/span.h"
 #include "absl/types/variant.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "tensorflow/compiler/xla/service/buffer_assignment.h"
 #include "tensorflow/compiler/xla/service/executable.h"
@@ -38,12 +39,21 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_module.h"
 #include "tensorflow/compiler/xla/service/shaped_buffer.h"
 #include "tensorflow/compiler/xla/statusor.h"
-#include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/stream_executor_no_cuda.h"
 #include "tensorflow/stream_executor/device_memory_allocator.h"
 
 namespace xla {
 namespace gpu {
+
+// Returns whether GpuExecutable runs on TFRT (instead of thunks).
+bool IsBefExecutableEnabled(const HloModuleConfig& config);
+
+// Returns whether to create BefThunks (if the specific thunk is supported).
+bool IsBefThunkEnabled(const HloModuleConfig& config);
+
+inline bool IsBefEnabled(const HloModuleConfig& config) {
+  return IsBefExecutableEnabled(config) || IsBefThunkEnabled(config);
+}
 
 // GPU-targeting implementation of the XLA Executable interface.
 //
@@ -195,9 +205,16 @@ class GpuExecutable : public Executable {
   using BufferAllocToDeviceMemoryMap =
       absl::flat_hash_map<BufferAllocation::Index, se::DeviceMemoryBase>;
 
-  // Loads the PTX or CUBIN for this executable into `executor` and resolves the
-  // globals corresponding to constant buffers.  Returns a map mapping buffer
-  // allocation indices to GPU pointers.
+  // Loads the PTX or CUBIN for this executable and initializes all
+  // constants that haven't already been initialized by the CUDA driver. Loaded
+  // modules are owned by this executable.
+  //
+  // Returns a map from buffer allocation indices to device memory pointers
+  // (only for allocations that contain constants).
+  //
+  // The returned map is cached. If the above process has already been run for
+  // the given stream, it is skipped and the cached map is immediately returned
+  // instead.
   StatusOr<const BufferAllocToDeviceMemoryMap*> ResolveConstantGlobals(
       stream_executor::Stream* stream);
 
@@ -209,8 +226,7 @@ class GpuExecutable : public Executable {
   StatusOr<BufferAllocations> GenerateBufferAllocations(
       VariantArguments arguments,
       const GpuExecutable::BufferAllocToDeviceMemoryMap* globals,
-      se::DeviceMemoryAllocator* const memory_allocator,
-      se::StreamExecutor* executor);
+      se::DeviceMemoryAllocator* const memory_allocator, int device_ordinal);
 
   StatusOr<se::DeviceMemoryBase> BufferForAllocation(
       VariantArguments arguments,
@@ -256,18 +272,22 @@ class GpuExecutable : public Executable {
   std::shared_ptr<BufferAssignmentProto> debug_buffer_assignment_;
   std::function<std::string()> verbose_buffer_assignment_string_dumper_;
 
-  // Cache of module handles and constant buffer allocation maps used by
-  // `ResolveConstantGlobals`.
-  tensorflow::mutex module_handle_mutex_;
+  absl::Mutex module_handle_mutex_;
+  // Cache of module handles. Required to keep loaded modules alive until this
+  // executable is destroyed.
   std::map<stream_executor::StreamExecutor*, se::ScopedModuleHandle>
-      module_handles_ TF_GUARDED_BY(module_handle_mutex_);
+      module_handles_ ABSL_GUARDED_BY(module_handle_mutex_);
+  // Cache of constant buffer allocation maps used by `ResolveConstantGlobals`.
   std::map<stream_executor::StreamExecutor*, BufferAllocToDeviceMemoryMap>
-      module_globals_ TF_GUARDED_BY(module_handle_mutex_);
+      module_globals_ ABSL_GUARDED_BY(module_handle_mutex_);
 
   std::vector<ConstantInfo> constants_;
   const absl::flat_hash_map<ShapeIndex, OutputInfo> output_info_;
+  // Retains shared ownership of on-device constants that are managed by XLA and
+  // potentially shared with other executables.
+  std::vector<std::shared_ptr<se::DeviceMemoryBase>> shared_constants_;
 
-  // Data for BEF_EXECUTABLE mode only, owned.
+  // Data for bef executable mode only, owned.
   BefExecutable* bef_executable_ = nullptr;
 
   GpuExecutable(const GpuExecutable&) = delete;

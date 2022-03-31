@@ -19,9 +19,9 @@ limitations under the License.
 #include "mlir-hlo/Dialect/lhlo/transforms/PassDetail.h"
 #include "mlir-hlo/Dialect/lhlo/transforms/passes.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Shape/IR/Shape.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"  // TF:llvm-project
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -82,8 +82,8 @@ struct LegalizeToTensorOpPass
   void runOnOperation() override {
     auto func = getOperation();
     auto* context = &getContext();
-    OwningRewritePatternList patterns(context);
-    patterns.insert<ForwardShapeOfOp, ForwardExtractOp>(context);
+    RewritePatternSet patterns(context);
+    patterns.add<ForwardShapeOfOp, ForwardExtractOp>(context);
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns)))) {
       func.emitError("applyPatternsAndFoldGreedily does not converge");
       signalPassFailure();

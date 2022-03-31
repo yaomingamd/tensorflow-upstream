@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor_types.h"
+#include "tensorflow/core/framework/type_traits.h"
 #include "tensorflow/core/framework/variant_op_registry.h"
 #include "tensorflow/core/kernels/cwise_ops_common.h"
 #include "tensorflow/core/kernels/dense_update_functor.h"
@@ -93,10 +94,15 @@ class CSRMatMulOp : public OpKernel {
                     "Only one of adjoint_b and transpose_b may be true."));
     OP_REQUIRES_OK(c, c->GetAttr("transpose_output", &transpose_output_));
     OP_REQUIRES_OK(c, c->GetAttr("conjugate_output", &conjugate_output_));
-    conjugate_a_ = adjoint_a;
-    conjugate_b_ = adjoint_b;
     transpose_a_ |= adjoint_a;
     transpose_b_ |= adjoint_b;
+    if (is_complex<T>::value) {
+      conjugate_a_ = adjoint_a;
+      conjugate_b_ = adjoint_b;
+    } else {
+      conjugate_a_ = false;
+      conjugate_b_ = false;
+    }
   }
 
   ~CSRMatMulOp() override {}
@@ -729,14 +735,12 @@ namespace {
 template <typename T>
 struct GPUDataType;
 
-// GPUDataType templates are currently not instantiated in the ROCm flow
-// So leaving out the #elif TENSORFLOW_USE_ROCM blocks for now
-// hipblas library is not (yet) being pulled in via rocm_configure.bzl
-// so cannot reference tyeps from hipblas headers here
 template <>
 struct GPUDataType<Eigen::half> {
 #if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_R_16F;
+#else
+  static constexpr hipDataType type = HIP_R_16F;
 #endif
 };
 
@@ -744,6 +748,8 @@ template <>
 struct GPUDataType<float> {
 #if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_R_32F;
+#else
+  static constexpr hipDataType type = HIP_R_32F;
 #endif
 };
 
@@ -751,6 +757,8 @@ template <>
 struct GPUDataType<std::complex<float>> {
 #if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_C_32F;
+#else
+  static constexpr hipDataType type = HIP_C_32F;
 #endif
 };
 
@@ -758,6 +766,8 @@ template <>
 struct GPUDataType<double> {
 #if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_R_64F;
+#else
+  static constexpr hipDataType type = HIP_R_64F;
 #endif
 };
 
@@ -765,6 +775,8 @@ template <>
 struct GPUDataType<std::complex<double>> {
 #if GOOGLE_CUDA
   static constexpr cudaDataType_t type = CUDA_C_64F;
+#else
+  static constexpr hipDataType type = HIP_C_64F;
 #endif
 };
 
@@ -877,16 +889,16 @@ class CSRSparseMatrixMatMul<GPUDevice, T> {
       TF_RETURN_IF_GPUSPARSE_ERROR(wrap::hipsparseCreateCsr(
           &matA, m, k, nnz, const_cast<int*>(a.row_ptr.data()),
           const_cast<int*>(a.col_ind.data()), const_cast<T*>(a.values.data()),
-          CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I, HIPSPARSE_INDEX_BASE_ZERO,
+          HIPSPARSE_INDEX_32I, HIPSPARSE_INDEX_32I, HIPSPARSE_INDEX_BASE_ZERO,
           GPUDataType<T>::type));
 
       TF_RETURN_IF_GPUSPARSE_ERROR(wrap::hipsparseCreateDnMat(
           &matB, n, k, ldb, const_cast<T*>(b.data()), GPUDataType<T>::type,
-          HIPSPARSE_ORDER_COL));
+          HIPSPARSE_ORDER_COLUMN));
 
       TF_RETURN_IF_GPUSPARSE_ERROR(wrap::hipsparseCreateDnMat(
           &matC, m, n, ldc, c.data(), GPUDataType<T>::type,
-          HIPSPARSE_ORDER_COL));
+          HIPSPARSE_ORDER_COLUMN));
 
       size_t bufferSize = 0;
       TF_RETURN_IF_ERROR(cuda_sparse.SpMMBufferSize(
@@ -899,7 +911,7 @@ class CSRSparseMatrixMatMul<GPUDevice, T> {
       DCHECK(buffer.flat<int8>().data() != nullptr);
 
       TF_RETURN_IF_ERROR(cuda_sparse.SpMM(transA, transB, &alpha, matA, matB,
-                                          &beta, matC, CUSPARSE_MM_ALG_DEFAULT,
+                                          &beta, matC, HIPSPARSE_MM_ALG_DEFAULT,
                                           buffer.flat<int8>().data()));
 
       TF_RETURN_IF_GPUSPARSE_ERROR(wrap::hipsparseDestroyDnMat(matB));

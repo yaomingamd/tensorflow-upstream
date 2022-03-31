@@ -175,6 +175,9 @@ struct LinalgTrivialBufferForwardingPattern
             });
 
         reused_inputs.insert(input_buffer);
+        // We have found an input buffer which we can forward. No need to keep
+        // looking for another input buffer to forward.
+        break;
       }
     }
 
@@ -188,12 +191,12 @@ struct LinalgTrivialBufferForwardingPattern
 struct LinalgTrivialBufferForwardingPass
     : public LinalgTrivialBufferForwardingBase<
           LinalgTrivialBufferForwardingPass> {
-  void runOnFunction() override {
-    mlir::FuncOp function = getFunction();
+  void runOnOperation() override {
+    mlir::FuncOp function = getOperation();
     mlir::MLIRContext* ctx = function.getContext();
 
     mlir::RewritePatternSet patterns(ctx);
-    patterns.insert<LinalgTrivialBufferForwardingPattern>(ctx);
+    patterns.add<LinalgTrivialBufferForwardingPattern>(ctx);
 
     (void)mlir::applyPatternsAndFoldGreedily(function, std::move(patterns));
   }
@@ -201,7 +204,8 @@ struct LinalgTrivialBufferForwardingPass
 
 }  // namespace
 
-std::unique_ptr<mlir::FunctionPass> CreateLinalgTrivialBufferForwardingPass() {
+std::unique_ptr<mlir::OperationPass<mlir::FuncOp>>
+CreateLinalgTrivialBufferForwardingPass() {
   return std::make_unique<LinalgTrivialBufferForwardingPass>();
 }
 

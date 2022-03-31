@@ -20,7 +20,7 @@ limitations under the License.
 
 #include "absl/types/optional.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"  // from @llvm-project
-#include "mlir/Dialect/StandardOps/IR/Ops.h"  // from @llvm-project
+#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/Attributes.h"  // from @llvm-project
 #include "mlir/IR/Builders.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
@@ -141,7 +141,7 @@ class HloFunctionImporter {
         builder_(builder),
         function_map_(function_map) {
     context_->loadDialect<mlir::arith::ArithmeticDialect>();
-    context_->loadDialect<mlir::StandardOpsDialect>();
+    context_->loadDialect<mlir::func::FuncDialect>();
     context_->loadDialect<mlir::mhlo::MhloDialect>();
   }
 
@@ -184,8 +184,11 @@ class HloFunctionImporter {
   // Converts xla Tensor type to the corresponding MLIR type.
   StatusOr<mlir::RankedTensorType> ConvertTensorType(const xla::Shape& shape);
 
-  // Converts an XLA shape/layout to the corresponding MLIR layout
-  StatusOr<mlir::Attribute> ConvertShapeToMlirLayout(const xla::Shape& shape);
+  // Converts an XLA shape/layout to the corresponding MLIR layout, in
+  // flattened_attr, while flattening the tuple layout.
+  Status ConvertShapeToMlirLayout(
+      const xla::Shape& shape,
+      llvm::SmallVectorImpl<mlir::Attribute>& flattened_attr);
 
   // Returns the output type of an HloInstruction.
   StatusOr<mlir::Type> GetReturnType(const xla::HloInstruction* instruction);
@@ -207,7 +210,7 @@ class HloFunctionImporter {
 
   // Converts the dimensions of an HLO instruction into an MLIR attribute.
   mlir::DenseIntElementsAttr ConvertDimensions(
-      llvm::ArrayRef<int64_t> op_dimensions);
+      absl::Span<const int64_t> op_dimensions);
 
   // Converts Array ref to an DenseIntElementsAttr.
   mlir::DenseIntElementsAttr Convert(llvm::ArrayRef<int64_t> elements);

@@ -188,8 +188,9 @@ Status LaunchAutotunedConv(const AutotuneEntry<se::dnn::ConvOp>& autotune_entry,
                         AllocateScratchOrFallback<se::dnn::ConvOp::Signature>(
                             scratch_allocator, primary, no_scratch_fallback));
     auto& runner = *std::get<const se::dnn::ConvRunner*>(runner_and_scratch);
-    return runner(stream, in_ptr, filter_ptr, out_ptr,
-                  std::get<se::DeviceMemoryBase>(runner_and_scratch), nullptr);
+    return runner(stream, nullptr,
+                  std::get<se::DeviceMemoryBase>(runner_and_scratch), in_ptr,
+                  filter_ptr, out_ptr);
   } else {
     return stream->ConvolveWithAlgorithm(
         kind, input_desc, in_ptr, filter_desc, filter_ptr, output_desc, out_ptr,
@@ -198,17 +199,15 @@ Status LaunchAutotunedConv(const AutotuneEntry<se::dnn::ConvOp>& autotune_entry,
   }
 }
 
-bool UseNhwcLayoutForConvOnRocm(se::Stream* stream);/* {
-#if TENSORFLOW_USE_ROCM
-   bool is_enabled = se::gpu::UseNhwcLayoutForRocm();
-   auto arch_name = stream->GetGcnArchName();
-   return (arch_name.find("gfx908") != std::string::npos  ||
-           arch_name.find("gfx90a") != std::string::npos) &&
-           is_enabled; 
-#else
-   return false;
-#endif
-}*/
+bool UseNhwcLayoutForConvOnRocm(se::Stream* stream); /* {
+ #if TENSORFLOW_USE_ROCM
+    bool is_enabled = se::gpu::UseNhwcLayoutForRocm();
+    auto rocm_compute_capability = stream->GetRocmComputeCapability();
+    return (is_enabled && rocm_compute_capability.has_nhwc_layout_support());
+ #else
+    return false;
+ #endif
+ }*/
 
 }  // namespace tensorflow
 

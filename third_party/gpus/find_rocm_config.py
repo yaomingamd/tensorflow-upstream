@@ -72,7 +72,8 @@ def _find_rocm_config(rocm_install_path):
   def rocm_version_numbers_pre_rocm50(path, prior_err):
     version_file = os.path.join(path, ".info/version-dev")
     if not os.path.exists(version_file):
-      raise ConfigError('{} ROCm version file "{}" not found either.'.format(prior_err, version_file))
+      raise ConfigError("{} ROCm version file ".format(prior_err) +
+                        '"{}" not found either.'.format(version_file))
     version_numbers = []
     with open(version_file) as f:
       version_string = f.read().strip()
@@ -85,16 +86,19 @@ def _find_rocm_config(rocm_install_path):
   def rocm_version_numbers_post_rocm50(path):
     version_file = os.path.join(path, "include/rocm_version.h")
     if not os.path.exists(version_file):
-      return False, 'ROCm version file "{}" not found. Trying an alternate approach to determine the ROCm version.'.format(version_file), 0,0,0
+      return False, 'ROCm version file "{}" not found.'.format(version_file) +\
+        " Trying an alternate approach to determine the ROCm version.", 0,0,0
     major = _get_header_version(version_file, "ROCM_VERSION_MAJOR")
     minor = _get_header_version(version_file, "ROCM_VERSION_MINOR")
-    # ROCM_VERSION_PATCH is only defined in ROCm 5.0 and higher
-    patch = _get_header_version(version_file, "ROCM_VERSION_PATCH") if int(major) >= 5 else 0
+    patch = _get_header_version(version_file, "ROCM_VERSION_PATCH")
     return True, "", major, minor, patch
 
-  status, error_msg, major, minor, patch = rocm_version_numbers_post_rocm50(rocm_install_path)
+  status, error_msg, major, minor, patch = \
+    rocm_version_numbers_post_rocm50(rocm_install_path)
+
   if not status:
-    major, minor, patch = rocm_version_numbers_pre_rocm50(rocm_install_path, error_msg)
+    major, minor, patch = \
+      rocm_version_numbers_pre_rocm50(rocm_install_path, error_msg)
 
   rocm_config = {
       "rocm_version_number": _get_composite_version_number(major, minor, patch)
@@ -106,10 +110,21 @@ def _find_rocm_config(rocm_install_path):
 def _find_hipruntime_config(rocm_install_path):
 
   def hipruntime_version_number(path):
-    version_file = os.path.join(path, "hip/include/hip/hip_version.h")
-    if not os.path.exists(version_file):
+    possible_version_files = [
+        "include/hip/hip_version.h",  # ROCm 5.2
+        "hip/include/hip/hip_version.h",  # ROCm 5.1 and prior
+    ]
+    version_file = None
+    for f in possible_version_files:
+      version_file_path = os.path.join(path, f)
+      if os.path.exists(version_file_path):
+        version_file = version_file_path
+        break
+    if not version_file:
       raise ConfigError(
-          'HIP Runtime version file "{}" not found'.format(version_file))
+          "HIP Runtime version file not found in {}".format(
+              possible_version_files))
+
     # This header file has an explicit #define for HIP_VERSION, whose value
     # is (HIP_VERSION_MAJOR * 100 + HIP_VERSION_MINOR)
     # Retreive the major + minor and re-calculate here, since we do not
@@ -151,8 +166,8 @@ def _find_rocblas_config(rocm_install_path):
 
   def rocblas_version_numbers(path):
     possible_version_files = [
-        "rocblas/include/rocblas-version.h",  # ROCm 3.7 and prior
-        "rocblas/include/internal/rocblas-version.h",  # ROCm 3.8
+        "include/rocblas/internal/rocblas-version.h",  # ROCm 5.2
+        "rocblas/include/internal/rocblas-version.h",  # ROCm 5.1 and prior
     ]
     version_file = None
     for f in possible_version_files:
@@ -183,8 +198,8 @@ def _find_rocrand_config(rocm_install_path):
 
   def rocrand_version_number(path):
     possible_version_files = [
-        "rocrand/include/rocrand_version.h",  # ROCm 5.0 and prior
         "include/rocrand/rocrand_version.h",  # ROCm 5.1
+        "rocrand/include/rocrand_version.h",  # ROCm 5.0 and prior
     ]
     version_file = None
     for f in possible_version_files:
@@ -194,8 +209,7 @@ def _find_rocrand_config(rocm_install_path):
         break
     if not version_file:
       raise ConfigError(
-          'rocrand version file not found in {}'.format(
-            possible_version_files))
+          "rocrand version file not found in {}".format(possible_version_files))
     version_number = _get_header_version(version_file, "ROCRAND_VERSION")
     return version_number
 
@@ -209,10 +223,20 @@ def _find_rocrand_config(rocm_install_path):
 def _find_rocfft_config(rocm_install_path):
 
   def rocfft_version_numbers(path):
-    version_file = os.path.join(path, "rocfft/include/rocfft-version.h")
-    if not os.path.exists(version_file):
+    possible_version_files = [
+        "include/rocfft/rocfft-version.h",  # ROCm 5.2
+        "rocfft/include/rocfft-version.h",  # ROCm 5.1 and prior
+    ]
+    version_file = None
+    for f in possible_version_files:
+      version_file_path = os.path.join(path, f)
+      if os.path.exists(version_file_path):
+        version_file = version_file_path
+        break
+    if not version_file:
       raise ConfigError(
-          'rocfft version file "{}" not found'.format(version_file))
+          "rocfft version file not found in {}".format(
+              possible_version_files))
     major = _get_header_version(version_file, "rocfft_version_major")
     minor = _get_header_version(version_file, "rocfft_version_minor")
     patch = _get_header_version(version_file, "rocfft_version_patch")
@@ -231,10 +255,20 @@ def _find_rocfft_config(rocm_install_path):
 def _find_hipfft_config(rocm_install_path):
 
   def hipfft_version_numbers(path):
-    version_file = os.path.join(path, "hipfft/include/hipfft-version.h")
-    if not os.path.exists(version_file):
+    possible_version_files = [
+        "include/hipfft/hipfft-version.h",  # ROCm 5.2
+        "hipfft/include/hipfft-version.h",  # ROCm 5.1 and prior
+    ]
+    version_file = None
+    for f in possible_version_files:
+      version_file_path = os.path.join(path, f)
+      if os.path.exists(version_file_path):
+        version_file = version_file_path
+        break
+    if not version_file:
       raise ConfigError(
-          'hipfft version file "{}" not found'.format(version_file))
+          "hipfft version file not found in {}".format(
+              possible_version_files))
     major = _get_header_version(version_file, "hipfftVersionMajor")
     minor = _get_header_version(version_file, "hipfftVersionMinor")
     patch = _get_header_version(version_file, "hipfftVersionPatch")
@@ -253,10 +287,20 @@ def _find_hipfft_config(rocm_install_path):
 def _find_roctracer_config(rocm_install_path):
 
   def roctracer_version_numbers(path):
-    version_file = os.path.join(path, "roctracer/include/roctracer.h")
-    if not os.path.exists(version_file):
+    possible_version_files = [
+        "include/roctracer/roctracer.h",  # ROCm 5.2
+        "roctracer/include/roctracer.h",  # ROCm 5.1 and prior
+    ]
+    version_file = None
+    for f in possible_version_files:
+      version_file_path = os.path.join(path, f)
+      if os.path.exists(version_file_path):
+        version_file = version_file_path
+        break
+    if not version_file:
       raise ConfigError(
-          'roctracer version file "{}" not found'.format(version_file))
+          "roctracer version file not found in {}".format(
+              possible_version_files))
     major = _get_header_version(version_file, "ROCTRACER_VERSION_MAJOR")
     minor = _get_header_version(version_file, "ROCTRACER_VERSION_MINOR")
     # roctracer header does not have a patch version number
@@ -276,10 +320,20 @@ def _find_roctracer_config(rocm_install_path):
 def _find_hipsparse_config(rocm_install_path):
 
   def hipsparse_version_numbers(path):
-    version_file = os.path.join(path, "hipsparse/include/hipsparse-version.h")
-    if not os.path.exists(version_file):
+    possible_version_files = [
+        "include/hipsparse/hipsparse-version.h",  # ROCm 5.2
+        "hipsparse/include/hipsparse-version.h",  # ROCm 5.1 and prior
+    ]
+    version_file = None
+    for f in possible_version_files:
+      version_file_path = os.path.join(path, f)
+      if os.path.exists(version_file_path):
+        version_file = version_file_path
+        break
+    if not version_file:
       raise ConfigError(
-          'hipsparse version file "{}" not found'.format(version_file))
+          "hipsparse version file not found in {}".format(
+              possible_version_files))
     major = _get_header_version(version_file, "hipsparseVersionMajor")
     minor = _get_header_version(version_file, "hipsparseVersionMinor")
     patch = _get_header_version(version_file, "hipsparseVersionPatch")
@@ -298,8 +352,9 @@ def _find_hipsolver_config(rocm_install_path):
 
   def hipsolver_version_numbers(path):
     possible_version_files = [
-        "hipsolver/include/hipsolver-version.h",  # ROCm 5.0 and prior
+        "include/hipsolver/internal/hipsolver-version.h",  # ROCm 5.2
         "hipsolver/include/internal/hipsolver-version.h",  # ROCm 5.1
+        "hipsolver/include/hipsolver-version.h",  # ROCm 5.0 and prior
     ]
     version_file = None
     for f in possible_version_files:
@@ -308,9 +363,8 @@ def _find_hipsolver_config(rocm_install_path):
         version_file = version_file_path
         break
     if not version_file:
-      raise ConfigError(
-          'hipsolver version file not found in {}'.format(
-            possible_version_files))
+      raise ConfigError("hipsolver version file not found in {}".format(
+          possible_version_files))
     major = _get_header_version(version_file, "hipsolverVersionMajor")
     minor = _get_header_version(version_file, "hipsolverVersionMinor")
     patch = _get_header_version(version_file, "hipsolverVersionPatch")
@@ -329,10 +383,20 @@ def _find_hipsolver_config(rocm_install_path):
 def _find_rocsolver_config(rocm_install_path):
 
   def rocsolver_version_numbers(path):
-    version_file = os.path.join(path, "rocsolver/include/rocsolver-version.h")
-    if not os.path.exists(version_file):
+    possible_version_files = [
+        "include/rocsolver/rocsolver-version.h",  # ROCm 5.2
+        "rocsolver/include/rocsolver-version.h",  # ROCm 5.1 and prior
+    ]
+    version_file = None
+    for f in possible_version_files:
+      version_file_path = os.path.join(path, f)
+      if os.path.exists(version_file_path):
+        version_file = version_file_path
+        break
+    if not version_file:
       raise ConfigError(
-          'rocsolver version file "{}" not found'.format(version_file))
+          "rocsolver version file not found in {}".format(
+              possible_version_files))
     major = _get_header_version(version_file, "ROCSOLVER_VERSION_MAJOR")
     minor = _get_header_version(version_file, "ROCSOLVER_VERSION_MINOR")
     patch = _get_header_version(version_file, "ROCSOLVER_VERSION_PATCH")

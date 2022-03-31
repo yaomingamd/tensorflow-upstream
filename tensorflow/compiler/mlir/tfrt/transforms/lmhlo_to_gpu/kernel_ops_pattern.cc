@@ -22,9 +22,9 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Casting.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/Dialect/GPU/GPUDialect.h"  // from @llvm-project
 #include "mlir/Dialect/MemRef/IR/MemRef.h"  // from @llvm-project
-#include "mlir/Dialect/StandardOps/IR/Ops.h"  // from @llvm-project
 #include "mlir/IR/Attributes.h"  // from @llvm-project
 #include "mlir/IR/BlockAndValueMapping.h"  // from @llvm-project
 #include "mlir/IR/Builders.h"  // from @llvm-project
@@ -38,6 +38,7 @@
 #include "mlir/Transforms/DialectConversion.h"  // from @llvm-project
 #include "mlir/Transforms/RegionUtils.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/hlo/include/mlir-hlo/Dialect/lhlo/IR/lhlo_ops.h"
+#include "tensorflow/compiler/mlir/tfrt/transforms/lmhlo_to_gpu/pattern_utils.h"
 #include "tensorflow/compiler/mlir/xla/hlo_utils.h"
 #include "tensorflow/compiler/xla/service/gpu/buffer_allocations.h"
 #include "tensorflow/compiler/xla/service/gpu/copy_thunk.h"
@@ -47,7 +48,13 @@
 #include "tensorflow/compiler/xla/service/gpu/kernel_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/launch_dimensions.h"
 #include "tensorflow/compiler/xla/service/gpu/llvm_gpu_backend/gpu_backend_lib.h"
+#include "tensorflow/compiler/xla/service/gpu/memset_thunk.h"
+#if TENSORFLOW_USE_ROCM
+#include "tensorflow/compiler/xla/service/platform_util.h"
+#include "tensorflow/core/platform/rocm_rocdl_path.h"
+#else
 #include "tensorflow/compiler/xla/service/gpu/nvptx_helper.h"
+#endif
 #include "tensorflow/compiler/xla/service/gpu/sequential_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/thunk.h"
 #include "tfrt/gpu/passes/passes.h"  // from @tf_runtime
@@ -97,14 +104,15 @@ static llvm::Error MakeError(xla::Status status) {
 
 // Clones `op` into a function within a module with `arguments`.
 // The `get_global_ops` are the def ops of `arguments`, or null otherwise.
-static std::tuple<mlir::OwningModuleRef, mlir::FuncOp> CloneToModule(
-    Operation* op, mlir::ValueRange arguments,
-    mlir::MutableArrayRef<GetGlobalOp> get_global_ops) {
+static std::tuple<mlir::OwningOpRef<mlir::ModuleOp>, mlir::FuncOp>
+CloneToModule(Operation* op, mlir::ValueRange arguments,
+              mlir::MutableArrayRef<GetGlobalOp> get_global_ops) {
   auto loc = op->getLoc();
   auto* context = op->getContext();
   mlir::OpBuilder builder(context);
 
-  mlir::OwningModuleRef module_op = builder.create<mlir::ModuleOp>(loc);
+  mlir::OwningOpRef<mlir::ModuleOp> module_op =
+      builder.create<mlir::ModuleOp>(loc);
   builder.setInsertionPointToEnd(module_op->getBody());
   // Clone and annotate the memref.global ops that the memref.get_global ops
   // refer to. The lmhlo.alloc index refers to one of the function arguments.
@@ -169,11 +177,21 @@ static llvm::Expected<
     std::tuple<std::unique_ptr<ThunkSequence>, std::vector<ConstantInfo>>>
 Emit(mlir::FuncOp func_op, absl::Span<const xla::BufferAllocation> allocations,
      const stream_executor::CudaComputeCapability& cuda_compute_capability,
+     const stream_executor::RocmComputeCapability& rocm_compute_capability,
      const xla::HloModuleConfig& hlo_module_config, llvm::Module* llvm_module) {
+#if TENSORFLOW_USE_ROCM
+  const char target_triple[] = "amdgcn-amd-amdhsa";
+  const char data_layout[] =
+      "e-p:64:64-p1:64:64-p2:64:64-p3:32:32-p4:32:32-p5:32:32-i64:64-v16:16-"
+      "v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-"
+      "v2048:2048-n32:64-A5";
+  const char platform_name[] = "ROCm";
+#else
   // Hardcoded values for now...
   const char target_triple[] = "nvptx64-nvidia-cuda";
   const char data_layout[] = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64";
   const char platform_name[] = "CUDA";
+#endif
   xla::gpu::GpuDeviceInfo gpu_device_info = {};
   gpu_device_info.threads_per_block_limit = 1024;
   gpu_device_info.threads_per_warp = 32;
@@ -192,8 +210,8 @@ Emit(mlir::FuncOp func_op, absl::Span<const xla::BufferAllocation> allocations,
 
   IrEmitterContext ir_emitter_context(
       /*hlo_module=*/nullptr, /*buffer_assignment=*/nullptr, platform_name,
-      gpu_device_info, cuda_compute_capability, func_op->getContext(),
-      llvm_module);
+      gpu_device_info, cuda_compute_capability, rocm_compute_capability,
+      func_op->getContext(), llvm_module);
 
   ir_emitter_context.set_allocations(allocations);
 
@@ -201,7 +219,7 @@ Emit(mlir::FuncOp func_op, absl::Span<const xla::BufferAllocation> allocations,
       IrEmitterUnnested::Create(hlo_module_config, &ir_emitter_context);
   if (!ir_emitter.ok()) return MakeError(ir_emitter.status());
 
-  auto emit_status = (*ir_emitter)->EmitLmhloRegion(&func_op.body());
+  auto emit_status = (*ir_emitter)->EmitLmhloRegion(&func_op.getBody());
   if (!emit_status.ok()) return MakeError(emit_status);
 
   return std::make_tuple((*ir_emitter)->ConsumeThunkSequence(),
@@ -232,12 +250,24 @@ static llvm::Expected<RewriteData> Match(Operation* op) {
   xla::DebugOptions options = xla::GetDebugOptionsFromFlags();
   hlo_module_config.set_debug_options(options);
   stream_executor::CudaComputeCapability cuda_compute_capability = {5, 2};
+#if TENSORFLOW_USE_ROCM
+  auto platform = xla::PlatformUtil::GetPlatform("gpu");
+  if (!platform.ok()) return MakeError(platform.status());
+  auto ses = xla::PlatformUtil::GetStreamExecutors(*platform);
+  if (!ses.ok()) return MakeError(ses.status());
+  if (ses->size() == 0)
+    return MakeError("Unable to obtain rocm compute capability");
+  auto rocm_compute_capability =
+      (*ses)[0]->GetDeviceDescription().rocm_compute_capability();
+#else
+  stream_executor::RocmComputeCapability rocm_compute_capability("gfx908");
+#endif
   llvm::LLVMContext llvm_context;
   auto llvm_module = std::make_unique<llvm::Module>("", llvm_context);
 
-  auto emit_result =
-      Emit(std::get<mlir::FuncOp>(module_op), *allocations,
-           cuda_compute_capability, hlo_module_config, llvm_module.get());
+  auto emit_result = Emit(std::get<mlir::FuncOp>(module_op), *allocations,
+                          cuda_compute_capability, rocm_compute_capability,
+                          hlo_module_config, llvm_module.get());
   if (!emit_result) return emit_result.takeError();
   auto thunks = std::move(std::get<0>(*emit_result));
   auto constants = std::move(std::get<1>(*emit_result));
@@ -254,18 +284,28 @@ static llvm::Expected<RewriteData> Match(Operation* op) {
     }
   }
   if (!llvm::all_of(*thunks, [](const auto& thunk) {
-        Thunk::Kind kinds[] = {Thunk::kKernel, Thunk::kCopy};
+        Thunk::Kind kinds[] = {Thunk::kKernel, Thunk::kCopy,
+                               Thunk::kMemset32BitValue, Thunk::kMemzero};
         auto equal = [&](Thunk::Kind kind) { return thunk->kind() == kind; };
         return llvm::any_of(kinds, equal);
       })) {
-    return MakeError("Expected only kernel and copy thunks");
+    return MakeError("Expected only kernel, copy, memset, and memzero thunks");
   }
 
+#if TENSORFLOW_USE_ROCM
+  auto libdevice_dir = tensorflow::RocdlRoot();
+  xla::gpu::GpuVersion gpu_version{rocm_compute_capability};
+  auto hsaco = xla::gpu::amdgpu::CompileToHsaco(
+      llvm_module.get(), gpu_version, hlo_module_config, libdevice_dir);
+  if (!hsaco.ok()) return MakeError(hsaco.status());
+  StatusOr<std::string> ptx(std::string(hsaco->begin(), hsaco->end()));
+#else
   auto libdevice_dir = xla::gpu::GetLibdeviceDir(hlo_module_config);
   auto ptx =
       xla::gpu::nvptx::CompileToPtx(llvm_module.get(), cuda_compute_capability,
                                     hlo_module_config, libdevice_dir);
   if (!ptx.ok()) return MakeError(ptx.status());
+#endif
 
   return RewriteData{op,
                      std::move(arguments),
@@ -326,6 +366,32 @@ static void Rewrite(Operation* op, mlir::PatternRewriter& rewriter,
       continue;
     }
 
+    auto rewrite_memset = [&](const xla::BufferAllocation::Slice& slice,
+                              uint32_t memset_value) {
+      assert(slice.offset() == 0);
+      Value buffer_arg = arguments[slice.index()];
+      auto element_type =
+          buffer_arg.getType().cast<mlir::MemRefType>().getElementType();
+      rewriter.setInsertionPoint(op);
+      Value value =
+          MakeBitPatternConstant(rewriter, loc, element_type, memset_value);
+      rewriter.create<mlir::gpu::MemsetOp>(
+          loc, mlir::TypeRange(), mlir::ValueRange(), buffer_arg, value);
+    };
+
+    if (thunk->kind() == Thunk::kMemset32BitValue) {
+      const auto* memset_thunk =
+          static_cast<const xla::gpu::Memset32BitValueThunk*>(thunk.get());
+      rewrite_memset(memset_thunk->destination(), memset_thunk->value());
+      continue;
+    }
+    if (thunk->kind() == Thunk::kMemzero) {
+      const auto* memzero_thunk =
+          static_cast<const xla::gpu::MemzeroThunk*>(thunk.get());
+      rewrite_memset(memzero_thunk->destination(), 0);
+      continue;
+    }
+
     const auto* kernel_thunk = static_cast<const KernelThunk*>(thunk.get());
     rewriter.setInsertionPointToStart(gpu_module.getBody());
     SmallVector<Value, 4> kernel_args;
@@ -377,7 +443,9 @@ mlir::LogicalResult KernelOpsPattern::matchAndRewrite(
     });
   };
   if (walk(mlir::lmhlo::FusionOp()).wasInterrupted() ||
+      walk(mlir::lmhlo::RngGetAndUpdateStateOp()).wasInterrupted() ||
       walk(mlir::lmhlo::ScatterOp()).wasInterrupted() ||
+      walk(mlir::lmhlo::SelectAndScatterOp()).wasInterrupted() ||
       walk(mlir::lmhlo::SortOp()).wasInterrupted())
     return mlir::failure();
 

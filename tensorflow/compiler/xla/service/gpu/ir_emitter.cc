@@ -15,9 +15,6 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/service/gpu/ir_emitter.h"
 
-#include <string>
-#include <utility>
-
 #include "tensorflow/core/platform/logging.h"
 // IWYU pragma: no_include "llvm/IR/Intrinsics.gen.inc"
 #include "absl/algorithm/container.h"
@@ -29,14 +26,11 @@ limitations under the License.
 #include "tensorflow/compiler/xla/primitive_util.h"
 #include "tensorflow/compiler/xla/service/elemental_ir_emitter.h"
 #include "tensorflow/compiler/xla/service/gpu/elemental_ir_emitter.h"
-#include "tensorflow/compiler/xla/service/gpu/gpu_constants.h"
 #include "tensorflow/compiler/xla/service/gpu/ir_emitter_nested.h"
 #include "tensorflow/compiler/xla/service/gpu/ir_emitter_unnested.h"
 #include "tensorflow/compiler/xla/service/gpu/launch_dimensions.h"
-#include "tensorflow/compiler/xla/service/hlo_casting_utils.h"
 #include "tensorflow/compiler/xla/service/hlo_computation.h"
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
-#include "tensorflow/compiler/xla/service/llvm_ir/buffer_assignment_util.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/fused_ir_emitter.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/ir_array.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/llvm_loop.h"
@@ -95,57 +89,6 @@ Status IrEmitter::DefaultAction(HloInstruction* hlo) {
       *hlo, GpuElementalIrEmitter(hlo_module_config_, module_, &b_,
                                   GetNestedComputer())
                 .MakeElementGenerator(hlo, operand_to_generator));
-}
-
-Status IrEmitter::EmitConstants(const HloComputation& computation) {
-  for (HloInstruction* instr : computation.instructions()) {
-    if (instr->opcode() != HloOpcode::kConstant) {
-      continue;
-    }
-    Literal& literal = *Cast<HloConstantInstruction>(instr)->mutable_literal();
-    const bool should_emit_initializer = ShouldEmitLiteralInLlvmIr(literal);
-    llvm::ArrayType* global_type =
-        llvm::ArrayType::get(b_.getInt8Ty(), literal.size_bytes());
-    llvm::Constant* initializer =
-        should_emit_initializer
-            ? llvm_ir::ConvertLiteralToIrConstant(literal, module_)
-            : llvm::ConstantAggregateZero::get(global_type);
-    if (should_emit_initializer) {
-      VLOG(3) << "Emitted initializer for constant with shape "
-              << ShapeUtil::HumanString(literal.shape());
-    }
-
-    // These globals will be looked up by name by GpuExecutable so we need to
-    // give them an external linkage.  Not all of their uses are visible in
-    // the LLVM IR (e.g. TupleThunk) so we can't give then a linkage that
-    // merely preserves their names (like available_externally), we also need
-    // to ensure that they stick around even if they're "unused".
-    //
-    // We may have to be more clever here in the future if we notice that we're
-    // keeping around too many globals because of their linkage.
-    std::string global_name = llvm_ir::ConstantHloToGlobalName(*instr);
-
-    llvm::GlobalVariable* global_for_const = new llvm::GlobalVariable(
-        global_type, /*isConstant=*/should_emit_initializer,
-        llvm::GlobalValue::ExternalLinkage,
-        /*Initializer=*/initializer, global_name,
-        /*TLMode=*/llvm::GlobalValue::NotThreadLocal,
-        /*AddressSpace=*/0,
-        /*isExternallyInitialized=*/false);
-    global_for_const->setAlignment(llvm::Align(kConstantBufferAlignBytes));
-    ir_emitter_context_->llvm_module()->getGlobalList().push_back(
-        global_for_const);
-
-    GpuExecutable::ConstantInfo info;
-    info.symbol_name = global_name;
-
-    if (!should_emit_initializer) {
-      auto base = static_cast<const uint8_t*>(literal.untyped_data());
-      info.content.assign(base, base + literal.size_bytes());
-    }
-    ir_emitter_context_->constants().push_back(std::move(info));
-  }
-  return Status::OK();
 }
 
 Status IrEmitter::HandleConstant(HloInstruction* constant) {
@@ -270,10 +213,8 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
     return false;
   }
 
-  llvm::Triple target_triple = llvm::Triple(module_->getTargetTriple());
-  bool isAMDGPU = target_triple.isAMDGPU();
-
   if (root_opcode == HloOpcode::kAdd) {
+    llvm::Triple target_triple = llvm::Triple(module_->getTargetTriple());
     // NVPTX supports atomicAdd on F32 and integer types.
     if (target_triple.isNVPTX()) {
       // "atom.add.f64 requires sm_60 or higher."
@@ -291,51 +232,20 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
       }
     }
 
-    if (isAMDGPU) {
-      std::string arch = ir_emitter_context_->amdgpu_arch();
-      llvm::PointerType* output_address_type =
-          llvm::dyn_cast<llvm::PointerType>(output_address->getType());
-      CHECK_NE(output_address_type, nullptr);
-
-      // todo: implement for F16 via global_atomic_fadd_pk2f16
-      bool atomic_add_supported = (element_type == F32);
-      if (atomic_add_supported) {
-        if (output_address_type->getPointerAddressSpace() != 3) {
-          // the compiler will only generate a global_atomic_fadd if the pointer
-          // is in global addrspace (1)
-          auto cast_output_ptr = b_.CreateAddrSpaceCast(
-             output_address,
-             llvm::PointerType::get(output_address_type->getPointerElementType(),
-                               /*AddressSpace=*/1));
-          AtomicRMW(llvm::AtomicRMWInst::FAdd, cast_output_ptr, source,
-                  llvm::MaybeAlign(),
-                  llvm::AtomicOrdering::SequentiallyConsistent,
-                  b_.getContext().getOrInsertSyncScopeID("agent"));
-          return true;
-        } else {
-          // adds to shared memory are always atomic. Todo: verify that the compiler
-          // produces a ds_add_f32 rather than a CAS loop
-          AtomicRMW(llvm::AtomicRMWInst::FAdd, output_address, source,
-                  llvm::MaybeAlign(),
-                  llvm::AtomicOrdering::SequentiallyConsistent,
-                  b_.getContext().getOrInsertSyncScopeID("agent"));
-          return true;
-        }
-      }
+    if (IsEmittingForAMDGPU() &&
+        (element_type == F32 ||
+         (element_type == F16 &&
+          ir_emitter_context_->rocm_compute_capability()
+              .has_fp16_atomics_support()))) /* is atomic add supported? */ {
+      EmitAMDGPUAtomicAdd(output_address, source);
+      return true;
     }
 
     if (is_atomic_integral) {
       // integral + integral
-      if (isAMDGPU) {
-        AtomicRMW(llvm::AtomicRMWInst::Add, output_address, source,
-            llvm::MaybeAlign(),
-            llvm::AtomicOrdering::SequentiallyConsistent,
-            b_.getContext().getOrInsertSyncScopeID("agent"));
-      } else {
-        AtomicRMW(llvm::AtomicRMWInst::Add, output_address, source,
-            llvm::MaybeAlign(),
-            llvm::AtomicOrdering::SequentiallyConsistent);
-      }
+      AtomicRMW(
+          llvm::AtomicRMWInst::Add, output_address, source, llvm::MaybeAlign(),
+          llvm::AtomicOrdering::SequentiallyConsistent, DetermineSyncScope());
       return true;
     }
   }
@@ -346,14 +256,9 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
     auto opcode = primitive_util::IsSignedIntegralType(element_type)
                       ? llvm::AtomicRMWInst::Max
                       : llvm::AtomicRMWInst::UMax;
-    if (isAMDGPU) {
-      AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
-                llvm::AtomicOrdering::SequentiallyConsistent,
-                b_.getContext().getOrInsertSyncScopeID("agent"));
-    } else {
-      AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
-                llvm::AtomicOrdering::SequentiallyConsistent);
-    }
+    AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
+              llvm::AtomicOrdering::SequentiallyConsistent,
+              DetermineSyncScope());
     return true;
   }
 
@@ -362,14 +267,9 @@ bool IrEmitter::MaybeEmitDirectAtomicOperation(
     auto opcode = primitive_util::IsSignedIntegralType(element_type)
                       ? llvm::AtomicRMWInst::Min
                       : llvm::AtomicRMWInst::UMin;
-    if (isAMDGPU) {
-      AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
-                llvm::AtomicOrdering::SequentiallyConsistent,
-                b_.getContext().getOrInsertSyncScopeID("agent"));
-    } else {
-      AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
-                llvm::AtomicOrdering::SequentiallyConsistent);
-    }
+    AtomicRMW(opcode, output_address, source, llvm::MaybeAlign(),
+              llvm::AtomicOrdering::SequentiallyConsistent,
+              DetermineSyncScope());
     return true;
   }
 
@@ -525,21 +425,10 @@ Status IrEmitter::EmitAtomicOperationUsingCAS(const HloComputation& computation,
   // Emit code to perform the atomicCAS operation
   // (cas_old_output, success) = atomicCAS(memory_address, cas_old_output,
   //                                       cas_new_output);
-  llvm::Value* ret_value = [&]() {
-    llvm::Triple target_triple = llvm::Triple(module_->getTargetTriple());
-    if (target_triple.isAMDGPU()) {
-      return AtomicCmpXchg(
-          atomic_memory_address, cas_old_output, cas_new_output, llvm::MaybeAlign(),
-          llvm::AtomicOrdering::SequentiallyConsistent,
-          llvm::AtomicOrdering::SequentiallyConsistent,
-          b_.getContext().getOrInsertSyncScopeID("agent"));
-    } else {
-      return AtomicCmpXchg(
-          atomic_memory_address, cas_old_output, cas_new_output, llvm::MaybeAlign(),
-          llvm::AtomicOrdering::SequentiallyConsistent,
-          llvm::AtomicOrdering::SequentiallyConsistent);
-    }
-  }();
+  llvm::Value* ret_value = AtomicCmpXchg(
+      atomic_memory_address, cas_old_output, cas_new_output, llvm::MaybeAlign(),
+      llvm::AtomicOrdering::SequentiallyConsistent,
+      llvm::AtomicOrdering::SequentiallyConsistent, DetermineSyncScope());
 
   // Extract the memory value returned from atomicCAS and store it as
   // cas_old_output.
@@ -572,6 +461,80 @@ Status IrEmitter::EmitAtomicOperationForNestedComputation(
 
   return EmitAtomicOperationUsingCAS(computation, output_address,
                                      source_address);
+}
+
+bool IrEmitter::IsEmittingForAMDGPU() const {
+  llvm::Triple target_triple = llvm::Triple(module_->getTargetTriple());
+  return target_triple.isAMDGPU();
+}
+
+void IrEmitter::EmitAMDGPUAtomicAdd(llvm::Value* output_address,
+                                    llvm::Value* source) {
+  CHECK(IsEmittingForAMDGPU());
+  auto output_address_type =
+      llvm::dyn_cast<llvm::PointerType>(output_address->getType());
+  CHECK_NE(output_address_type, nullptr);
+
+  auto output_ptr =
+      (output_address_type->getPointerAddressSpace() != 3)
+          ?
+          // the compiler will only generate a global_atomic_fadd if the pointer
+          // is in global addrspace (1)
+          b_.CreateAddrSpaceCast(
+              output_address, llvm::PointerType::get(
+                                  output_address_type->getPointerElementType(),
+                                  /*AddressSpace=*/1))
+          :
+          // adds to shared memory are always atomic.
+          output_address;
+
+  if(source->getType()->getPrimitiveSizeInBits() == 16)
+  {
+    llvm::VectorType* half2type = llvm::VectorType::get(b_.getHalfTy(), llvm::ElementCount::getFixed(2));
+    auto i16 = b_.getInt16Ty();
+    auto i32 = b_.getInt32Ty();
+    auto i64 = b_.getInt64Ty();
+    auto half2ptr = llvm::PointerType::get(half2type, 1);
+    auto intptr = b_.CreatePtrToInt(output_address, i64);
+    auto alignment = b_.CreateAnd(intptr, llvm::ConstantInt::get(i64, 2ull));
+    intptr = b_.CreateAnd(intptr, llvm::ConstantInt::get(i64, ~3ull));
+    output_ptr = b_.CreateIntToPtr(intptr, half2ptr);
+
+    auto shift = b_.CreateShl(b_.CreateTrunc(alignment, i32), 3);
+    auto i16src = b_.CreateBitCast(source, i16);
+    auto intsrc = b_.CreateZExt(i16src, i32);
+    source = b_.CreateShl(intsrc, shift);
+    source = b_.CreateBitCast(source, half2type); 
+    
+    llvm::Module* module = b_.GetInsertBlock()->getModule();
+    std::vector<llvm::Type*> ir_input_types{half2ptr, half2type};
+
+    llvm::FunctionType* callee_type = llvm::FunctionType::get(
+      half2type, ir_input_types, false);
+
+    // Declares the callee if it is not declared already.
+    llvm::Function* callee = llvm::dyn_cast<llvm::Function>(
+        b_.GetInsertBlock()
+            ->getModule()
+            ->getOrInsertFunction("llvm.amdgcn.global.atomic.fadd.v2f16.p1v2f16.v2f16", callee_type)
+            .getCallee());
+
+    callee->addFnAttr(llvm::Attribute::NoUnwind);
+    callee->addFnAttr(llvm::Attribute::ArgMemOnly);
+
+    b_.CreateCall(callee, {output_ptr, source});//llvm_ir::AsArrayRef(operands));
+    return;
+  }
+
+  AtomicRMW(llvm::AtomicRMWInst::FAdd, output_ptr, source, llvm::MaybeAlign(),
+            llvm::AtomicOrdering::SequentiallyConsistent,
+            b_.getContext().getOrInsertSyncScopeID("agent"));
+}
+
+llvm::SyncScope::ID IrEmitter::DetermineSyncScope() const {
+  return (IsEmittingForAMDGPU())
+             ? b_.getContext().getOrInsertSyncScopeID("agent")
+             : llvm::SyncScope::System;
 }
 
 Status IrEmitter::HandleTupleSelect(HloInstruction* tuple_select) {
@@ -639,10 +602,10 @@ Status IrEmitter::HandleFusion(HloInstruction* fusion) {
   CHECK_EQ(HloInstruction::FusionKind::kLoop, fusion->fusion_kind());
   GpuElementalIrEmitter elemental_emitter(hlo_module_config_, module_, &b_,
                                           GetNestedComputer());
-  FusedIrEmitter fused_emitter(&elemental_emitter);
+  FusedIrEmitter fused_emitter(elemental_emitter);
   BindFusionArguments(fusion, &fused_emitter);
   TF_ASSIGN_OR_RETURN(auto generator, fused_emitter.GetGenerator(
-                                          fusion->fused_expression_root()));
+                                          *fusion->fused_expression_root()));
   return EmitTargetElementLoop(*fusion, generator);
 }
 
@@ -751,7 +714,7 @@ void IrEmitter::BindFusionArguments(const HloInstruction* fusion,
   for (int i = 0; i < fusion->operand_count(); i++) {
     const HloInstruction* operand = fusion->operand(i);
     fused_emitter->BindGenerator(
-        fusion->fused_parameter(i),
+        *fusion->fused_parameter(i),
         [this, operand, fusion](llvm_ir::IrArray::Index index) {
           return GetIrArray(*operand, *fusion)
               .EmitReadArrayElement(index, &b_, operand->name());
