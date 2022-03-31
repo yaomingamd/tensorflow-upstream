@@ -3,7 +3,8 @@ import argparse
 import tensorflow as tf
 
 # enable xla
-tf.config.optimizer.set_jit(True)
+# this works but partitions graph into xla and non xla
+# tf.config.optimizer.set_jit(True)
 
 
 def main(log_dir):
@@ -17,7 +18,7 @@ def main(log_dir):
     with strategy.scope():
         weights = tf.Variable([[1.]])
 
-        @tf.function
+        @tf.function(jit_compile=True) # force xla in tensorflow function
         def reduce_fn():
             ctx = tf.distribute.get_replica_context()
             input = tf.constant([[1.]])
