@@ -24,6 +24,8 @@ import copy
 import functools
 import os
 
+os.environ["TF_NUM_INTEROP_THREADS"]="16"
+
 from absl.testing import parameterized
 import numpy as np
 
