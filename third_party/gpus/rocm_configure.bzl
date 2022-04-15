@@ -655,9 +655,6 @@ def _create_local_rocm_repository(repository_ctx):
                             hiprand_include +
                             rocrand_include),
     }
-    if rocm_version_number >= 40500:
-        repository_dict["%{hipsolver_lib}"] = rocm_libs["hipsolver"].file_name
-        repository_dict["%{hipblas_lib}"] = rocm_libs["hipblas"].file_name
 
     repository_ctx.template(
         "rocm/BUILD",
