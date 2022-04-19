@@ -272,6 +272,7 @@ static Status CompileToLocalExecutable(
 }
 
 void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
+  std::cout << "XlaLocalLaunchBase::Compute" << std::endl;
   VLOG(1) << "XlaLocalLaunchOpBase::Compute "
           << Canonicalize(function_.name(), AttrSlice(&function_.attr()));
   xla_launch_counter->GetCell(platform_info_.device_type().type_string())
