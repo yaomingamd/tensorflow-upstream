@@ -6,7 +6,7 @@
 
 ROOT_DIR=$(pwd)
 
-cd "/usr/local/lib/bazel/bin" && curl -fLO https://releases.bazel.build/4.2.2/release/bazel-4.2.2-linux-x86_64 && chmod +x bazel-4.2.2-linux-x86_64
+(cd "/usr/local/lib/bazel/bin" && curl -fLO https://releases.bazel.build/5.1.0/release/bazel-5.1.0-linux-x86_64 && chmod +x bazel-5.1.0-linux-x86_64)
 
 cd $ROOT_DIR
 pip3 uninstall tensorflow -y
