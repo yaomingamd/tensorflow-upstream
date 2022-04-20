@@ -15,10 +15,10 @@ export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_SUBSYS=ALL
 # export NCCL_SOCKET_IFNAME=ib1
 
-
 # log dir
 ROOT_DIR=$(pwd)
-DEFAULT_LOG_DIR=$ROOT_DIR/$(git rev-parse --symbolic-full-name --abbrev-ref HEAD)
+BRANCH_NAME=$(git rev-parse --symbolic-full-name --abbrev-ref HEAD)
+DEFAULT_LOG_DIR=$ROOT_DIR/log_${BRANCH_NAME}
 LOG_DIR="${1:-$DEFAULT_LOG_DIR}"
 rm -rf $LOG_DIR
 mkdir -p $LOG_DIR
@@ -28,8 +28,8 @@ chmod -R 777 $LOG_DIR
 
 # run model
 # pip3 install tensorflow_datasets ipywidgets
-# export XLA_FLAGS="--xla_dump_hlo_as_text" 
-export XLA_FLAGS="--xla_dump_hlo_as_text --xla_dump_to=$LOG_DIR/xla" 
+# export XLA_FLAGS="--xla_dump_hlo_as_text"
+export XLA_FLAGS="--xla_dump_hlo_as_text --xla_dump_to=$LOG_DIR/xla"
 python3 scripts/amd/rccl_xla_script.py --log_dir $LOG_DIR 2>&1 | tee $LOG_DIR/rccl_script.log
 
 echo "NCCL KERNELS:"
