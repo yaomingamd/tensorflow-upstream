@@ -3,7 +3,7 @@ set -o xtrace
 alias drun='sudo docker run -it --rm --network=host --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined'
 
 # DEVICES="--gpus all"
-# DEVICES="--device=/dev/kfd --device=/dev/dri"
+DEVICES="--device=/dev/kfd --device=/dev/dri"
 
 MEMORY="--ipc=host --shm-size 16G"
 
