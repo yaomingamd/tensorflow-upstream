@@ -3,11 +3,12 @@ set -o xtrace
 alias drun='sudo docker run -it --rm --network=host --group-add video --cap-add=SYS_PTRACE --security-opt seccomp=unconfined'
 
 # DEVICES="--gpus all"
-DEVICES="--device=/dev/kfd --device=/dev/dri"
+# DEVICES="--device=/dev/kfd --device=/dev/dri"
 
 MEMORY="--ipc=host --shm-size 16G"
 
-VOLUMES="-v $HOME/dockerx:/dockerx -v /data:/data"
+DIR_NAME="$(dirname $(pwd))"
+VOLUMES="-v $DIR_NAME:/dockerx -v /data:/data"
 
 WORK_DIR="/dockerx/$(basename $(pwd))"
 # WORK_DIR="/root/$(basename $(pwd))"
