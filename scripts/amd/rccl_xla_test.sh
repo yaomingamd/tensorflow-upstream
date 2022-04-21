@@ -15,6 +15,8 @@ export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_SUBSYS=ALL
 # export NCCL_SOCKET_IFNAME=ib1
 
+# export HIP_VISIBLE_DEVICES=7
+
 # log dir
 ROOT_DIR=$(pwd)
 BRANCH_NAME=$(git rev-parse --symbolic-full-name --abbrev-ref HEAD)
