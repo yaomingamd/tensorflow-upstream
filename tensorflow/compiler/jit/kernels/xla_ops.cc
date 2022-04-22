@@ -278,6 +278,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
   xla_launch_counter->GetCell(platform_info_.device_type().type_string())
       ->IncrementBy(1);
 
+  std::cout << "InputsFromContext" << std::endl;
   std::vector<const Tensor*> inputs = InputsFromContext(ctx);
   xla::LocalClient* client;
   const XlaCompiler::CompilationResult* compilation_result;
@@ -297,6 +298,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
     OP_REQUIRES_OK(ctx, s);
   }
 
+  std::cout << "resource_var_ptrs" << std::endl;
   std::map<int, const Tensor*> resource_var_ptrs;
   for (int i = 0; i < resources_.size(); i++) {
     resource_var_ptrs[resources_[i]] = variable_infos[i].var()->tensor();
@@ -314,6 +316,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
                                     input_output_alias);
   OP_REQUIRES_OK(ctx, execution_inputs.status());
 
+  std::cout << "// Execute the computation." << std::endl;
   // Execute the computation.
   xla::gpu::GpuExecutableRunOptions gpu_options;
   xla::DeviceAssignment device_assignment;
@@ -326,6 +329,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
     VLOG(2) << "No collective info provided: skipping device assignment";
   }
 
+  std::cout << "// Hardcode run id to always be zero" << std::endl;
   // Hardcode run id to always be zero: TF distributed strategy differentiates
   // between subsequent runs using dependency edges.
   // This is safe, as only TF dist-strat can produce distributed ops, and we can
@@ -333,11 +337,13 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
   xla::RunId run_id(0);
   run_options.set_run_id(run_id);
 
+  std::cout << "// RunExecutable" << std::endl;
   StatusOr<xla::ExecutionOutput> execution_output = RunExecutable(
       platform_info_, launch_context, std::move(*execution_inputs), run_options,
       executable, ctx, allocator.get());
   OP_REQUIRES(ctx, execution_output.ok(), execution_output.status());
 
+  std::cout << "// PopulateOutputs" << std::endl;
   OP_REQUIRES_OK(
       ctx, launch_context.PopulateOutputs(
                ctx, compilation_result, execution_output->ConsumeResult(),
