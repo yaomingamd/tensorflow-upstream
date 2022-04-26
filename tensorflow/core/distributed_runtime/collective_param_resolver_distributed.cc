@@ -107,9 +107,11 @@ CollectiveParamResolverDistributed::CollectiveParamResolverDistributed(
 void CollectiveParamResolverDistributed::CompleteParamsAsync(
     const DeviceAttributes& device, CollectiveParams* cp,
     CancellationManager* cancel_mgr, const StatusCallback& done) {
+  std::cout << "CollectiveParamResolverDistributed::CompleteParamsAsync" << std::endl;
   VLOG(1) << "CompleteParams distributed " << device.name() << " for " << cp
           << ": " << cp->ToString();
   if (cp->run_group_initialization) {
+    std::cout << "cp->run_group_initialization" << std::endl;
     CompleteGroupDistributed(
         device, &cp->group, cancel_mgr,
         [this, device, cp, cancel_mgr, done](Status s) {
@@ -130,6 +132,7 @@ void CollectiveParamResolverDistributed::CompleteParamsAsync(
   } else {
     // For Collective V3 ops, group is already initialized. Fetch attributes
     // for the already initialized group to pass to Insitance initialization.
+    std::cout << "auto s = LookupGroup(cp->group.group_key, &cp->group);" << std::endl;
     auto s = LookupGroup(cp->group.group_key, &cp->group);
     if (s.ok()) {
       CompleteInstanceDistributed(device.name(), cp, cancel_mgr, done);

@@ -130,6 +130,7 @@ Status CheckUserSpecifiedRanks(const std::vector<CollGroupMember> members) {
 void CollectiveParamResolverLocal::CompleteGroupLocal(
     const DeviceAttributes& device, CollGroupParams* group_params,
     CancellationManager* cancel_mgr, StatusCallback done) {
+  std::cout << "CollectiveParamResolverLocal::CompleteParamsAsync" << std::endl;
   VLOG(1) << "CompleteGroup device=" << device.name() << ": "
           << group_params->ToString();
   std::vector<StatusCallback> to_be_called;
@@ -137,6 +138,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
   GroupRec* gr = nullptr;
   Status status;
   {
+    std::cout << "mutex_lock" << std::endl;
     mutex_lock l(group_mu_);
     auto it = group_table_.find(group_params->group_key);
     if (it == group_table_.end()) {
@@ -169,6 +171,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
   }
 
   if (cancel_mgr != nullptr) {
+    std::cout << "cancel_mgr" << std::endl;
     CancellationToken token = cancel_mgr->get_cancellation_token();
     bool is_cancelled = !cancel_mgr->RegisterCallback(
         token, std::bind(&CollectiveParamResolverLocal::CancelGroup, this,
@@ -185,6 +188,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
   }
 
   {
+    std::cout << "mutex_lock gr_lock(gr->mu);" << std::endl;
     mutex_lock gr_lock(gr->mu);
     // If there is ever an error associated with a group key, we store the error
     // status and invoke all waiting and future callbacks with this error
@@ -259,6 +263,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
     }
 
     if (gr->status.ok()) {
+      std::cout << "gr->status.ok()" << std::endl;
       // If the group is not yet complete, queue to wait for it.
       VLOG(2) << "group_size " << gr->group.group_size << " set size "
               << gr->group.members.size() << " gr " << gr;
@@ -277,6 +282,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
       if (new_device) {
         FinishGroup(gr);
       }
+      std::cout << "// Copy to all pending CollGroupParams;" << std::endl;
       // Copy to all pending CollGroupParams;
       *group_params = gr->group;
       for (auto* params : gr->pending_params) {
@@ -285,11 +291,13 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
     }
     // At this point, we either have a full group, or an error status.  Ensure
     // that all callbacks are invoked with the appropriate status.
+    std::cout << "to_be_called.swap(gr->pending_done);" << std::endl;
     to_be_called.swap(gr->pending_done);
     gr->pending_params.clear();
     status = gr->status;
   }
   done(status);
+  std::cout << "done(status);" << std::endl;
   for (int i = 0; i < to_be_called.size(); ++i) {
     to_be_called[i](status);
   }
@@ -644,9 +652,11 @@ Status CollectiveParamResolverLocal::LookupGroup(int32_t group_key,
 void CollectiveParamResolverLocal::CompleteParamsAsync(
     const DeviceAttributes& device, CollectiveParams* cp,
     CancellationManager* cancel_mgr, const StatusCallback& done) {
+  std::cout << "CollectiveParamResolverLocal::CompleteParamsAsync" << std::endl;
   VLOG(1) << "CompleteParams local " << device.name() << " for " << cp << ": "
           << cp->ToString();
   if (cp->run_group_initialization) {
+    std::cout << "cp->run_group_initialization" << std::endl;
     CompleteGroupLocal(device, &cp->group, cancel_mgr,
                        [this, device, cp, done](const Status& s) {
                          if (s.ok()) {
@@ -656,6 +666,7 @@ void CollectiveParamResolverLocal::CompleteParamsAsync(
                          }
                        });
   } else {
+    std::cout << "const auto s = LookupGroup(cp->group.group_key, &cp->group);" << std::endl;
     // For Collective V3 ops, group is already initialized. Fetch attributes
     // for the already initialized group to pass to Insitance initialization.
     const auto s = LookupGroup(cp->group.group_key, &cp->group);
