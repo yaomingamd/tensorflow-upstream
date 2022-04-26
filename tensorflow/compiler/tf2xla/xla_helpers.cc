@@ -147,6 +147,7 @@ Status ResolveDeviceAssignment(
     xla::ExecutableRunOptions& run_options,
     xla::DeviceAssignment& device_assignment,
     xla::gpu::GpuExecutableRunOptions& gpu_options) {
+  std::cout << "ResolveDeviceAssignment" << std::endl;
   // TODO(nnigania): workaround for b/199436990
   static const int kTimeoutSeconds = 1000;
   if (ctx->collective_executor() == nullptr) {
@@ -154,6 +155,7 @@ Status ResolveDeviceAssignment(
         "CollectiveExecutor is required but not available");
   }
 
+  std::cout << "core::RefCountPtr<CollectiveParams>" << std::endl;
   auto params = core::RefCountPtr<CollectiveParams>(new CollectiveParams());
   params->name = "xla-reduction-compilation";
   params->group.device_type =
@@ -168,6 +170,7 @@ Status ResolveDeviceAssignment(
   // devices otherwise.
   params->instance.shape = TensorShape({1});
 
+  std::cout << "ctx->collective_executor()->CompleteParamsAsync(" << std::endl;
   Status st;
   absl::Notification n;
   ctx->collective_executor()->CompleteParamsAsync(
@@ -183,6 +186,7 @@ Status ResolveDeviceAssignment(
   VLOG(5) << "Using collective params to resolve device assignment: "
           << params->ToString();
 
+  std::cout << "// Identify the physical device associated with each replica." << std::endl;
   // Identify the physical device associated with each replica.
   device_assignment = xla::DeviceAssignment(params->group.group_size, 1);
   for (int device_idx = 0; device_idx < params->group.group_size;
@@ -216,6 +220,7 @@ Status ResolveDeviceAssignment(
   }
   VLOG(5) << "Generated device assignment: " << device_assignment.ToString();
   if (params->group.device_type == DEVICE_GPU) {
+    std::cout << "params->group.device_type == DEVICE_GPU" << std::endl;
     // For GPU collectives, `xla_global_id`s are arbitrary integers, and XLA
     // requires a mapping from local device IDs to global device IDs.
     const DeviceMgr* device_mgr = ctx->function_library()->device_mgr();

@@ -322,6 +322,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
   xla::DeviceAssignment device_assignment;
   xla::ExecutableRunOptions run_options;
   if (compilation_result->collective_info.has_value()) {
+    std::cout << "compilation_result->collective_info.has_value()==True" << std::endl;
     OP_REQUIRES_OK(ctx, ResolveDeviceAssignment(
                             ctx, *compilation_result->collective_info,
                             run_options, device_assignment, gpu_options));
