@@ -8,7 +8,7 @@ ROOT_DIR=$(pwd)
 (cd "/usr/local/lib/bazel/bin" && curl -fLO https://releases.bazel.build/5.1.1/release/bazel-5.1.1-linux-x86_64 && chmod +x bazel-5.1.1-linux-x86_64)
 
 cd $ROOT_DIR
-bazel clean
+# bazel clean
 pip3 uninstall tensorflow tf-nightly-rocm -y
 scripts/amd/build_rocm_python3.sh
 pip3 list | grep '^t.*'
