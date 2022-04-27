@@ -23,6 +23,8 @@ class BatchGemmOp : public OpKernel {
   explicit BatchGemmOp(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("adj_x", &transpose_a_));
     OP_REQUIRES_OK(context, context->GetAttr("adj_y", &transpose_b_));
+    OP_REQUIRES_OK(context, context->GetAttr("grad_x", &grad_a_));
+    OP_REQUIRES_OK(context, context->GetAttr("grad_y", &grad_b_));
     OP_REQUIRES_OK(context, context->GetAttr("alpha", &alpha_));
     OP_REQUIRES_OK(context, context->GetAttr("beta", &beta_));
   }
@@ -86,10 +88,16 @@ class BatchGemmOp : public OpKernel {
       f(ctx->eigen_device<Device>(), out_reshaped.flat<Scalar>());
       return;
     }
+    se::blas::CallContext call_context = se::blas::CallContext::kForward;
+    if(grad_a_)
+      call_context = se::blas::CallContext::kBackpropInput2;
+    else if(grad_b_)
+      call_context = se::blas::CallContext::kBackpropInput1;
+
 
     LaunchBatchMatMul<Device, Scalar>::Launch(ctx, in0_reshaped, in1_reshaped,
                                               transpose_a_, transpose_b_, bcast,
-                                              &out_reshaped, alpha_, beta_);
+                                              &out_reshaped, call_context, alpha_, beta_);
   }
 
  private:
@@ -107,6 +115,7 @@ class BatchGemmOp : public OpKernel {
 
   bool transpose_a_;
   bool transpose_b_;
+  bool grad_a_, grad_b_;
   float alpha_;
   float beta_;
 };

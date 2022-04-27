@@ -1189,14 +1189,11 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       auto c_ptr = AsDeviceMemory(in_backprop->template flat<T>().data(),
                                   in_backprop->template flat<T>().size());
 
-      auto transpose = se::blas::Transpose::kTranspose;
-      auto no_transpose = se::blas::Transpose::kNoTranspose;
-
-      bool blas_launch_status =
-          stream
-              ->ThenBlasGemm(transpose, no_transpose, n, m, k, 1.0f, b_ptr, k,
-                             a_ptr, k, 0.0f, &c_ptr, n)
-              .ok();
+      se::blas::GemmCallContext<T> gemm_call{se::blas::Transpose::kTranspose,
+        se::blas::Transpose::kNoTranspose, n, m, k, 
+        1.0f, 0.0f, &b_ptr, k, &a_ptr, k, &c_ptr, n,
+        stream_executor::blas::CallContext::kBackpropInput1};
+      bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
       if (!blas_launch_status) {
         context->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                             ", n=", n, ", k=", k));
@@ -1221,12 +1218,10 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
 
       auto transpose = se::blas::Transpose::kTranspose;
       auto no_transpose = se::blas::Transpose::kNoTranspose;
-
-      bool blas_launch_status =
-          stream
-              ->ThenBlasGemm(transpose, no_transpose, n, m, k, 1.0f, b_ptr, k,
-                             a_ptr, k, 0.0f, &c_ptr, n)
-              .ok();
+      se::blas::GemmCallContext<T> gemm_call{transpose, no_transpose, n, m, k, 
+        1.0f, 0.0f, &b_ptr, k, &a_ptr, k, &c_ptr, n,
+        stream_executor::blas::CallContext::kBackpropInput1};
+      bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
       if (!blas_launch_status) {
         context->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                             ", n=", n, ", k=", k));
@@ -1639,13 +1634,12 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       // From cublas's perspective, it is: n x m
       auto c_ptr = AsDeviceMemory(filter_backprop->template flat<T>().data(),
                                   filter_backprop->template flat<T>().size());
-
-      bool blas_launch_status =
-          stream
-              ->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
-                             se::blas::Transpose::kTranspose, n, m, k, 1.0f,
-                             a_ptr, n, b_ptr, m, 0.0f, &c_ptr, n)
-              .ok();
+      // not reverted?
+      se::blas::GemmCallContext<T> gemm_call{se::blas::Transpose::kNoTranspose,
+        se::blas::Transpose::kTranspose, n, m, k, 
+        1.0f, 0.0f, &a_ptr, n, &b_ptr, m, &c_ptr, n,
+        stream_executor::blas::CallContext::kBackpropInput2};
+      bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
       if (!blas_launch_status) {
         context->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                             ", n=", n, ", k=", k));
@@ -1668,12 +1662,11 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       auto c_ptr = AsDeviceMemory(filter_backprop->template flat<T>().data(),
                                   filter_backprop->template flat<T>().size());
 
-      bool blas_launch_status =
-          stream
-              ->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
-                             se::blas::Transpose::kTranspose, n, m, k, 1.0f,
-                             b_ptr, n, a_ptr, m, 0.0f, &c_ptr, n)
-              .ok();
+      se::blas::GemmCallContext<T> gemm_call{se::blas::Transpose::kNoTranspose,
+        se::blas::Transpose::kTranspose, n, m, k, 
+        1.0f, 0.0f, &b_ptr, n, &a_ptr, m, &c_ptr, n,
+        stream_executor::blas::CallContext::kBackpropInput2};
+      bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
       if (!blas_launch_status) {
         context->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                             ", n=", n, ", k=", k));

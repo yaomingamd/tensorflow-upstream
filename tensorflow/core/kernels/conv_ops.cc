@@ -653,11 +653,11 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
                                 output->template flat<T>().size());
 
     auto no_transpose = se::blas::Transpose::kNoTranspose;
-    bool blas_launch_status =
-        stream
-            ->ThenBlasGemm(no_transpose, no_transpose, n, m, k, 1.0f, b_ptr, n,
-                           a_ptr, k, 0.0f, &c_ptr, n)
-            .ok();
+    se::blas::GemmCallContext<T> gemm_call{no_transpose, no_transpose, 
+      n, m, k, 1.0f, 0.0f, &b_ptr, n,
+      &a_ptr, k, &c_ptr, n,
+      stream_executor::blas::CallContext::kForward};
+    bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
     if (!blas_launch_status) {
       ctx->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                       ", n=", n, ", k=", k));
@@ -681,11 +681,11 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
                                 output->template flat<T>().size());
 
     auto no_transpose = se::blas::Transpose::kNoTranspose;
-    bool blas_launch_status =
-        stream
-            ->ThenBlasGemm(no_transpose, no_transpose, n, m, k, 1.0f, b_ptr, n,
-                           a_ptr, k, 0.0f, &c_ptr, n)
-            .ok();
+    se::blas::GemmCallContext<T> gemm_call{no_transpose, no_transpose, 
+      n, m, k, 1.0f, 0.0f, &b_ptr, n,
+      &a_ptr, k, &c_ptr, n,
+      stream_executor::blas::CallContext::kForward};
+    bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
     if (!blas_launch_status) {
       ctx->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                       ", n=", n, ", k=", k));

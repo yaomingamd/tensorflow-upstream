@@ -569,7 +569,7 @@ Status ContractOperands(OpKernelContext* ctx, absl::Span<const Tensor> inputs,
   TF_RETURN_IF_ERROR(
       ReshapeToRank3(*output, bcast.output_batch_size(), &output_reshaped));
   LaunchBatchMatMul<Device, T>::Launch(ctx, lhs, rhs, adj_x, adj_y, bcast,
-                                       &output_reshaped);
+                                       &output_reshaped, se::blas::CallContext::kNone);
   return Status::OK();
 }
 }  // namespace

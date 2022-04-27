@@ -58,6 +58,16 @@ enum class DimIndex : int {
   Z = 2,
 };
 
+// Call context information for GEMM API calls
+// This is extra information that can optionally be passed down to the blas
+// library, so that it can pick the efficient imlpementation based on context
+enum class CallContext {
+  kNone = 0,            // No information
+  kForward = 1,         // call happens in "forward" pass
+  kBackpropData = 2,    // call happens in "backprop" pass for data
+  kBackpropFilter = 4,  // call happens in "backprop" pass for filter
+};
+
 // Helper functions to make methods more readable.
 inline int64 GetDim(absl::Span<const int64> data, DimIndex dim) {
   return data.rbegin()[static_cast<int64>(dim)];
@@ -1327,7 +1337,7 @@ class DnnSupport {
       DeviceMemoryBase output_data,
       const ConvolutionDescriptor& convolution_descriptor,
       AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
-      ProfileResult* output_profile_result) = 0;
+      dnn::CallContext call_context, ProfileResult* output_profile_result) = 0;
 
   template <typename ElementType, typename OutputType>
   bool DoConvolve(Stream* stream, const dnn::BatchDescriptor& input_descriptor,
@@ -1339,13 +1349,15 @@ class DnnSupport {
                   DeviceMemory<OutputType>* output_data,
                   const dnn::AlgorithmDesc& algorithm_desc,
                   DeviceMemory<uint8>* scratch_memory,
+                  dnn::CallContext call_context, 
                   ProfileResult* output_profile_result) {
     return IsStatusOk(
         DoConvolve(ConvolutionKind::FORWARD, ToDataType<ElementType>::value,
                    ToDataType<OutputType>::value, stream, input_descriptor,
                    input_data, filter_descriptor, filter_data,
                    output_descriptor, *output_data, convolution_descriptor,
-                   algorithm_desc, *scratch_memory, output_profile_result),
+                   algorithm_desc, *scratch_memory, call_context,
+                   output_profile_result),
         !output_profile_result);
   }
 
@@ -1438,7 +1450,8 @@ class DnnSupport {
             ToDataType<ElementType>::value, stream, input_descriptor,
             *backward_input_data, filter_descriptor, filter_data,
             output_descriptor, backward_output_data, convolution_descriptor,
-            algorithm_desc, *scratch_memory, output_profile_result),
+            algorithm_desc, *scratch_memory, dnn::CallContext::kBackpropData,
+            output_profile_result),
         !output_profile_result);
   }
 
@@ -1485,7 +1498,7 @@ class DnnSupport {
             ToDataType<ElementType>::value, stream, input_descriptor,
             input_data, filter_descriptor, *backward_filter_data,
             output_descriptor, backward_output_data, convolution_descriptor,
-            algorithm_desc, *scratch_memory, output_profile_result),
+            algorithm_desc, *scratch_memory, dnn::CallContext::kBackpropFilter, output_profile_result),
         !output_profile_result);
   }
 

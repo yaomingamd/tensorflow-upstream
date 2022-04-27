@@ -703,6 +703,8 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     return;
   }
 
+  typedef typename std::conditional<std::is_same<T, Eigen::half>::value, float, T>::type CT;
+
   // If the filter in-depth (filter_shape.dim_size(2)) is 1 and smaller than the
   // input depth, it's a depthwise convolution. More generally, if the filter
   // in-depth divides but is smaller than the input depth, it is a grouped
@@ -737,12 +739,11 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     auto c_ptr = AsDeviceMemory(filter_backprop->template flat<T>().data(),
                                 filter_backprop->template flat<T>().size());
 
-    bool blas_launch_status =
-        stream
-            ->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
-                           se::blas::Transpose::kTranspose, n, m, k, 1.0f,
-                           a_ptr, n, b_ptr, m, 0.0f, &c_ptr, n)
-            .ok();
+    se::blas::GemmCallContext<T> gemm_call{se::blas::Transpose::kNoTranspose,
+                           se::blas::Transpose::kTranspose, n, m, k, 1.0f, 0.0f,
+                           &a_ptr, n, &b_ptr, m, &c_ptr, n,
+                           stream_executor::blas::CallContext::kBackpropInput2};
+    bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
     if (!blas_launch_status) {
       ctx->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                       ", n=", n, ", k=", k));
@@ -768,12 +769,11 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     auto c_ptr = AsDeviceMemory(filter_backprop->template flat<T>().data(),
                                 filter_backprop->template flat<T>().size());
 
-    bool blas_launch_status =
-        stream
-            ->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
-                           se::blas::Transpose::kTranspose, n, m, k, 1.0f,
-                           b_ptr, n, a_ptr, m, 0.0f, &c_ptr, n)
-            .ok();
+    se::blas::GemmCallContext<T> gemm_call{se::blas::Transpose::kNoTranspose,
+                           se::blas::Transpose::kTranspose, n, m, k, 1.0f, 0.0f,
+                           &b_ptr, n, &a_ptr, m, &c_ptr, n,
+                           stream_executor::blas::CallContext::kBackpropInput2};
+    bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
     if (!blas_launch_status) {
       ctx->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                       ", n=", n, ", k=", k));
