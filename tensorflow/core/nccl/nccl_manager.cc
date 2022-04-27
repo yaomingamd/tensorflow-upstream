@@ -259,6 +259,7 @@ NcclManager* NcclManager::instance() {
 }
 
 string NcclManager::GenerateCommunicatorKey() {
+  std::cout << "NcclManager::GenerateCommunicatorKey()" << std::endl;
   ncclUniqueId nccl_id;
   ncclGetUniqueId(&nccl_id);
   return string(nccl_id.internal, NCCL_UNIQUE_ID_BYTES);

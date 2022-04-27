@@ -148,6 +148,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
       gr->group.group_size = group_params->group_size;
       gr->group.device_type = group_params->device_type;
       if (nccl_communicator_ != nullptr) {
+        std::cout << "nccl_communicator_ != nullptr" << std::endl;
         gr->group.runtime_details.communicator_key =
             nccl_communicator_->GenerateCommunicatorKey();
       }
@@ -171,7 +172,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
   }
 
   if (cancel_mgr != nullptr) {
-    std::cout << "cancel_mgr" << std::endl;
+    std::cout << "cancel_mgr != nullptr" << std::endl;
     CancellationToken token = cancel_mgr->get_cancellation_token();
     bool is_cancelled = !cancel_mgr->RegisterCallback(
         token, std::bind(&CollectiveParamResolverLocal::CancelGroup, this,
@@ -269,12 +270,15 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
               << gr->group.members.size() << " gr " << gr;
 
       if (gr->group.members.size() < gr->group.group_size) {
+        std::cout << "gr->group.members.size() < gr->group.group_size" << std::endl;
         gr->pending_done.push_back(std::move(done));
         gr->pending_params.push_back(group_params);
         return;
       }
+      std::cout << "CHECK_EQ(gr->group.members.size(), gr->group.group_size);" << std::endl;
       CHECK_EQ(gr->group.members.size(), gr->group.group_size);
       // We get a full group. Fill in remaining fields in gr->group.
+      std::cout << "// We get a full group. Fill in remaining fields in gr->group." << std::endl;
       auto st = CheckUserSpecifiedRanks(gr->group.members);
       if (!st.ok()) {
         gr->status = st;
