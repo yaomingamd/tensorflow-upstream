@@ -16,7 +16,8 @@ export NCCL_DEBUG=INFO
 # export NCCL_SOCKET_IFNAME=ib1
 
 # pick at least 2 GPUS
-# export HIP_VISIBLE_DEVICES=6,7
+export CUDA_VISIBLE_DEVICES=6,7
+export HIP_VISIBLE_DEVICES=6,7
 
 # log dir
 ROOT_DIR=$(pwd)

@@ -15,8 +15,8 @@ WORK_DIR="/dockerx/$(basename $(pwd))"
 
 # IMAGE_NAME=rocm/tensorflow
 IMAGE_NAME=rocm/tensorflow-autobuilds:latest
-# IMAGE_NAME=tensorflow/tensorflow:devel-gpu
 # IMAGE_NAME=rocm/tensorflow-private:enable_rccl_debug_build
+IMAGE_NAME=nvcr.io/nvidia/tensorflow:22.01-tf2-py3
 
 CONTAINER_NAME=tensorflow
 
