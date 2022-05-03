@@ -147,7 +147,7 @@ Status ResolveDeviceAssignment(
     xla::ExecutableRunOptions& run_options,
     xla::DeviceAssignment& device_assignment,
     xla::gpu::GpuExecutableRunOptions& gpu_options) {
-  std::cout << "ResolveDeviceAssignment" << std::endl;
+  std::cout << "tensorflow::ResolveDeviceAssignment" << std::endl;
   // TODO(nnigania): workaround for b/199436990
   static const int kTimeoutSeconds = 1000;
   if (ctx->collective_executor() == nullptr) {
@@ -155,7 +155,7 @@ Status ResolveDeviceAssignment(
         "CollectiveExecutor is required but not available");
   }
 
-  std::cout << "core::RefCountPtr<CollectiveParams>" << std::endl;
+  // std::cout << "core::RefCountPtr<CollectiveParams>" << std::endl;
   auto params = core::RefCountPtr<CollectiveParams>(new CollectiveParams());
   params->name = "xla-reduction-compilation";
   params->group.device_type =
@@ -170,7 +170,7 @@ Status ResolveDeviceAssignment(
   // devices otherwise.
   params->instance.shape = TensorShape({1});
 
-  std::cout << "ctx->collective_executor()->CompleteParamsAsync(" << std::endl;
+  // std::cout << "ctx->collective_executor()->CompleteParamsAsync" << std::endl;
   Status st;
   absl::Notification n;
   ctx->collective_executor()->CompleteParamsAsync(

@@ -278,7 +278,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
   xla_launch_counter->GetCell(platform_info_.device_type().type_string())
       ->IncrementBy(1);
 
-  std::cout << "InputsFromContext" << std::endl;
+  // std::cout << "InputsFromContext" << std::endl;
   std::vector<const Tensor*> inputs = InputsFromContext(ctx);
   xla::LocalClient* client;
   const XlaCompiler::CompilationResult* compilation_result;
@@ -298,7 +298,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
     OP_REQUIRES_OK(ctx, s);
   }
 
-  std::cout << "resource_var_ptrs" << std::endl;
+  // std::cout << "resource_var_ptrs" << std::endl;
   std::map<int, const Tensor*> resource_var_ptrs;
   for (int i = 0; i < resources_.size(); i++) {
     resource_var_ptrs[resources_[i]] = variable_infos[i].var()->tensor();
@@ -322,7 +322,7 @@ void XlaLocalLaunchBase::Compute(OpKernelContext* ctx) {
   xla::DeviceAssignment device_assignment;
   xla::ExecutableRunOptions run_options;
   if (compilation_result->collective_info.has_value()) {
-    std::cout << "compilation_result->collective_info.has_value()==True" << std::endl;
+    // std::cout << "compilation_result->collective_info.has_value()==True" << std::endl;
     OP_REQUIRES_OK(ctx, ResolveDeviceAssignment(
                             ctx, *compilation_result->collective_info,
                             run_options, device_assignment, gpu_options));

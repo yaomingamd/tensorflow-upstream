@@ -130,7 +130,7 @@ Status CheckUserSpecifiedRanks(const std::vector<CollGroupMember> members) {
 void CollectiveParamResolverLocal::CompleteGroupLocal(
     const DeviceAttributes& device, CollGroupParams* group_params,
     CancellationManager* cancel_mgr, StatusCallback done) {
-  std::cout << "CollectiveParamResolverLocal::CompleteParamsAsync" << std::endl;
+  std::cout << "CollectiveParamResolverLocal::CompleteGroupLocal" << std::endl;
   VLOG(1) << "CompleteGroup device=" << device.name() << ": "
           << group_params->ToString();
   std::vector<StatusCallback> to_be_called;
@@ -138,7 +138,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
   GroupRec* gr = nullptr;
   Status status;
   {
-    std::cout << "mutex_lock" << std::endl;
+    // std::cout << "mutex_lock" << std::endl;
     mutex_lock l(group_mu_);
     auto it = group_table_.find(group_params->group_key);
     if (it == group_table_.end()) {
@@ -148,7 +148,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
       gr->group.group_size = group_params->group_size;
       gr->group.device_type = group_params->device_type;
       if (nccl_communicator_ != nullptr) {
-        std::cout << "nccl_communicator_ != nullptr" << std::endl;
+        // std::cout << "nccl_communicator_ != nullptr" << std::endl;
         gr->group.runtime_details.communicator_key =
             nccl_communicator_->GenerateCommunicatorKey();
       }
@@ -172,7 +172,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
   }
 
   if (cancel_mgr != nullptr) {
-    std::cout << "cancel_mgr != nullptr" << std::endl;
+    // std::cout << "cancel_mgr != nullptr" << std::endl;
     CancellationToken token = cancel_mgr->get_cancellation_token();
     bool is_cancelled = !cancel_mgr->RegisterCallback(
         token, std::bind(&CollectiveParamResolverLocal::CancelGroup, this,
@@ -189,7 +189,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
   }
 
   {
-    std::cout << "mutex_lock gr_lock(gr->mu);" << std::endl;
+    // std::cout << "mutex_lock gr_lock(gr->mu);" << std::endl;
     mutex_lock gr_lock(gr->mu);
     // If there is ever an error associated with a group key, we store the error
     // status and invoke all waiting and future callbacks with this error
@@ -264,7 +264,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
     }
 
     if (gr->status.ok()) {
-      std::cout << "gr->status.ok()" << std::endl;
+      // std::cout << "gr->status.ok()" << std::endl;
       // If the group is not yet complete, queue to wait for it.
       VLOG(2) << "group_size " << gr->group.group_size << " set size "
               << gr->group.members.size() << " gr " << gr;
@@ -275,6 +275,7 @@ void CollectiveParamResolverLocal::CompleteGroupLocal(
         gr->pending_params.push_back(group_params);
         return;
       }
+
       std::cout << "CHECK_EQ(gr->group.members.size(), gr->group.group_size);" << std::endl;
       CHECK_EQ(gr->group.members.size(), gr->group.group_size);
       // We get a full group. Fill in remaining fields in gr->group.
@@ -660,7 +661,7 @@ void CollectiveParamResolverLocal::CompleteParamsAsync(
   VLOG(1) << "CompleteParams local " << device.name() << " for " << cp << ": "
           << cp->ToString();
   if (cp->run_group_initialization) {
-    std::cout << "cp->run_group_initialization" << std::endl;
+    // std::cout << "cp->run_group_initialization" << std::endl;
     CompleteGroupLocal(device, &cp->group, cancel_mgr,
                        [this, device, cp, done](const Status& s) {
                          if (s.ok()) {
