@@ -111,7 +111,7 @@ void CollectiveParamResolverDistributed::CompleteParamsAsync(
   VLOG(1) << "CompleteParams distributed " << device.name() << " for " << cp
           << ": " << cp->ToString();
   if (cp->run_group_initialization) {
-    std::cout << "cp->run_group_initialization" << std::endl;
+    // std::cout << "cp->run_group_initialization" << std::endl;
     CompleteGroupDistributed(
         device, &cp->group, cancel_mgr,
         [this, device, cp, cancel_mgr, done](Status s) {
