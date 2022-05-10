@@ -483,10 +483,10 @@ def _tf_repositories():
     tf_http_archive(
         name = "curl",
         build_file = "//third_party:curl.BUILD",
-        sha256 = "ac8e1087711084548d788ef18b9b732c8de887457b81f616fc681d1044b32f98",
-        strip_prefix = "curl-7.81.0",
+        sha256 = "c0e64302a33d2fb79e0fc4e674260a22941e92ee2f11b894bf94d32b8f5531af",
+        strip_prefix = "curl-7.83.0",
         system_build_file = "//third_party/systemlibs:curl.BUILD",
-        urls = tf_mirror_urls("https://curl.haxx.se/download/curl-7.81.0.tar.gz"),
+        urls = tf_mirror_urls("https://curl.haxx.se/download/curl-7.83.0.tar.gz"),
     )
 
     # WARNING: make sure ncteisen@ and vpai@ are cc-ed on any CL to change the below rule
@@ -837,9 +837,9 @@ def _tf_repositories():
 
     tf_http_archive(
         name = "pybind11",
-        urls = tf_mirror_urls("https://github.com/pybind/pybind11/archive/v2.9.0.tar.gz"),
-        sha256 = "057fb68dafd972bc13afb855f3b0d8cf0fa1a78ef053e815d9af79be7ff567cb",
-        strip_prefix = "pybind11-2.9.0",
+        urls = tf_mirror_urls("https://github.com/pybind/pybind11/archive/v2.8.1.tar.gz"),
+        sha256 = "f1bcc07caa568eb312411dde5308b1e250bd0e1bc020fae855bf9f43209940cc",
+        strip_prefix = "pybind11-2.8.1",
         build_file = "//third_party:pybind11.BUILD",
         system_build_file = "//third_party/systemlibs:pybind11.BUILD",
     )
