@@ -289,6 +289,7 @@ cuda_py_test(
     srcs = ["cudnn_deterministic_ops_test.py"],
     tags = [
         "no_cuda_asan",  # TODO(b/171509035): re-enable.
+        "no_rocm",
     ],
     xla_enable_strict_auto_jit = True,
     deps = [
@@ -302,6 +303,7 @@ cuda_py_test(
     srcs = ["cudnn_d9m_test.py"],
     tags = [
         "no_cuda_asan",  # TODO(b/171509035): re-enable.
+        "no_rocm",
     ],
     deps = [
         ":cudnn_deterministic_base",
