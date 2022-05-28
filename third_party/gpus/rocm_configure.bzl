@@ -208,9 +208,9 @@ def _rocm_include_path(repository_ctx, rocm_config, bash_bin):
 def _enable_rocm(repository_ctx):
     enable_rocm = get_host_environ(repository_ctx, "TF_NEED_ROCM")
     if enable_rocm == "1":
-        if get_cpu_value(repository_ctx) != "Linux":
-            auto_configure_warning("ROCm configure is only supported on Linux")
-            return False
+        # if get_cpu_value(repository_ctx) != "Linux":
+        #     auto_configure_warning("ROCm configure is only supported on Linux")
+        #     return False
         return True
     return False
 
