@@ -3,8 +3,8 @@
 FROM ubuntu:bionic
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
-ARG ROCM_DEB_REPO=http://repo.radeon.com/rocm/apt/5.1.0/
-ARG ROCM_BUILD_NAME=xenial
+ARG ROCM_DEB_REPO=https://repo.radeon.com/rocm/apt/5.1/
+ARG ROCM_BUILD_NAME=ubuntu
 ARG ROCM_BUILD_NUM=main
 ARG ROCM_PATH=/opt/rocm-5.1.0
 ENV ROCM_PATH=$ROCM_PATH
@@ -16,8 +16,8 @@ RUN apt update && apt install -y wget software-properties-common
 
 # Add rocm repository
 RUN apt-get clean all
+RUN wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add -;
 RUN bin/bash -c 'if [[ $ROCM_DEB_REPO == http://repo.radeon.com/rocm/*  ]] ; then \
-      wget -qO - $ROCM_DEB_REPO/rocm.gpg.key | apt-key add -; \
       echo "deb [arch=amd64] $ROCM_DEB_REPO $ROCM_BUILD_NAME $ROCM_BUILD_NUM" > /etc/apt/sources.list.d/rocm.list; \
     else \
       echo "deb [arch=amd64 trusted=yes] $ROCM_DEB_REPO $ROCM_BUILD_NAME $ROCM_BUILD_NUM" > /etc/apt/sources.list.d/rocm.list ; \
