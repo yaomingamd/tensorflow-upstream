@@ -88,7 +88,7 @@ REQUIRED_PACKAGES = [
     'h5py >= 2.9.0', # capped since 3.3.0 lacks py3.6
     'keras_preprocessing >= 1.1.1', # 1.1.0 needs tensorflow==1.7
     'opt_einsum >= 2.3.2', # sphinx pin not removed up til 3.3.0 release
-    'protobuf >= 3.9.2',
+    'protobuf >= 3.9.2, < 3.20',
     'six >= 1.12.0',
     'termcolor >= 1.1.0',
     'typing_extensions >= 3.6.6',
