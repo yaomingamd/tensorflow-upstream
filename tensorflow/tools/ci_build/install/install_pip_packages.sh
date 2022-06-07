@@ -95,7 +95,7 @@ pip3 install --upgrade gast
 pip3 install --upgrade termcolor
 
 # Keras
-pip3 install keras-nightly --no-deps
+pip3 install keras-nightly==2.10.0.dev2022060207 --no-deps
 pip3 install keras_preprocessing==1.1.0 --no-deps
 pip3 install --upgrade h5py==3.1.0
 
