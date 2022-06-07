@@ -87,7 +87,7 @@ REQUIRED_PACKAGES = [
     'numpy >= 1.20',
     'opt_einsum >= 2.3.2',
     'packaging',
-    'protobuf >= 3.9.2',
+    'protobuf >= 3.9.2, < 3.20',
     'setuptools',
     'six >= 1.12.0',
     'termcolor >= 1.1.0',
