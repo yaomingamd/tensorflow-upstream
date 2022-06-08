@@ -100,7 +100,7 @@ pip3 install keras_preprocessing==1.1.0 --no-deps
 pip3 install --upgrade h5py==3.1.0
 
 # Estimator
-pip3 install tf-estimator-nightly --no-deps
+pip3 install tf-estimator-nightly==2.10.0.dev2022060108 --no-deps
 
 # Tensorboard
 pip3 install tb-nightly --no-deps
