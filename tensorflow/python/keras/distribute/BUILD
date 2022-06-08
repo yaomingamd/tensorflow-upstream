@@ -252,6 +252,7 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "notsan",  # TODO(b/170954243)
+        "no_rocm",  
     ],
     tpu_tags = [
         "no_oss",  # b/153615544.

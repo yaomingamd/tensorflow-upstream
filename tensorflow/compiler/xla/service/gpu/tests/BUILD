@@ -91,7 +91,7 @@ tf_cc_test(
     srcs = [
         "reduction_degenerate_dim_remover_test.cc",
     ],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags()+ ["no_rocm"],
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla:debug_options_flags",
@@ -118,7 +118,7 @@ tf_cc_test(
     srcs = [
         "reduction_layout_normalizer_test.cc",
     ],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags()+ ["no_rocm"],
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla:debug_options_flags",
@@ -172,7 +172,7 @@ tf_cc_test(
     srcs = [
         "reduction_vectorization_test.cc",
     ],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags()+ ["no_rocm"],
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla:debug_options_flags",
@@ -199,7 +199,7 @@ tf_cc_test(
     srcs = [
         "reduction_dimension_grouper_test.cc",
     ],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags()+ ["no_rocm"],
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla:debug_options_flags",
@@ -292,7 +292,7 @@ tf_cc_test(
 tf_cc_test(
     name = "gpu_ftz_test",
     srcs = ["gpu_ftz_test.cc"],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags() + ["no_rocm"],
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla/tests:verified_hlo_module",
@@ -345,7 +345,7 @@ tf_cc_test(
 tf_cc_test(
     name = "gpu_kernel_tiling_test",
     srcs = ["gpu_kernel_tiling_test.cc"],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags()+ ["no_rocm"],
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla/service:hlo",
@@ -360,7 +360,7 @@ tf_cc_test(
 tf_cc_test(
     name = "gpu_ldg_test",
     srcs = ["gpu_ldg_test.cc"],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags()+ ["no_rocm"],
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla:literal",
@@ -410,7 +410,7 @@ tf_cc_test(
 tf_cc_test(
     name = "gpu_unrolling_test",
     srcs = ["gpu_unrolling_test.cc"],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags()+ ["no_rocm"],
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla/service:hlo_module_config",

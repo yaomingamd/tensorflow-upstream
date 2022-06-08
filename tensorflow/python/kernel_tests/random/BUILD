@@ -130,6 +130,7 @@ cuda_py_test(
     shard_count = 10,
     tags = [
         "no_windows",  # TODO(b/171384674)
+        "no_rocm",
     ],
     tfrt_enabled = True,
     deps = [

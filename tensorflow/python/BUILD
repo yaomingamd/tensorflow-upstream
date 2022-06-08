@@ -1957,7 +1957,7 @@ cuda_py_test(
     size = "small",
     srcs = ["framework/config_test.py"],
     python_version = "PY3",
-    tags = ["no_pip"],  # test_ops are not available in pip.
+    tags = ["no_pip","no_rocm"],  # test_ops are not available in pip.
     deps = [
         ":client_testlib",
         ":config",
@@ -5388,6 +5388,7 @@ cuda_py_test(
     srcs = ["ops/nn_fused_batchnorm_test.py"],
     python_version = "PY3",
     shard_count = 24,
+    tags = ["no_rocm"],
     deps = [
         ":array_ops",
         ":client_testlib",
@@ -7069,6 +7070,7 @@ cuda_py_test(
     srcs = ["ops/nn_grad_test.py"],
     python_version = "PY3",
     tfrt_enabled = True,
+    tags = ["no_rocm"],
     deps = [
         ":client_testlib",
         ":framework_for_generated_wrappers",

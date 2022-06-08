@@ -1770,6 +1770,9 @@ cuda_py_test(
     name = "batch_gemm_op_test",
     size = "small",
     srcs = ["batch_gemm_op_test.py"],
+    tags = [
+       "no_rocm",    
+    ],		    
     deps = [
         "//third_party/py/numpy",
         "//tensorflow/python:array_ops",
@@ -3555,6 +3558,9 @@ cuda_py_test(
     size = "medium",
     srcs = ["linalg_grad_test.py"],
     shard_count = 20,
+    tags = [
+	"no_rocm",
+    ],		    
     deps = [
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",

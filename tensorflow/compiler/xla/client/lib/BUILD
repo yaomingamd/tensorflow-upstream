@@ -165,6 +165,7 @@ cc_library(
 xla_test(
     name = "math_test",
     srcs = ["math_test.cc"],
+    tags = ["optonly","no_rocm",],
     deps = [
         ":constants",
         ":math",
@@ -291,7 +292,7 @@ cc_library(
 xla_test(
     name = "qr_test",
     srcs = ["qr_test.cc"],
-    tags = ["optonly"],
+    tags = ["optonly","no_rocm",],
     deps = [
         ":matrix",
         ":qr",
@@ -519,7 +520,7 @@ xla_test(
     srcs = ["svd_test.cc"],
     real_hardware_only = True,
     shard_count = 10,
-    tags = ["optonly"],
+    tags = ["optonly","no_rocm"],
     deps = [
         ":arithmetic",
         ":constants",

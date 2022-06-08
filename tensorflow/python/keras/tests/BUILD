@@ -506,6 +506,7 @@ tf_xla_py_test(
         "no_windows",
         "nomac",
         "notsan",  # b/74395663
+        "no_rocm",
     ],
     deps = [
         "//tensorflow/compiler/tests:xla_test",
