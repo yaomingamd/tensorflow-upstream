@@ -23,6 +23,9 @@ namespace Eigen {
 
 namespace internal {
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wignored-attributes"
+
 // WARNING: Most of the code here implicitly assumes that the matrix is in
 // ColMajor layout. This is guaranteed by the tensor contraction (see
 // TensorContraction.h).
@@ -1769,5 +1772,7 @@ EIGEN_DEVICE_FUNC
 }
 
 }  // end namespace Eigen
+
+#pragma GCC diagnostic pop
 
 #endif  // TENSORFLOW_CORE_KERNELS_EIGEN_SPATIAL_CONVOLUTIONS_INL_H_

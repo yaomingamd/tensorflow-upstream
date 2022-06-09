@@ -3215,6 +3215,7 @@ Stream &Stream::ThenBlasTrsv(blas::UpperLower uplo, blas::Transpose trans,
               lda, x, incx);
 }
 
+/*
 Stream &Stream::ThenBlasGemm(blas::Transpose transa, blas::Transpose transb,
                              uint64 m, uint64 n, uint64 k, float alpha,
                              const DeviceMemory<Eigen::half> &a, int lda,
@@ -3309,6 +3310,7 @@ Stream &Stream::ThenBlasGemm(blas::Transpose transa, blas::Transpose transb,
   return impl(this, &blas::BlasSupport::DoBlasGemm, transa, transb, m, n, k,
               alpha, a, lda, b, ldb, beta, c, ldc);
 }
+*/
 
 namespace {
 // Like ThenBlasImpl, except this expects the last argument of blas_func to be a
@@ -3327,6 +3329,83 @@ struct ThenBlasWithProfileImpl {
   }
 };
 }  // anonymous namespace
+
+template <class T>
+Stream &Stream::ThenBlasGemmImpl(T ctx)
+{
+  if(ctx.output_profile_result == 0)
+  {
+    ThenBlasImpl<T, blas::ProfileResult*> impl;
+    return impl(this, &blas::BlasSupport::DoBlasGemm, ctx, (blas::ProfileResult*)nullptr);
+  }
+  else
+  {
+    ThenBlasWithProfileImpl<T> impl;
+    return impl(this, &blas::BlasSupport::DoBlasGemm, ctx, ctx.output_profile_result);
+  }
+}
+
+Stream &Stream::ThenBlasGemm(blas::GemmCallContext<Eigen::half> ctx)
+{
+  return ThenBlasGemmImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemm(blas::GemmCallContext<float> ctx)
+{
+  return ThenBlasGemmImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemm(blas::GemmCallContext<double> ctx)
+{
+  return ThenBlasGemmImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemm(blas::GemmCallContext<std::complex<float> > ctx)
+{
+  return ThenBlasGemmImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemm(blas::GemmCallContext<std::complex<double> > ctx)
+{
+  return ThenBlasGemmImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemm(blas::GemmCallContext<int8, int32> ctx)
+{
+  return ThenBlasGemmImpl(ctx);
+}
+
+template <class T>
+Stream &Stream::ThenBlasGemmBatchedImpl(T ctx)
+{
+  ThenBlasImpl<T> impl;
+  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, ctx);
+}
+
+Stream &Stream::ThenBlasGemmBatched(blas::BatchedGemmCallContext<Eigen::half> ctx)
+{
+  return ThenBlasGemmBatchedImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemmBatched(blas::BatchedGemmCallContext<float> ctx)
+{
+  return ThenBlasGemmBatchedImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemmBatched(blas::BatchedGemmCallContext<double> ctx)
+{
+  return ThenBlasGemmBatchedImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemmBatched(blas::BatchedGemmCallContext<std::complex<float> > ctx)
+{
+  return ThenBlasGemmBatchedImpl(ctx);
+}
+
+Stream &Stream::ThenBlasGemmBatched(blas::BatchedGemmCallContext<std::complex<double> > ctx)
+{
+  return ThenBlasGemmBatchedImpl(ctx);
+}
 
 Stream &Stream::ThenBlasGemvWithProfiling(
     blas::Transpose trans, uint64 m, uint64 n, float alpha,
@@ -3403,6 +3482,7 @@ Stream &Stream::ThenBlasGemvWithProfiling(
               alpha, a, lda, x, incx, beta, y, incy, output_profile_result);
 }
 
+/*
 Stream &Stream::ThenBlasGemmWithProfiling(
     blas::Transpose transa, blas::Transpose transb, uint64 m, uint64 n,
     uint64 k, float alpha, const DeviceMemory<Eigen::half> &a, int lda,
@@ -3656,6 +3736,7 @@ Stream &Stream::ThenBlasGemmWithAlgorithm(
               m, n, k, alpha, a, lda, b, ldb, beta, c, ldc, computation_type,
               algorithm, output_profile_result);
 }
+*/
 
 Stream &Stream::ThenBlasHemm(blas::Side side, blas::UpperLower uplo, uint64 m,
                              uint64 n, std::complex<float> alpha,
@@ -4117,6 +4198,7 @@ Stream &Stream::ThenBlasTrsm(blas::Side side, blas::UpperLower uplo,
               n, alpha, a, lda, b, ldb);
 }
 
+/*
 Stream &Stream::ThenBlasGemmBatched(
     blas::Transpose transa, blas::Transpose transb, uint64 m, uint64 n,
     uint64 k, float alpha,
@@ -4126,7 +4208,7 @@ Stream &Stream::ThenBlasGemmBatched(
     int batch_count) {
   return ThenBlasGemmBatchedWithScratch(transa, transb, m, n, k, alpha, a, lda,
                                         b, ldb, beta, c, ldc, batch_count,
-                                        /*scratch_allocator=*/nullptr);
+                                        /*scratch_allocator=/nullptr);
 }
 
 Stream &Stream::ThenBlasGemmBatchedWithScratch(
@@ -4159,7 +4241,7 @@ Stream &Stream::ThenBlasGemmBatched(
     int batch_count) {
   return ThenBlasGemmBatchedWithScratch(transa, transb, m, n, k, alpha, a, lda,
                                         b, ldb, beta, c, ldc, batch_count,
-                                        /*scratch_allocator=*/nullptr);
+                                        /*scratch_allocator=/nullptr);
 }
 
 Stream &Stream::ThenBlasGemmBatchedWithScratch(
@@ -4191,7 +4273,7 @@ Stream &Stream::ThenBlasGemmBatched(
     int batch_count) {
   return ThenBlasGemmBatchedWithScratch(transa, transb, m, n, k, alpha, a, lda,
                                         b, ldb, beta, c, ldc, batch_count,
-                                        /*scratch_allocator=*/nullptr);
+                                        /*scratch_allocator=/nullptr);
 }
 
 Stream &Stream::ThenBlasGemmBatchedWithScratch(
@@ -4225,7 +4307,7 @@ Stream &Stream::ThenBlasGemmBatched(
     int batch_count) {
   return ThenBlasGemmBatchedWithScratch(transa, transb, m, n, k, alpha, a, lda,
                                         b, ldb, beta, c, ldc, batch_count,
-                                        /*scratch_allocator=*/nullptr);
+                                        /*scratch_allocator=/nullptr);
 }
 
 Stream &Stream::ThenBlasGemmBatchedWithScratch(
@@ -4264,7 +4346,7 @@ Stream &Stream::ThenBlasGemmBatched(
     int batch_count) {
   return ThenBlasGemmBatchedWithScratch(transa, transb, m, n, k, alpha, a, lda,
                                         b, ldb, beta, c, ldc, batch_count,
-                                        /*scratch_allocator=*/nullptr);
+                                        /*scratch_allocator=/nullptr);
 }
 
 Stream &Stream::ThenBlasGemmBatchedWithScratch(
@@ -4401,6 +4483,7 @@ Stream &Stream::ThenBlasGemmStridedBatched(
               transb, m, n, k, alpha, a, lda, stride_a, b, ldb, stride_b, beta,
               c, ldc, stride_c, batch_count);
 }
+*/
 
 template <typename ABType, typename CType>
 Stream &Stream::ThenBlasLtMatmulImpl(

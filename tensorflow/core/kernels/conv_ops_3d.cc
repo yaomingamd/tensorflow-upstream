@@ -130,11 +130,11 @@ struct LaunchConvOp<GPUDevice, T, OpKernelContext> {
                                   output->template flat<T>().size());
 
       auto no_transpose = se::blas::Transpose::kNoTranspose;
-      bool blas_launch_status =
-          stream
-              ->ThenBlasGemm(no_transpose, no_transpose, n, m, k, 1.0f, b_ptr,
-                             n, a_ptr, k, 0.0f, &c_ptr, n)
-              .ok();
+       se::blas::GemmCallContext<T> gemm_call{no_transpose, no_transpose, n, m, k,
+                             1.0f, 0.0f, &b_ptr, n, &a_ptr, k,&c_ptr, n, 
+                             stream_executor::blas::CallContext::kForward};
+
+      bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
       if (!blas_launch_status) {
         ctx->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                         ", n=", n, ", k=", k));
@@ -157,11 +157,11 @@ struct LaunchConvOp<GPUDevice, T, OpKernelContext> {
                                   output->template flat<T>().size());
 
       auto no_transpose = se::blas::Transpose::kNoTranspose;
-      bool blas_launch_status =
-          stream
-              ->ThenBlasGemm(no_transpose, no_transpose, n, m, k, 1.0f, b_ptr,
-                             n, a_ptr, k, 0.0f, &c_ptr, n)
-              .ok();
+      se::blas::GemmCallContext<T> gemm_call{no_transpose, no_transpose, n, m, k,
+                             1.0f, 0.0f, &b_ptr, n, &a_ptr, k, &c_ptr, n,
+                             stream_executor::blas::CallContext::kForward};
+
+      bool blas_launch_status = stream->ThenBlasGemm(gemm_call).ok();
       if (!blas_launch_status) {
         ctx->SetStatus(errors::Internal("Blas SGEMM launch failed : m=", m,
                                         ", n=", n, ", k=", k));
@@ -434,7 +434,8 @@ struct LaunchConvOp<GPUDevice, T, OpKernelContext> {
                       se::dnn::ConvolutionKind::FORWARD,
                       se::dnn::ToDataType<T>::value, stream, input_desc,
                       input_ptr, filter_desc, filter_ptr, output_desc,
-                      output_ptr, conv_desc, &scratch_allocator, &algorithms),
+                      output_ptr, conv_desc, &scratch_allocator, 
+                      stream_executor::dnn::CallContext::kForward, &algorithms),
                   errors::Unknown(
                       "Failed to get convolution algorithm. This is probably "
                       "because MIOpen failed to initialize, so try looking to "

@@ -125,7 +125,8 @@ StatusOr<std::vector<se::dnn::ProfileResult>> GetMIOpenAlgorithms(
     const HloCustomCallInstruction* instr,
     absl::Span<se::DeviceMemoryBase> operand_buffers,
     se::DeviceMemoryBase result_buffer, se::StreamExecutor* stream_exec,
-    ScratchAllocator* scratch_allocator, se::Stream* stream) {
+    ScratchAllocator* scratch_allocator, 
+    se::dnn::CallContext call_context, se::Stream* stream) {
   std::vector<se::dnn::ProfileResult> algorithms;
 
   TF_ASSIGN_OR_RETURN(GpuConvConfig config, GetGpuConvConfig(instr));
@@ -143,7 +144,7 @@ StatusOr<std::vector<se::dnn::ProfileResult>> GetMIOpenAlgorithms(
       kind, dtype, stream, params.config.input_descriptor, params.input_buf,
       params.config.filter_descriptor, params.filter_buf,
       params.config.output_descriptor, params.output_buf,
-      params.config.conv_desc, scratch_allocator, &algorithms);
+      params.config.conv_desc, scratch_allocator, call_context, &algorithms);
   DCHECK(succ);
 
   return algorithms;
@@ -687,10 +688,15 @@ GpuConvAlgorithmPicker::PickBestAlgorithmNoCacheRocm(
 
   ScratchAllocator scratch_allocator(device_ordinal, allocator);
 
+  TF_ASSIGN_OR_RETURN(auto backend_config,
+                      instr->backend_config<CudnnConvBackendConfig>());
+  se::dnn::CallContext call_context =
+      GetCallContext(backend_config.call_context());
+
   TF_ASSIGN_OR_RETURN(
       std::vector<se::dnn::ProfileResult> algorithms,
       GetMIOpenAlgorithms(instr, absl::MakeSpan(operand_buffers), result_buffer,
-                          stream_exec_, &scratch_allocator, stream));
+                          stream_exec_, &scratch_allocator, call_context, stream));
 
   std::vector<AutotuneResult> profile_results;
 

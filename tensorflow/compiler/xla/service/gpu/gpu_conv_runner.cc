@@ -254,6 +254,16 @@ Status RunGpuConvImpl(const GpuConvParams& params,
 
 }  // anonymous namespace
 
+se::dnn::CallContext GetCallContext(const absl::string_view call_context) {
+  if (call_context == "kForward")
+    return se::dnn::CallContext::kForward;
+  else if (call_context == "kBackpropData")
+    return se::dnn::CallContext::kBackpropData;
+  else if (call_context == "kBackpropFilter")
+    return se::dnn::CallContext::kBackpropFilter;
+  return se::dnn::CallContext::kNone;
+}
+
 StatusOr<GpuConvConfig> GetGpuConvConfig(
     const HloCustomCallInstruction* cudnn_call) {
   GpuConvConfig config;
@@ -272,6 +282,7 @@ StatusOr<GpuConvConfig> GetGpuConvConfig(
       se::dnn::AlgorithmDesc(backend_config.algorithm(),
                              backend_config.tensor_ops_enabled()),
       cudnn_call->shape().tuple_shapes(1).dimensions(0));
+  config.call_context = GetCallContext(backend_config.call_context());
   config.conv_result_scale = backend_config.conv_result_scale();
 
   Shape operand0_shape = cudnn_call->operand(0)->shape();
