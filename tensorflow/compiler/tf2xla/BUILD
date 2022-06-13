@@ -1084,6 +1084,9 @@ tf_cuda_cc_test(
     name = "fused_batchnorm_reserve_space_test",
     size = "medium",
     srcs = ["fused_batchnorm_reserve_space_test.cc"],
+    tags = [
+	"no_rocm",
+    ],
     deps = [
         "//tensorflow/cc:cc_ops",
         "//tensorflow/cc:ops",

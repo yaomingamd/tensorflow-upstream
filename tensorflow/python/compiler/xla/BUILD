@@ -74,6 +74,7 @@ cuda_py_test(
     tags = [
         "no_mac",
         "no_windows",
+        "no_rocm",
     ],
     xla_enabled = True,
     deps = [

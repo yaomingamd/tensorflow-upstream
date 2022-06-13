@@ -281,7 +281,7 @@ tf_cc_tests_gpu(
     size = "small",
     srcs = [
         "gpu_bfc_allocator_test.cc",
-        "gpu_device_test.cc",
+        #"gpu_device_test.cc",
         "gpu_id_manager_test.cc",
         "pool_allocator_test.cc",
     ],
@@ -336,6 +336,7 @@ tf_cuda_cc_test(
     tags = tf_cuda_tests_tags() + [
         "guitar",
         "multi_gpu",
+	"no_rocm",
     ],
     deps = [
         ":gpu_id",

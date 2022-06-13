@@ -535,6 +535,7 @@ xla_test(
 xla_test(
     name = "map_test",
     srcs = ["map_test.cc"],
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array2d",
@@ -642,6 +643,7 @@ xla_test(
 xla_test(
     name = "unary_op_test",
     srcs = ["unary_op_test.cc"],
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:xla_data_proto_cc",
@@ -662,6 +664,7 @@ xla_test(
     name = "scalar_computations_test",
     srcs = ["scalar_computations_test.cc"],
     shard_count = 32,
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:literal",
@@ -728,6 +731,7 @@ xla_test(
     name = "array_elementwise_ops_test",
     srcs = ["array_elementwise_ops_test.cc"],
     shard_count = 25,
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array2d",
@@ -925,6 +929,7 @@ xla_test(
     shard_count = 20,
     tags = [
         "optonly",
+    	"no_rocm",
     ],
     deps = [
         ":client_library_test_base",
@@ -960,6 +965,7 @@ xla_test(
         "optonly",
         # TODO(b/151340488): Timed out on 2020-03-12.
         "nozapfhahn",
+    	"no_rocm",
     ],
     deps = [
         ":client_library_test_base",
@@ -1024,6 +1030,7 @@ xla_test(
     shard_count = 20,
     tags = [
         "optonly",
+	"no_rocm",
     ],
     deps = [
         ":client_library_test_base",
@@ -1341,6 +1348,7 @@ xla_test(
     name = "bfloat16_test",
     srcs = ["bfloat16_test.cc"],
     shard_count = 40,
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         ":test_utils",
@@ -1377,6 +1385,7 @@ xla_test(
         "cpu",
         "gpu",
     ],
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         ":test_utils",
@@ -1491,6 +1500,7 @@ xla_test(
 xla_test(
     name = "vector_ops_reduce_test",
     srcs = ["vector_ops_reduce_test.cc"],
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array2d",
@@ -1513,6 +1523,7 @@ xla_test(
     shard_count = 31,
     tags = [
         "optonly",
+	"no_rocm",
     ],
     deps = [
         ":test_macros_header",
@@ -1581,6 +1592,7 @@ xla_test(
     shard_count = 20,
     tags = [
         "optonly",
+	"no_rocm",
     ],
     xla_test_library_deps = [":reduce_window_test_library"],
     deps = [":test_macros_header"],
@@ -1785,6 +1797,7 @@ xla_test(
 xla_test(
     name = "log_test",
     srcs = ["log_test.cc"],
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla/client:local_client",
@@ -1800,6 +1813,7 @@ xla_test(
 xla_test(
     name = "matrix_ops_simple_test",
     srcs = ["matrix_ops_simple_test.cc"],
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array2d",
@@ -1830,7 +1844,7 @@ xla_test(
     srcs = ["prng_test.cc"],
     shard_count = 6,
     # TODO(b/148276347) The test fails on macOS.
-    tags = ["nomac"],
+    tags = ["nomac","no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:literal",
@@ -1897,6 +1911,7 @@ xla_test(
 xla_test(
     name = "vector_ops_simple_test",
     srcs = ["vector_ops_simple_test.cc"],
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:array4d",
@@ -2289,6 +2304,7 @@ xla_test(
 xla_test(
     name = "cpu_gpu_fusion_test",
     srcs = ["cpu_gpu_fusion_test.cc"],
+    tags = ["no_rocm"],
     deps = [
         ":client_library_test_base",
         ":hlo_test_base",
@@ -2316,6 +2332,7 @@ xla_test(
     name = "multioutput_fusion_test",
     srcs = ["multioutput_fusion_test.cc"],
     backends = ["gpu"],
+    tags = ["no_rocm"],
     deps = [
         ":test_macros_header",
         "//tensorflow/compiler/xla:literal",

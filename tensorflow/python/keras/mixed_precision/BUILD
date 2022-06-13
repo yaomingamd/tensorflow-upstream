@@ -264,6 +264,7 @@ cuda_py_test(
     tags = [
         "no_pip",
         "no_windows",  # b/139083295: bfloat16 tests fail on Windows
+        "no_rocm",  
     ],
     deps = [
         ":test_util",

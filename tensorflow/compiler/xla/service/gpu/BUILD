@@ -1818,6 +1818,7 @@ cc_library(
     name = "horizontal_input_fusion",
     srcs = ["horizontal_input_fusion.cc"],
     hdrs = ["horizontal_input_fusion.h"],
+    tags = ["no_rocm",],
     deps = [
         ":gpu_fusible",
         ":ir_emission_utils",
@@ -1836,7 +1837,7 @@ cc_library(
 tf_cc_test(
     name = "horizontal_input_fusion_test",
     srcs = ["horizontal_input_fusion_test.cc"],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags() + ["no_rocm"],
     deps = [
         ":horizontal_input_fusion",
         ":multi_output_fusion",

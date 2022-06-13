@@ -92,6 +92,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -109,6 +110,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -127,6 +129,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -272,6 +275,7 @@ tf_xla_py_test(
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
         "optonly",
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -332,6 +336,7 @@ tf_xla_py_test(
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
         "optonly",
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -399,6 +404,7 @@ tf_xla_py_test(
         "noasan",
         "nomsan",
         "notsan",
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -418,6 +424,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -545,6 +552,7 @@ tf_xla_py_test(
         "nomsan",
         "notsan",
         "optonly",  # Times out frequently in fastbuild mode.
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -655,6 +663,7 @@ tf_xla_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -733,6 +742,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -773,6 +783,7 @@ tf_xla_py_test(
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
         "optonly",  # Times out frequently in fastbuild mode.
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -811,6 +822,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -977,6 +989,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -1018,6 +1031,7 @@ tf_xla_py_test(
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
         "optonly",
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -1067,6 +1081,7 @@ tf_xla_py_test(
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
         "notap",  # TODO(b/141057424): flaky on TPU
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -1087,6 +1102,7 @@ tf_xla_py_test(
     shard_count = 5,
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -1159,6 +1175,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -1299,6 +1316,7 @@ tf_xla_py_test(
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
         "optonly",
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -1388,6 +1406,7 @@ tf_xla_py_test(
     python_version = "PY3",
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":xla_test",
@@ -1408,6 +1427,7 @@ tf_xla_py_test(
     shard_count = 5,
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     deps = [
         ":test_utils",
@@ -1548,6 +1568,7 @@ tf_xla_py_test(
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
         "optonly",
+	"no_rocm",
     ],
     deps = [
         "//tensorflow/compiler/tests:xla_test",
@@ -1619,6 +1640,7 @@ cuda_py_test(
     shard_count = 5,
     tags = [
         "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+	"no_rocm",
     ],
     xla_enable_strict_auto_jit = False,
     xla_enabled = True,

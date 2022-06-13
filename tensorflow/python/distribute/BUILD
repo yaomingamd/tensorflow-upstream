@@ -1603,6 +1603,7 @@ cuda_py_test(
     python_version = "PY3",
     tags = [
         "multi_and_single_gpu",
+        "no_rocm",
     ],
     # b/141096229: Non-atomic AssignAdd
     xla_enable_strict_auto_jit = False,
