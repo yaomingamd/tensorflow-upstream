@@ -46,7 +46,7 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.8.1'
+_VERSION = '2.8.2'
 
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
@@ -81,7 +81,7 @@ REQUIRED_PACKAGES = [
     'libclang >= 9.0.1',
     'numpy >= 1.20',
     'opt_einsum >= 2.3.2',
-    'protobuf >= 3.9.2',
+    'protobuf >= 3.9.2, < 3.20',
     'setuptools',
     'six >= 1.12.0',
     'termcolor >= 1.1.0',
