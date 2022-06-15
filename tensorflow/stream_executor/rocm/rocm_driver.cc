@@ -1111,9 +1111,9 @@ GpuDriver::ContextGetSharedMemConfig(GpuContext* context) {
     pos = gcnArchName.find("gfx");
     if(pos!=string::npos)
        gcnArchName = gcnArchName.substr(pos+3);
-    VLOG(1)<<"GCN arch name (stripped) " << gcnArchName;
     supported = (gcnArchName=="908" || gcnArchName=="910" || gcnArchName=="90a");
     gfx90a = (gcnArchName=="910" || gcnArchName=="90a");
+    VLOG(1)<<"GCN arch name (stripped): " << gcnArchName << ", MFMA supported: " << supported;
     return port::Status::OK();
   }
   return port::Status{

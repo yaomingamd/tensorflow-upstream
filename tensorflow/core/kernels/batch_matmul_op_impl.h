@@ -221,7 +221,7 @@ struct LaunchBatchMatMul<CPUDevice, Scalar> {
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
                      bool trans_y, 
                      const MatMulBCast& bcast, Tensor* out,
-                     se::blas::CallContext call_context) {
+                     int call_context) {
     typedef ParallelMatMulKernel<Scalar, Eigen::NumTraits<Scalar>::IsComplex>
         ParallelMatMulKernel;
     bool conjugate_result = false;
@@ -317,7 +317,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
                      bool trans_y,
                      const MatMulBCast& bcast, Tensor* out,
-                     se::blas::CallContext call_context,
+                     int call_context,
                      float alpha = 1.0, float beta = 0.0) {
     se::blas::Transpose trans[] = {se::blas::Transpose::kNoTranspose,
                                    se::blas::Transpose::kTranspose,
@@ -395,10 +395,11 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
 
     typedef Scalar Coefficient;
 
-    if(call_context == se::blas::CallContext::kBackpropInput1)
-      call_context = se::blas::CallContext::kBackpropInput2;
-    else if(call_context == se::blas::CallContext::kBackpropInput2)
-      call_context = se::blas::CallContext::kBackpropInput1;
+    se::blas::CallContext cc = static_cast<se::blas::CallContext>(call_context);
+    if(cc == se::blas::CallContext::kBackpropInput1)
+      cc = se::blas::CallContext::kBackpropInput2;
+    else if(cc == se::blas::CallContext::kBackpropInput2)
+      cc = se::blas::CallContext::kBackpropInput1;
 
     // Blas does
     // C = A x B
@@ -439,7 +440,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                                static_cast<Coefficient>(alpha), static_cast<Coefficient>(beta),
                                b_ptrs[0], adj_y || trans_y ? k : n, a_ptrs[0],
                                adj_x || trans_x ? m : k, c_ptrs[0], n,
-                               call_context};
+                               cc};
         
         bool blas_launch_status = stream->ThenBlasGemm(ctx).ok();
         if (!blas_launch_status) {
@@ -455,7 +456,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                   static_cast<Coefficient>(alpha), static_cast<Coefficient>(beta),
                   b_ptrs[0], adj_y || trans_y ? k : n,
                   a_ptrs[0], adj_x || trans_x ? m : k, 
-                  c_ptrs[0], n, call_context,
+                  c_ptrs[0], n, cc,
                   b_stride, a_stride, c_stride, batch_size};
 
       bool blas_launch_status = stream->ThenBlasGemm(ctx).ok();
@@ -475,7 +476,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                   static_cast<Coefficient>(alpha), static_cast<Coefficient>(beta),
                   &b_port, adj_y || trans_y ? k : n, 
 		  &a_port, adj_x || trans_x ? m : k,
-                  &c_port, n, batch_size, call_context,
+                  &c_port, n, batch_size, cc,
                   &scratch_allocator};
       
       bool blas_launch_status = stream->ThenBlasGemmBatched(ctx).ok();
@@ -495,7 +496,7 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
   static void Launch(OpKernelContext* context, const Tensor& in_x,
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
                      bool trans_y, const MatMulBCast& bcast, 
-                     Tensor* out, se::blas::CallContext call_context,
+                     Tensor* out, int call_context,
                      float alpha = 1.0, float beta = 0.0) {
     typedef Eigen::half Scalar;
     se::blas::Transpose trans[] = {se::blas::Transpose::kNoTranspose,
@@ -575,10 +576,11 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
 
     typedef float Coefficient;
 
-    if(call_context == se::blas::CallContext::kBackpropInput1)
-      call_context = se::blas::CallContext::kBackpropInput2;
-    else if(call_context == se::blas::CallContext::kBackpropInput2)
-      call_context = se::blas::CallContext::kBackpropInput1;
+    se::blas::CallContext cc = static_cast<se::blas::CallContext>(call_context);
+    if(cc == se::blas::CallContext::kBackpropInput1)
+      cc = se::blas::CallContext::kBackpropInput2;
+    else if(cc == se::blas::CallContext::kBackpropInput2)
+      cc = se::blas::CallContext::kBackpropInput1;
 
     // Blas does
     // C = A x B
@@ -594,7 +596,7 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
                              static_cast<Coefficient>(alpha), static_cast<Coefficient>(beta),
                              b_ptrs[0], adj_y || trans_y ? k : n, 
                              a_ptrs[0], adj_x || trans_x ? m : k,
-                             c_ptrs[0], n, call_context};
+                             c_ptrs[0], n, cc};
 
       bool blas_launch_status = stream->ThenBlasGemm(ctx).ok();
       if (!blas_launch_status) {
@@ -609,7 +611,7 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
                   static_cast<Coefficient>(alpha), static_cast<Coefficient>(beta),
                   b_ptrs[0], adj_y || trans_y ? k : n,
                   a_ptrs[0], adj_x || trans_x ? m : k,
-                  c_ptrs[0], n, call_context,
+                  c_ptrs[0], n, cc,
                   b_stride, a_stride, c_stride, batch_size};
 
       bool blas_launch_status = stream->ThenBlasGemm(ctx).ok();
@@ -630,7 +632,7 @@ struct LaunchBatchMatMul<GPUDevice, Eigen::half> {
                   static_cast<Coefficient>(alpha), static_cast<Coefficient>(beta),
                   &b_port, adj_y || trans_y ? k : n, 
 		  &a_port, adj_x || trans_x ? m : k,
-                  &c_port, n, batch_size, call_context,
+                  &c_port, n, batch_size, cc,
                   &scratch_allocator};
 
       bool blas_launch_status = stream->ThenBlasGemmBatched(ctx).ok();
@@ -716,6 +718,7 @@ class BaseBatchMatMulOp : public OpKernel {
                 out_reshaped.CopyFrom(*out, TensorShape({batch_size, d0, d3})),
                 errors::Internal("Failed to reshape output from ",
                                  out->shape().DebugString()));
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     se::blas::CallContext cc = se::blas::CallContext::kNone;
     if(grad_x_)
       cc = se::blas::CallContext::kBackpropInput1;
@@ -723,7 +726,12 @@ class BaseBatchMatMulOp : public OpKernel {
       cc = se::blas::CallContext::kBackpropInput2;
     LaunchBatchMatMul<Device, Scalar>::Launch(
         ctx, in0_reshaped, in1_reshaped, adj_x_, adj_y_, /*trans_x=*/false,
-        /*trans_y=*/false, bcast, &out_reshaped, cc);
+        /*trans_y=*/false, bcast, &out_reshaped, static_cast<int>(cc));
+#else
+    LaunchBatchMatMul<Device, Scalar>::Launch(
+        ctx, in0_reshaped, in1_reshaped, adj_x_, adj_y_, /*trans_x=*/false,
+        /*trans_y=*/false, bcast, &out_reshaped, 0);
+#endif
   }
 
  protected:
