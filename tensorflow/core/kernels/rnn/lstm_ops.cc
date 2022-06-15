@@ -60,10 +60,17 @@ void LSTMBlockCellFpropWithEigen(
 
   // states1 = xh * w + b
   typename TTypes<T>::ConstMatrix const_xh(xh.data(), xh.dimensions());
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   TensorBlasGemm<CPUDevice, T, false /* USE_CUBLAS */>::compute(
       ctx, d, false, false, typename gemm_compute_type<T>::type(1.f), const_xh,
       w, typename gemm_compute_type<T>::type(0.f), gates,
-      se::blas::CallContext::kForward);
+      static_cast<int>(se::blas::CallContext::kForward));
+#else
+  TensorBlasGemm<CPUDevice, T, false /* USE_CUBLAS */>::compute(
+      ctx, d, false, false, typename gemm_compute_type<T>::type(1.f), const_xh,
+      w, typename gemm_compute_type<T>::type(0.f), gates,
+      0);
+#endif
   Eigen::array<Eigen::DenseIndex, 2> b_shape({1, b.dimensions()[0]});
   Eigen::array<Eigen::DenseIndex, 2> broadcast_shape({cell.batch_size(), 1});
   gates.device(d) += b.reshape(b_shape).broadcast(broadcast_shape);

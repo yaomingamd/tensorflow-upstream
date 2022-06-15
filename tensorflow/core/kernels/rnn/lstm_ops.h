@@ -275,9 +275,15 @@ struct BlockLSTMBprop : public LSTMBlockCell {
     // xh_grad.
     typename TTypes<T>::ConstMatrix const_dgates(dgates.data(),
                                                  dgates.dimensions());
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     TensorBlasGemm<Device, T, USE_CUBLAS>::compute(
         ctx, d, false, true, 1.f, const_dgates, w, 0.f, xh_grad,
-        se::blas::CallContext::kBackpropInput1);
+        static_cast<int>(se::blas::CallContext::kBackpropInput1));
+#else
+    TensorBlasGemm<Device, T, USE_CUBLAS>::compute(
+        ctx, d, false, true, 1.f, const_dgates, w, 0.f, xh_grad,
+        0);
+#endif
 
     // xh.
     xh.slice(xh_x_offsets(), xh_x_extents()).device(d) = x;
@@ -289,9 +295,15 @@ struct BlockLSTMBprop : public LSTMBlockCell {
     h_prev_grad.device(d) = xh_grad.slice(xh_h_offsets(), xh_h_extents());
 
     // w_grad.
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     TensorBlasGemm<Device, T, USE_CUBLAS>::compute(
         ctx, d, true, false, 1.f, const_xh, const_dgates, 1.f, w_grad,
-        se::blas::CallContext::kBackpropInput2);
+        static_cast<int>(se::blas::CallContext::kBackpropInput2));
+#else
+    TensorBlasGemm<Device, T, USE_CUBLAS>::compute(
+        ctx, d, true, false, 1.f, const_xh, const_dgates, 1.f, w_grad,
+        0);
+#endif
 
     // b_grad.
     b_grad.device(d) += dgates.sum(Eigen::array<int, 1>({0}));

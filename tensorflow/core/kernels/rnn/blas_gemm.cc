@@ -40,7 +40,7 @@ void TensorCuBlasGemm<T>::operator()(OpKernelContext* ctx, bool transa,
                                      bool transb, uint64 m, uint64 n, uint64 k,
                                      float alpha, const T* a, int lda,
                                      const T* b, int ldb, float beta, T* c,
-                                     int ldc, se::blas::CallContext call_context) {
+                                     int ldc, int call_context) {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   se::blas::Transpose trans[] = {se::blas::Transpose::kNoTranspose,
                                  se::blas::Transpose::kTranspose};
@@ -53,7 +53,7 @@ void TensorCuBlasGemm<T>::operator()(OpKernelContext* ctx, bool transa,
       ctx->op_device_context()
           ->stream()
           ->ThenBlasGemm(se::blas::GemmCallContext<T>{trans[transa], trans[transb], m, n, k,
-                         alpha, beta, &a_ptr, lda, &b_ptr, ldb, &c_ptr, ldc, call_context})
+                         alpha, beta, &a_ptr, lda, &b_ptr, ldb, &c_ptr, ldc, static_cast<se::blas::CallContext>(call_context)})
           .ok();
   OP_REQUIRES(ctx, blas_launch_status, errors::Aborted("CuBlasGemm failed!"));
 #else

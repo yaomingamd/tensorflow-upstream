@@ -581,9 +581,15 @@ struct EinsumHelper {
     Tensor output_reshaped;
     TF_RETURN_IF_ERROR(
         ReshapeToRank3(*output, bcast.output_batch_size(), &output_reshaped));
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     LaunchBatchMatMul<Device, T>::Launch(ctx, lhs, rhs, /*adj_x=*/false,
                                          /*adj_y=*/false, trans_x, trans_y,
                                          bcast, &output_reshaped, static_cast<int>(se::blas::CallContext::kNone));
+#else
+    LaunchBatchMatMul<Device, T>::Launch(ctx, lhs, rhs, /*adj_x=*/false,
+                                         /*adj_y=*/false, trans_x, trans_y,
+                                         bcast, &output_reshaped, 0);
+#endif
     return Status::OK();
   }
 };
