@@ -131,6 +131,7 @@ def _get_cxx_inc_directories_impl(repository_ctx, cc, lang_is_cpp):
     ]
 
 def get_cxx_inc_directories(repository_ctx, cc):
+    # NOTE: SEE HOW the ENV Variables affecto rocm compilation
     """Compute the list of default C and C++ include directories."""
 
     # For some reason `clang -xc` sometimes returns include paths that are
@@ -536,6 +537,7 @@ def _compute_rocm_extra_copts(repository_ctx, amdgpu_targets):
     return str(amdgpu_target_flags)
 
 def _create_local_rocm_repository(repository_ctx):
+    # NOTE: create repo
     """Creates the repository containing files set up to build with ROCm."""
 
     tpl_paths = {labelname: _tpl_path(repository_ctx, labelname) for labelname in [
@@ -805,6 +807,7 @@ def _create_remote_rocm_repository(repository_ctx, remote_config_repo):
     )
 
 def _rocm_autoconf_impl(repository_ctx):
+    # NOTE: Auto config
     """Implementation of the rocm_autoconf repository rule."""
     if not _enable_rocm(repository_ctx):
         _create_dummy_repository(repository_ctx)

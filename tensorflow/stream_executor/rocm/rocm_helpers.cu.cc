@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+// NOTE: this import fails
 #include <hip/hip_runtime.h>
 
 #include <limits>

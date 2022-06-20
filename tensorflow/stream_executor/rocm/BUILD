@@ -413,6 +413,9 @@ cc_library(
     alwayslink = True,
 )
 
+# NOTE: Source of ERROR
+#  Compiling tensorflow/stream_executor/rocm/rocm_helpers.cu.cc failed: undeclared inclusion(s) in rule '//tensorflow/stream_executor/rocm:rocm_helpers':\
+# this rule is missing dependency declarations for the following files included by 'tensorflow/stream_executor/rocm/rocm_helpers.cu.cc':
 cc_library(
     name = "rocm_helpers",
     srcs = if_rocm_is_configured(["rocm_helpers.cu.cc"]),
