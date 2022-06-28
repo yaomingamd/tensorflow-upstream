@@ -108,6 +108,11 @@ RUN /install/install_deb_packages.sh
 RUN /install/install_bootstrap_deb_packages.sh
 RUN /install/install_pi_python3.9_toolchain.sh
 
+# Install gcc 7
+RUN apt -y install gcc-7 g++-7
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 700 \
+                         --slave /usr/bin/g++ g++ /usr/bin/g++-7
+
 SHELL ["/bin/bash", "-c"]
 RUN /install/install_bazel.sh
 RUN /install/install_golang.sh
