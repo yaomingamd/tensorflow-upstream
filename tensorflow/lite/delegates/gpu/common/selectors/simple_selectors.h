@@ -38,6 +38,7 @@ std::unique_ptr<GPUOperation> SelectPReLU(const PReLUAttributes& attr,
                                           const OperationDef& op_def);
 
 std::unique_ptr<GPUOperation> SelectPooling(const Pooling2DAttributes& attr,
+                                            const GpuInfo& gpu_info,
                                             const OperationDef& op_def);
 
 std::unique_ptr<GPUOperation> SelectMaxUnpooling(
@@ -54,7 +55,8 @@ absl::Status SelectResize(const Resize2DAttributes& attr,
                           const OperationDef& op_def,
                           std::unique_ptr<GPUOperation>* ptr);
 
-std::unique_ptr<GPUOperation> SelectResampler(const OperationDef& op_def);
+std::unique_ptr<GPUOperation> SelectResampler(const OperationDef& op_def,
+                                              const GpuInfo& gpu_info);
 
 absl::Status SelectConcat(const ConcatAttributes& attr,
                           const std::vector<int>& channels,
@@ -92,7 +94,8 @@ void SelectDepthToSpace(const SpaceToDepthAttributes& attr,
                         const OperationDef& op_def,
                         std::unique_ptr<GPUOperation>* ptr);
 
-void SelectSplit(const SplitAttributes& attr, const OperationDef& op_def,
+void SelectSplit(const SplitAttributes& attr, const GpuInfo& gpu_info,
+                 const std::vector<int>& channels, const OperationDef& op_def,
                  std::unique_ptr<GPUOperation>* ptr);
 
 std::unique_ptr<GPUOperation> SelectTile(const OperationDef& op_def,
@@ -112,6 +115,18 @@ std::unique_ptr<GPUOperation> SelectWinograd36To4x4(
 
 std::unique_ptr<GPUOperation> SelectQuantizeAndDequantize(
     const QuantizeAndDequantizeAttributes& attr, const OperationDef& op_def);
+
+void SelectCast(const OperationDef& op_def, const GpuInfo& gpu_info,
+                std::unique_ptr<GPUOperation>* ptr);
+
+void SelectCumsum(const OperationDef& op_def, const CumsumAttributes& attr,
+                  std::unique_ptr<GPUOperation>* ptr);
+
+void SelectOneHot(const OperationDef& op_def, const OneHotAttributes& attr,
+                  std::unique_ptr<GPUOperation>* ptr);
+
+void SelectSelectV2(const OperationDef& op_def, const SelectV2Attributes& attr,
+                    std::unique_ptr<GPUOperation>* ptr);
 
 }  // namespace gpu
 }  // namespace tflite

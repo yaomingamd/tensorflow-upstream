@@ -24,8 +24,10 @@ exports_files([
     "captured_function.h",
     "dataset_utils.cc",
     "dataset_utils.h",
-    "file_utils.cc",
-    "file_utils.h",
+    "finalization_utils.cc",
+    "finalization_utils.h",
+    "metric_utils.cc",
+    "metric_utils.h",
     "name_utils.cc",
     "name_utils.h",
     "rewrite_utils.cc",
@@ -40,6 +42,8 @@ exports_files([
     "stats_utils.h",
     "unbounded_thread_pool.cc",
     "unbounded_thread_pool.h",
+    "utils.cc",
+    "utils.h",
 ])
 
 cc_library(
@@ -84,6 +88,9 @@ cc_library(
 tf_cc_test(
     name = "compression_utils_test",
     srcs = ["compression_utils_test.cc"],
+    tags = [
+        "requires-mem:24g",
+    ],
     deps = [
         ":compression_utils",
         ":dataset_test_base",
@@ -92,6 +99,7 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
+        "//tensorflow/core/platform:status_matchers",
     ],
 )
 
@@ -195,6 +203,38 @@ tf_cc_test(
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
+    ],
+)
+
+cc_library(
+    name = "metric_utils",
+    srcs = ["metric_utils.cc"],
+    hdrs = ["metric_utils.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/core:framework",
+        "//tensorflow/core/data:utils",
+        "//tensorflow/core/platform:env",
+        "//tensorflow/core/platform:mutex",
+        "//tensorflow/core/platform:thread_annotations",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+tf_cc_test(
+    name = "metric_utils_test",
+    size = "small",
+    srcs = ["metric_utils_test.cc"],
+    deps = [
+        ":metric_utils",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core/lib/monitoring:cell_reader",
+        "//tensorflow/core/lib/monitoring:test_utils",
+        "//tensorflow/core/platform:env",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -455,7 +495,10 @@ tf_cc_test(
 )
 
 cc_library(
-    name = "file_utils",
-    srcs = ["file_utils.cc"],
-    hdrs = ["file_utils.h"],
+    name = "utils",
+    srcs = ["utils.cc"],
+    hdrs = ["utils.h"],
+    deps = [
+        "//tensorflow/core:framework",
+    ],
 )

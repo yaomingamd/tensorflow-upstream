@@ -16,14 +16,16 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/tensorflow/analysis/side_effect_analysis.h"
 
 #include <bitset>
+#include <string>
 
+#include "absl/container/node_hash_map.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Casting.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"  // from @llvm-project
+#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/Attributes.h"  // from @llvm-project
 #include "mlir/IR/Block.h"  // from @llvm-project
 #include "mlir/IR/Builders.h"  // from @llvm-project
@@ -35,6 +37,7 @@ limitations under the License.
 #include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_device.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_executor.h"
+#include "tensorflow/compiler/mlir/tensorflow/ir/tf_op_interfaces.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_side_effects.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_types.h"
@@ -155,11 +158,7 @@ SideEffects GetSideEffectsFromEffectInstance(
     const MemoryEffects::EffectInstance& effect_instance, Operation* op) {
   mlir::SideEffects::Effect* effect = effect_instance.getEffect();
   SideEffects side_effects;
-  if (llvm::isa<ResourceEffects::TPUEmbedding>(effect_instance.getResource())) {
-    // TODO(mgester) This hack can be removed once b/196857154 is fixed.
-    // See definition of `TF_TPUEmbeddingSideEffect` for more details.
-    side_effects.SetRead();
-  } else if (isa<MemoryEffects::Allocate>(effect)) {
+  if (isa<MemoryEffects::Allocate>(effect)) {
     side_effects.SetAlloc();
   } else if (isa<MemoryEffects::Free>(effect)) {
     side_effects.SetFree();
@@ -202,6 +201,16 @@ SideEffectsByResourceId CollectSideEffectsByResourceId(
     // resource alias analysis. Other side effects are treated as op-based
     // side effects.
     if (!ShouldUseResourceAliasAnalysis(effect)) continue;
+
+    TypeID type_id = effect.getResource()->getResourceID();
+    if (ResourceEffects::IsOnlySelfDependent(type_id)) {
+      // For value-based side effects we currently treat resource types that are
+      // only self-dependent conservatively, i.e., we do add dependencies
+      // to/from unknown resource types. Currently, we don't have such cases and
+      // there is no indication that we will need to support them in the future.
+      LOG(WARNING) << "Self-dependent-only resource types are treated "
+                      "conservatively for value-based side effects.";
+    }
 
     // Add side effects for every potentially accessed resource ID.
     SideEffects side_effects(GetSideEffectsFromEffectInstance(effect, op));
@@ -264,7 +273,7 @@ class OpSideEffectCollector {
   // populates `op_side_effect_map_`.
   explicit OpSideEffectCollector(ModuleOp module) {
     symbol_table_collection_.getSymbolTable(module);
-    for (auto func : module.getOps<FuncOp>()) {
+    for (auto func : module.getOps<func::FuncOp>()) {
       CollectOpSideEffects(func);
     }
   }
@@ -274,6 +283,12 @@ class OpSideEffectCollector {
     auto iter = op_side_effect_map_.find(op);
     if (iter != op_side_effect_map_.end()) return iter->second;
     return empty_side_effects_map_;
+  }
+
+  // Returns true iff resource with given ID is only self-dependent, i.e., there
+  // are no dependencies to other resources (including unknown resources).
+  bool IsOnlySelfDependent(ResourceId resource_id) const {
+    return self_dependent_only_ids_.contains(resource_id);
   }
 
  private:
@@ -297,16 +312,17 @@ class OpSideEffectCollector {
     if (!MayHaveSideEffect(op)) return;
     // Skip following ops to avoid that every island, graph and function is
     // classified as unknown side-effecting.
-    if (isa<tf_executor::YieldOp, tf_executor::FetchOp, mlir::ReturnOp>(op))
+    if (isa<tf_executor::YieldOp, tf_executor::FetchOp,
+            mlir::func::ReturnOp>(op))
       return;
 
     // Propagate side effects from regions or functions attached to `op` for
     // some special cases.
-    if (auto func = llvm::dyn_cast<FuncOp>(op)) {
+    if (auto func = llvm::dyn_cast<func::FuncOp>(op)) {
       AddRegionSideEffectsForOp(func.getBody(), op);
     } else if (auto call = llvm::dyn_cast<CallOpInterface>(op)) {
-      FuncOp func_op =
-          dyn_cast<FuncOp>(call.resolveCallable(&symbol_table_collection_));
+      func::FuncOp func_op = dyn_cast<func::FuncOp>(
+          call.resolveCallable(&symbol_table_collection_));
       if (func_op) {
         AddRegionSideEffectsForOp(func_op.getBody(), op);
       }
@@ -318,7 +334,7 @@ class OpSideEffectCollector {
     } else if (auto while_region_op = dyn_cast<WhileRegionOp>(op)) {
       AddRegionSideEffectsForOp(while_region_op.body(), op);
     } else if (auto case_op = dyn_cast<CaseOp>(op)) {
-      llvm::SmallVector<FuncOp, 4> branch_funcs;
+      llvm::SmallVector<func::FuncOp, 4> branch_funcs;
       case_op.get_branch_functions(branch_funcs);
       for (auto branch_func : branch_funcs) {
         AddRegionSideEffectsForOp(branch_func.getBody(), op);
@@ -356,25 +372,38 @@ class OpSideEffectCollector {
         // We handle value-based side effects for which we can use resource
         // alias analysis at a different place, skip here.
         if (ShouldUseResourceAliasAnalysis(effect)) continue;
+        if (llvm::isa<ResourceEffects::MustExecute>(effect.getResource()))
+          // We have this fake resource to avoid that certain ops are considered
+          // dead or get pruned, ignore it for side effect analysis.
+          continue;
 
         // Add side effects for op resource ID.
+        std::string instance_str = "";
         SideEffects side_effects(GetSideEffectsFromEffectInstance(effect, op));
-        ResourceId resource_id =
-            GetOpResourceId(effect.getResource()->getResourceID());
+        if (auto resource_instance_op =
+            dyn_cast<GetResourceInstanceInterface>(op)) {
+          instance_str = resource_instance_op.GetResourceInstanceStr();
+        }
+        TypeID type_id = effect.getResource()->getResourceID();
+        ResourceId resource_id = GetOpResourceId(type_id, instance_str);
         side_effects.SetResourceId(resource_id);
         UpdateSideEffectsByResourceId(side_effects,
                                       side_effects_by_resource_id);
+        if (ResourceEffects::IsOnlySelfDependent(type_id)) {
+          self_dependent_only_ids_.insert(resource_id);
+        }
       }
     }
   }
 
-  // Get internal op resource ID from MLIR type ID.
-  ResourceId GetOpResourceId(TypeID type_id) {
-    auto emplace_result =
-        type_id_to_op_resource_id_.try_emplace(type_id, next_op_resource_id_);
+  // Get internal op resource ID from MLIR type ID and instance ID.
+  ResourceId GetOpResourceId(TypeID type_id, std::string instance_str) {
+    auto emplace_result = type_instance_str_to_op_resource_id_.try_emplace(
+        std::make_pair(type_id.getAsOpaquePointer(), instance_str),
+        next_op_resource_id_);
     // Increment type ID if we have encountered a new resource type.
     if (emplace_result.second) ++next_op_resource_id_;
-    return emplace_result.first->getSecond();
+    return emplace_result.first->second;
   }
 
   // We use [0, kMaxResourceId] for resource IDs returned by resource alias
@@ -385,14 +414,20 @@ class OpSideEffectCollector {
   // Next available ID for op-based resources (resources not handled by resource
   // alias analysis).
   ResourceId next_op_resource_id_ = kMaxResourceId + 1;
-  // Maps MLIR type IDs for resource types to internal IDs for op-based
-  // resources. Also see comment above.
-  llvm::SmallDenseMap<TypeID, ResourceId> type_id_to_op_resource_id_;
+  // Maps (type ID, instance ID) pairs to internal IDs for op-based resources.
+  // Also see comment above. Instead of using TypeID directly we use its opaque
+  // pointer.
+  absl::node_hash_map<std::pair<const void*, std::string>, ResourceId>
+    type_instance_str_to_op_resource_id_;
   // Used for faster callable resolution.
   SymbolTableCollection symbol_table_collection_;
   // Collect all op-based side effects here.
   OpSideEffectMap op_side_effect_map_;
   const SideEffectsByResourceId empty_side_effects_map_;
+
+  // Set of all resource IDs which only have dependencies to themselves, not to
+  // any other resource ID (including unknown resource ID).
+  llvm::SmallDenseSet<ResourceId, 8> self_dependent_only_ids_;
 };
 
 
@@ -458,7 +493,7 @@ void SideEffectAnalysisInfo::UpdateAccess(ResourceId resource_id,
   }
 }
 
-void SideEffectAnalysisInfo::AnalyzeFunction(FuncOp func_op) {
+void SideEffectAnalysisInfo::AnalyzeFunction(func::FuncOp func_op) {
   // AnalyzeRegion() recursively analyzes the function body, and only populates
   // control_predecessors_.
   AnalyzeRegion(&func_op.getBody());
@@ -518,6 +553,31 @@ void SideEffectAnalysisInfo::AnalyzeRegion(Region* region) {
   }
 }
 
+ResourceIdSet
+SideEffectAnalysisInfo::GetConflictingIds(ResourceId resource_id,
+                                          bool is_fetch_op)  const {
+  ResourceIdSet conflicting_ids;
+  if (resource_id == kUnknownResourceId) {
+    // Unknown resource has potential conflict with all other resources, except
+    // those that are only self-dependent. For `Fetch` op make every resource
+    // conflicting in any case to ensure that all side-effecting ops in
+    // `Graph` feed into `Fetch` (its terminator).
+    for (auto& entry : per_resource_access_info_) {
+      ResourceId other_id = entry.getFirst();
+      if (!op_side_effect_collector_.IsOnlySelfDependent(other_id) ||
+          is_fetch_op)
+        conflicting_ids.insert(other_id);
+    }
+  } else {
+    conflicting_ids.insert(resource_id);
+    // Resource has potential conflict with unknown resource, if not only
+    // self-dependent.
+    if (!op_side_effect_collector_.IsOnlySelfDependent(resource_id))
+      conflicting_ids.insert(kUnknownResourceId);
+  }
+  return conflicting_ids;
+}
+
 void SideEffectAnalysisInfo::AnalyzeOp(Operation* op) {
   VLOG(2) << "Processing op " << mlir::debugString(*op);
   SideEffectsByResourceId side_effects_by_resource_id =
@@ -548,26 +608,23 @@ void SideEffectAnalysisInfo::AnalyzeOp(Operation* op) {
     // Effect is dominated by previous unknown resource read effect.
     if (read_only && had_unknown_resource_read) continue;
 
-    // We collect all conflicting IDs except unknown resource ID which is
-    // handled later.
-    ResourceIdSet conflicting_ids;
-    bool is_unknown_access_indirectly_tracked = false;
-    if (resource_id == kUnknownResourceId) {
-      for (auto& entry : per_resource_access_info_) {
-        ResourceId other_id = entry.getFirst();
-        if (other_id != kUnknownResourceId) conflicting_ids.insert(other_id);
-      }
-    } else {
-      conflicting_ids.insert(resource_id);
-    }
+    ResourceIdSet conflicting_ids = GetConflictingIds(
+        resource_id, isa<tf_executor::FetchOp>(op));
+
     // Add predecessors for conflicting IDs.
+    bool is_unknown_access_indirectly_tracked = false;
     for (ResourceId id : conflicting_ids) {
+      // Handle unknown resource later, access might already be indirectly
+      // tracked by another resource access.
+      if (id == kUnknownResourceId) continue;
+
       AddPredecessorsForAccess(id, op, read_only);
       is_unknown_access_indirectly_tracked |=
           IsUnknownAccessIndirectlyTrackedByResource(id, read_only);
     }
-    // Add predecessors for unknown resource if not already tracked.
-    if (!is_unknown_access_indirectly_tracked)
+    // Add predecessors for unknown resource if necessary.
+    if (conflicting_ids.contains(kUnknownResourceId) &&
+        !is_unknown_access_indirectly_tracked)
       AddPredecessorsForAccess(kUnknownResourceId, op, read_only);
     // Update resource access.
     UpdateAccess(resource_id, op, read_only);
@@ -647,16 +704,17 @@ SideEffectAnalysisInfo::GetResourceIds(Operation* op) const {
 
 }  // namespace detail
 
-SideEffectAnalysis::SideEffectAnalysis(ModuleOp module) {
+SideEffectAnalysis::SideEffectAnalysis(ModuleOp module)
   // Analyze entire module for alias analysis info.
-  ResourceAliasAnalysis alias_analysis(module);
+    : alias_analysis_(module) {
+  // Collect op-based side effects for entire module.
   detail::OpSideEffectCollector op_side_effect_collector(module);
 
-  // Analyze all functions.
-  for (auto func : module.getOps<FuncOp>())
+  // Analyze side effects for all functions in module.
+  for (auto func : module.getOps<func::FuncOp>())
     this->info_map_.try_emplace(func, func,
                                 op_side_effect_collector,
-                                alias_analysis.GetAnalysisForFunc(func));
+                                alias_analysis_.GetAnalysisForFunc(func));
 }
 
 }  // namespace TF

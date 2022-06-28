@@ -20,14 +20,12 @@ limitations under the License.
 #include <memory>
 #include <random>
 
-#include "absl/memory/memory.h"
 #include "absl/types/span.h"
 #include "tensorflow/compiler/xla/layout_util.h"
 #include "tensorflow/compiler/xla/literal.h"
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
 #include "tensorflow/compiler/xla/service/hlo_module.h"
 #include "tensorflow/compiler/xla/xla_data.pb.h"
-#include "tensorflow/core/platform/types.h"
 
 namespace xla {
 
@@ -38,7 +36,7 @@ template <typename NativeT>
 class PseudorandomGenerator {
  public:
   explicit PseudorandomGenerator(NativeT min_value, NativeT max_value,
-                                 uint32 seed)
+                                 uint32_t seed)
       : min_(min_value), max_(max_value), generator_(seed) {}
 
   // Get a pseudorandom value.

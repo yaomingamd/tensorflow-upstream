@@ -41,7 +41,7 @@ Status UnchangedRank(shape_inference::InferenceContext* c) {
   } else {
     c->set_output(0, c->input(0));
   }
-  return Status::OK();
+  return OkStatus();
 }
 
 REGISTER_OP("XlaBroadcastHelper")
@@ -180,6 +180,7 @@ REGISTER_OP("XlaConvV2")
     .Attr("dimension_numbers: string")
     .Attr("precision_config: string")
     .Attr("preferred_element_type: numbertype")
+    .Attr("batch_group_count: int = 1")
     .Output("output: preferred_element_type")
     .SetShapeFn(UnchangedRank)
     .Doc(R"doc(
@@ -187,16 +188,17 @@ Wraps the XLA ConvGeneralDilated operator, documented at
  https://www.tensorflow.org/performance/xla/operation_semantics#conv_convolution
 .
 
-lhs: the input tensor
-rhs: the kernel tensor
-window_strides: the inter-window strides
-padding: the padding to apply at the start and end of each input dimensions
+lhs: input tensor
+rhs: kernel tensor
+window_strides: inter-window strides
+padding: padding to apply at the start and end of each input dimensions
 lhs_dilation: dilation to apply between input elements
 rhs_dilation: dilation to apply between kernel elements
 feature_group_count: number of feature groups for grouped convolution.
-dimension_numbers: a serialized xla::ConvolutionDimensionNumbers proto.
-precision_config: a serialized xla::PrecisionConfig proto.
-preferred_element_type: The type of the tensor.
+dimension_numbers: serialized xla::ConvolutionDimensionNumbers proto.
+precision_config: serialized xla::PrecisionConfig proto.
+preferred_element_type: type of the tensor.
+batch_group_count: number of batch groups or grouped filters.
 )doc");
 
 static Status XlaDotShapeFunction(shape_inference::InferenceContext* c) {
@@ -291,7 +293,7 @@ static Status XlaDotShapeFunction(shape_inference::InferenceContext* c) {
   }
 
   c->set_output(0, c->MakeShape(output_dims));
-  return Status::OK();
+  return OkStatus();
 }
 
 REGISTER_OP("XlaDot")
@@ -395,7 +397,7 @@ REGISTER_OP("XlaDynamicSlice")
         return UnchangedRank(c);
       }
       c->set_output(0, size_indices_value);
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Wraps the XLA DynamicSlice operator, documented at
@@ -553,7 +555,7 @@ REGISTER_OP("XlaPad")
       }
 
       c->set_output(0, c->MakeShape(output_dims));
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Wraps the XLA Pad operator, documented at
@@ -584,7 +586,7 @@ REGISTER_OP("XlaRecv")
       shape_inference::ShapeHandle s;
       TF_RETURN_IF_ERROR(c->MakeShapeFromTensorShape(shape_attr, &s));
       c->set_output(0, s);
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Receives the named tensor from another XLA computation. Wraps the XLA Recv
@@ -627,7 +629,7 @@ REGISTER_OP("XlaReduce")
       } else {
         c->set_output(0, c->input(0));
       }
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Wraps the XLA Reduce operator, documented at
@@ -681,7 +683,7 @@ REGISTER_OP("XlaVariadicReduce")
           c->set_output(i, c->input(i));
         }
       }
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Wraps the variadic XLA Reduce operator.
@@ -765,7 +767,7 @@ REGISTER_OP("XlaVariadicReduceV2")
       for (int i = 0; i < nr_inputs; ++i) {
         c->set_output(i, output_shape);
       }
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Wraps the variadic XLA Reduce operator.
@@ -825,7 +827,7 @@ REGISTER_OP("XlaRngBitGenerator")
       shape_inference::ShapeHandle output;
       TF_RETURN_IF_ERROR(c->MakeShapeFromShapeTensor(2, &output));
       c->set_output(1, output);
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Stateless PRNG bit generator.
@@ -909,7 +911,7 @@ REGISTER_OP("XlaKeyValueSort")
     .SetShapeFn([](shape_inference::InferenceContext* c) {
       c->set_output(0, c->input(0));
       c->set_output(1, c->input(1));
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Wraps the XLA Sort operator, documented at
@@ -935,7 +937,7 @@ REGISTER_OP("XlaVariadicSort")
       std::vector<shape_inference::ShapeHandle> input_shapes;
       TF_RETURN_IF_ERROR(c->input("inputs", &input_shapes));
       TF_RETURN_IF_ERROR(c->set_output("outputs", input_shapes));
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 Wraps the XLA Sort operator, documented at
@@ -1063,7 +1065,7 @@ REGISTER_OP("XlaSpmdFullToShardShape")
         dims.push_back(c->MakeDim(dim));
       }
       c->set_output(0, c->MakeShape(dims));
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 An op used by XLA SPMD partitioner to switch from automatic partitioning to
@@ -1089,7 +1091,7 @@ REGISTER_OP("XlaSpmdShardToFullShape")
       shape_inference::ShapeHandle s;
       TF_RETURN_IF_ERROR(c->MakeShapeFromTensorShape(shape_attr, &s));
       c->set_output(0, s);
-      return Status::OK();
+      return OkStatus();
     })
     .Doc(R"doc(
 An op used by XLA SPMD partitioner to switch from manual partitioning to
@@ -1116,7 +1118,7 @@ REGISTER_OP("XlaReplicaId")
     .Output("id: int32")
     .SetShapeFn([](shape_inference::InferenceContext* context) {
       context->set_output(0, context->MakeShape({}));
-      return Status::OK();
+      return OkStatus();
     })
     .Doc("Replica ID.");
 
@@ -1203,6 +1205,54 @@ input: Array or a non-empty tuple of arrays to reduce across replicas.
 group_assignment: Groups between which the reductions are performed.
 scatter_dimension: Dimension to scatter.
 reduce_op: Reduction computation.
+)doc");
+
+Status OptimizationBarrierShape(shape_inference::InferenceContext* c) {
+  for (int i = 0; i < c->num_inputs(); ++i) {
+    c->set_output(i, c->input(i));
+  }
+  return OkStatus();
+}
+
+REGISTER_OP("XlaOptimizationBarrier")
+    .Input("input: T")
+    .Output("output: T")
+    .Attr("T: list(type) >= 0")
+    .SetShapeFn(OptimizationBarrierShape)
+    .Doc(R"doc(
+Wraps the XLA OptimizationBarrier operator.
+
+Documented at https://www.tensorflow.org/xla/operation_semantics#optimizationbarrier.
+
+input: A Tuple of Arrays of any type.
+)doc");
+
+REGISTER_OP("XlaCustomCall")
+    .Input("args: T")
+    .Output("output: dtype")
+    .Attr("target_name: string")
+    .Attr("backend_config: string")
+    .Attr("T: list(type) >= 0")
+    .Attr("dtype: type")
+    .Attr("shape: shape")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      TensorShape shape_attr;
+      TF_RETURN_IF_ERROR(c->GetAttr("shape", &shape_attr));
+      shape_inference::ShapeHandle s;
+      TF_RETURN_IF_ERROR(c->MakeShapeFromTensorShape(shape_attr, &s));
+      c->set_output(0, s);
+      return OkStatus();
+    })
+    .Doc(R"doc(
+Wraps the XLA CustomCall operator
+  documented at https://www.tensorflow.org/xla/operation_semantics#customcall.
+
+args: A list of `Tensor` with possibly different types.
+target_name: Name of the function. A call instruction will be emitted which
+  targets this symbol name.
+backend_config: String, used to encode serialized metadata to the backend.
+dtype: Output tensor data type.
+shape: Output tensor shape.
 )doc");
 
 }  // namespace

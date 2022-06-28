@@ -22,7 +22,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/nccl_collective_thunk.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
 #include "tensorflow/compiler/xla/xla_data.pb.h"
-#include "tensorflow/core/platform/types.h"
 
 namespace xla {
 namespace gpu {
@@ -66,6 +65,9 @@ class NcclAllGatherThunk : public NcclCollectiveThunk {
   const NcclAllGatherConfig config_;
   const std::vector<Buffer> buffers_;
 };
+
+Status RunAllGather(std::vector<DeviceBufferPair>& buffers, se::Stream& stream,
+                    ncclComm_t comm);
 
 }  // namespace gpu
 }  // namespace xla

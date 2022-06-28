@@ -17,6 +17,7 @@ limitations under the License.
 // operators using XLA via the XLA "Host" (CPU) backend.
 
 #include "absl/memory/memory.h"
+#include "tensorflow/compiler/jit/defs.h"
 #include "tensorflow/compiler/jit/flags.h"
 #include "tensorflow/compiler/jit/kernels/xla_ops.h"
 #include "tensorflow/compiler/jit/xla_compile_on_demand_op.h"
@@ -39,22 +40,23 @@ class XlaCpuDeviceFactory : public DeviceFactory {
 
 Status XlaCpuDeviceFactory::ListPhysicalDevices(std::vector<string>* devices) {
   XlaDeviceFlags* flags = GetXlaDeviceFlags();
-  if (!flags->tf_xla_enable_xla_devices) {
-    VLOG(1) << "Not creating XLA devices, tf_xla_enable_xla_devices not set";
-    return Status::OK();
+  if (!flags->tf_xla_enable_xla_devices && !XlaDevicesCreationRequired()) {
+    VLOG(1) << "Not creating XLA devices, tf_xla_enable_xla_devices not set "
+               "and XLA device creation not requested";
+    return OkStatus();
   }
 
   devices->push_back(absl::StrCat("/physical_device:", DEVICE_XLA_CPU, ":0"));
-  return Status::OK();
+  return OkStatus();
 }
 
 Status XlaCpuDeviceFactory::CreateDevices(
     const SessionOptions& session_options, const string& name_prefix,
     std::vector<std::unique_ptr<Device>>* devices) {
   XlaDeviceFlags* flags = GetXlaDeviceFlags();
-  if (!flags->tf_xla_enable_xla_devices) {
+  if (!flags->tf_xla_enable_xla_devices && !XlaDevicesCreationRequired()) {
     VLOG(1) << "Not creating XLA devices, tf_xla_enable_xla_devices not set";
-    return Status::OK();
+    return OkStatus();
   }
   bool compile_on_demand = flags->tf_xla_compile_on_demand;
 
@@ -92,20 +94,20 @@ Status XlaCpuDeviceFactory::CreateDevices(
   XlaShapeLayoutHelpers::ShapeDeterminationFns shape_representation_fns{
       UseNoPreferenceLayoutFn(), IdentityShapeRepresentationFn()};
   options.shape_determination_fns = {shape_representation_fns};
-  auto device = absl::make_unique<XlaDevice>(session_options, options);
+  auto device = std::make_unique<XlaDevice>(session_options, options);
 
-  // Setting GpuDeviceInfo because eager runtime relies on the device
-  // context in tensorflow_gpu_device_info(). Also,
-  // tensorflow_gpu_device_info() == nullptr is used as an IsCPU test.
+  // Setting AcceleratorDeviceInfo because eager runtime relies on the device
+  // context in tensorflow_accelerator_device_info(). Also,
+  // tensorflow_accelerator_device_info() == nullptr is used as an IsCPU test.
   // We need XlaCpuDevice to be treated not as CPU because it allocates
   // XlaTensors, not regular Tensors.
-  Status status = device->UseGpuDeviceInfo();
+  Status status = device->UseAcceleratorDeviceInfo();
   if (!status.ok()) {
     errors::AppendToMessage(&status, "while setting up ", DEVICE_GPU_XLA_JIT);
     return status;
   }
   devices->push_back(std::move(device));
-  return Status::OK();
+  return OkStatus();
 }
 
 REGISTER_LOCAL_DEVICE_FACTORY(DEVICE_XLA_CPU, XlaCpuDeviceFactory);

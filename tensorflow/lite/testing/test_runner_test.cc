@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/lite/testing/test_runner.h"
 
+#include <string>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -24,17 +26,7 @@ namespace {
 class ConcreteTestRunner : public TestRunner {
  public:
   void LoadModel(const string& bin_file_path) override {}
-  const std::vector<int>& GetInputs() override { return ids_; }
-  const std::vector<int>& GetOutputs() override { return ids_; }
-  void ReshapeTensor(int id, const string& csv_values) override {}
   void AllocateTensors() override {}
-  void ResetTensor(int id) override {}
-  void SetInput(int id, const string& csv_values) override {}
-  void SetExpectation(int id, const string& csv_values) override {}
-  void SetShapeExpectation(int id, const string& csv_values) override {}
-  string ReadOutput(int id) override { return ""; }
-  void Invoke() override {}
-  bool CheckResults() override { return true; }
   bool CheckFloatSizes(size_t bytes, size_t values) {
     return CheckSizes<float>(bytes, values);
   }
@@ -50,6 +42,7 @@ class ConcreteTestRunner : public TestRunner {
       override {
     return true;
   }
+  std::vector<string> GetOutputNames() override { return {}; }
 
  private:
   std::vector<int> ids_;

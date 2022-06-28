@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tensorflow/lite/c/common.h"
 
+#include <string>
+
 #include <gtest/gtest.h>
 #include "tensorflow/lite/c/c_api_types.h"
 
@@ -83,6 +85,7 @@ TEST(Types, TestTypeNames) {
   EXPECT_EQ(type_name(kTfLiteFloat32), "FLOAT32");
   EXPECT_EQ(type_name(kTfLiteFloat16), "FLOAT16");
   EXPECT_EQ(type_name(kTfLiteInt16), "INT16");
+  EXPECT_EQ(type_name(kTfLiteUInt16), "UINT16");
   EXPECT_EQ(type_name(kTfLiteInt32), "INT32");
   EXPECT_EQ(type_name(kTfLiteUInt32), "UINT32");
   EXPECT_EQ(type_name(kTfLiteUInt8), "UINT8");

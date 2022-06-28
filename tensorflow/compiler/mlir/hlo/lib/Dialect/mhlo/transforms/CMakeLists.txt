@@ -53,7 +53,12 @@ add_mlir_library(ChloPasses
 
 add_mlir_library(MhloPasses
   broadcast_propagation.cc
+  collapse_elementwise_map.cc
+  constraint_fusion_pass.cc
+  convert_to_signless_pass.cc
   expand_hlo_tuples.cc
+  group_reduction_dimensions.cc
+  legalize_shape_computations.cc
   legalize_einsum_to_dot_general.cc
   legalize_gather_to_torch_index_select.cc
   legalize_trigonometric_to_approximation.cc
@@ -62,13 +67,15 @@ add_mlir_library(MhloPasses
   lower_general_dot.cc
   materialize_broadcasts.cc
   materialize_broadcasts_pass.cc
+  merge_assuming_ops.cc
   mhlo_canonicalize_reduction.cc
-  mhlo_fusion.cc
-  mhlo_mark_shape_calc.cc
   optimize_mhlo.cc
   optimize_mhlo_pass.cc
   rank_specialization.cc
+  restrict_max_rank.cc
+  shape_reification_pass.cc
   sink_constants_to_control_flow.cc
+  sparse_rewriting.cc
   test_infer_shaped_type_pass.cc
   unfuse_batch_norm.cc
   unfuse_batch_norm_pass.cc
@@ -85,6 +92,7 @@ add_mlir_library(MhloPasses
   LINK_LIBS PUBLIC
   ChloDialect
   MhloDialect
+  MhloTypeConversion
   MLIRIR
   MLIRMhloUtils
   MLIRPass
@@ -105,13 +113,13 @@ add_mlir_library(MhloToLhloConversion
   LINK_LIBS PUBLIC
   MhloDialect
   LmhloDialect
-  MLIRArithmetic
+  MLIRArithmeticDialect
   MLIRArithmeticTransforms
+  MLIRFuncTransforms
   MLIRIR
   MLIRPass
-  MLIRMath
+  MLIRMathDialect
   MLIRShapeOpsTransforms
-  MLIRStandardOpsTransforms
   MLIRTransformUtils
   MLIRTransforms
 )
@@ -141,20 +149,41 @@ add_mlir_library(MhloToMemrefConversion
   MhloTypeConversion
   MLIRIR
   MLIRPass
-  MLIRMath
+  MLIRMathDialect
+  MLIRTransforms
+  MLIRTransformUtils
+)
+
+add_mlir_library(MhloToArithmeticConversion
+  hlo_legalize_to_arithmetic.cc
+
+  DEPENDS
+  MLIRhlo_opsIncGen
+  MLIRMhloPassIncGen
+
+  LINK_COMPONENTS
+  Core
+
+  LINK_LIBS PUBLIC
+  MhloDialect
+  MhloTypeConversion
+  MLIRIR
+  MLIRPass
+  MLIRMathDialect
   MLIRTransforms
   MLIRTransformUtils
 )
 
 add_mlir_library(MhloToStandard
   legalize_control_flow.cc
+  legalize_sort.cc
   legalize_to_standard.cc
-  mhlo_control_flow_to_scf.cc
 
   DEPENDS
   MLIRhlo_opsIncGen
   MLIRlhlo_opsIncGen
   MLIRMhloLegalizeToStandardIncGen
+  MLIRMhloPassIncGen
   MhloTypeConversion
 
   LINK_COMPONENTS
@@ -164,18 +193,16 @@ add_mlir_library(MhloToStandard
   MhloDialect
   MLIRIR
   MLIRPass
-  MLIRTensor
+  MLIRTensorDialect
   MLIRTransformUtils
 )
 
-add_mlir_library(MhloLhloToLinalg
+add_mlir_library(MhloToLinalg
   legalize_to_linalg.cc
 
   DEPENDS
   MLIRhlo_opsIncGen
-  MLIRlhlo_opsIncGen
   MLIRMhloPassIncGen
-  MLIRLmhloPassIncGen
 
   LINK_COMPONENTS
   Core
@@ -184,39 +211,29 @@ add_mlir_library(MhloLhloToLinalg
   LmhloDialect
   MhloDialect
   MhloTypeConversion
-  MLIRComplex
+  MLIRBufferizationDialect
+  MLIRComplexDialect
   MLIRIR
   MLIRPass
   MLIRRewrite
   MLIRTransformUtils
 )
 
-add_mlir_library(LmhloPasses
-  fusion_utils.cc
-  input_inline_fusion_pass.cc
-  legalize_to_tensor_op.cc
-  lhlo_elemental_utils.cc
-  lhlo_fuse_linalg.cc
-  lhlo_fusion.cc
-  lhlo_fusion_inliner.cc
-  lhlo_legalize_roots_to_loops.cc
-  lhlo_legalize_to_affine.cc
-  lhlo_legalize_to_gpu.cc
-  lhlo_legalize_to_parallel_loops.cc
+add_mlir_library(MhloShapeOpsToStandard
+  hlo_legalize_shape_ops_to_standard.cc
 
   DEPENDS
-  MLIRlhlo_opsIncGen
+  MLIRhlo_opsIncGen
+  MLIRMhloPassIncGen
 
   LINK_COMPONENTS
   Core
 
   LINK_LIBS PUBLIC
   LmhloDialect
-  MLIRComplex
-  MLIRGPUOps
-  MLIRLinalg
-  MLIRLinalgTransforms
-  MLIRMhloUtils
+  MhloDialect
+  MhloTypeConversion
+  MLIRComplexDialect
   MLIRIR
   MLIRPass
   MLIRRewrite
@@ -228,8 +245,18 @@ target_link_libraries(AllMhloPasses INTERFACE
   ChloPasses
   MhloPasses
   MhloToLhloConversion
+  MhloToArithmeticConversion
   MhloToMemrefConversion
   MhloToStandard
-  MhloLhloToLinalg
-  LmhloPasses
+  MhloToLinalg
+  MhloShapeOpsToStandard
+)
+
+add_library(AllGmlStPasses INTERFACE)
+target_link_libraries(AllGmlStPasses INTERFACE
+  GmlStPasses
+  GmlStTestPasses
+  MLIRHLOGmlStPipeline
+  MLIRFuncDialect
+  MLIRPass
 )

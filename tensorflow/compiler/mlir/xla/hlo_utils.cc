@@ -76,7 +76,7 @@ StatusOr<AffineMap> GetPermutationIfAvailable(const Shape& shape,
 
 template <typename T>
 void CopyDenseElementsBy(mlir::DenseElementsAttr data,
-                         std::vector<uint8>* output) {
+                         std::vector<uint8_t>* output) {
   output->resize(data.getNumElements() * sizeof(T));
   int i = 0;
   for (T element : data.getValues<T>()) {
@@ -122,21 +122,21 @@ StatusOr<mlir::DenseElementsAttr> CreateDenseElementsAttrFromLiteral(
     case PrimitiveType::F64:
       return CreateDenseAttrFromLiteral<double>(type, literal);
     case PrimitiveType::S8:
-      return CreateDenseAttrFromLiteral<int8>(type, literal);
+      return CreateDenseAttrFromLiteral<int8_t>(type, literal);
     case PrimitiveType::S16:
-      return CreateDenseAttrFromLiteral<int16>(type, literal);
+      return CreateDenseAttrFromLiteral<int16_t>(type, literal);
     case PrimitiveType::S32:
-      return CreateDenseAttrFromLiteral<int32>(type, literal);
+      return CreateDenseAttrFromLiteral<int32_t>(type, literal);
     case PrimitiveType::S64:
       return CreateDenseAttrFromLiteral<int64_t>(type, literal);
     case PrimitiveType::U8:
-      return CreateDenseAttrFromLiteral<uint8>(type, literal);
+      return CreateDenseAttrFromLiteral<uint8_t>(type, literal);
     case PrimitiveType::U16:
-      return CreateDenseAttrFromLiteral<uint16>(type, literal);
+      return CreateDenseAttrFromLiteral<uint16_t>(type, literal);
     case PrimitiveType::U32:
-      return CreateDenseAttrFromLiteral<uint32>(type, literal);
+      return CreateDenseAttrFromLiteral<uint32_t>(type, literal);
     case PrimitiveType::U64:
-      return CreateDenseAttrFromLiteral<uint64>(type, literal);
+      return CreateDenseAttrFromLiteral<uint64_t>(type, literal);
     case PrimitiveType::C64:
       return CreateDenseAttrFromLiteral<complex64>(type, literal);
     case PrimitiveType::C128:
@@ -148,54 +148,54 @@ StatusOr<mlir::DenseElementsAttr> CreateDenseElementsAttrFromLiteral(
 }
 
 Status CopyDenseElementsDataToXlaFormat(mlir::DenseElementsAttr data,
-                                        std::vector<uint8>* output) {
+                                        std::vector<uint8_t>* output) {
   mlir::Type element_type = data.getType().getElementType();
 
   // TODO(hinsu): Support remaining XLA primitive types.
   if (element_type.isInteger(1)) {
     CopyDenseElementsBy<bool>(data, output);
-    return Status::OK();
+    return ::tensorflow::OkStatus();
   }
   if (element_type.isInteger(8)) {
-    CopyDenseElementsBy<uint8>(data, output);
-    return Status::OK();
+    CopyDenseElementsBy<uint8_t>(data, output);
+    return ::tensorflow::OkStatus();
   }
   if (element_type.isInteger(16)) {
-    CopyDenseElementsBy<uint16>(data, output);
-    return Status::OK();
+    CopyDenseElementsBy<uint16_t>(data, output);
+    return ::tensorflow::OkStatus();
   }
   if (element_type.isInteger(32)) {
-    CopyDenseElementsBy<uint32>(data, output);
-    return Status::OK();
+    CopyDenseElementsBy<uint32_t>(data, output);
+    return ::tensorflow::OkStatus();
   }
   if (element_type.isInteger(64)) {
-    CopyDenseElementsBy<uint64>(data, output);
-    return Status::OK();
+    CopyDenseElementsBy<uint64_t>(data, output);
+    return ::tensorflow::OkStatus();
   }
   if (element_type.isBF16()) {
     CopyDenseElementsBy<bfloat16>(data, output);
-    return Status::OK();
+    return ::tensorflow::OkStatus();
   }
   if (element_type.isF16()) {
     CopyDenseElementsBy<half>(data, output);
-    return Status::OK();
+    return ::tensorflow::OkStatus();
   }
   if (element_type.isF32()) {
     CopyDenseElementsBy<float>(data, output);
-    return Status::OK();
+    return ::tensorflow::OkStatus();
   }
   if (element_type.isF64()) {
     CopyDenseElementsBy<double>(data, output);
-    return Status::OK();
+    return ::tensorflow::OkStatus();
   }
   if (auto complex_type = element_type.dyn_cast<mlir::ComplexType>()) {
     if (complex_type.getElementType().isF32()) {
       CopyDenseElementsBy<complex64>(data, output);
-      return Status::OK();
+      return ::tensorflow::OkStatus();
     }
     if (complex_type.getElementType().isF64()) {
       CopyDenseElementsBy<complex128>(data, output);
-      return Status::OK();
+      return ::tensorflow::OkStatus();
     }
   }
   return tensorflow::errors::Internal(
@@ -279,7 +279,7 @@ mlir::mhlo::GatherDimensionNumbersAttr CreateGatherDimensionNumbers(
 StatusOr<::xla::HloOpcode> MhloToHloOpcode(mlir::Operation* op) {
   using mlir::isa;
 
-  if (isa<mlir::mhlo::ConstOp, mlir::lmhlo::ConstOp>(op)) {
+  if (isa<mlir::mhlo::ConstantOp, mlir::lmhlo::ConstantOp>(op)) {
     return xla::HloOpcode::kConstant;
   } else if (isa<mlir::mhlo::IotaOp, mlir::lmhlo::IotaOp>(op)) {
     return xla::HloOpcode::kIota;
@@ -357,6 +357,8 @@ StatusOr<::xla::HloOpcode> MhloToHloOpcode(mlir::Operation* op) {
     return xla::HloOpcode::kSort;
   } else if (isa<mlir::mhlo::RngBitGeneratorOp>(op)) {
     return xla::HloOpcode::kRngBitGenerator;
+  } else if (isa<mlir::mhlo::XlaRngGetAndUpdateStateOp>(op)) {
+    return xla::HloOpcode::kRngGetAndUpdateState;
   } else if (isa<mlir::mhlo::FusionOp, mlir::lmhlo::FusionOp>(op)) {
     return xla::HloOpcode::kFusion;
   } else if (isa<mlir::mhlo::BitcastOp>(op)) {
@@ -463,8 +465,6 @@ StatusOr<::xla::HloOpcode> MhloToHloOpcode(mlir::Operation* op) {
     return xla::HloOpcode::kReverse;
   } else if (isa<mlir::mhlo::PadOp, mlir::lmhlo::PadOp>(op)) {
     return xla::HloOpcode::kPad;
-  } else if (isa<mlir::mhlo::TraceOp>(op)) {
-    return xla::HloOpcode::kTrace;
   } else if (isa<mlir::mhlo::TransposeOp, mlir::lmhlo::TransposeOp>(op)) {
     return xla::HloOpcode::kTranspose;
   } else if (isa<mlir::mhlo::TriangularSolveOp, mlir::lmhlo::TriangularSolveOp>(

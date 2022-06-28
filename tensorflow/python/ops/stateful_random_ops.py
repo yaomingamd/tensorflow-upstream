@@ -14,8 +14,6 @@
 # ==============================================================================
 """Operations for generating random numbers."""
 
-import six
-
 from tensorflow.python.distribute import distribution_strategy_context as ds_context
 from tensorflow.python.distribute import sharded_variable
 from tensorflow.python.distribute import values_util
@@ -30,7 +28,7 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import stateless_random_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.ops.stateless_random_ops import Algorithm
-from tensorflow.python.training.tracking import tracking
+from tensorflow.python.trackable import autotrackable
 from tensorflow.python.util import nest
 from tensorflow.python.util.tf_export import tf_export
 
@@ -99,7 +97,7 @@ def _make_1d_state(state_size, seed):
   Returns:
     a 1-D tensor of shape [state_size] and dtype STATE_TYPE.
   """
-  if isinstance(seed, six.integer_types):
+  if isinstance(seed, int):
     # chop the Python integer (infinite precision) into chunks of SEED_TYPE
     ls = []
     for _ in range(state_size):
@@ -208,7 +206,7 @@ def get_replica_id():
 
 
 @tf_export("random.Generator", "random.experimental.Generator")
-class Generator(tracking.AutoTrackable):
+class Generator(autotrackable.AutoTrackable):
   """Random-number generator.
 
   Example:
@@ -470,6 +468,8 @@ class Generator(tracking.AutoTrackable):
       The created variable.
     """
     with ops.name_scope("random_generator"):
+      # Make sure we don't change this name since Keras was using this name
+      # to filter out the state variable.
       kwargs["name"] = "StateVar"
       v = variables.Variable(*args, **kwargs)
     if isinstance(v, sharded_variable.ShardedVariable):

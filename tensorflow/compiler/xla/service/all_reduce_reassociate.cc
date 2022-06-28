@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
 #include "tensorflow/compiler/xla/service/hlo_query.h"
+#include "tensorflow/core/platform/errors.h"
 
 namespace xla {
 namespace {
@@ -33,8 +34,8 @@ namespace {
 // AllReduceKey to check compatibility.
 bool AreCompatible(const HloAllReduceInstruction *ar0,
                    const HloAllReduceInstruction *ar1, ReductionKind op_kind) {
-  absl::optional<AllReduceKey> key0 = GetAllReduceKey(ar0);
-  absl::optional<AllReduceKey> key1 = GetAllReduceKey(ar1);
+  std::optional<AllReduceKey> key0 = GetAllReduceKey(ar0);
+  std::optional<AllReduceKey> key1 = GetAllReduceKey(ar1);
   auto kind0 = MatchReductionComputation(ar0->to_apply());
   return key0 && key1 && kind0 && *key0 == *key1 && kind0 == op_kind;
 }
@@ -54,7 +55,7 @@ StatusOr<bool> AllReduceReassociate::Run(HloModule *module) {
   bool changed = false;
   for (auto computation : module->computations()) {
     for (HloInstruction *inst : computation->MakeInstructionPostOrder()) {
-      absl::optional<ReductionKind> kind = MatchReductionInstruction(inst);
+      std::optional<ReductionKind> kind = MatchReductionInstruction(inst);
       if (!kind || inst->operand(0)->opcode() != HloOpcode::kAllReduce ||
           inst->operand(1)->opcode() != HloOpcode::kAllReduce ||
           !inst->shape().IsArray()) {
@@ -91,8 +92,9 @@ StatusOr<bool> AllReduceReassociate::Run(HloModule *module) {
       // so manually these instructions.
       TF_RETURN_IF_ERROR(computation->RemoveInstruction(inst));
       TF_RETURN_IF_ERROR(computation->RemoveInstruction(ar0));
-      TF_RETURN_IF_ERROR(computation->RemoveInstruction(ar1));
-
+      if (ar0 != ar1) {
+        TF_RETURN_IF_ERROR(computation->RemoveInstruction(ar1));
+      }
       changed = true;
     }
   }

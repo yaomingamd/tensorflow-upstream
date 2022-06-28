@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow/lite/delegates/gpu/common/tasks/elementwise.h"
 
 #include <string>
+#include <utility>
 
 #include "absl/strings/str_cat.h"
 #include "absl/strings/substitute.h"
@@ -214,23 +215,18 @@ GPUOperation CreateElementwiseTwoInput(
     const tflite::gpu::Tensor<Linear, DataType::FLOAT32>& constant_tensor,
     bool swap_inputs) {
   const BHWC shape = BHWC(1, 1, 1, constant_tensor.shape.v);
-  TensorStorageType storage_type;
-  auto status = SelectBestStorageType(
-      gpu_info, shape, definition.GetPrimaryStorageType(),
-      definition.GetDataType(), Layout::HWC, &storage_type);
-  if (!status.ok()) {
-    storage_type = TensorStorageType::BUFFER;
-  }
-  TensorDescriptor desc{definition.GetDataType(), storage_type, Layout::HWC};
-  desc.UploadData(constant_tensor);
+  TensorDescriptor const_tensor_desc = definition.src_tensors[0];
+  auto status = const_tensor_desc.UpdateToSupportedStorageType(gpu_info, shape);
+  const_tensor_desc.UploadData(constant_tensor);
 
   GPUOperation result(definition);
   result.elementwise_ = true;
-  result.args_.AddObject("second_tensor",
-                         absl::make_unique<TensorDescriptor>(std::move(desc)));
+  result.args_.AddObject("second_tensor", std::make_unique<TensorDescriptor>(
+                                              std::move(const_tensor_desc)));
   const std::string s_coord = shape.c == 1 ? "0" : "S_COORD";
   result.code_ = absl::StrCat(
-      "FLT4 second_val = args.second_tensor.Read(0, 0, ", s_coord, ");\n");
+      "args.second_tensor::type second_val = args.second_tensor.Read(0, 0, ",
+      s_coord, ");\n");
   if (shape.c == 1) {
     result.code_ += "  second_val.y = second_val.x;\n";
     result.code_ += "  second_val.z = second_val.x;\n";
@@ -250,25 +246,20 @@ GPUOperation CreateElementwiseTwoInput(
     bool swap_inputs) {
   const BHWC shape = BHWC(1, constant_tensor.shape.h, constant_tensor.shape.w,
                           constant_tensor.shape.c);
-  TensorStorageType storage_type;
-  auto status = SelectBestStorageType(
-      gpu_info, shape, definition.GetPrimaryStorageType(),
-      definition.GetDataType(), Layout::HWC, &storage_type);
-  if (!status.ok()) {
-    storage_type = TensorStorageType::BUFFER;
-  }
-  TensorDescriptor desc{definition.GetDataType(), storage_type, Layout::HWC};
-  desc.UploadData(constant_tensor);
+  TensorDescriptor const_tensor_desc = definition.src_tensors[0];
+  auto status = const_tensor_desc.UpdateToSupportedStorageType(gpu_info, shape);
+  const_tensor_desc.UploadData(constant_tensor);
 
   GPUOperation result(definition);
   result.elementwise_ = true;
-  result.args_.AddObject("second_tensor",
-                         absl::make_unique<TensorDescriptor>(std::move(desc)));
+  result.args_.AddObject("second_tensor", std::make_unique<TensorDescriptor>(
+                                              std::move(const_tensor_desc)));
   const std::string x_coord = shape.w == 1 ? "0" : "X_COORD";
   const std::string y_coord = shape.h == 1 ? "0" : "Y_COORD";
   const std::string s_coord = shape.c == 1 ? "0" : "S_COORD";
-  result.code_ = absl::StrCat("FLT4 second_val = args.second_tensor.Read(",
-                              x_coord, ", ", y_coord, ", ", s_coord, ");\n");
+  result.code_ = absl::StrCat(
+      "args.second_tensor::type second_val = args.second_tensor.Read(", x_coord,
+      ", ", y_coord, ", ", s_coord, ");\n");
   if (shape.c == 1) {
     result.code_ += "  second_val.y = second_val.x;\n";
     result.code_ += "  second_val.z = second_val.x;\n";
@@ -330,8 +321,9 @@ GPUOperation CreateElementwiseTwoInput(const OperationDef& definition,
   const std::string x_coord = shape.w == 1 ? "0" : "X_COORD";
   const std::string y_coord = shape.h == 1 ? "0" : "Y_COORD";
   const std::string s_coord = shape.c == 1 ? "0" : "S_COORD";
-  op.code_ = absl::StrCat("FLT4 second_val = args.second_tensor.Read(", x_coord,
-                          ", ", y_coord, ", ", s_coord, ");\n");
+  op.code_ = absl::StrCat(
+      "args.second_tensor::type second_val = args.second_tensor.Read(", x_coord,
+      ", ", y_coord, ", ", s_coord, ");\n");
   if (shape.c == 1) {
     op.code_ += "  second_val.y = second_val.x;\n";
     op.code_ += "  second_val.z = second_val.x;\n";

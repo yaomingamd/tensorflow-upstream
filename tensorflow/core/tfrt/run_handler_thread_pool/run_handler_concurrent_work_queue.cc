@@ -28,12 +28,8 @@ namespace tf {
 RunHandlerThreadWorkQueue::RunHandlerThreadWorkQueue(const Options& options)
     : options_(options),
       quiescing_state_(std::make_unique<::tfrt::internal::QuiescingState>()),
-      // TODO(b/207109369): This work queue will be used for JIT compilation
-      // during model initialization. Until we figured out how to offload all
-      // compilation tasks to a separate work queue, initialize it large enough
-      // to compile multiple kernels concurrently.
       non_blocking_work_queue_(quiescing_state_.get(),
-                               /*num_threads=*/16),
+                               /*num_threads=*/1),
       blocking_work_queue_(quiescing_state_.get(),
                            /*num_threads=*/1) {
   CHECK(options.num_threads_in_sub_thread_pool.size() ==  // Crash OK.
@@ -57,11 +53,10 @@ RunHandlerThreadWorkQueue::RunHandlerThreadWorkQueue(const Options& options)
   pool_options.enable_wake_up = options.enable_wake_up;
   pool_options.wait_if_no_active_request = options.wait_if_no_active_request;
   pool_options.use_adaptive_waiting_time = options.use_adaptive_waiting_time;
-  handler_pool_ = absl::make_unique<RunHandlerPool>(pool_options);
+  handler_pool_ = std::make_unique<RunHandlerPool>(pool_options);
 }
 
-tensorflow::tfrt_stub::StatusOr<
-    std::unique_ptr<tensorflow::tfrt_stub::WorkQueueInterface>>
+tensorflow::StatusOr<std::unique_ptr<tensorflow::tfrt_stub::WorkQueueInterface>>
 RunHandlerThreadWorkQueue::InitializeRequest(
     tfrt::RequestContextBuilder* request_context_builder,
     tensorflow::thread::ThreadPoolInterface** intra_op_threadpool) const {

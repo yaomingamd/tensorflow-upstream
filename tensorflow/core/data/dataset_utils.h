@@ -33,6 +33,9 @@ namespace data {
 // should be supplied by the auto-sharding rewrite.
 constexpr int kShardHint = -1;
 
+// The initial parallelism value before Autotune has a chance to optimize.
+constexpr int kAutotuneDefaultParallelism = 16;
+
 // Creates a resource handle with a unique name for the given resource where
 // the resource is managed by the Resource Manager.
 template <typename T>
@@ -46,7 +49,7 @@ Status CreateWeakHandle(OpKernelContext* ctx, T* resource,
 
   *handle = MakeResourceHandle(container_name, unique_name, *ctx->device(),
                                TypeIndex::Make<T>());
-  return Status::OK();
+  return OkStatus();
 }
 
 // Creates a ref-counting resource handle for the given resource, where the
@@ -58,7 +61,7 @@ Status CreateHandle(OpKernelContext* ctx, T* resource, ResourceHandle* handle) {
       ResourceHandle::MakeRefCountingHandle(resource, ctx->device()->name());
   TF_RETURN_IF_ERROR(
       mgr->CreateUnowned<T>(handle->container(), handle->name(), resource));
-  return Status::OK();
+  return OkStatus();
 }
 
 // TODO(b/198162355): Merge this class with ResourceOpKernel.
@@ -353,6 +356,10 @@ inline int GetCpuBudget() {
   static bool in_experiment = GetExperiments().contains("tune_cpu_budget");
   return (in_experiment ? 1.2 : 1.0) * port::NumSchedulableCPUs();
 }
+
+// Returns the initial value for parallelism parameter before the first Autotune
+// optimization.
+int64 GetAutotuneDefaultParallelism(IteratorContext* ctx);
 
 // Registry of tf.data experiments.
 class DatasetExperimentRegistry {

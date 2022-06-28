@@ -23,20 +23,15 @@ limitations under the License.
 #include "tensorflow/core/distributed_runtime/rpc/async_service_interface.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_call.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_util.h"
+#include "tensorflow/core/distributed_runtime/worker_env.h"
+#include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/platform.h"
+#include "tensorflow/core/platform/thread_annotations.h"
 #include "tensorflow/core/platform/threadpool.h"
 #include "tensorflow/core/protobuf/coordination_service.grpc.pb.h"
 #include "tensorflow/core/protobuf/coordination_service.pb.h"
 
 namespace tensorflow {
-
-#ifndef PLATFORM_GOOGLE
-namespace grpc {
-// Creating aliases here to make sure we can access services under namespace
-// "tensorflow::grpc" both in google internal and open source.
-using ::tensorflow::CoordinationService;
-}  // namespace grpc
-#endif  // PLATFORM_GOOGLE
 
 class GrpcCoordinationServiceImpl : public AsyncServiceInterface {
  public:
@@ -45,7 +40,7 @@ class GrpcCoordinationServiceImpl : public AsyncServiceInterface {
       Call<GrpcCoordinationServiceImpl, grpc::CoordinationService::AsyncService,
            RequestMessage, ResponseMessage>;
 
-  GrpcCoordinationServiceImpl(const WorkerEnv* env,
+  GrpcCoordinationServiceImpl(thread::ThreadPool* compute_pool,
                               ::grpc::ServerBuilder* server_builder);
   ~GrpcCoordinationServiceImpl() override {}
 
@@ -58,7 +53,11 @@ class GrpcCoordinationServiceImpl : public AsyncServiceInterface {
  private:
 #define HANDLER(method)                                                        \
   void method##Handler(CoordCall<method##Request, method##Response>* call) {   \
-    env_->compute_pool->Schedule([this, call]() {                              \
+    tf_shared_lock l(shutdown_mu_);                                            \
+    if (shutdown_) {                                                           \
+      return;                                                                  \
+    }                                                                          \
+    compute_pool_.Schedule([this, call]() {                                    \
       rpc_handler_.method##Async(&call->request, &call->response,              \
                                  [call](const Status& s) {                     \
                                    call->ClearCancelCallback();                \
@@ -73,19 +72,27 @@ class GrpcCoordinationServiceImpl : public AsyncServiceInterface {
             &GrpcCoordinationServiceImpl::method##Handler,                     \
             /*supports_cancel=*/false);                                        \
   }
-  HANDLER(RegisterWorker);
+  HANDLER(RegisterTask);
   HANDLER(WaitForAllTasks);
+  HANDLER(ShutdownTask);
+  HANDLER(ResetTask);
   HANDLER(Heartbeat);
-  HANDLER(ReportErrorToAgent);
+  HANDLER(ReportErrorToTask);
   HANDLER(ReportErrorToService);
   HANDLER(InsertKeyValue);
   HANDLER(GetKeyValue);
+  HANDLER(TryGetKeyValue);
+  HANDLER(GetKeyValueDir);
   HANDLER(DeleteKeyValue);
+  HANDLER(Barrier);
+  HANDLER(CancelBarrier);
 #undef HANDLER
 
-  const WorkerEnv* const env_;  // Not owned.
+  thread::ThreadPool& compute_pool_;
   CoordinationServiceRpcHandler rpc_handler_;
 
+  mutex shutdown_mu_;
+  bool shutdown_ TF_GUARDED_BY(shutdown_mu_);
   std::unique_ptr<::grpc::Alarm> shutdown_alarm_;
 
   std::unique_ptr<::grpc::ServerCompletionQueue> cq_;

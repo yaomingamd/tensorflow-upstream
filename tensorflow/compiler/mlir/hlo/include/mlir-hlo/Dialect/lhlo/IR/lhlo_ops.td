@@ -49,12 +49,12 @@ include "mlir-hlo/Dialect/lhlo/IR/lhlo_structured_interface.td"
 // LMHLO nullary op definitions.
 //===----------------------------------------------------------------------===//
 
-class LHLO_Op<string mnemonic, list<OpTrait> traits> :
+class LHLO_Op<string mnemonic, list<Trait> traits> :
   Op<LHLO_Dialect, mnemonic,
     !listconcat([MemoryEffects<[MemRead, MemWrite]>,
     LmhloStructuredInterface], traits)>;
 
-def LHLO_ConstOp : LHLO_Op<"constant", []> {
+def LHLO_ConstantOp : LHLO_Op<"constant", []> {
   let summary = "Constant operator";
   let description = [{
     Represents a constant value.
@@ -83,7 +83,7 @@ def LHLO_IotaOp : LHLO_Op<"iota", []> {
 
 class LHLO_UnaryElementwiseOp<string mnemonic,
                               Type BufferType = LHLO_Buffer,
-                              list<OpTrait> traits = [SameTypeOperands, Elementwise]>
+                              list<Trait> traits = [SameTypeOperands, Elementwise]>
     : LHLO_Op<mnemonic, traits> {
   let arguments = (ins Arg<BufferType, "", [MemRead]>:$input,
                        Arg<BufferType, "", [MemWrite]>:$output);
@@ -98,7 +98,7 @@ def LHLO_AbsOp: LHLO_UnaryElementwiseOp<"abs", LHLO_Buffer, [SameOperandsShape]>
     See
     https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
   }];
-  let verifier = [{ return Verify(*this); }];
+  let hasVerifier = 1;
 }
 
 // TODO(timshen): add a custom verifier.
@@ -344,7 +344,7 @@ def LHLO_TanhOp: LHLO_UnaryElementwiseOp<"tanh", LHLO_FpOrComplexBuffer> {
 // See https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations
 
 class LHLO_BinaryElementwiseOp<string mnemonic, Type BufferType = LHLO_Buffer,
-                               list<OpTrait> traits = [SameTypeOperands, Elementwise]> :
+                               list<Trait> traits = [SameTypeOperands, Elementwise]> :
         LHLO_Op<mnemonic, traits> {
   let arguments = (ins
       Arg<BufferType, "", [MemRead]>:$lhs,
@@ -555,7 +555,7 @@ def LHLO_ReduceWindowOp: LHLO_Op<"reduce_window", [SameVariadicOperandSize]> {
   );
 
   let regions = (region SizedRegion<1>:$body);
-  let verifier = [{ return Verify(*this); }];
+  let hasVerifier = 1;
 }
 
 // TODO(timshen): Add a custom syntax for this.
@@ -626,9 +626,9 @@ def LHLO_CustomCallOp : LHLO_Op<"custom_call", [AttrSizedOperandSegments]> {
     DefaultValuedAttr<HLO_CustomCallApiVersionAttr,
                       "mhlo::CustomCallApiVersion::API_VERSION_ORIGINAL">:
                       $api_version,
-    OptionalAttr<CustomCallTargetArgMapping>:$target_arg_mapping
+    OptionalAttr<CustomCallTargetArgMappingAttr>:$target_arg_mapping
   );
-  let verifier = [{ return Verify(*this); }];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -867,7 +867,7 @@ def LHLO_ConvOp : LHLO_Op<"convolution", []> {
 
   code extraClassDeclaration = [{
     bool hasWindowReversal() {
-      auto reversal = window_reversalAttr();
+      auto reversal = getWindowReversalAttr();
       return reversal && llvm::any_of(reversal.getValues<bool>(),
                                       [](bool v) { return v; });
     }
@@ -894,8 +894,8 @@ def LHLO_CopyOp: LHLO_Op<"copy", [CopyOpInterface]> {
   );
 
   let extraClassDeclaration = [{
-    Value getSource() { return operand();}
-    Value getTarget() { return output(); }
+    Value getSource() { return getOperand();}
+    Value getTarget() { return getOutput(); }
   }];
 }
 
@@ -1033,6 +1033,7 @@ def LHLO_PadOp: LHLO_Op<"pad", []> {
     I64ElementsAttr:$interior_padding,
     Arg<LHLO_Buffer, "", [MemWrite]>:$output
   );
+  let hasVerifier = 1;
 }
 
 def LHLO_TransposeOp: LHLO_Op<"transpose", []> {
@@ -1072,20 +1073,20 @@ def LHLO_ReducePrecisionOp: LHLO_Op<"reduce_precision", [SameTypeOperands]> {
 }
 
 // Common base class for AllReduce, AllGather, and AllToAll.
-class LHLO_CollectiveCommunicationOp<string name, list<OpTrait> traits = []> :
+class LHLO_CollectiveCommunicationOp<string name, list<Trait> traits = []> :
   LHLO_Op<name, !listconcat(traits, [SameVariadicOperandSize])> {
   dag arguments_base = (ins
-    Arg<Variadic<LHLO_Buffer>, "", [MemRead]>:$operands,
-    Arg<Variadic<LHLO_Buffer>, "", [MemWrite]>:$results,
+    Arg<Variadic<LHLO_Buffer>, "", [MemRead]>:$inputs,
+    Arg<Variadic<LHLO_Buffer>, "", [MemWrite]>:$outputs,
     I64ElementsAttr:$replica_groups,
     DefaultValuedAttr<BoolAttr, "false">:$constrain_layout,
     OptionalAttr<ChannelHandle>:$channel_id,
     DefaultValuedAttr<BoolAttr, "false">:$use_global_device_ids
   );
-  let verifier = [{ return Verify(*this); }];
+  let hasVerifier = 1;
   let extraClassDeclaration = [{
     // AllGather is cross replica if channel_id is not set.
-    bool IsCrossReplica() { return !channel_id().hasValue(); }
+    bool IsCrossReplica() { return !getChannelId().hasValue(); }
   }];
 }
 
@@ -1152,7 +1153,7 @@ def LHLO_CollectivePermuteOp: LHLO_Op<"collective_permute", [SameTypeOperands]> 
     I64ElementsAttr:$source_target_pairs,
     OptionalAttr<ChannelHandle>:$channel_id
   );
-  let verifier = [{ return Verify(*this); }];
+  let hasVerifier = 1;
 }
 
 def LHLO_FftOp: LHLO_Op<"fft", []> {
@@ -1221,7 +1222,7 @@ def LHLO_InfeedOp: LHLO_Op<"infeed", []> {
 
 def LHLO_OutfeedOp: LHLO_Op<"outfeed", []> {
   let arguments = (ins
-    Arg<Variadic<LHLO_Buffer>, "", [MemRead]>:$operands,
+    Arg<Variadic<LHLO_Buffer>, "", [MemRead]>:$inputs,
     DefaultValuedStrAttr<StrAttr, "">:$config
   );
 }
@@ -1300,7 +1301,7 @@ def LHLO_MapOp: LHLO_Op<"map", [SameOperandsShape]> {
   See https://www.tensorflow.org/xla/operation_semantics#map.
   }];
   let arguments = (ins
-    Arg<Variadic<LHLO_Buffer>, "", [MemRead]>:$operands,
+    Arg<Variadic<LHLO_Buffer>, "", [MemRead]>:$inputs,
     Arg<LHLO_Buffer, "", [MemWrite]>:$output,
     I64ElementsAttr:$dimensions
   );
@@ -1324,7 +1325,7 @@ def LHLO_SortOp: LHLO_Op<"sort", [SameVariadicOperandSize, SameOperandsShape]> {
     See https://www.tensorflow.org/xla/operation_semantics#sort.
   }];
   let arguments = (ins
-    Arg<Variadic<LHLO_Buffer>, "", [MemRead]>:$operands,
+    Arg<Variadic<LHLO_Buffer>, "", [MemRead]>:$inputs,
     Arg<Variadic<LHLO_Buffer>, "", [MemWrite]>:$output,
     DefaultValuedAttr<I64Attr, "-1">:$dimension,
     DefaultValuedAttr<BoolAttr, "false">:$is_stable
@@ -1363,15 +1364,15 @@ def FusionOp : LHLO_Op<"fusion", [
   let extraClassDeclaration = [{
     SmallVector<Value> getInputBuffers() {
       SmallVector<Value> buffers;
-      for (auto load : region().front().getOps<bufferization::ToTensorOp>()) {
-        buffers.push_back(load.memref());
+      for (auto load : getRegion().front().getOps<bufferization::ToTensorOp>()) {
+        buffers.push_back(load.getMemref());
       }
       return buffers;
     }
 
     SmallVector<Value> getOutputBuffers() {
       SmallVector<Value> buffers;
-      for (auto store : region().front().getOps<memref::TensorStoreOp>()) {
+      for (auto store : getRegion().front().getOps<memref::TensorStoreOp>()) {
         buffers.push_back(store.memref());
       }
       return buffers;
@@ -1379,7 +1380,7 @@ def FusionOp : LHLO_Op<"fusion", [
 
     SmallVector<Value> getFusionParameters() {
       SmallVector<Value> buffers;
-      for (auto load : region().front().getOps<bufferization::ToTensorOp>()) {
+      for (auto load : getRegion().front().getOps<bufferization::ToTensorOp>()) {
         buffers.push_back(load);
       }
       return buffers;
@@ -1387,7 +1388,7 @@ def FusionOp : LHLO_Op<"fusion", [
 
     SmallVector<Value> getFusionResults() {
       SmallVector<Value> buffers;
-      for (auto store : region().front().getOps<memref::TensorStoreOp>()) {
+      for (auto store : getRegion().front().getOps<memref::TensorStoreOp>()) {
         buffers.push_back(store.tensor());
       }
       return buffers;

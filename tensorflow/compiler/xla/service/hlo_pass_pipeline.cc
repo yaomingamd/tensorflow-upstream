@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_pass_pipeline.h"
 
 #include <functional>
+#include <string>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
@@ -60,7 +61,7 @@ Status AttemptRecordPassEndMetadata(HloModule& module,
   TF_RETURN_IF_ERROR(
       module.metadata()->set_current_pass_module_changed(module_changed));
   TF_RETURN_IF_ERROR(module.metadata()->RecordPassEnd());
-  return Status::OK();
+  return OkStatus();
 }
 
 void RecordPassEndMetadata(HloModule& module, const std::string& pass_name,
@@ -84,7 +85,7 @@ Status AttemptRecordPassEndMetadata(HloModuleGroup& module_group,
     TF_RETURN_IF_ERROR(
         AttemptRecordPassEndMetadata(*module, pass_name, module_changed));
   }
-  return Status::OK();
+  return OkStatus();
 }
 
 void RecordPassEndMetadata(HloModuleGroup& module_group,
@@ -139,7 +140,7 @@ Status HloPassPipeline::RunInvariantCheckers(
     TF_RET_CHECK(!changed_status.ValueOrDie())
         << "invariant checkers must not change the graph";
   }
-  return Status::OK();
+  return OkStatus();
 }
 
 template <typename HloT>
@@ -171,7 +172,7 @@ StatusOr<bool> HloPassPipeline::RunPassesInternal(
     XLA_SCOPED_LOGGING_TIMER(absl::StrCat("HLO pass: ", pass->name()));
     std::string pass_name = std::string(pass->name());
     VLOG(1) << "  HLO pass " << pass_name;
-    VLOG(2) << "  Module hash " << hlo->Hash();
+    VLOG(2) << "  Module hash " << absl::HashOf(*hlo);
     if (!pass->IsPassPipeline()) {
       compilation_stats_->StartPass(pass_name);
     }
@@ -205,11 +206,11 @@ std::vector<HloPassInterface*> HloPassPipeline::GetEnabledPasses(
     return {};
   }
 
-  absl::flat_hash_set<string> disabled_pass_names(
+  absl::flat_hash_set<std::string> disabled_pass_names(
       debug_options.xla_disable_hlo_passes().begin(),
       debug_options.xla_disable_hlo_passes().end());
 
-  absl::flat_hash_set<string> enabled_pass_names(
+  absl::flat_hash_set<std::string> enabled_pass_names(
       debug_options.xla_enable_hlo_passes_only().begin(),
       debug_options.xla_enable_hlo_passes_only().end());
 

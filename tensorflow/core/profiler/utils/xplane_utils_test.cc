@@ -23,7 +23,7 @@ limitations under the License.
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/profiler/protobuf/xplane.pb.h"
-#include "tensorflow/core/profiler/utils/time_utils.h"
+#include "tensorflow/core/profiler/utils/math_utils.h"
 #include "tensorflow/core/profiler/utils/xplane_builder.h"
 #include "tensorflow/core/profiler/utils/xplane_visitor.h"
 
@@ -205,8 +205,8 @@ void CheckXEvent(const XEvent& event, const XPlane& plane,
       plane.event_metadata().at(event.metadata_id());
   EXPECT_EQ(event_metadata.name(), name);
   EXPECT_EQ(event_metadata.display_name(), display);
-  EXPECT_EQ(event.offset_ps(), NanosToPicos(offset_ns));
-  EXPECT_EQ(event.duration_ps(), NanosToPicos(duration_ns));
+  EXPECT_EQ(event.offset_ps(), NanoToPico(offset_ns));
+  EXPECT_EQ(event.duration_ps(), NanoToPico(duration_ns));
   EXPECT_EQ(event.stats_size(), stats_size);
 }
 }  // namespace
@@ -318,6 +318,61 @@ TEST(XPlaneUtilsTest, MergeXPlaneTest) {
     CheckXEvent(line.events(0), dst_plane, "event1", "display1", 1, 2, 1);
     CheckXEvent(line.events(1), dst_plane, "event2", "", 3, 4, 1);
   }
+}
+
+TEST(XPlaneUtilsTest, FindPlanesWithPrefix) {
+  XSpace xspace;
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:0");
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:1");
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:2");
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:3");
+  XPlane* p4 = FindOrAddMutablePlaneWithName(&xspace, "test-do-not-include:0");
+
+  std::vector<const XPlane*> xplanes =
+      FindPlanesWithPrefix(xspace, "test-prefix");
+  ASSERT_EQ(4, xplanes.size());
+  for (const XPlane* plane : xplanes) {
+    ASSERT_NE(p4, plane);
+  }
+}
+
+TEST(XplaneUtilsTest, FindMutablePlanesWithPrefix) {
+  XSpace xspace;
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:0");
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:1");
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:2");
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:3");
+  XPlane* p4 = FindOrAddMutablePlaneWithName(&xspace, "test-do-not-include:0");
+
+  std::vector<XPlane*> xplanes =
+      FindMutablePlanesWithPrefix(&xspace, "test-prefix");
+  ASSERT_EQ(4, xplanes.size());
+  for (XPlane* plane : xplanes) {
+    ASSERT_NE(p4, plane);
+  }
+}
+
+TEST(XplaneUtilsTest, FindPlanesWithPredicate) {
+  XSpace xspace;
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:0");
+  XPlane* p1 = FindOrAddMutablePlaneWithName(&xspace, "test-prefix:1");
+
+  std::vector<const XPlane*> xplanes = FindPlanes(
+      xspace,
+      [](const XPlane& xplane) { return xplane.name() == "test-prefix:1"; });
+  ASSERT_EQ(1, xplanes.size());
+  ASSERT_EQ(p1, xplanes[0]);
+}
+
+TEST(XplaneUtilsTest, FindMutablePlanesWithPredicate) {
+  XSpace xspace;
+  FindOrAddMutablePlaneWithName(&xspace, "test-prefix:0");
+  XPlane* p1 = FindOrAddMutablePlaneWithName(&xspace, "test-prefix:1");
+
+  std::vector<XPlane*> xplanes = FindMutablePlanes(
+      &xspace, [](XPlane& xplane) { return xplane.name() == "test-prefix:1"; });
+  ASSERT_EQ(1, xplanes.size());
+  ASSERT_EQ(p1, xplanes[0]);
 }
 
 }  // namespace

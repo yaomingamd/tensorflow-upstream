@@ -39,6 +39,7 @@ limitations under the License.
 #endif  // GOOGLE_CUDA
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/str_cat.h"
@@ -559,7 +560,7 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
         kSideInputScale, input_ptr, filter_ptr, output_ptr, bias_ptr,
         side_input_ptr, ConvolveScratchSize());
     OP_REQUIRES_OK(context, entry_or.status());
-    auto autotune_entry = entry_or.ConsumeValueOrDie();
+    auto autotune_entry = std::move(entry_or).value();
 
     DnnScratchAllocator scratch_allocator(ConvolveScratchSize(), context);
     Status cudnn_launch_status;
@@ -577,16 +578,14 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
                                           output_desc,
                                           conv_desc,
                                           dnn_activation_mode};
-      auto primary_or =
-          runners.primary->GetOrCreateRunner(config, stream->parent());
+      auto primary_or = runners.primary->GetOrCreateRunner(config, stream);
       OP_REQUIRES_OK(context, primary_or.status());
       auto* primary = primary_or.ValueOrDie();
 
       const se::dnn::FusedConvRunner* no_scratch_fallback = nullptr;
       if (runners.no_scratch_fallback) {
         auto no_scratch_fallback_or =
-            runners.no_scratch_fallback->GetOrCreateRunner(config,
-                                                           stream->parent());
+            runners.no_scratch_fallback->GetOrCreateRunner(config, stream);
         OP_REQUIRES_OK(context, no_scratch_fallback_or.status());
         no_scratch_fallback = no_scratch_fallback_or.ValueOrDie();
       }
@@ -595,12 +594,12 @@ struct LaunchFusedConv2DOp<GPUDevice, T> {
           AllocateScratchOrFallback<se::dnn::FusedConvOp::Signature>(
               &scratch_allocator, primary, no_scratch_fallback);
       OP_REQUIRES_OK(context, runner_and_scratch_or.status());
-      auto runner_and_scratch = runner_and_scratch_or.ConsumeValueOrDie();
+      auto runner_and_scratch = std::move(runner_and_scratch_or).value();
       auto& runner =
           *std::get<const se::dnn::FusedConvRunner*>(runner_and_scratch);
       cudnn_launch_status = runner(
-          stream, input_ptr, filter_ptr, side_input_ptr, bias_ptr, output_ptr,
-          std::get<se::DeviceMemoryBase>(runner_and_scratch), nullptr);
+          stream, nullptr, std::get<se::DeviceMemoryBase>(runner_and_scratch),
+          input_ptr, filter_ptr, side_input_ptr, bias_ptr, output_ptr);
     } else {
       cudnn_launch_status = stream->FusedConvolveWithAlgorithm(
           input_desc, input_ptr,            // input

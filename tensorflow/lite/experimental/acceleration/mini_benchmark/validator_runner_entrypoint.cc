@@ -12,14 +12,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-
+#include <string>
 #ifndef _WIN32
-
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <cstdint>
 #include <memory>
 #include <thread>  // NOLINT: only used on Android, where std::thread is allowed
 
@@ -31,6 +31,7 @@ limitations under the License.
 #include "tensorflow/lite/experimental/acceleration/mini_benchmark/status_codes.h"
 #include "tensorflow/lite/experimental/acceleration/mini_benchmark/validator.h"
 #include "tensorflow/lite/experimental/acceleration/mini_benchmark/validator_runner.h"
+#include "tensorflow/lite/nnapi/sl/include/SupportLibrary.h"
 
 namespace tflite {
 namespace acceleration {
@@ -44,6 +45,8 @@ int Java_org_tensorflow_lite_acceleration_validation_entrypoint(int argc,
   std::string model_path = argv[3];
   std::string storage_path = argv[4];
   // argv[5] is data directory path.
+  // argv[6] if present is the NNAPI SL path
+  std::string nnapi_sl_path = argc > 6 ? argv[6] : "";
   FileLock lock(storage_path + ".child_lock");
   if (!lock.TryLock()) {
     return kMinibenchmarkChildProcessAlreadyRunning;
@@ -76,6 +79,24 @@ int Java_org_tensorflow_lite_acceleration_validation_entrypoint(int argc,
     const BenchmarkEvent* event = storage.Get(i);
     if (event->event_type() == BenchmarkEventType_START) {
       event->tflite_settings()->UnPackTo(&tflite_settings);
+
+      std::unique_ptr<const ::tflite::nnapi::NnApiSupportLibrary>
+          nnapi_sl_handle;
+      if (tflite_settings.nnapi_settings && !nnapi_sl_path.empty()) {
+        // We are not calling dlclose, it will be done once the
+        // validator process ends.
+        nnapi_sl_handle =
+            ::tflite::nnapi::loadNnApiSupportLibrary(nnapi_sl_path);
+
+        if (!nnapi_sl_handle) {
+          status = kMiniBenchmarkCannotLoadSupportLibrary;
+          break;
+        }
+
+        tflite_settings.nnapi_settings->support_library_handle =
+            reinterpret_cast<uint64_t>(nnapi_sl_handle->getFL5());
+      }
+
       flatbuffers::FlatBufferBuilder fbb;
       fbb.Finish(
           CreateComputeSettings(fbb, ExecutionPreference_ANY,
@@ -103,6 +124,7 @@ int Java_org_tensorflow_lite_acceleration_validation_entrypoint(int argc,
       fbb.Reset();
       std::vector<int64_t> initialization_times{results.compilation_time_us};
       std::vector<flatbuffers::Offset<tflite::BenchmarkMetric>> metrics;
+      metrics.reserve(results.metrics.size());
       for (const auto& name_and_values : results.metrics) {
         metrics.push_back(
             CreateBenchmarkMetric(fbb, fbb.CreateString(name_and_values.first),

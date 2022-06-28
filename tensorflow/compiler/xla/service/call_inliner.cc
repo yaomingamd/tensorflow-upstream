@@ -20,6 +20,9 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/call_graph.h"
 #include "tensorflow/compiler/xla/service/dfs_hlo_visitor_with_default.h"
 #include "tensorflow/compiler/xla/service/hlo_dce.h"
+#include "tensorflow/compiler/xla/service/hlo_domain_isolator.h"
+#include "tensorflow/compiler/xla/service/hlo_instruction.h"
+#include "tensorflow/compiler/xla/service/hlo_sharding_metadata.h"
 #include "tensorflow/core/lib/core/errors.h"
 
 namespace xla {
@@ -60,7 +63,7 @@ class SubcomputationInsertionVisitor : public DfsHloVisitorWithDefault {
           new_control_predecessor->AddControlDependencyTo(new_hlo_pointer));
     }
 
-    return Status::OK();
+    return OkStatus();
   }
 
   // Does not create new nodes for the parameter; rather, notes the mapping from
@@ -69,7 +72,7 @@ class SubcomputationInsertionVisitor : public DfsHloVisitorWithDefault {
   Status HandleParameter(HloInstruction* parameter) override {
     TF_RETURN_IF_ERROR(NoteMapping(
         parameter, call_->mutable_operand(parameter->parameter_number())));
-    return Status::OK();
+    return OkStatus();
   }
 
   // Wires the consumers of the call to instead point at the newly created root,
@@ -110,7 +113,7 @@ class SubcomputationInsertionVisitor : public DfsHloVisitorWithDefault {
         std::make_pair(subcomputation_hlo, new_hlo));
     TF_RET_CHECK(result.second)
         << "A mapping for the subcomputation HLO is already present.";
-    return Status::OK();
+    return OkStatus();
   }
 
   HloInstruction* call_;
@@ -143,16 +146,28 @@ StatusOr<bool> CallInliner::Run(HloModule* module) {
         VLOG(1) << "Visiting node: " << node.ToString();
         for (HloInstruction* instruction :
              node.computation()->MakeInstructionPostOrder()) {
-          if (instruction->opcode() == HloOpcode::kCall &&
-              (!single_call_site_ ||
-               call_graph->GetNode(instruction->to_apply())
-                       .caller_callsites()
-                       .size() == 1)) {
-            TF_RETURN_IF_ERROR(Inline(instruction).status());
-            did_mutate = true;
+          if (instruction->opcode() == HloOpcode::kCall) {
+            const auto& callees = instruction->called_computations();
+            TF_RET_CHECK(callees.size() == 1);
+            HloInstruction* call_root = callees[0]->root_instruction();
+            if (!single_call_site_ ||
+                call_graph->GetNode(instruction->to_apply())
+                        .caller_callsites()
+                        .size() == 1) {
+              TF_ASSIGN_OR_RETURN(CallInliner::InlinedInstructionMap inline_map,
+                                  Inline(instruction));
+              HloInstruction* inlined_root = inline_map[call_root];
+              if (update_domain_) {
+                HloDomainIsolator isolator(
+                    []() { return ShardingDomainCreator{}; });
+                TF_RETURN_IF_ERROR(
+                    isolator.UpdateDomains(inlined_root).status());
+              }
+              did_mutate = true;
+            }
           }
         }
-        return Status::OK();
+        return OkStatus();
       }));
   if (did_mutate) {
     // Run DCE to remove called computations which are now becoming unused.

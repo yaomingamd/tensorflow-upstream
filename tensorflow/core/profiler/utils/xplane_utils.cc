@@ -15,6 +15,7 @@ limitations under the License.
 #include "tensorflow/core/profiler/utils/xplane_utils.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,13 +24,15 @@ limitations under the License.
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
+#include "tensorflow/core/platform/fingerprint.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/profiler/lib/context_types.h"
 #include "tensorflow/core/profiler/protobuf/xplane.pb.h"
-#include "tensorflow/core/profiler/utils/time_utils.h"
+#include "tensorflow/core/profiler/utils/math_utils.h"
 #include "tensorflow/core/profiler/utils/timespan.h"
 #include "tensorflow/core/profiler/utils/xplane_builder.h"
+#include "tensorflow/core/profiler/utils/xplane_schema.h"
 #include "tensorflow/core/profiler/utils/xplane_visitor.h"
 
 namespace tensorflow {
@@ -131,25 +134,27 @@ XPlane* FindOrAddMutablePlaneWithName(XSpace* space, absl::string_view name) {
 
 std::vector<const XPlane*> FindPlanesWithPrefix(const XSpace& space,
                                                 absl::string_view prefix) {
-  std::vector<const XPlane*> result;
-  for (const XPlane& plane : space.planes()) {
-    if (absl::StartsWith(plane.name(), prefix)) result.push_back(&plane);
-  }
-  return result;
+  return FindPlanes(space, [&](const XPlane& plane) {
+    return absl::StartsWith(plane.name(), prefix);
+  });
 }
 
 std::vector<XPlane*> FindMutablePlanesWithPrefix(XSpace* space,
                                                  absl::string_view prefix) {
-  std::vector<XPlane*> result;
-  for (XPlane& plane : *space->mutable_planes()) {
-    if (absl::StartsWith(plane.name(), prefix)) result.push_back(&plane);
-  }
-  return result;
+  return FindMutablePlanes(space, [&](XPlane& plane) {
+    return absl::StartsWith(plane.name(), prefix);
+  });
 }
 
 const XLine* FindLineWithId(const XPlane& plane, int64_t id) {
   int i =
       Find(plane.lines(), [id](const XLine* line) { return line->id() == id; });
+  return (i != -1) ? &plane.lines(i) : nullptr;
+}
+
+const XLine* FindLineWithName(const XPlane& plane, absl::string_view name) {
+  int i = Find(plane.lines(),
+               [name](const XLine* line) { return line->name() == name; });
   return (i != -1) ? &plane.lines(i) : nullptr;
 }
 
@@ -242,7 +247,7 @@ void MergePlanes(const XPlane& src_plane, XPlane* dst_plane) {
     // Use SetOrAddStat to avoid duplicating stats in dst_plane.
     dst.SetOrAddStat(*stat_metadata, stat.RawStat(), src_plane);
   });
-  src.ForEachLine([&](const tensorflow::profiler::XLineVisitor& line) {
+  src.ForEachLine([&](const XLineVisitor& line) {
     XLineBuilder dst_line = dst.GetOrCreateLine(line.Id());
     int64_t time_offset_ps = 0LL;
     if (dst_line.NumEvents() == 0) {
@@ -256,14 +261,14 @@ void MergePlanes(const XPlane& src_plane, XPlane* dst_plane) {
         dst_line.SetTimestampNsAndAdjustEventOffsets(line.TimestampNs());
       } else {
         time_offset_ps =
-            NanosToPicos(line.TimestampNs() - dst_line.TimestampNs());
+            NanoToPico(line.TimestampNs() - dst_line.TimestampNs());
       }
       dst_line.SetNameIfEmpty(line.Name());
       // Don't override dst_line's display name because if both lines have name,
       // but no display name, line's name will became display name of dst_line.
     }
 
-    line.ForEachEvent([&](const tensorflow::profiler::XEventVisitor& event) {
+    line.ForEachEvent([&](const XEventVisitor& event) {
       const XEventMetadata* src_event_metadata = event.metadata();
       XEventMetadata* dst_event_metadata =
           dst.GetOrCreateEventMetadata(event.Name());
@@ -282,7 +287,7 @@ void MergePlanes(const XPlane& src_plane, XPlane* dst_plane) {
       if (event.NumOccurrences()) {
         dst_event.SetNumOccurrences(event.NumOccurrences());
       }
-      event.ForEachStat([&](const tensorflow::profiler::XStatVisitor& stat) {
+      event.ForEachStat([&](const XStatVisitor& stat) {
         // Here we can call AddStat instead of SetOrAddStat because dst_event
         // was just added.
         dst_event.AddStat(*dst.GetOrCreateStatMetadata(stat.Name()),
@@ -299,10 +304,10 @@ void MergePlanes(const std::vector<const XPlane*>& src_planes,
   }
 }
 
-uint64 GetStartTimestampNs(const XPlane& plane) {
+int64_t GetStartTimestampNs(const XPlane& plane) {
   int64_t plane_timestamp = 0;
   for (const auto& line : plane.lines()) {
-    plane_timestamp = std::min<int64_t>(plane_timestamp, line.timestamp_ns());
+    plane_timestamp = std::min(plane_timestamp, line.timestamp_ns());
   }
   return plane_timestamp;
 }
@@ -316,6 +321,95 @@ bool IsEmpty(const XSpace& space) {
     }
   }
   return true;
+}
+
+void AddFlowsToXplane(int32_t host_id, bool is_host_plane, bool connect_traceme,
+                      XPlane* xplane) {
+  if (!xplane) return;
+  XPlaneBuilder plane(xplane);
+  XStatMetadata* correlation_id_stats_metadata =
+      plane.GetStatMetadata(GetStatTypeStr(StatType::kCorrelationId));
+  XStatMetadata* producer_type_stats_metadata =
+      plane.GetStatMetadata(GetStatTypeStr(StatType::kProducerType));
+  XStatMetadata* consumer_type_stats_metadata =
+      plane.GetStatMetadata(GetStatTypeStr(StatType::kConsumerType));
+  XStatMetadata* producer_id_stats_metadata =
+      plane.GetStatMetadata(GetStatTypeStr(StatType::kProducerId));
+  XStatMetadata* consumer_id_stats_metadata =
+      plane.GetStatMetadata(GetStatTypeStr(StatType::kConsumerId));
+  XStatMetadata* flow_stats_metadata =
+      plane.GetOrCreateStatMetadata(GetStatTypeStr(StatType::kFlow));
+  XFlow::FlowDirection direction = is_host_plane
+                                       ? XFlow::FlowDirection::kFlowOut
+                                       : XFlow::FlowDirection::kFlowIn;
+
+  plane.ForEachLine([&](XLineBuilder line) {
+    line.ForEachEvent([&](XEventBuilder event) {
+      absl::optional<uint64_t> correlation_id;
+      absl::optional<uint64_t> producer_type;
+      absl::optional<uint64_t> consumer_type;
+      absl::optional<uint64_t> producer_id;
+      absl::optional<uint64_t> consumer_id;
+      event.ForEachStat([&](XStat* stat) {
+        if (correlation_id_stats_metadata &&
+            stat->metadata_id() == correlation_id_stats_metadata->id()) {
+          correlation_id = stat->uint64_value();
+        } else if (connect_traceme) {
+          if (producer_type_stats_metadata &&
+              stat->metadata_id() == producer_type_stats_metadata->id()) {
+            producer_type = XStatsBuilder<XPlane>::IntOrUintValue(*stat);
+          } else if (consumer_type_stats_metadata &&
+                     stat->metadata_id() ==
+                         consumer_type_stats_metadata->id()) {
+            consumer_type = XStatsBuilder<XPlane>::IntOrUintValue(*stat);
+          } else if (producer_id_stats_metadata &&
+                     stat->metadata_id() == producer_id_stats_metadata->id()) {
+            producer_id = XStatsBuilder<XPlane>::IntOrUintValue(*stat);
+          } else if (consumer_id_stats_metadata &&
+                     stat->metadata_id() == consumer_id_stats_metadata->id()) {
+            consumer_id = XStatsBuilder<XPlane>::IntOrUintValue(*stat);
+          }
+        }
+      });
+      if (correlation_id) {
+        XFlow flow(XFlow::GetFlowId(host_id, *correlation_id), direction,
+                   ContextType::kGpuLaunch);
+        event.AddStatValue(*flow_stats_metadata, flow.ToStatValue());
+      }
+      if (connect_traceme) {
+        if (producer_type && producer_id) {
+          auto context_type = GetSafeContextType(*producer_type);
+          XFlow flow(XFlow::GetFlowId(host_id, *producer_id, context_type),
+                     XFlow::FlowDirection::kFlowOut, context_type);
+          event.AddStatValue(*flow_stats_metadata, flow.ToStatValue());
+        }
+        if (consumer_type && consumer_id) {
+          auto context_type = GetSafeContextType(*consumer_type);
+          XFlow flow(XFlow::GetFlowId(host_id, *consumer_id, context_type),
+                     XFlow::FlowDirection::kFlowIn, context_type);
+          event.AddStatValue(*flow_stats_metadata, flow.ToStatValue());
+        }
+      }
+    });
+  });
+}
+
+uint64_t GetDevicePlaneFingerprint(const XPlane& plane) {
+  const XLine* xla_module_line = FindLineWithName(plane, kXlaModuleLineName);
+  if (!xla_module_line) return 0ULL;
+
+  XPlaneVisitor xplane(&plane);
+  XLineVisitor xline(&xplane, xla_module_line);
+  std::set<uint64_t> ordered_module_fps;
+  xline.ForEachEvent([&](const XEventVisitor& xevent) {
+    ordered_module_fps.insert(Fingerprint64(xevent.Name()));
+  });
+  if (ordered_module_fps.empty()) return 0ULL;
+  uint64_t output = 0ULL;
+  for (const auto& fp : ordered_module_fps) {
+    output = FingerprintCat64(output, fp);
+  }
+  return output;
 }
 
 }  // namespace profiler

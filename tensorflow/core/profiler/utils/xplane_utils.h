@@ -15,8 +15,11 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_PROFILER_UTILS_XPLANE_UTILS_H_
 #define TENSORFLOW_CORE_PROFILER_UTILS_XPLANE_UTILS_H_
 
+#include <algorithm>
+#include <cstdint>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
@@ -32,6 +35,30 @@ namespace profiler {
 // WARNING: This should only be used when comparing events from the same XLine.
 inline Timespan XEventTimespan(const XEvent& event) {
   return Timespan(event.offset_ps(), event.duration_ps());
+}
+
+// Returns the planes with the given predicate.
+template <typename F>
+std::vector<const XPlane*> FindPlanes(const XSpace& space, const F& predicate) {
+  std::vector<const XPlane*> result;
+  for (const XPlane& plane : space.planes()) {
+    if (predicate(plane)) {
+      result.push_back(&plane);
+    }
+  }
+  return result;
+}
+
+// Returns mutable planes with the given predicate.
+template <typename F>
+std::vector<XPlane*> FindMutablePlanes(XSpace* space, const F& predicate) {
+  std::vector<XPlane*> result;
+  for (XPlane& plane : *space->mutable_planes()) {
+    if (predicate(plane)) {
+      result.push_back(&plane);
+    }
+  }
+  return result;
 }
 
 // Returns the plane with the given name or nullptr if not found.
@@ -52,8 +79,9 @@ std::vector<const XPlane*> FindPlanesWithPrefix(const XSpace& space,
 std::vector<XPlane*> FindMutablePlanesWithPrefix(XSpace* space,
                                                  absl::string_view prefix);
 
-// Returns the plane with the given id or nullptr if not found.
+// Returns the plane with the given id/name or nullptr if not found.
 const XLine* FindLineWithId(const XPlane& plane, int64_t id);
+const XLine* FindLineWithName(const XPlane& plane, absl::string_view name);
 
 XStat* FindOrAddMutableStat(const XStatMetadata& stat_metadata, XEvent* event);
 
@@ -94,17 +122,17 @@ struct XEventsComparator {
 };
 
 // Returns a sorted vector of all XEvents in the given XPlane.
-template <class Compare>
-std::vector<XEvent*> GetSortedEvents(XPlane* plane, Compare comp,
-                                     bool include_derived_events = false) {
-  std::vector<XEvent*> events;
-  for (XLine& line : *plane->mutable_lines()) {
-    if (!include_derived_events && IsDerivedThreadId(line.id())) continue;
-    for (XEvent& event : *line.mutable_events()) {
-      events.push_back(&event);
-    }
-  }
-  absl::c_sort(events, XEventsComparator());
+// This template can be used with either XPlaneVisitor or XPlaneBuilder.
+template <typename Event, typename Plane>
+inline std::vector<Event> GetSortedEvents(Plane& plane,
+                                          bool include_derived_events = false) {
+  std::vector<Event> events;
+  plane.ForEachLine([&events, include_derived_events](auto line) {
+    if (!include_derived_events && IsDerivedThreadId(line.Id())) return;
+    line.ForEachEvent(
+        [&events](auto event) { events.emplace_back(std::move(event)); });
+  });
+  absl::c_sort(events);
   return events;
 }
 
@@ -124,10 +152,27 @@ void MergePlanes(const std::vector<const XPlane*>& src_planes,
 
 // Plane's start timestamp is defined as the minimum of all lines' start
 // timestamps. If zero line exists, return 0;
-uint64 GetStartTimestampNs(const XPlane& plane);
+int64_t GetStartTimestampNs(const XPlane& plane);
 
 // Returns true if there are no XEvents.
 bool IsEmpty(const XSpace& space);
+
+// Mutate the XPlane by adding predefined XFlow. e.g. GPU kernel launches =>
+// GPU kernel events.
+void AddFlowsToXplane(int32_t host_id, bool is_host_plane, bool connect_traceme,
+                      XPlane* plane);
+
+// Get a fingerprint of device plane for deduplicating derived lines in similar
+// device planes. The fingerprint is a hash of sorted HLO modules name which
+// were appeared on current plane.
+// Returns 0 when such "Xla Modules" line don't exist.
+uint64_t GetDevicePlaneFingerprint(const XPlane& plane);
+template <typename XPlanePointerIterator>
+void SortPlanesById(XPlanePointerIterator begin, XPlanePointerIterator end) {
+  std::sort(begin, end, [&](const XPlane* a, const XPlane* b) {
+    return a->id() < b->id();  // ascending order of device xplane id.
+  });
+}
 
 }  // namespace profiler
 }  // namespace tensorflow

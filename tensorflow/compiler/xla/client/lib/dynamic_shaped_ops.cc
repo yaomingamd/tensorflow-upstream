@@ -112,11 +112,9 @@ XlaOp DynamicConditional(XlaBuilder* builder, XlaOp predicate,
                          XlaOp false_operand,
                          const XlaComputation& false_computation) {
   return builder->ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
-    auto true_shape =
-        true_computation.GetProgramShape().ConsumeValueOrDie().result();
+    auto true_shape = true_computation.GetProgramShape().value().result();
 
-    auto false_shape =
-        false_computation.GetProgramShape().ConsumeValueOrDie().result();
+    auto false_shape = false_computation.GetProgramShape().value().result();
 
     if (ShapeUtil::Compatible(true_shape, false_shape)) {
       return xla::Conditional(predicate, true_operand, true_computation,
@@ -224,7 +222,7 @@ StatusOr<XlaOp> SetDimensionSizeWithRebound(ValueInference* value_inference,
   TF_RETURN_IF_ERROR(inferred_bound_status_or.status());
   TF_RETURN_IF_ERROR(dynamism_status_or.status());
   if (inferred_bound_status_or->AllValid()) {
-    int64_t inferred_bound = inferred_bound_status_or->Get<int32>({}).value();
+    int64_t inferred_bound = inferred_bound_status_or->Get<int32_t>({}).value();
     TF_ASSIGN_OR_RETURN(auto* shape_ptr,
                         operand.builder()->GetShapePtr(operand));
     // Found a tighter bound, do a slice.

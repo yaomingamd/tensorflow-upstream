@@ -152,6 +152,29 @@ TEST_F(GpuFusibleTest, LayoutsAreReduceInputFusionFriendly_CopyProducer) {
   EXPECT_FALSE(LayoutsAreReduceInputFusionFriendly(*copy, *reduce));
 }
 
+TEST_F(GpuFusibleTest, LayoutsAreReduceInputFusionFriendly_PhysicalTranspose) {
+  auto module = ParseAndReturnVerifiedModule(absl::StrCat(kModulePrefix, R"(
+    fused_reduce {
+      p0.1 = f32[1024,128,32,32]{3,2,1,0} parameter(0)
+      c0.1 = f32[] constant(0)
+      ROOT reduce = f32[1024]{0} reduce(p0.1, c0.1), dimensions={1,2,3}, to_apply=scalar_add
+    }
+    ENTRY entry {
+      p0 = f16[128,1024,32,32]{3,2,1,0} parameter(0)
+      copy = f32[1024,128,32,32]{3,2,1,0} transpose(p0), dimensions={1,0,2,3}
+      ROOT reduce_fusion = f32[1024]{0} fusion(copy), kind=kInput, calls=fused_reduce
+    })"))
+                    .ValueOrDie();
+  SCOPED_TRACE(module->ToString());
+  const HloInstruction* reduce =
+      module->entry_computation()->root_instruction();
+  ASSERT_EQ(reduce->fused_expression_root()->opcode(), HloOpcode::kReduce);
+  const HloInstruction* transpose =
+      module->entry_computation()->root_instruction()->operand(0);
+  ASSERT_EQ(transpose->opcode(), HloOpcode::kTranspose);
+  EXPECT_FALSE(LayoutsAreReduceInputFusionFriendly(*transpose, *reduce));
+}
+
 TEST_F(GpuFusibleTest,
        LayoutsAreReduceInputFusionFriendly_LayoutChangingFusionProducer) {
   auto module = ParseAndReturnVerifiedModule(absl::StrCat(kModulePrefix, R"(
@@ -910,6 +933,33 @@ TEST_F(GpuFusibleTest, ProducerConsumerFusionReduceUnfriendlyLoopFusion) {
   EXPECT_FALSE(IsProducerConsumerMultiOutputFusible(*producer, *consumer));
 }
 
+TEST_F(GpuFusibleTest, ProducerConsumerFusionInPlaceOperation) {
+  auto module = ParseAndReturnVerifiedModule(absl::StrCat(kModulePrefix, R"(
+    %fusion {
+      %param_0 = s32[4,4]{1,0} parameter(0)
+      %copy = s32[4,4]{0,1} copy(%param_0)
+      ROOT %transpose = s32[4,4]{1,0} transpose(%copy), dimensions={1,0}
+    }
+
+    ENTRY %main {
+      %param_0 = s32[4,4]{1,0} parameter(0)
+      %constant_0 = s32[] constant(0)
+      %constant_1 = s32[] constant(1)
+      %constant_1x1_1 = s32[1,1] constant({ {1} })
+      %updated = s32[4,4]{1,0} dynamic-update-slice(%param_0, %constant_1x1_1, %constant_1, %constant_0)
+      %transpose = s32[4,4]{0,1} fusion(%updated), kind=kLoop, calls=fusion
+      ROOT %tuple = tuple(%updated, %transpose)
+    })"))
+                    .ValueOrDie();
+  const HloInstruction* tuple = module->entry_computation()->root_instruction();
+  EXPECT_EQ(tuple->opcode(), HloOpcode::kTuple);
+  const HloInstruction* dus = tuple->operand(0);
+  EXPECT_EQ(dus->opcode(), HloOpcode::kDynamicUpdateSlice);
+  const HloInstruction* transpose = tuple->operand(1);
+  EXPECT_EQ(transpose->opcode(), HloOpcode::kFusion);
+  EXPECT_FALSE(IsProducerConsumerMultiOutputFusible(*dus, *transpose));
+}
+
 TEST_F(GpuFusibleTest, NonscalarConstantsNotFused) {
   auto module = ParseAndReturnVerifiedModule(R"(
     HloModule test_module
@@ -936,8 +986,10 @@ TEST_F(GpuFusibleTest, NonscalarConstantsNotFused) {
   const HloInstruction* producer = root->operand(1);
   const HloInstruction* consumer2 = root->operand(2);
   const HloInstruction* producer2 = root->operand(3);
-  EXPECT_FALSE(IsProducerConsumerFusible(*producer, *consumer));
-  EXPECT_FALSE(IsProducerConsumerFusible(*producer2, *consumer2));
+  EXPECT_FALSE(
+      static_cast<bool>(IsProducerConsumerFusible(*producer, *consumer)));
+  EXPECT_FALSE(
+      static_cast<bool>(IsProducerConsumerFusible(*producer2, *consumer2)));
 }
 
 TEST_F(GpuFusibleTest, TransposingCopyNotFused) {
@@ -974,7 +1026,8 @@ TEST_F(GpuFusibleTest, TransposingCopyNotFused) {
   const HloInstruction* consumer =
       module->entry_computation()->root_instruction();
   const HloInstruction* producer = root->operand(0);
-  EXPECT_FALSE(IsProducerConsumerFusible(*producer, *consumer));
+  EXPECT_FALSE(
+      static_cast<bool>(IsProducerConsumerFusible(*producer, *consumer)));
 }
 
 TEST_F(GpuFusibleTest, DoNotFuseLayoutChangingOpWithReduce) {
@@ -998,7 +1051,8 @@ TEST_F(GpuFusibleTest, DoNotFuseLayoutChangingOpWithReduce) {
   const HloInstruction* consumer =
       module->entry_computation()->root_instruction();
   const HloInstruction* producer = consumer->operand(0);
-  EXPECT_FALSE(IsProducerConsumerFusible(*producer, *consumer));
+  EXPECT_FALSE(
+      static_cast<bool>(IsProducerConsumerFusible(*producer, *consumer)));
 }
 
 TEST_F(GpuFusibleTest, FuseLayoutChangingOpWithElementwise) {
@@ -1014,7 +1068,8 @@ TEST_F(GpuFusibleTest, FuseLayoutChangingOpWithElementwise) {
   const HloInstruction* consumer =
       module->entry_computation()->root_instruction();
   const HloInstruction* producer = consumer->operand(0);
-  EXPECT_TRUE(IsProducerConsumerFusible(*producer, *consumer));
+  EXPECT_TRUE(
+      static_cast<bool>(IsProducerConsumerFusible(*producer, *consumer)));
 }
 
 TEST_F(GpuFusibleTest, CreatesNestedLoop_NonfusionInstr) {

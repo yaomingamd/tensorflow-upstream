@@ -16,8 +16,9 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_XLA_SERVICE_CPU_RUNTIME_SINGLE_THREADED_CONV3D_H_
 #define TENSORFLOW_COMPILER_XLA_SERVICE_CPU_RUNTIME_SINGLE_THREADED_CONV3D_H_
 
+#include <stdint.h>
+
 #include "third_party/eigen3/Eigen/Core"
-#include "tensorflow/core/platform/types.h"
 
 extern "C" {
 
@@ -32,7 +33,7 @@ extern void __xla_cpu_runtime_EigenSingleThreadedConv3DF16(
     int64_t padding_y_before, int64_t padding_y_after, int64_t padding_z_before,
     int64_t padding_z_after, int64_t lhs_x_dilation, int64_t lhs_y_dilation,
     int64_t lhs_z_dilation, int64_t rhs_x_dilation, int64_t rhs_y_dilation,
-    int64_t rhs_z_dilation);
+    int64_t rhs_z_dilation, int64_t feature_group_count);
 
 extern void __xla_cpu_runtime_EigenSingleThreadedConv3DF32(
     const void* /* xla::ExecutableRunOptions* */ run_options_ptr, float* out,
@@ -44,7 +45,8 @@ extern void __xla_cpu_runtime_EigenSingleThreadedConv3DF32(
     int64_t padding_x_before, int64_t padding_x_after, int64_t padding_y_before,
     int64_t padding_y_after, int64_t padding_z_before, int64_t padding_z_after,
     int64_t lhs_x_dilation, int64_t lhs_y_dilation, int64_t lhs_z_dilation,
-    int64_t rhs_x_dilation, int64_t rhs_y_dilation, int64_t rhs_z_dilation);
+    int64_t rhs_x_dilation, int64_t rhs_y_dilation, int64_t rhs_z_dilation,
+    int64_t feature_group_count);
 
 }  // extern "C"
 

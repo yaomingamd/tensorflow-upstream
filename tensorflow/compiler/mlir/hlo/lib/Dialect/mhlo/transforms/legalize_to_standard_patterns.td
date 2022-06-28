@@ -18,14 +18,14 @@ limitations under the License.
 include "mlir/IR/OpBase.td"
 include "mlir/Dialect/Arithmetic/IR/ArithmeticOps.td"
 include "mlir/Dialect/Math/IR/MathOps.td"
-include "mlir/Dialect/StandardOps/IR/Ops.td"
+include "mlir/Dialect/Func/IR/FuncOps.td"
 include "mlir-hlo/Dialect/mhlo/IR/hlo_ops.td"
 
 //===----------------------------------------------------------------------===//
 // Nullary op patterns.
 //===----------------------------------------------------------------------===//
 
-def : Pat<(HLO_ConstOp ElementsAttr:$value),
+def : Pat<(HLO_ConstantOp ElementsAttr:$value),
           (Arith_ConstantOp $value)>;
 
 //===----------------------------------------------------------------------===//

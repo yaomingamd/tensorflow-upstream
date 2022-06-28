@@ -224,6 +224,24 @@ class AlgorithmConfig {
   AlgorithmType algorithm_;
 };
 
+// Opaque identifier specifying the precision to use in gemm calls.
+typedef int64_t ComputePrecision;
+constexpr ComputePrecision kDefaultComputePrecision = 0;
+
+// This struct contains the metadata of a matrix, e.g., its base address and
+// dimensions.
+struct MatrixDescriptor {
+  DeviceMemoryBase data;
+  int64_t leading_dim_stride;
+  int64_t batch_stride;
+  Transpose transpose;
+
+  template <typename T>
+  DeviceMemory<T> cast() const {
+    return DeviceMemory<T>(data);
+  }
+};
+
 struct IBlasLtMatmulPlan {
   // Returns the data type of the A and B (input) matrices.
   virtual DataType ab_type() const = 0;
@@ -260,6 +278,11 @@ struct BlasLtMatmulPlanParams {
   int64_t stride_a = 0;
   int64_t stride_b = 0;
   int64_t stride_c = 0;
+};
+
+struct PlanAndAlgorithms {
+  std::unique_ptr<blas::IBlasLtMatmulPlan> plan;
+  std::vector<std::unique_ptr<blas::IBlasLtMatmulAlgorithm>> algorithms;
 };
 
 // BLAS support interface -- this can be derived from a GPU executor when the
@@ -1070,7 +1093,7 @@ class BlasSupport {
                                   const DeviceMemoryBase &a, int lda,
                                   const DeviceMemoryBase &b, int ldb,
                                   const void *beta, DeviceMemoryBase *c,
-                                  int ldc) = 0;
+                                  int ldc, ComputePrecision precision) = 0;
 
   virtual bool DoBlasGemmWithProfiling(
       Stream *stream, blas::Transpose transa, blas::Transpose transb,
@@ -1108,7 +1131,7 @@ class BlasSupport {
 
   // Gets a list of supported algorithms for DoBlasGemmWithAlgorithm.
   virtual bool GetBlasGemmAlgorithms(
-      std::vector<AlgorithmType> *out_algorithms) = 0;
+      Stream *stream, std::vector<AlgorithmType> *out_algorithms) = 0;
 
   // Like DoBlasGemm, but accepts an algorithm and an compute type.
   //
@@ -1414,6 +1437,37 @@ class BlasSupport {
                           std::complex<double> alpha,
                           const DeviceMemory<std::complex<double>> &a, int lda,
                           DeviceMemory<std::complex<double>> *b, int ldb) = 0;
+
+  // Same as DoBlasTrsm, but operates over a list of a's and b's.  The lists
+  // `as` and `bs` must have the same length.
+  virtual bool DoBlasTrsmBatched(Stream *stream, blas::Side side,
+                                 blas::UpperLower uplo, blas::Transpose transa,
+                                 blas::Diagonal diag, uint64_t m, uint64 n,
+                                 float alpha, const DeviceMemory<float *> &as,
+                                 int lda, DeviceMemory<float *> *bs, int ldb,
+                                 int batch_count) = 0;
+  virtual bool DoBlasTrsmBatched(Stream *stream, blas::Side side,
+                                 blas::UpperLower uplo, blas::Transpose transa,
+                                 blas::Diagonal diag, uint64_t m, uint64 n,
+                                 double alpha, const DeviceMemory<double *> &as,
+                                 int lda, DeviceMemory<double *> *bs, int ldb,
+                                 int batch_count) = 0;
+  virtual bool DoBlasTrsmBatched(Stream *stream, blas::Side side,
+                                 blas::UpperLower uplo, blas::Transpose transa,
+                                 blas::Diagonal diag, uint64_t m, uint64 n,
+                                 std::complex<float> alpha,
+                                 const DeviceMemory<std::complex<float> *> &as,
+                                 int lda,
+                                 DeviceMemory<std::complex<float> *> *bs,
+                                 int ldb, int batch_count) = 0;
+  virtual bool DoBlasTrsmBatched(Stream *stream, blas::Side side,
+                                 blas::UpperLower uplo, blas::Transpose transa,
+                                 blas::Diagonal diag, uint64_t m, uint64 n,
+                                 std::complex<double> alpha,
+                                 const DeviceMemory<std::complex<double> *> &as,
+                                 int lda,
+                                 DeviceMemory<std::complex<double> *> *bs,
+                                 int ldb, int batch_count) = 0;
 
   // Creates a backend-specific plan object for a blaslt matmul operation, which
   // can then be passed to DoBlasLtMatmul(). When possible, plans should be
@@ -1977,7 +2031,8 @@ class BlasSupport {
       Stream *stream, blas::Transpose transa, blas::Transpose transb,          \
       uint64_t m, uint64 n, uint64 k, blas::DataType dtype, const void *alpha, \
       const DeviceMemoryBase &a, int lda, const DeviceMemoryBase &b, int ldb,  \
-      const void *beta, DeviceMemoryBase *c, int ldc) override;                \
+      const void *beta, DeviceMemoryBase *c, int ldc,                          \
+      blas::ComputePrecision precision) override;                              \
   bool DoBlasGemmWithProfiling(                                                \
       Stream *stream, blas::Transpose transa, blas::Transpose transb,          \
       uint64_t m, uint64 n, uint64 k, float alpha,                             \
@@ -2011,7 +2066,8 @@ class BlasSupport {
       const DeviceMemory<std::complex<double>> &b, int ldb,                    \
       std::complex<double> beta, DeviceMemory<std::complex<double>> *c,        \
       int ldc, blas::ProfileResult *output_profile_result) override;           \
-  bool GetBlasGemmAlgorithms(std::vector<blas::AlgorithmType> *out_algorithms) \
+  bool GetBlasGemmAlgorithms(Stream *stream,                                   \
+                             std::vector<blas::AlgorithmType> *out_algorithms) \
       override;                                                                \
   port::Status DoBlasGemmWithAlgorithm(                                        \
       Stream *stream, blas::Transpose transa, blas::Transpose transb,          \
@@ -2210,6 +2266,30 @@ class BlasSupport {
                   uint64_t n, std::complex<double> alpha,                      \
                   const DeviceMemory<std::complex<double>> &a, int lda,        \
                   DeviceMemory<std::complex<double>> *b, int ldb) override;    \
+  bool DoBlasTrsmBatched(                                                      \
+      Stream *stream, blas::Side side, blas::UpperLower uplo,                  \
+      blas::Transpose transa, blas::Diagonal diag, uint64_t m, uint64 n,       \
+      float alpha, const DeviceMemory<float *> &as, int lda,                   \
+      DeviceMemory<float *> *bs, int ldb, int batch_count) override;           \
+  bool DoBlasTrsmBatched(                                                      \
+      Stream *stream, blas::Side side, blas::UpperLower uplo,                  \
+      blas::Transpose transa, blas::Diagonal diag, uint64_t m, uint64 n,       \
+      double alpha, const DeviceMemory<double *> &as, int lda,                 \
+      DeviceMemory<double *> *bs, int ldb, int batch_count) override;          \
+  bool DoBlasTrsmBatched(Stream *stream, blas::Side side,                      \
+                         blas::UpperLower uplo, blas::Transpose transa,        \
+                         blas::Diagonal diag, uint64_t m, uint64 n,            \
+                         std::complex<float> alpha,                            \
+                         const DeviceMemory<std::complex<float> *> &as,        \
+                         int lda, DeviceMemory<std::complex<float> *> *bs,     \
+                         int ldb, int batch_count) override;                   \
+  bool DoBlasTrsmBatched(Stream *stream, blas::Side side,                      \
+                         blas::UpperLower uplo, blas::Transpose transa,        \
+                         blas::Diagonal diag, uint64_t m, uint64 n,            \
+                         std::complex<double> alpha,                           \
+                         const DeviceMemory<std::complex<double> *> &as,       \
+                         int lda, DeviceMemory<std::complex<double> *> *bs,    \
+                         int ldb, int batch_count) override;                   \
   port::StatusOr<std::unique_ptr<blas::IBlasLtMatmulPlan>>                     \
   CreateBlasLtMatmulPlan(const blas::BlasLtMatmulPlanParams &params) override; \
   port::StatusOr<std::vector<std::unique_ptr<blas::IBlasLtMatmulAlgorithm>>>   \
