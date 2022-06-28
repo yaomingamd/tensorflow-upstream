@@ -1,6 +1,6 @@
 # This Dockerfile provides a starting point for a ROCm installation of
 # MIOpen and tensorflow.
-FROM ubuntu:bionic
+FROM ubuntu:focal
 MAINTAINER Jeff Poznanovic <jeffrey.poznanovic@amd.com>
 
 ARG ROCM_DEB_REPO=https://repo.radeon.com/rocm/apt/5.1.3/
@@ -56,7 +56,7 @@ RUN apt-get update --allow-insecure-repositories && DEBIAN_FRONTEND=noninteracti
   libnuma-dev \
   pciutils \
   virtualenv \
-  python-pip \
+  python3-pip \
   libxml2 \
   libxml2-dev \
   wget && \
@@ -107,6 +107,11 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN /install/install_deb_packages.sh
 RUN /install/install_bootstrap_deb_packages.sh
 RUN /install/install_pi_python3.9_toolchain.sh
+
+# Install gcc 7
+RUN apt -y install gcc-7 g++-7
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 700 \
+                         --slave /usr/bin/g++ g++ /usr/bin/g++-7
 
 SHELL ["/bin/bash", "-c"]
 RUN /install/install_bazel.sh
