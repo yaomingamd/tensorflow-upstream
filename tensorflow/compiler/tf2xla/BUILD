@@ -905,7 +905,11 @@ cc_library(
     hdrs = [
         "functionalize_control_flow.h",
     ],
-    visibility = [":friends"],
+    visibility = [
+        ":friends",
+        "//tensorflow/core/lib/core:__pkg__",
+        "//tensorflow/core/lib/gtl:__pkg__",
+    ],
     deps = [
         ":functionalize_cond",
         ":functionalize_control_flow_util",
