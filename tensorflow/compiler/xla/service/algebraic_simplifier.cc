@@ -1522,7 +1522,7 @@ Status AlgebraicSimplifierVisitor::HandleConcatenate(
   if (absl::c_count(operands, operands[0]) == operands.size() &&
       operands[0]->shape().dimensions(concatenate_dimension) == 1) {
     Shape new_shape = operands[0]->shape();
-    absl::InlinedVector<int64_t, 8> broadcast_dims;
+    DimensionVector broadcast_dims;
     for (int64_t i = 0; i < new_shape.rank(); ++i) {
       if (i == concatenate_dimension) {
         continue;
@@ -4768,6 +4768,9 @@ Status AlgebraicSimplifierVisitor::HandleSlice(HloInstruction* slice) {
                 absl::MakeSpan(concat->operands())
                     .subspan(*start_operand, *limit_operand - *start_operand),
                 concat_dim));
+        *new_concat->mutable_shape()->mutable_layout() =
+            concat->shape().layout();
+        simplifier_->UpdateLayout(new_concat->mutable_shape());
         concat->SetupDerivedInstruction(new_concat);
         operand = new_concat;
       }
@@ -4866,6 +4869,58 @@ Status AlgebraicSimplifierVisitor::HandleDynamicSlice(
     VLOG(3) << "New dynamic slice: " << dynamic_slice->ToString();
     VLOG(3) << "New broadcast: " << new_broadcast->ToString();
     return ReplaceInstruction(dynamic_slice, new_broadcast);
+  }
+
+  HloInstruction *reshape, *reshape_operand;
+  if (Match(operand, m::Reshape(&reshape, m::Op(&reshape_operand))) &&
+      reshape->ReshapeMerelyInsertsOrDeletes1SizedDimensions().has_value() &&
+      !options_.is_layout_sensitive()) {
+    int64_t slice_dim = 0;
+    HloInstruction* zero = MakeScalarLike(dynamic_slice->mutable_operand(1), 0);
+    std::vector<HloInstruction*> starts;
+    starts.reserve(reshape_operand->shape().rank());
+    std::vector<int64_t> slice_sizes;
+    slice_sizes.reserve(reshape_operand->shape().rank());
+    for (int64_t dim = 0; dim < reshape_operand->shape().rank(); ++dim) {
+      if (reshape_operand->shape().dimensions(dim) == 1) {
+        starts.push_back(zero);
+        slice_sizes.push_back(1);
+        continue;
+      }
+      while (dynamic_slice->operand(0)->shape().dimensions(slice_dim) == 1) {
+        ++slice_dim;
+      }
+      starts.push_back(dynamic_slice->mutable_operand(1 + slice_dim));
+      slice_sizes.push_back(dynamic_slice->slice_sizes(slice_dim));
+      ++slice_dim;
+    }
+    HloInstruction* new_dynamic_slice =
+        dynamic_slice->AddInstruction(HloInstruction::CreateDynamicSlice(
+            ShapeUtil::MakeShape(dynamic_slice->shape().element_type(),
+                                 slice_sizes),
+            reshape_operand, starts, slice_sizes));
+    return ReplaceWithNewInstruction(
+        dynamic_slice, HloInstruction::CreateReshape(dynamic_slice->shape(),
+                                                     new_dynamic_slice));
+  }
+
+  HloInstruction *transpose, *transpose_operand;
+  if (Match(operand, m::Transpose(&transpose, m::Op(&transpose_operand))) &&
+      !options_.is_layout_sensitive()) {
+    auto output_to_input = InversePermutation(transpose->dimensions());
+    HloInstruction* new_slice =
+        dynamic_slice->AddInstruction(HloInstruction::CreateDynamicSlice(
+            ShapeUtil::PermuteDimensions(output_to_input,
+                                         dynamic_slice->shape()),
+            transpose_operand,
+            Permute(absl::MakeSpan(dynamic_slice->operands().begin() + 1,
+                                   dynamic_slice->operands().end()),
+                    output_to_input),
+            Permute(dynamic_slice->dynamic_slice_sizes(), output_to_input)));
+    return ReplaceWithNewInstruction(
+        dynamic_slice,
+        HloInstruction::CreateTranspose(dynamic_slice->shape(), new_slice,
+                                        transpose->dimensions()));
   }
 
   // Convert a dynamic slice into a slice if all offsets are constant and the
@@ -5672,8 +5727,7 @@ Status AlgebraicSimplifierVisitor::HandleReduceWindow(HloInstruction* hlo) {
                 m::MinimumAnyOrder(m::Parameter(0), m::Parameter(1)),
                 m::MaximumAnyOrder(m::Parameter(0), m::Parameter(1))))) {
     const HloInstruction* nested_root = function->root_instruction();
-    absl::InlinedVector<int64_t, 8> broadcast_dims(
-        nested_root->shape().dimensions_size());
+    DimensionVector broadcast_dims(nested_root->shape().dimensions_size());
     absl::c_iota(broadcast_dims, 0);
     TF_ASSIGN_OR_RETURN(
         auto new_op, MakeBinaryHlo(nested_root->opcode(), operand,
@@ -5710,16 +5764,16 @@ Status AlgebraicSimplifierVisitor::HandleReduceWindow(HloInstruction* hlo) {
     auto effective_reduce_dims = [&] {
       if (window_util::HasStride(window) || window_util::HasDilation(window) ||
           window_util::HasPadding(window)) {
-        return absl::InlinedVector<int64_t, 8>{};
+        return DimensionVector{};
       }
-      absl::InlinedVector<int64_t, 8> reduce_dims;
+      DimensionVector reduce_dims;
       for (int64_t i = 0; i < window.dimensions_size(); ++i) {
         if (window.dimensions(i).size() == 1) {
           continue;
         } else if (reduce_window->shape().dimensions(i) == 1) {
           reduce_dims.push_back(i);
         } else {
-          return absl::InlinedVector<int64_t, 8>{};
+          return DimensionVector{};
         }
       }
       return reduce_dims;
@@ -5995,7 +6049,7 @@ bool OnlyPermutesDegenerateDims(const Shape& shape,
 }
 
 bool IsPermutationOfIota(absl::Span<const int64_t> elems) {
-  absl::InlinedVector<int64_t, 8> sorted(elems.begin(), elems.end());
+  DimensionVector sorted(elems.begin(), elems.end());
   absl::c_sort(sorted);
   for (int i = 0; i < sorted.size(); i++) {
     if (sorted[i] != i) {
@@ -6053,7 +6107,7 @@ Status AlgebraicSimplifierVisitor::HandleTranspose(HloInstruction* transpose) {
     }
 
     // Transpose must just be over the two last dims (i.e. the non-batch dims).
-    absl::InlinedVector<int64_t, 8> expected_perm(rank);
+    DimensionVector expected_perm(rank);
     absl::c_iota(expected_perm, 0);
     std::swap(expected_perm.rbegin()[0], expected_perm.rbegin()[1]);
     if (transpose->dimensions() != expected_perm) {
@@ -6088,9 +6142,7 @@ Status AlgebraicSimplifierVisitor::HandleTranspose(HloInstruction* transpose) {
     return ReplaceInstruction(transpose, operand);
   }
 
-  if (options_.is_layout_sensitive() &&
-      options_.replace_transpose_with_bitcast() &&
-      TransposeIsBitcast(transpose)) {
+  if (options_.is_layout_sensitive() && TransposeIsBitcast(transpose)) {
     ReplaceWithBitcast(transpose);
     return OkStatus();
   }

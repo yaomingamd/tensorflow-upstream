@@ -36,7 +36,7 @@ class GemmTest : public MlirGpuTestBase {
                    %arg2: memref<2x2xf32> {lmhlo.output_index = dense<[0]> : tensor<1xindex>}) attributes {
                        result_xla_shape = "(f32[4]) "
                    } {
-          "lmhlo_gpu.gemm"(%arg0, %arg1, %arg2) {alpha_imag = 0.000000e+00 : f64, alpha_real = 1.000000e+00 : f64, batch_size = 1 : i64, lhs_stride = 4 : i64, rhs_stride = 4 : i64, dot_dimension_numbers = #mhlo.dot<lhs_contracting_dimensions = [1], rhs_contracting_dimensions = [0]>)",
+          "lmhlo_gpu.gemm"(%arg0, %arg1, %arg2) {alpha_imag = 0.000000e+00 : f64, alpha_real = 1.000000e+00 : f64, beta = 0.000000e+00 : f64, batch_size = 1 : i64, lhs_stride = 4 : i64, rhs_stride = 4 : i64, dot_dimension_numbers = #mhlo.dot<lhs_contracting_dimensions = [1], rhs_contracting_dimensions = [0]>)",
         matmul_options,
         R"(} : (memref<2x2xf32>, memref<2x2xf32>, memref<2x2xf32>) -> ()
           "lmhlo.terminator"() : () -> ()
@@ -63,7 +63,7 @@ TEST_F(GemmTest, GemmPrecisionDefault) {
   std::vector<float> arg1 = {0x1.fffffep+0, 0, 0, 0x1.fffffep+0};
   auto outputs = Run2x2Gemm(
       arg0, arg1,
-      R"(, precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">])");
+      R"(, precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>])");
   ASSERT_EQ(1, outputs.size());
   auto stream = BorrowStream();
   if (stream->GetCudaComputeCapability().IsAtLeast(
@@ -81,7 +81,7 @@ TEST_F(GemmTest, GemmPrecisionHighest) {
   std::vector<float> arg1 = {0x1.fffffep+0, 0, 0, 0x1.fffffep+0};
   auto outputs = Run2x2Gemm(
       arg0, arg1,
-      R"(, precision_config = [#mhlo<"precision HIGH">, #mhlo<"precision HIGHEST">])");
+      R"(, precision_config = [#mhlo<precision HIGH>, #mhlo<precision HIGHEST>])");
   ASSERT_EQ(1, outputs.size());
   EXPECT_THAT(FromUint8Span<float>(outputs[0]),
               ElementsAreArray<float>({0x1.fffffcp+1, 0, 0, 0x1.fffffcp+1}));

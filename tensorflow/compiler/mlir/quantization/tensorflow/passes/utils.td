@@ -23,6 +23,9 @@ def NonOpaqueElementsAttr : ElementsAttrBase<
 // Checks if the data format is "NHWC".
 def IsDataFormatNHWC : ConstantAttr<TF_ConvnetDataFormatAttr, "\"NHWC\"">;
 
+// Checks if the op is constant op.
+def IsConstTensor :  Constraint<CPred<"dyn_cast_or_null<TF::ConstOp>($0.getDefiningOp())">>;
+
 // Checks if the element value has a float type.
 def IsFloatElementsAttr : ElementsAttrBase<
   CPred<"$_self.isa<ElementsAttr>() && "
@@ -38,6 +41,21 @@ def HasOneUse : Constraint<CPred<"$0.hasOneUse()">>;
 
 // Gets the type of a value.
 def GetValueType : NativeCodeCall<"$0.getType()">;
+
+// Checks if the value has the type of int8.
+def IsInt8ElementType : Constraint<
+  CPred<"getElementTypeOrSelf($0).isInteger(8)">>;
+
+// Checks if the value has the type of int32.
+def IsInt32ElementType : Constraint<
+  CPred<"getElementTypeOrSelf($0).isInteger(32)">>;
+
+// Checks if the value has static shape.
+def HasStaticShapeConstraint : Constraint<CPred<"HasStaticShape($0)">>;
+
+// Checks if the value has static shape at given dims.
+class HasStaticShapeAtDimsConstraint<string dims> : Constraint<
+  CPred<"HasStaticShapeAtDims($0, {"# dims #"})">>;
 
 // The rewrite rule cannot replace a value with itself, so we work around
 // by cloning the root op to replicate that value. The old op will get folded.

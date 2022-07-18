@@ -126,6 +126,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/pattern_matcher.h"
 #include "tensorflow/compiler/xla/service/shape_inference.h"
 #include "tensorflow/compiler/xla/service/while_loop_analysis.h"
+#include "tensorflow/compiler/xla/shape.h"
 #include "tensorflow/compiler/xla/shape_util.h"
 #include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/compiler/xla/types.h"
@@ -568,9 +569,9 @@ Status IrEmitterUnnested::EmitConstant(mlir::Operation* op) {
   auto get_global = mlir::cast<mlir::memref::GetGlobalOp>(op);
   auto module = get_global->getParentOfType<mlir::ModuleOp>();
   auto global = mlir::cast<mlir::memref::GlobalOp>(
-      module.lookupSymbol(get_global.name()));
+      module.lookupSymbol(get_global.getName()));
 
-  auto literal = global.initial_value()->dyn_cast<mlir::DenseElementsAttr>();
+  auto literal = global.getInitialValue()->dyn_cast<mlir::DenseElementsAttr>();
   TF_RET_CHECK(literal);
 
   const bool should_emit_initializer = literal.getType().getNumElements() <= 1;
@@ -604,14 +605,15 @@ Status IrEmitterUnnested::EmitConstant(mlir::Operation* op) {
   llvm::GlobalVariable* global_for_const = new llvm::GlobalVariable(
       global_type, /*isConstant=*/should_emit_initializer,
       llvm::GlobalValue::ExternalLinkage,
-      /*Initializer=*/initializer, global.sym_name(),
+      /*Initializer=*/initializer, global.getSymName(),
       /*TLMode=*/llvm::GlobalValue::NotThreadLocal,
       /*AddressSpace=*/0,
       /*isExternallyInitialized=*/false);
   global_for_const->setAlignment(llvm::Align(kConstantBufferAlignBytes));
   module_->getGlobalList().push_back(global_for_const);
 
-  info.symbol_name.assign(global.sym_name().begin(), global.sym_name().end());
+  info.symbol_name.assign(global.getSymName().begin(),
+                          global.getSymName().end());
 
   info.allocation_index =
       global->getAttrOfType<mlir::IntegerAttr>("lmhlo.alloc").getInt();
@@ -1110,71 +1112,25 @@ Status IrEmitterUnnested::EmitConvolutionThunk(mlir::Operation* op) {
 }
 
 Status IrEmitterUnnested::EmitGemmThunk(mlir::Operation* op) {
-  auto make_bef_thunk =
-      [&](auto op, std::optional<BufferAllocation::Slice> bias =
-                       std::nullopt) -> StatusOr<std::unique_ptr<Thunk>> {
-    TF_ASSIGN_OR_RETURN(auto lhs, GetAllocationSlice(op.getLhs()));
-    TF_ASSIGN_OR_RETURN(auto rhs, GetAllocationSlice(op.getRhs()));
-    TF_ASSIGN_OR_RETURN(auto output, GetAllocationSlice(op.getOutput()));
-    std::vector<BufferAllocation::Slice> buffers = {lhs, rhs};
-    if (bias.has_value()) {
-      buffers.push_back(bias.value());
-    }
-    buffers.push_back(output);
-    return CreateBefThunk(GetThunkInfo(op), op, std::move(buffers));
-  };
+  TF_ASSIGN_OR_RETURN(auto thunk, [&]() -> StatusOr<std::unique_ptr<Thunk>> {
+    auto gemm = mlir::dyn_cast<mlir::lmhlo_gpu::GEMMOp>(op);
+    TF_RET_CHECK(gemm != nullptr);
 
-  auto make_gemm_thunk =
-      [&](auto op, std::optional<double> gemm_bias_beta =
-                       std::nullopt) -> StatusOr<std::unique_ptr<Thunk>> {
-    TF_ASSIGN_OR_RETURN(auto lhs, GetAllocationSlice(op.getLhs()));
-    TF_ASSIGN_OR_RETURN(auto rhs, GetAllocationSlice(op.getRhs()));
-    TF_ASSIGN_OR_RETURN(auto output, GetAllocationSlice(op.getOutput()));
+    TF_ASSIGN_OR_RETURN(auto a, GetAllocationSlice(gemm.getA()));
+    TF_ASSIGN_OR_RETURN(auto b, GetAllocationSlice(gemm.getB()));
+    TF_ASSIGN_OR_RETURN(auto c, GetAllocationSlice(gemm.getC()));
+
+    if (IsBefThunkEnabled(hlo_module_config_)) {
+      return CreateBefThunk(GetThunkInfo(op), op, {a, b, c});
+    }
 
     bool use_cublaslt =
         hlo_module_config_.debug_options().xla_gpu_enable_cublaslt();
 
-    TF_ASSIGN_OR_RETURN(GemmConfig config, GemmConfig::For(op, use_cublaslt));
+    TF_ASSIGN_OR_RETURN(GemmConfig config, GemmConfig::For(gemm, use_cublaslt));
 
     return std::unique_ptr<Thunk>(
-        new GemmThunk(GetThunkInfo(op), std::move(config), lhs, rhs, output));
-  };
-
-  TF_ASSIGN_OR_RETURN(auto thunk, [&]() -> StatusOr<std::unique_ptr<Thunk>> {
-    if (auto gemm = mlir::dyn_cast<mlir::lmhlo_gpu::GEMMOp>(op)) {
-      if (IsBefThunkEnabled(hlo_module_config_)) return make_bef_thunk(gemm);
-      return make_gemm_thunk(gemm);
-    }
-
-    if (auto gemm = mlir::dyn_cast<mlir::lmhlo_gpu::GEMM_BiasOp>(op)) {
-      double gemm_bias_beta = gemm.getBeta().convertToDouble();
-      TF_ASSIGN_OR_RETURN(auto bias, GetAllocationSlice(gemm.getBias()));
-      TF_ASSIGN_OR_RETURN(auto output, GetAllocationSlice(gemm.getOutput()));
-
-      if (IsBefThunkEnabled(hlo_module_config_))
-        return make_bef_thunk(gemm, bias);
-
-      // The bias is passed inside the output buffer. If those buffers are
-      // shared we can just use it, otherwise copy the bias values into the
-      // output buffer first.
-      if (bias == output) {
-        return make_gemm_thunk(gemm, gemm_bias_beta);
-      }
-
-      ThunkSequence thunks;
-      thunks.push_back(std::make_unique<DeviceToDeviceCopyThunk>(
-          Thunk::ThunkInfo(),
-          /*source_buffer=*/bias,
-          /*destination_buffer=*/output,
-          /*mem_size=*/
-          ShapeUtil::ByteSizeOf(GetShape(gemm.getOutput()))));
-      TF_ASSIGN_OR_RETURN(auto thunk, make_gemm_thunk(gemm, gemm_bias_beta));
-      thunks.push_back(std::move(thunk));
-      return std::unique_ptr<Thunk>(
-          new SequentialThunk(GetThunkInfo(op), std::move(thunks)));
-    }
-
-    return tensorflow::errors::Internal("Unexpected op.");
+        new GemmThunk(GetThunkInfo(op), std::move(config), a, b, c));
   }());
 
   AddThunkToThunkSequence(std::move(thunk));
@@ -1602,7 +1558,7 @@ static Status ProcessFusionForConversion(mlir::Region* region,
   });
 
   region->walk([&](mlir::memref::TensorStoreOp store) {
-    if (store.memref().getParentRegion() != region) {
+    if (store.getMemref().getParentRegion() != region) {
       stores.push_back(store);
     }
   });
@@ -1617,10 +1573,10 @@ static Status ProcessFusionForConversion(mlir::Region* region,
 
   std::vector<mlir::Value> returned_values;
   for (auto store : stores) {
-    Shape shape = GetShape(store.memref());
+    Shape shape = GetShape(store.getMemref());
     output_shapes->push_back(shape);
 
-    returned_values.push_back(store.tensor());
+    returned_values.push_back(store.getTensor());
     store.erase();
   }
 
@@ -3462,11 +3418,11 @@ IrEmitterUnnested::TryBuildConstantInitializerThunk(mlir::Value init_value,
               init_value.getDefiningOp())) {
     auto global_memref =
         mlir::SymbolTable::lookupNearestSymbolFrom<mlir::memref::GlobalOp>(
-            get_global_memref, get_global_memref.nameAttr());
-    if (global_memref.constant() && global_memref.initial_value()) {
+            get_global_memref, get_global_memref.getNameAttr());
+    if (global_memref.getConstant() && global_memref.getInitialValue()) {
       // If the initial value happens to be a constant, generate a specialized
       // thunk.
-      const_init = global_memref.initial_value()
+      const_init = global_memref.getInitialValue()
                        .getValue()
                        .cast<mlir::DenseElementsAttr>();
     }
@@ -4612,148 +4568,19 @@ void IrEmitterUnnested::EmitHlo021Tile(
       EmitTilingKernel(tiling_scheme, index_type, tile_generator).status());
 }
 
-namespace {
-
-// A recursive function to inspect the users of a parameter to determine
-// whether it's safe for a parameter to participate in a shared-memory
-// transpose.
-//
-// Consider a fusion parameter P for which we might want to use a shmem
-// transpose.  If we do, we use a GPU thread block to preload a tile of P with
-// indices [z, y..y+31, x..x+31] to compute an output tile with the same indices
-// cooperatively, where z, y, x are the indices for the normalized input/output
-// tensor (see the document for FindTranspose021 for the definition of
-// normalized tensor for 0-2-1 transpose). This shmem transpose implementation
-// requires that the computation of the output tile only read elements within
-// the preload tile. If this is not true, we can't use a shmem transpose for P.
-//
-// If the computation of output element [z, y, x] only requires the element of
-// P with the same indices, the shmem transpose implementation can be applied
-// to P safely. This is a sufficient but not necessary condition. We check all
-// the transitive users of P to see if we can find a user that may cause an
-// exception to the situation. If such a user is not found, we conclude that P
-// is safe for shmem transpose.
-//
-// This is trivially true for elementwise operations and some "data-movement"
-// ops like kTuple. However, it's not true for operations that can change the
-// dimensions of the inputs (e.g. pad, slice) and bitcast operation.
-// For example:
-//
-// fused_computation {
-//   param_0 = f32[64,64]{1,0} parameter(0)
-//   ROOT bitcast = f32[64,64]{0,1} bitcast(param_0)
-// }
-// The output element at logical address [0, 63] depends on the input element
-// at logical address [63, 0], which would not be within the shared-memory
-// block.
-//
-// TODO(bixia): In order to extend this for kInput fusion, that is reduction
-// with transpose, we only need to end the use-chain checking with the input of
-// a reduce operations. In this case, the above description on "output" apply
-// to the result of such a use-chain, which provides the input to the reduce
-// operation.
-bool IsInstructionSafeForShmemTranspose(mlir::Operation* op) {
-  if (mlir::isa<mlir::memref::TensorStoreOp>(op)) {
-    return true;
-  }
-
-  HloOpcode opcode;
-  if (mlir::isa<mlir::bufferization::ToTensorOp>(op)) {
-    opcode = HloOpcode::kParameter;
-  } else {
-    opcode = *MhloToHloOpcode(op);
-  }
-  if (HloInstruction::IsOpElementwise(opcode)) {
-    for (mlir::Value v : op->getResults()) {
-      for (mlir::OpOperand use : v.getUsers()) {
-        if (!IsInstructionSafeForShmemTranspose(use.getOwner())) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  switch (opcode) {
-    // Non-elementwise instructions that don't cause the shmem transpose
-    // to be unsafe, including the instructions that don't currently fuse.
-    case HloOpcode::kGetDimensionSize:
-      // The result of the operation doesn't rely on the content of the
-      // tensor. As such, there is no need to further inspect its users.
-      return true;
-    case HloOpcode::kGetTupleElement:
-    case HloOpcode::kMap:
-    case HloOpcode::kParameter:
-    case HloOpcode::kTuple:
-      for (mlir::Value v : op->getResults()) {
-        for (mlir::OpOperand use : v.getUsers()) {
-          if (!IsInstructionSafeForShmemTranspose(use.getOwner())) {
-            return false;
-          }
-        }
-      }
-      return true;
-
-    default:
-      return false;
-  }
-}
-
-// Given a group of input parameters that are 0-2-1 transpose of the outputs of
-// a fusion kernel, returns the input parameters that are safe for the shared
-// memory transpose implementation.
-//
-// When a tile based shared memory transpose is used to implement an input with
-// 0-2-1 transpose, we preload a tile of the input elements
-// [z, y..y+31, x..x+31] to compute the output tile elements of the same
-// indices. Preloading the input tile this way is only safe when the computation
-// of the output tile elements do not need any input element outside the
-// preloaded tile. We inspect all the transitive users of the input parameter
-// up to the fusion root instruction to see if we can find any instruction
-// that can make preloading the input tile unsafe.
-std::vector<int64_t> FilterInputsForShmemTranspose(
-    mlir::lmhlo::FusionOp fusion, std::vector<int64_t> input_ids) {
-  std::vector<mlir::Value> params = ToStdVector(fusion.getFusionParameters());
-
-  std::vector<int64_t> filtered_input_ids;
-  for (int64_t input_id : input_ids) {
-    mlir::Value input = params.at(input_id);
-    if (IsInstructionSafeForShmemTranspose(input.getDefiningOp())) {
-      filtered_input_ids.push_back(input_id);
-    }
-  }
-  return filtered_input_ids;
-}
-
-}  // namespace
 
 StatusOr<bool> IrEmitterUnnested::CheckAndEmitHloWithTile021(
     mlir::lmhlo::FusionOp fusion) {
   // If the output_shape is reduced to 021 shape, find all the parameters of
   // the HLO that are in the corresponding 012 shape.
   std::vector<int64_t> params_012;
-  optional<std::vector<int64_t>> reduced_dims_021;
-  for (int64_t operand_idx = 0; operand_idx < fusion.getInputBuffers().size();
-       ++operand_idx) {
-    const Shape& operand_shape =
-        GetShape(fusion.getInputBuffers()[operand_idx]);
-    auto find_transpose_result = ShapeUtil::FindTranspose021(
-        operand_shape, GetShape(fusion.getOutputBuffers()[0]));
-    if (!find_transpose_result.has_value()) {
-      continue;
-    }
-    const std::vector<int64_t>& curr_reduced_dims_021 = *find_transpose_result;
-    if (!reduced_dims_021.has_value()) {
-      reduced_dims_021 = curr_reduced_dims_021;
-    }
-    if (!absl::c_equal(*reduced_dims_021, curr_reduced_dims_021)) {
-      // There is more than one possible transpose. Instead of picking one
-      // transpose, we simply give up here.
-      return false;
-    }
-    params_012.push_back(operand_idx);
-  }
-
+  std::vector<Shape> operenad_shapes;
+  absl::c_for_each(fusion.getInputBuffers(), [&](mlir::Value& value) {
+    operenad_shapes.push_back(GetShape(value));
+  });
+  std::optional<std::vector<int64_t>> reduced_dims_021 =
+      ShapeUtil::FindTranspose021DimsAndParameters(
+          operenad_shapes, GetShape(fusion.getOutputBuffers()[0]), &params_012);
   if (!reduced_dims_021.has_value()) {
     return false;
   }
@@ -5347,19 +5174,27 @@ std::vector<std::vector<HloInstruction*>> GroupDisjointReductions(
       HloReachabilityMap::Build(fused_computation);
   for (HloInstruction* instr : fused_computation->instructions()) {
     std::vector<HloInstruction*> reached_output_ids;
+    bool added_to_reduce = false;
     for (HloInstruction* output : roots) {
       if (HloOpcode::kReduce == output->opcode() &&
           (IsBroadcastedConstantOrScalar(*instr))) {
-        // Do not group output reduce instructions through broadcasted
-        // constants or scalars, as the recomputation should be acceptable.
-        VLOG(3) << "Skip broadcasted constant or scalar " << instr->ToString();
-        continue;
+        if (added_to_reduce) {
+          // Do not group more than one output reduce instructions through
+          // broadcasted constants or scalars, as the recomputation should be
+          // acceptable.
+          VLOG(3) << "Skip broadcasted constant or scalar "
+                  << instr->ToString();
+          continue;
+        }
       }
       // Now group output instructions if they have common predecessors.
       if (reachability_map->IsReachable(instr, output)) {
         VLOG(3) << "Reaching " << output->ToString() << " from "
                 << instr->ToString();
         reached_output_ids.push_back(output);
+        if (HloOpcode::kReduce == output->opcode()) {
+          added_to_reduce = true;
+        }
       }
     }
     for (size_t j = 1; j < reached_output_ids.size(); ++j) {
@@ -5668,7 +5503,7 @@ Status IrEmitterUnnested::EmitOp(mlir::Operation* op) {
     return EmitCustomCallThunk(op);
   }
 
-  if (mlir::isa<mlir::lmhlo_gpu::GEMMOp, mlir::lmhlo_gpu::GEMM_BiasOp>(op)) {
+  if (mlir::isa<mlir::lmhlo_gpu::GEMMOp>(op)) {
     return EmitGemmThunk(op);
   }
 

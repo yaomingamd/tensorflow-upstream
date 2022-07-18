@@ -448,7 +448,7 @@ func.func @count_leading_zeros(%lhs: tensor<2x2xi32>) -> tensor<2x2xi32> {
 // CHECK-LABEL: func @float_cmp
 func.func @float_cmp(%lhs: tensor<2x2xf32>,
                 %rhs: tensor<2x2xf32>) -> (tensor<2x2xi1>) {
-  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<"comparison_direction EQ">}
+  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<comparison_direction EQ>}
           : (tensor<2x2xf32>, tensor<2x2xf32>) -> tensor<2x2xi1>
   func.return %0 : tensor<2x2xi1>
 }
@@ -463,7 +463,7 @@ func.func @float_cmp(%lhs: tensor<2x2xf32>,
 // CHECK-LABEL: func @float_cmp_ne
 func.func @float_cmp_ne(%lhs: tensor<2x2xf32>,
                 %rhs: tensor<2x2xf32>) -> (tensor<2x2xi1>) {
-  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<"comparison_direction NE">}
+  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<comparison_direction NE>}
           : (tensor<2x2xf32>, tensor<2x2xf32>) -> tensor<2x2xi1>
   func.return %0 : tensor<2x2xi1>
 }
@@ -478,7 +478,7 @@ func.func @float_cmp_ne(%lhs: tensor<2x2xf32>,
 // CHECK-LABEL: func @int_cmp
 func.func @int_cmp(%lhs: tensor<2x2xi32>,
               %rhs: tensor<2x2xi32>) -> tensor<2x2xi1> {
-  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<"comparison_direction LT">}
+  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<comparison_direction LT>}
           : (tensor<2x2xi32>, tensor<2x2xi32>) -> (tensor<2x2xi1>)
   func.return %0 : tensor<2x2xi1>
 }
@@ -493,7 +493,7 @@ func.func @int_cmp(%lhs: tensor<2x2xi32>,
 // CHECK-LABEL: func @complex_cmp_eq
 func.func @complex_cmp_eq(%lhs: tensor<2xcomplex<f32>>,
                      %rhs: tensor<2xcomplex<f32>>) -> tensor<2xi1> {
-  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<"comparison_direction EQ">}
+  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<comparison_direction EQ>}
           : (tensor<2xcomplex<f32>>, tensor<2xcomplex<f32>>) -> (tensor<2xi1>)
   func.return %0 : tensor<2xi1>
 }
@@ -508,7 +508,7 @@ func.func @complex_cmp_eq(%lhs: tensor<2xcomplex<f32>>,
 // CHECK-LABEL: func @complex_cmp_neq
 func.func @complex_cmp_neq(%lhs: tensor<2xcomplex<f64>>,
                       %rhs: tensor<2xcomplex<f64>>) -> tensor<2xi1> {
-  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<"comparison_direction NE">}
+  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<comparison_direction NE>}
           : (tensor<2xcomplex<f64>>, tensor<2xcomplex<f64>>) -> (tensor<2xi1>)
   func.return %0 : tensor<2xi1>
 }
@@ -2064,7 +2064,7 @@ func.func @dot_general_batch_matmul(%arg0: tensor<?x?x3xf32>,
       rhs_batching_dimensions = [0],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">],
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>],
     someattr
   } : (tensor<?x?x3xf32>, tensor<?x3x?xf32>) -> tensor<?x?x?xf32>
   func.return %0 : tensor<?x?x?xf32>
@@ -2102,7 +2102,7 @@ func.func @dot_general_batch_matmul_unsigned(%arg0: tensor<?x?x3xui32>,
       rhs_batching_dimensions = [0],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">],
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>],
     someattr
   } : (tensor<?x?x3xui32>, tensor<?x3x?xui32>) -> tensor<?x?x?xui32>
   func.return %0 : tensor<?x?x?xui32>
@@ -2123,7 +2123,7 @@ func.func @dot_general_batch_matmul_i8_i8_i32(%arg0: tensor<?x?x3xi8>,
       rhs_batching_dimensions = [0],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">]
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>]
   } : (tensor<?x?x3xi8>, tensor<?x3x?xi8>) -> tensor<?x?x?xi32>
   func.return %0 : tensor<?x?x?xi32>
 }
@@ -2159,7 +2159,7 @@ func.func @dot_general_batch_matmul_i16_i16_i32(%arg0: tensor<?x?x3xi16>,
       rhs_batching_dimensions = [0],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">]
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>]
   } : (tensor<?x?x3xi16>, tensor<?x3x?xi16>) -> tensor<?x?x?xi32>
   func.return %0 : tensor<?x?x?xi32>
 }
@@ -2195,7 +2195,7 @@ func.func @dot_general_batch_matmul_large
       rhs_batching_dimensions = [0],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">]}
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>]}
     : (tensor<2x16x32xf32>, tensor<2x32x32xf32>) -> tensor<2x16x32xf32>
   func.return %0 : tensor<2x16x32xf32>
 }
@@ -2244,7 +2244,7 @@ func.func @dot_general_batch_matvec(%arg0: tensor<?x?x3xf32>,
       rhs_batching_dimensions = [0],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">],
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>],
     someattr
   } : (tensor<?x?x3xf32>, tensor<?x3xf32>) -> tensor<?x?xf32>
   func.return %0 : tensor<?x?xf32>
@@ -2420,7 +2420,7 @@ func.func @map_compare(%arg0: tensor<?xcomplex<f32>>,
     %1 = mhlo.real(%arg2) : (tensor<complex<f32>>) -> tensor<f32>
     %2 = mhlo.real(%arg3) : (tensor<complex<f32>>) -> tensor<f32>
     %3 = "mhlo.compare"(%1, %2)
-       {comparison_direction = #mhlo<"comparison_direction EQ">}
+       {comparison_direction = #mhlo<comparison_direction EQ>}
        : (tensor<f32>, tensor<f32>) -> tensor<i1>
     "mhlo.return"(%3) : (tensor<i1>) -> ()
   }) {dimensions = dense<0> : tensor<1xi64>}
@@ -2746,15 +2746,15 @@ func.func @reduce_lexicographic_min_complex(%arg0: tensor<?x3x4xcomplex<f64>>,
     %1 = mhlo.real(%arg3) : (tensor<complex<f64>>) -> tensor<f64>
     %2 = mhlo.convert(%arg4) : (tensor<complex<f64>>) -> tensor<f64>
     %3 = "mhlo.compare"(%1, %2)
-      {comparison_direction = #mhlo<"comparison_direction EQ">}
+      {comparison_direction = #mhlo<comparison_direction EQ>}
       : (tensor<f64>, tensor<f64>) -> tensor<i1>
     %4 = mhlo.imag(%arg3) : (tensor<complex<f64>>) -> tensor<f64>
     %5 = mhlo.imag(%arg4) : (tensor<complex<f64>>) -> tensor<f64>
     %6 = "mhlo.compare"(%4, %5)
-      {comparison_direction = #mhlo<"comparison_direction LT">}
+      {comparison_direction = #mhlo<comparison_direction LT>}
       : (tensor<f64>, tensor<f64>) -> tensor<i1>
     %7 = "mhlo.compare"(%1, %2)
-      {comparison_direction = #mhlo<"comparison_direction LT">}
+      {comparison_direction = #mhlo<comparison_direction LT>}
       : (tensor<f64>, tensor<f64>) -> tensor<i1>
     %8 = "mhlo.select"(%3, %6, %7)
       : (tensor<i1>, tensor<i1>, tensor<i1>) -> tensor<i1>
@@ -2812,9 +2812,9 @@ func.func @variadic_reduce(%arg0: tensor<9x2xi32>, %arg1: tensor<9x2xi32>) -> (t
   %cst1 = mhlo.constant dense<0> : tensor<i32>
   %res0, %res1 = "mhlo.reduce"(%arg0, %arg1, %cst0, %cst1) ({
   ^bb0(%arg2: tensor<i32>, %arg3: tensor<i32>, %arg15: tensor<i32>, %arg16: tensor<i32>):
-    %669 = "mhlo.compare"(%arg2, %arg15) {comparison_direction = #mhlo<"comparison_direction GE">} : (tensor<i32>, tensor<i32>) -> tensor<i1>
+    %669 = "mhlo.compare"(%arg2, %arg15) {comparison_direction = #mhlo<comparison_direction GE>} : (tensor<i32>, tensor<i32>) -> tensor<i1>
     %670 = "mhlo.select"(%669, %arg2, %arg15) : (tensor<i1>, tensor<i32>, tensor<i32>) -> tensor<i32>
-    %671 = "mhlo.compare"(%arg2, %arg15) {comparison_direction = #mhlo<"comparison_direction EQ">} : (tensor<i32>, tensor<i32>) -> tensor<i1>
+    %671 = "mhlo.compare"(%arg2, %arg15) {comparison_direction = #mhlo<comparison_direction EQ>} : (tensor<i32>, tensor<i32>) -> tensor<i1>
     %672 = mhlo.minimum %arg3, %arg16 : tensor<i32>
     %673 = "mhlo.select"(%669, %arg3, %arg16) : (tensor<i1>, tensor<i32>, tensor<i32>) -> tensor<i32>
     %674 = "mhlo.select"(%671, %672, %673) : (tensor<i1>, tensor<i32>, tensor<i32>) -> tensor<i32>
@@ -2854,7 +2854,7 @@ func.func @variadic_diff_type_reduce(%arg0: tensor<128x10xf32>, %arg1: tensor<12
   %cst1 = mhlo.constant dense<1> : tensor<i32>
   %res0, %res1 = "mhlo.reduce"(%arg0, %arg1, %cst0, %cst1) ({
   ^bb0(%arg7: tensor<f32>, %arg8: tensor<i32>, %arg9: tensor<f32>, %arg10: tensor<i32>):
-    %0 = "mhlo.compare"(%arg7, %arg9) {comparison_direction = #mhlo<"comparison_direction GE">} : (tensor<f32>, tensor<f32>) -> tensor<i1>
+    %0 = "mhlo.compare"(%arg7, %arg9) {comparison_direction = #mhlo<comparison_direction GE>} : (tensor<f32>, tensor<f32>) -> tensor<i1>
     %1 = "mhlo.select"(%0, %arg7, %arg9) : (tensor<i1>, tensor<f32>, tensor<f32>) -> tensor<f32>
     %2 = "mhlo.select"(%0, %arg8, %arg10) : (tensor<i1>, tensor<i32>, tensor<i32>) -> tensor<i32>
     "mhlo.return"(%1, %2) : (tensor<f32>, tensor<i32>) -> ()
@@ -2990,7 +2990,7 @@ func.func @dynamic_slice_unsigned(%arg: tensor<3x4xui32>, %start1: tensor<i64>, 
 // -----
 
 func.func @dynamic_update_slice(%target: tensor<3x3xi32>, %update: tensor<2x2xi32>, %c0: tensor<i32>) -> tensor<3x3xi32> {
-  %0 = "mhlo.dynamic-update-slice"(%target, %update, %c0, %c0)
+  %0 = "mhlo.dynamic_update_slice"(%target, %update, %c0, %c0)
     : (tensor<3x3xi32>, tensor<2x2xi32>, tensor<i32>, tensor<i32>) -> tensor<3x3xi32>
   func.return %0 : tensor<3x3xi32>
 }
@@ -3017,7 +3017,7 @@ func.func @dynamic_update_slice(%target: tensor<3x3xi32>, %update: tensor<2x2xi3
 // -----
 
 func.func @dynamic_update_slice_unsigned(%target: tensor<3x3xui32>, %update: tensor<2x2xui32>, %c0: tensor<i32>) -> tensor<3x3xui32> {
-  %0 = "mhlo.dynamic-update-slice"(%target, %update, %c0, %c0)
+  %0 = "mhlo.dynamic_update_slice"(%target, %update, %c0, %c0)
     : (tensor<3x3xui32>, tensor<2x2xui32>, tensor<i32>, tensor<i32>) -> tensor<3x3xui32>
   func.return %0 : tensor<3x3xui32>
 }
@@ -3049,7 +3049,7 @@ func.func @dynamic_update_slice_unsigned(%target: tensor<3x3xui32>, %update: ten
 func.func @dynamic_update_slice_float(%target: tensor<3x3xf32>,
                                  %update: tensor<2x2xf32>,
                                  %c0: tensor<i32>) -> tensor<3x3xf32> {
-  %0 = "mhlo.dynamic-update-slice"(%target, %update, %c0, %c0)
+  %0 = "mhlo.dynamic_update_slice"(%target, %update, %c0, %c0)
     : (tensor<3x3xf32>, tensor<2x2xf32>, tensor<i32>, tensor<i32>) -> tensor<3x3xf32>
   func.return %0 : tensor<3x3xf32>
 }
@@ -3149,7 +3149,7 @@ func.func @pad_interior_negative(%arg0: tensor<12x4xui32>, %arg1: tensor<ui32>) 
 
 func.func @linalg.conv_0d_nc(%arg0: tensor<3x2xf32>, %arg1: tensor<2x3xf32>) -> tensor<3x3xf32> {
 
-  %0 = mhlo.convolution(%arg0, %arg1) dim_numbers = [b, f]x[i, o]->[b, f], window = {stride = [], pad = [], lhs_dilate = [], rhs_dilate = [], reverse = []} {batch_group_count = 1 : i64, feature_group_count = 1 : i64, precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">]} : (tensor<3x2xf32>, tensor<2x3xf32>) -> tensor<3x3xf32>
+  %0 = mhlo.convolution(%arg0, %arg1) dim_numbers = [b, f]x[i, o]->[b, f], window = {stride = [], pad = [], lhs_dilate = [], rhs_dilate = [], reverse = []} {batch_group_count = 1 : i64, feature_group_count = 1 : i64, precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>]} : (tensor<3x2xf32>, tensor<2x3xf32>) -> tensor<3x3xf32>
   func.return %0 : tensor<3x3xf32>
 }
 
@@ -3253,8 +3253,8 @@ func.func @conv_transpose_2d(%arg0: tensor<2x9x10x3xf32>,
     {
       batch_group_count = 1 : i64,
       feature_group_count = 1 : i64,
-      precision_config = [#mhlo<"precision DEFAULT">,
-                          #mhlo<"precision DEFAULT">]
+      precision_config = [#mhlo<precision DEFAULT>,
+                          #mhlo<precision DEFAULT>]
     } : (tensor<2x9x10x3xf32>, tensor<4x4x3x3xf32>) -> tensor<2x15x25x3xf32>
   return %0 : tensor<2x15x25x3xf32>
 }
@@ -4450,7 +4450,7 @@ func.func @torch_index_select(%arg0: tensor<5x1x5xi32>,
 func.func @rng_uniform_1d(%min: tensor<f32>, %max: tensor<f32>) -> tensor<10xf32>
 {
   %shape = arith.constant dense<[10]>  : tensor<1xi32>
-  %0 = "mhlo.rng_uniform"(%min, %max, %shape) : (tensor<f32>, tensor<f32>, tensor<1xi32>) -> tensor<10xf32>
+  %0 = "mhlo.rng"(%min, %max, %shape) {rng_distribution = #mhlo.rng_distribution<UNIFORM>} : (tensor<f32>, tensor<f32>, tensor<1xi32>) -> tensor<10xf32>
   func.return %0 : tensor<10xf32>
 }
 // CHECK-LABEL: func @rng_uniform_1d
@@ -4477,7 +4477,7 @@ func.func @rng_uniform_1d(%min: tensor<f32>, %max: tensor<f32>) -> tensor<10xf32
 func.func @rng_uniform_2d(%min: tensor<f32>, %max: tensor<f32>) -> tensor<3x3xf32>
 {
         %shape = arith.constant dense<[3, 3]>  : tensor<2xi32>
-        %0 = "mhlo.rng_uniform"(%min, %max, %shape) : (tensor<f32>, tensor<f32>, tensor<2xi32>) -> tensor<3x3xf32>
+        %0 = "mhlo.rng"(%min, %max, %shape) {rng_distribution = #mhlo.rng_distribution<UNIFORM>} : (tensor<f32>, tensor<f32>, tensor<2xi32>) -> tensor<3x3xf32>
         func.return %0 : tensor<3x3xf32>
 }
 // CHECK-LABEL: func @rng_uniform_2d
@@ -4509,7 +4509,7 @@ func.func @rng_uniform_2d(%min: tensor<f32>, %max: tensor<f32>) -> tensor<3x3xf3
 func.func @rng_uniform_3d(%min: tensor<f32>, %max: tensor<f32>) -> tensor<2x2x2xf32>
 {
         %shape = arith.constant dense<[2, 2, 2]>  : tensor<3xi32>
-        %0 = "mhlo.rng_uniform"(%min, %max, %shape) : (tensor<f32>, tensor<f32>, tensor<3xi32>) -> tensor<2x2x2xf32>
+        %0 = "mhlo.rng"(%min, %max, %shape) {rng_distribution = #mhlo.rng_distribution<UNIFORM>} : (tensor<f32>, tensor<f32>, tensor<3xi32>) -> tensor<2x2x2xf32>
         func.return %0 : tensor<2x2x2xf32>
 }
 // CHECK-LABEL: func @rng_uniform_3d
@@ -4545,7 +4545,7 @@ func.func @rng_uniform_3d(%min: tensor<f32>, %max: tensor<f32>) -> tensor<2x2x2x
 
 func.func @rng_uniform_dynamic_1d(%min: tensor<f32>, %max: tensor<f32>, %shape: tensor<1xi32>) -> tensor<?xf32>
 {
-  %0 = "mhlo.rng_uniform"(%min, %max, %shape) : (tensor<f32>, tensor<f32>, tensor<1xi32>) -> tensor<?xf32>
+  %0 = "mhlo.rng"(%min, %max, %shape) {rng_distribution = #mhlo.rng_distribution<UNIFORM>} : (tensor<f32>, tensor<f32>, tensor<1xi32>) -> tensor<?xf32>
   func.return %0 : tensor<?xf32>
 }
 // CHECK-LABEL: func @rng_uniform_dynamic_1d
@@ -4960,7 +4960,7 @@ func.func @unsigned_convert(%in: tensor<2x2xui32>) -> tensor<2x2xui64> {
 func.func @unsigned_compare(%lhs: tensor<2x2xui32>, %rhs: tensor<2x2xui32>) -> tensor<2x2xi1> {
   // CHECK: linalg.generic
   // CHECK: cmpi ugt
-  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<"comparison_direction GT">} : (tensor<2x2xui32>, tensor<2x2xui32>) -> tensor<2x2xi1>
+  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<comparison_direction GT>} : (tensor<2x2xui32>, tensor<2x2xui32>) -> tensor<2x2xi1>
   func.return %0 : tensor<2x2xi1>
 }
 
@@ -4970,7 +4970,7 @@ func.func @unsigned_compare(%lhs: tensor<2x2xui32>, %rhs: tensor<2x2xui32>) -> t
 func.func @pred_compare(%lhs: tensor<2x2xi1>, %rhs: tensor<2x2xi1>) -> tensor<2x2xi1> {
   // CHECK: linalg.generic
   // CHECK: cmpi ugt
-  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<"comparison_direction GT">} : (tensor<2x2xi1>, tensor<2x2xi1>) -> tensor<2x2xi1>
+  %0 = "mhlo.compare"(%lhs, %rhs) {comparison_direction = #mhlo<comparison_direction GT>} : (tensor<2x2xi1>, tensor<2x2xi1>) -> tensor<2x2xi1>
   func.return %0 : tensor<2x2xi1>
 }
 
@@ -5110,7 +5110,7 @@ func.func @dot_general(%arg0: tensor<?x?x?xf32>,
       rhs_batching_dimensions = [2],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">],
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>],
     someattr
   } : (tensor<?x?x?xf32>, tensor<?x?x?xf32>) -> tensor<?x?x?xf32>
   func.return %0 : tensor<?x?x?xf32>
@@ -5161,7 +5161,7 @@ func.func @dot_general_unsigned(%arg0: tensor<?x?x?xui32>,
       rhs_batching_dimensions = [2],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">],
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>],
     someattr
   } : (tensor<?x?x?xui32>, tensor<?x?x?xui32>) -> tensor<?x?x?xui32>
   func.return %0 : tensor<?x?x?xui32>
@@ -5183,7 +5183,7 @@ func.func @dot_general_complex(%arg0: tensor<?x?x?xcomplex<f32>>,
       rhs_batching_dimensions = [2],
       rhs_contracting_dimensions = [1]
     >,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">],
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>],
     someattr
   } : (tensor<?x?x?xcomplex<f32>>, tensor<?x?x?xcomplex<f32>>) -> tensor<?x?x?xcomplex<f32>>
   func.return %0 : tensor<?x?x?xcomplex<f32>>
@@ -5204,7 +5204,7 @@ func.func @dot_general_multiple_batch_dimensions(%arg0: tensor<3x4x2x4xi32>,
       rhs_batching_dimensions = [0, 1],
       lhs_contracting_dimensions = [2],
       rhs_contracting_dimensions = [3]>,
-    precision_config = [#mhlo<"precision DEFAULT">, #mhlo<"precision DEFAULT">],
+    precision_config = [#mhlo<precision DEFAULT>, #mhlo<precision DEFAULT>],
     someattr
   } : (tensor<3x4x2x4xi32>, tensor<3x4x3x2xi32>) -> tensor<3x4x4x3xi32>
   return %0 : tensor<3x4x4x3xi32>

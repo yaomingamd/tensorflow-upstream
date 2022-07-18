@@ -70,7 +70,7 @@ class HLO_ComparisonDirectionValue<string enumStr> :
 // TODO(b/228291745): Assert that $x and $y have the same shape.
 def : Pat<(TF_ApproximateEqualOp:$result $x, $y, $tolerance),
           (CHLO_BroadcastCompareOp
-           (HLO_AbsOp:$abs (HLO_SubOp $x, $y)),
+           (HLO_AbsOp:$abs (HLO_SubtractOp $x, $y)),
            (CastValueToElementType $result, (HLO_ConstantOp $tolerance), $abs),
            (NullDenseIntElementsAttr),
            HLO_ComparisonDirectionValue<"LT">,
@@ -454,7 +454,7 @@ def : Pattern<(TF_MatrixBandPartOp:$op AnyStaticShapeTensor:$input, $num_lower,
            (HLO_AndOp
             (CHLO_BroadcastCompareOp
              (HLO_NegOp $num_lower_or_m),
-             (HLO_SubOp:$offset
+             (HLO_SubtractOp:$offset
               (createIotaOp<"1"> $op, $input, $num_lower),
               (createIotaOp<"0"> $op, $input, $num_lower)
              ),
@@ -646,7 +646,7 @@ foreach Mapping = [
                    [TF_CoshOp, CHLO_CoshOp],
                    [TF_ComplexAbsOp, HLO_AbsOp],
                    [TF_ConjOp, CHLO_ConjOp],
-                   [TF_CosOp, HLO_CosOp],
+                   [TF_CosOp, HLO_CosineOp],
                    [TF_DigammaOp, CHLO_DigammaOp],
                    [TF_ExpOp, HLO_ExpOp],
                    [TF_Expm1Op, HLO_Expm1Op],
@@ -666,7 +666,7 @@ foreach Mapping = [
                    [TF_RsqrtOp, HLO_RsqrtOp],
                    [TF_SigmoidOp, HLO_LogisticOp],
                    [TF_SinhOp, CHLO_SinhOp],
-                   [TF_SinOp, HLO_SinOp],
+                   [TF_SinOp, HLO_SineOp],
                    [TF_SqrtOp, HLO_SqrtOp],
                    [TF_TanhOp, HLO_TanhOp],
                    [TF_TanOp, CHLO_TanOp]
@@ -716,19 +716,30 @@ def : Pat<(TF_BitcastOp:$res HLO_Tensor:$arg),
 //===----------------------------------------------------------------------===//
 // Random ops.
 //===----------------------------------------------------------------------===//
-
-foreach srcDstOpPair = [[TF_RandomUniformOp, HLO_RngUniformOp],
-                        [TF_RandomStandardNormalOp, HLO_RngNormalOp]] in {
 // TODO(b/148269299): handle random number generator seeds/states correctly.
-def : Pat<(srcDstOpPair[0]:$old $shape, $seed, $seed2),
-          (srcDstOpPair[1]
+
+class HLO_RngDistributionValue<string enumStr> :
+  ConstantAttr<HLO_RngDistributionAttr, "::mlir::mhlo::RngDistribution::" # enumStr>;
+
+def : Pat<(TF_RandomUniformOp:$old $shape, $seed, $seed2),
+          (HLO_RngOp
             (HLO_ConstantOp
               (NativeCodeCall<"$_builder.getFloatAttr(old.dtype(), 0.0)">)),
             (HLO_ConstantOp
               (NativeCodeCall<"$_builder.getFloatAttr(old.dtype(), 1.0)">)),
-            (CastValueToI64 $old, $shape)),
+            (CastValueToI64 $old, $shape),
+            HLO_RngDistributionValue<"UNIFORM">),
           [(IsShapedTensor $shape)]>;
-}
+
+def : Pat<(TF_RandomStandardNormalOp:$old $shape, $seed, $seed2),
+          (HLO_RngOp
+            (HLO_ConstantOp
+              (NativeCodeCall<"$_builder.getFloatAttr(old.dtype(), 0.0)">)),
+            (HLO_ConstantOp
+              (NativeCodeCall<"$_builder.getFloatAttr(old.dtype(), 1.0)">)),
+            (CastValueToI64 $old, $shape),
+            HLO_RngDistributionValue<"NORMAL">),
+          [(IsShapedTensor $shape)]>;
 
 //===----------------------------------------------------------------------===//
 // Sigmoid grad op.
@@ -739,7 +750,7 @@ def : Pat<(srcDstOpPair[0]:$old $shape, $seed, $seed2),
 def : Pat<(TF_SigmoidGradOp AnyRankedTensor:$l, AnyRankedTensor:$r),
           (HLO_MulOp
            (HLO_MulOp $r, $l),
-           (HLO_SubOp (HLO_ConstantOp (ConstantSplat<"1"> $l)), $l))>;
+           (HLO_SubtractOp (HLO_ConstantOp (ConstantSplat<"1"> $l)), $l))>;
 
 //===----------------------------------------------------------------------===//
 // Softplus op.

@@ -49,6 +49,9 @@ limitations under the License.
 #else
 #include "tensorflow/lite/arena_planner.h"
 #endif
+#ifdef TF_LITE_TENSORFLOW_PROFILER
+#include "tensorflow/lite/tensorflow_profiler_logger.h"
+#endif  // TF_LITE_TENSORFLOW_PROFILER
 
 namespace tflite {
 
@@ -230,12 +233,14 @@ Subgraph::Subgraph(ErrorReporter* error_reporter,
                    std::vector<std::unique_ptr<Subgraph>>* subgraphs,
                    resource::ResourceMap* resources,
                    resource::ResourceIDMap* resource_ids,
-                   resource::InitializationStatusMap* initialization_status_map)
+                   resource::InitializationStatusMap* initialization_status_map,
+                   int subgraph_index)
     : external_contexts_(external_contexts),
       error_reporter_(error_reporter),
       next_execution_plan_index_to_prepare_(0),
       next_execution_plan_index_to_plan_allocation_(0),
       subgraphs_(subgraphs),
+      subgraph_index_(subgraph_index),
       resources_(resources),
       resource_ids_(resource_ids),
       initialization_status_map_(initialization_status_map),
@@ -1053,6 +1058,9 @@ TfLiteStatus Subgraph::PrepareOpsStartingAt(
     const TfLiteRegistration& registration =
         nodes_and_registration_[node_index].second;
     EnsureTensorsVectorCapacity();
+#ifdef TF_LITE_TENSORFLOW_PROFILER
+    tflite::OnTfLiteOpPrepare(GetTFLiteOpName(registration), node_index);
+#endif  // TF_LITE_TENSORFLOW_PROFILER
     const TfLiteStatus op_prepare_status = OpPrepare(registration, &node);
     if (op_prepare_status != kTfLiteOk) {
       ReportOpError(&context_, node, registration, node_index,
@@ -1218,6 +1226,12 @@ TfLiteStatus Subgraph::Invoke() {
 
     const char* op_name = nullptr;
     if (profiler_) op_name = GetTFLiteOpName(registration);
+#ifdef TF_LITE_TENSORFLOW_PROFILER
+    if (!op_name) {
+      op_name = GetTFLiteOpName(registration);
+    }
+    tflite::OnTfLiteOpInvoke(op_name, node_index);
+#endif  // TF_LITE_TENSORFLOW_PROFILER
     TFLITE_SCOPED_TAGGED_OPERATOR_PROFILE(profiler_.get(), op_name, node_index);
 
     for (int i = 0; i < node.inputs->size; ++i) {

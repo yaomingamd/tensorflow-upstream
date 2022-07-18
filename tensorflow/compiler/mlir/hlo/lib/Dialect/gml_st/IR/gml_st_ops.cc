@@ -15,6 +15,12 @@ limitations under the License.
 
 #include "mlir-hlo/Dialect/gml_st/IR/gml_st_ops.h"
 
+#include <algorithm>
+#include <iterator>
+#include <memory>
+#include <utility>
+
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -52,30 +58,6 @@ ParseResult parseShapeTypeDimensionsList(
   }
   dims = vals;
   return success();
-}
-
-ParseResult parseI64ElementsAttr(OpAsmParser &parser,
-                                 DenseIntElementsAttr &attr) {
-  SmallVector<int64_t> values;
-  auto parseI64Element = [&]() {
-    return parser.parseInteger(values.emplace_back());
-  };
-  if (failed(parser.parseCommaSeparatedList(OpAsmParser::Delimiter::Square,
-                                            parseI64Element))) {
-    return failure();
-  }
-  OpBuilder b(parser.getContext());
-  attr = b.getI64TensorAttr(values);
-  return success();
-}
-
-void printI64ElementsAttr(OpAsmPrinter &printer, Operation *,
-                          DenseIntElementsAttr attr) {
-  printer << "[";
-  llvm::interleave(
-      attr.getValues<int64_t>(), printer, [&](int64_t val) { printer << val; },
-      ", ");
-  printer << "]";
 }
 
 }  // namespace
@@ -170,7 +152,7 @@ void LoopOp::build(OpBuilder &builder, OperationState &result,
                                 static_cast<int32_t>(outputs.size())}));
   result.addAttribute(getIteratorTypesAttrName(), iteratorTypes);
 
-  if (distributionTypes.hasValue())
+  if (distributionTypes.has_value())
     result.addAttribute(getDistributionTypesAttrName(),
                         distributionTypes.getValue());
 
@@ -234,7 +216,7 @@ void LoopOp::print(OpAsmPrinter &p) {
       }))
     p << " iterators" << iterator_types();
 
-  if (distribution_types().hasValue())
+  if (distribution_types().has_value())
     p << " distribution" << distribution_types().getValue();
 
   p << ' ';
@@ -579,7 +561,7 @@ void ParallelOp::build(
     builder.setInsertionPointToStart(bodyBlock);
     bodyBuilderFn(builder, result.location,
                   bodyBlock->getArguments().take_front(numIvs));
-    LoopOp::ensureTerminator(*bodyRegion, builder, result.location);
+    ParallelOp::ensureTerminator(*bodyRegion, builder, result.location);
   }
 }
 
@@ -667,7 +649,7 @@ void ForOp::build(
     bodyBuilderFn(builder, result.location,
                   bodyBlock->getArguments().take_front(numIvs),
                   bodyBlock->getArguments().take_back(outputs.size()));
-    LoopOp::ensureTerminator(*bodyRegion, builder, result.location);
+    ForOp::ensureTerminator(*bodyRegion, builder, result.location);
   }
 }
 
@@ -778,7 +760,7 @@ static bool isShapePreserving(LoopOp loopOp, int64_t arg) {
     using tensor::InsertSliceOp;
     value = llvm::TypeSwitch<Operation *, Value>(opResult.getOwner())
                 .template Case<InsertSliceOp>(
-                    [&](InsertSliceOp op) { return op.dest(); })
+                    [&](InsertSliceOp op) { return op.getDest(); })
                 .template Case<LoopOp>([&](LoopOp loopOp) {
                   return isShapePreserving(loopOp, opResult.getResultNumber())
                              ? loopOp.outputs()[opResult.getResultNumber()]
@@ -814,7 +796,7 @@ struct DimOfLoopInsOutsFolder : public OpRewritePattern<OpTy> {
 
   LogicalResult matchAndRewrite(OpTy dimOp,
                                 PatternRewriter &rewriter) const final {
-    auto src = dimOp.source().template dyn_cast<BlockArgument>();
+    auto src = dimOp.getSource().template dyn_cast<BlockArgument>();
     if (!src) return failure();
     auto loopOp = dyn_cast<LoopOp>(src.getOwner()->getParent()->getParentOp());
     if (!loopOp) return failure();
@@ -829,7 +811,8 @@ struct DimOfLoopInsOutsFolder : public OpRewritePattern<OpTy> {
     auto it1 = llvm::find(inputArgs, src);
     if (it1 != inputArgs.end()) {
       rewriter.updateRootInPlace(dimOp, [&] {
-        dimOp.sourceMutable().assign(loopOp.inputs()[it1 - inputArgs.begin()]);
+        dimOp.getSourceMutable().assign(
+            loopOp.inputs()[it1 - inputArgs.begin()]);
       });
       return success();
     }
@@ -838,7 +821,7 @@ struct DimOfLoopInsOutsFolder : public OpRewritePattern<OpTy> {
     auto it2 = llvm::find(outputArgs, src);
     if (it2 != outputArgs.end()) {
       rewriter.updateRootInPlace(dimOp, [&] {
-        dimOp.sourceMutable().assign(
+        dimOp.getSourceMutable().assign(
             loopOp.outputs()[it2 - outputArgs.begin()]);
       });
       return success();
@@ -873,13 +856,13 @@ struct DimOfLoopResultFolder : public OpRewritePattern<OpTy> {
 
   LogicalResult matchAndRewrite(OpTy dimOp,
                                 PatternRewriter &rewriter) const final {
-    auto loopOp = dimOp.source().template getDefiningOp<LoopOp>();
+    auto loopOp = dimOp.getSource().template getDefiningOp<LoopOp>();
     if (!loopOp) return failure();
-    auto opResult = dimOp.source().template cast<OpResult>();
+    auto opResult = dimOp.getSource().template cast<OpResult>();
     unsigned resultNumber = opResult.getResultNumber();
     if (!isShapePreserving(loopOp, resultNumber)) return failure();
     rewriter.updateRootInPlace(dimOp, [&]() {
-      dimOp.sourceMutable().assign(loopOp.outputs()[resultNumber]);
+      dimOp.getSourceMutable().assign(loopOp.outputs()[resultNumber]);
     });
     return success();
   }
@@ -1046,7 +1029,7 @@ struct TensorCastOfLoopInsOutsFolder : public OpRewritePattern<LoopOp> {
     for (auto arg : args) {
       if (auto cast = arg.getDefiningOp<tensor::CastOp>()) {
         result.ops.push_back(cast);
-        result.updatedArgs.push_back(cast.source());
+        result.updatedArgs.push_back(cast.getSource());
         result.castFound = true;
         continue;
       }
@@ -1117,7 +1100,7 @@ struct TensorCastOfLoopInsOutsFolder : public OpRewritePattern<LoopOp> {
         continue;
       }
       newYieldArgs.push_back(innerBuilder.create<tensor::CastOp>(
-          loc, argCast.source().getType(), bvm.lookup(yieldArg)));
+          loc, argCast.getSource().getType(), bvm.lookup(yieldArg)));
     }
     innerBuilder.create<YieldOp>(loc, newYieldArgs);
     return newResults;
@@ -1203,7 +1186,15 @@ LogicalResult LoopOp::fold(ArrayRef<Attribute>,
 
 LogicalResult YieldOp::verify() {
   auto *parentOp = getOperation()->getParentOp();
-  auto loopOp = dyn_cast<LoopOp>(parentOp);
+
+  if (auto setYield = dyn_cast<SetYieldOp>(parentOp)) {
+    if (values().size() != 1)
+      return emitOpError(
+          "expected a single argument for the terminator of accumulator "
+          "region");
+    return success();
+  }
+  auto loopOp = cast<LoopOp>(parentOp);
   // Check if output args with tensor types match results types.
   SmallVector<Value, 2> tensorOuts;
   llvm::copy_if(
@@ -1253,6 +1244,19 @@ LogicalResult SpaceOp::verify() {
       dynamic_sizes(), ShapedType::isDynamic);
 }
 
+unsigned SpaceOp::getNumDynamicEntriesUpToIdx(unsigned idx) {
+  return std::count_if(static_sizes().begin(), static_sizes().begin() + idx,
+                       [&](const mlir::Attribute size) {
+                         return mlir::ShapedType::isDynamic(
+                             size.cast<mlir::IntegerAttr>().getInt());
+                       });
+}
+
+mlir::Value SpaceOp::getDynamicSize(unsigned idx) {
+  auto numDynamic = getNumDynamicEntriesUpToIdx(idx);
+  return dynamic_sizes()[numDynamic];
+}
+
 //===----------------------------------------------------------------------===//
 // PointOp
 //===----------------------------------------------------------------------===//
@@ -1276,10 +1280,8 @@ LogicalResult PointOp::verify() {
     // Check whether the known indices are in-bounds of known dimension sizes.
     for (auto dimAndIndex : llvm::zip(tileShape, static_indices())) {
       auto dimSize = std::get<0>(dimAndIndex);
-      auto index = std::get<1>(dimAndIndex)
-                       .dyn_cast<mlir::IntegerAttr>()
-                       .getValue()
-                       .getSExtValue();
+      auto index =
+          std::get<1>(dimAndIndex).dyn_cast<mlir::IntegerAttr>().getInt();
       if (index == ShapedType::kDynamicStrideOrOffset) continue;
       if (index < 0) {
         return emitOpError("expected index = ")
@@ -1293,6 +1295,7 @@ LogicalResult PointOp::verify() {
   }
   return success();
 }
+
 //
 //===----------------------------------------------------------------------===//
 // TileOp
@@ -1381,6 +1384,169 @@ LogicalResult TileOp::verify() {
   return success();
 }
 
+namespace {
+
+OpFoldResult multiplyOperandsOrIntegers(OpBuilder &builder, Location loc,
+                                        OpFoldResult lhs, OpFoldResult rhs) {
+  // Both operands are static.
+  if (lhs.is<Attribute>() && rhs.is<Attribute>()) {
+    return builder.getI64IntegerAttr(
+        lhs.get<Attribute>().cast<IntegerAttr>().getInt() *
+        rhs.get<Attribute>().cast<IntegerAttr>().getInt());
+  }
+
+  // Exploit commutativity and move static operand to the left (if any).
+  if (rhs.is<Attribute>()) std::swap(lhs, rhs);
+
+  // Create constant if needed.
+  if (lhs.is<Attribute>()) {
+    int64_t lhsInt = lhs.get<Attribute>().cast<IntegerAttr>().getInt();
+
+    // Exploit static operand if possible.
+    if (lhsInt == 0) return lhs;
+    if (lhsInt == 1) return rhs;
+
+    lhs = builder.create<arith::ConstantIndexOp>(loc, lhsInt).getResult();
+  }
+
+  // Multiply.
+  return builder.create<arith::MulIOp>(loc, lhs.get<Value>(), rhs.get<Value>())
+      .getResult();
+}
+
+OpFoldResult addOperandsOrIntegers(OpBuilder &builder, Location loc,
+                                   OpFoldResult lhs, OpFoldResult rhs) {
+  // Both operands are static.
+  if (lhs.is<Attribute>() && rhs.is<Attribute>()) {
+    return builder.getI64IntegerAttr(
+        lhs.get<Attribute>().cast<IntegerAttr>().getInt() +
+        rhs.get<Attribute>().cast<IntegerAttr>().getInt());
+  }
+
+  // Exploit commutativity and move static operand to the left (if any).
+  if (rhs.is<Attribute>()) std::swap(lhs, rhs);
+
+  // Create constant if needed.
+  if (lhs.is<Attribute>()) {
+    int64_t lhsInt = lhs.get<Attribute>().cast<IntegerAttr>().getInt();
+
+    // Exploit static operand if possible.
+    if (lhsInt == 0) return rhs;
+
+    lhs = builder.create<arith::ConstantIndexOp>(loc, lhsInt).getResult();
+  }
+
+  // Add.
+  return builder.create<arith::AddIOp>(loc, lhs.get<Value>(), rhs.get<Value>())
+      .getResult();
+}
+
+// Compose offsets with newOffset = supersetOffset + supersetStride * offset.
+SmallVector<OpFoldResult> composeOffsets(
+    const llvm::SmallVectorImpl<OpFoldResult> &supersetOffsets,
+    const llvm::SmallVectorImpl<OpFoldResult> &supersetStrides,
+    const llvm::SmallVectorImpl<OpFoldResult> &offsets, Location loc,
+    OpBuilder &builder) {
+  SmallVector<OpFoldResult> composedOffsets;
+  for (auto it : llvm::zip(supersetOffsets, supersetStrides, offsets)) {
+    composedOffsets.push_back(addOperandsOrIntegers(
+        builder, loc, std::get<0>(it),
+        multiplyOperandsOrIntegers(builder, loc, std::get<1>(it),
+                                   std::get<2>(it))));
+  }
+  return composedOffsets;
+}
+
+// Compose strides with newStride = supersetStride * stride.
+SmallVector<OpFoldResult> composeStrides(
+    OpBuilder &builder, Location loc,
+    const llvm::SmallVectorImpl<OpFoldResult> &supersetStrides,
+    const llvm::SmallVectorImpl<OpFoldResult> &strides) {
+  SmallVector<OpFoldResult> composedStrides;
+  for (auto it : llvm::zip(supersetStrides, strides)) {
+    composedStrides.push_back(multiplyOperandsOrIntegers(
+        builder, loc, std::get<0>(it), std::get<1>(it)));
+  }
+  return composedStrides;
+}
+
+}  // namespace
+
+Value TileOp::compose(OpBuilder &builder) {
+  auto supersetOp = llvm::dyn_cast_or_null<TileOp>(superset().getDefiningOp());
+  if (!supersetOp) return {};
+
+  // Compose offsets with newOffset = supersetOffset + supersetStride *
+  // offset.
+  auto loc = getLoc();
+  auto composedOffsets = decomposeMixedStridesOrOffsets(
+      builder,
+      composeOffsets(supersetOp.getMixedOffsets(), supersetOp.getMixedStrides(),
+                     getMixedOffsets(), loc, builder));
+
+  // Compose strides with newStride = supersetStride * stride.
+  auto composedStrides = decomposeMixedStridesOrOffsets(
+      builder, composeStrides(builder, loc, supersetOp.getMixedStrides(),
+                              getMixedStrides()));
+
+  // Build the composed tile op.
+  return builder.create<TileOp>(loc, supersetOp.superset(),
+                                composedOffsets.second, sizes(),
+                                composedStrides.second, composedOffsets.first,
+                                static_sizes(), composedStrides.first);
+}
+
+//===----------------------------------------------------------------------===//
+// PointOp
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+// TODO(frgossen): Move this upstream to the ViewLikeInterface
+SmallVector<OpFoldResult> getMixedImpl(ArrayAttr staticValues,
+                                       ValueRange dynamicValues,
+                                       const int64_t dynamicValuePlaceholder) {
+  int64_t idxDynamic = 0;
+  SmallVector<OpFoldResult> result;
+  for (const auto &staticAttr : staticValues) {
+    int64_t staticInt = staticAttr.cast<IntegerAttr>().getInt();
+    if (staticInt == dynamicValuePlaceholder) {
+      result.push_back(dynamicValues[idxDynamic++]);
+    } else {
+      result.push_back(staticAttr);
+    }
+  }
+  return result;
+}
+
+// TODO(frgossen): Move this upstream to the ViewLikeInterface
+SmallVector<OpFoldResult> getMixedStridesOrOffsets(ArrayAttr staticValues,
+                                                   ValueRange dynamicValues) {
+  return getMixedImpl(staticValues, dynamicValues,
+                      ShapedType::kDynamicStrideOrOffset);
+}
+
+}  // namespace
+
+Value PointOp::compose(OpBuilder &builder) {
+  auto supersetOp = llvm::dyn_cast_or_null<TileOp>(superset().getDefiningOp());
+  if (!supersetOp) return {};
+
+  // Compose offsets with newOffset = supersetOffset + supersetStride *
+  // offset.
+  auto loc = getLoc();
+  auto composedOffsets = decomposeMixedStridesOrOffsets(
+      builder,
+      composeOffsets(
+          supersetOp.getMixedOffsets(), supersetOp.getMixedStrides(),
+          getMixedStridesOrOffsets(static_indices(), dynamic_indices()), loc,
+          builder));
+
+  // Build the composed point op.
+  return builder.create<PointOp>(loc, supersetOp.superset(),
+                                 composedOffsets.second, composedOffsets.first);
+}
+
 //===----------------------------------------------------------------------===//
 // CollapseTileOp
 //===----------------------------------------------------------------------===//
@@ -1398,8 +1564,7 @@ LogicalResult CollapseTileOp::inferReturnTypes(
   // Derive result shape.
   CollapseTileOp::Adaptor adaptor(operands, attributes, regions);
   SmallVector<int64_t> shape = llvm::to_vector(llvm::map_range(
-      adaptor.remaining_dims(),
-      [&](const auto &d) { return argShape[d.getLimitedValue()]; }));
+      adaptor.remaining_dims(), [&](const auto &d) { return argShape[d]; }));
 
   auto resultTy = TileType::get(ctx, shape);
   inferredReturnTypes.push_back(resultTy);
@@ -1407,10 +1572,318 @@ LogicalResult CollapseTileOp::inferReturnTypes(
 }
 
 //===----------------------------------------------------------------------===//
+// TransposeTileOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult TransposeTileOp::inferReturnTypes(
+    MLIRContext *ctx, Optional<Location> /*loc*/, ValueRange operands,
+    DictionaryAttr attributes, RegionRange regions,
+    SmallVectorImpl<Type> &inferredReturnTypes) {
+  // Get argument tile type.
+  TransposeTileOp::Adaptor adaptor(operands, attributes, regions);
+  auto argTy = adaptor.superset().getType().dyn_cast<TileType>();
+  if (!argTy) return failure();
+  auto argShape = argTy.getShape();
+
+  // Derive result shape.
+  SmallVector<int64_t> shape = llvm::to_vector(llvm::map_range(
+      adaptor.permutation(), [&](const auto &d) { return argShape[d]; }));
+
+  auto resultTy = TileType::get(ctx, shape);
+  inferredReturnTypes.push_back(resultTy);
+  return success();
+}
+
+Value TransposeTileOp::compose(OpBuilder &builder) {
+  // We can compose with a TileOp operand which has a SpaceOp operand, or
+  // compose with a SpaceOp operand. transpose_tile(tile(space, offsets, sizes,
+  // strides)) is replaced by tile(transpose(space), transpose(offsets),
+  // transpose(sizes), transpose(strides)). transpose_tile(space) is replaced by
+  // transpose(space).
+  Operation *definingOp = superset().getDefiningOp();
+  auto spaceOp = llvm::dyn_cast_or_null<SpaceOp>(definingOp);
+  auto tileOp = llvm::dyn_cast_or_null<TileOp>(definingOp);
+  if (tileOp) {
+    spaceOp =
+        llvm::dyn_cast_or_null<SpaceOp>(tileOp.superset().getDefiningOp());
+  }
+  if (!spaceOp) return {};
+
+  auto loc = getLoc();
+  ArrayRef<int64_t> perm = permutation();
+  int64_t rank = perm.size();
+
+  // Create a new space op that has the permutation applied.
+  SmallVector<Value> dynamicDims;
+  SmallVector<Attribute> staticDims;
+  SmallVector<int64_t> shape;
+  auto originalShape = spaceOp.getType().getShape();
+  dynamicDims.reserve(spaceOp.dynamic_sizes().size());
+  staticDims.reserve(rank);
+  shape.reserve(rank);
+  for (int64_t dim : perm) {
+    shape.push_back(originalShape[dim]);
+    staticDims.push_back(spaceOp.static_sizes()[dim]);
+    if (ShapedType::isDynamic(staticDims.back().cast<IntegerAttr>().getInt())) {
+      dynamicDims.push_back(spaceOp.getDynamicSize(dim));
+    }
+  }
+  auto spaceTy = builder.getType<TileType>(shape);
+  Value newSpace = builder.create<SpaceOp>(loc, spaceTy, dynamicDims,
+                                           builder.getArrayAttr(staticDims));
+  if (!tileOp) return newSpace;
+
+  // Otherwise we need to apply the permutation to the 'tileOp' operand.
+  SmallVector<Value> inputTileOffsets, inputTileSizes, inputTileStrides;
+  SmallVector<int64_t> inputStaticOffsets, inputStaticSizes, inputStaticStrides;
+  inputStaticOffsets.reserve(rank);
+  inputStaticSizes.reserve(rank);
+  inputStaticStrides.reserve(rank);
+  inputTileOffsets.reserve(tileOp.offsets().size());
+  inputTileSizes.reserve(tileOp.sizes().size());
+  inputTileStrides.reserve(tileOp.strides().size());
+  for (int64_t dim : perm) {
+    if (tileOp.isDynamicOffset(dim)) {
+      inputTileOffsets.push_back(tileOp.getDynamicOffset(dim));
+      inputStaticOffsets.push_back(ShapedType::kDynamicStrideOrOffset);
+    } else {
+      inputStaticOffsets.push_back(tileOp.getStaticOffset(dim));
+    }
+    if (tileOp.isDynamicSize(dim)) {
+      inputTileSizes.push_back(tileOp.getDynamicSize(dim));
+      inputStaticSizes.push_back(ShapedType::kDynamicSize);
+    } else {
+      inputStaticSizes.push_back(tileOp.getStaticSize(dim));
+    }
+    if (tileOp.isDynamicStride(dim)) {
+      inputTileStrides.push_back(tileOp.getDynamicStride(dim));
+      inputStaticStrides.push_back(ShapedType::kDynamicStrideOrOffset);
+    } else {
+      inputStaticStrides.push_back(tileOp.getStaticStride(dim));
+    }
+  }
+
+  return builder.create<TileOp>(loc, getType(), newSpace, inputTileOffsets,
+                                inputTileSizes, inputTileStrides,
+                                builder.getI64ArrayAttr(inputStaticOffsets),
+                                builder.getI64ArrayAttr(inputStaticSizes),
+                                builder.getI64ArrayAttr(inputStaticStrides));
+}
+
+LogicalResult TransposeTileOp::verify() {
+  TileType type = getType();
+  int64_t rank = type.getShape().size();
+  // 'permutation' should have 'rank' elements.
+  if (permutation().size() != rank) {
+    return emitOpError("expected permutation attribute size = ")
+           << permutation().size() << " to match rank = " << rank;
+  }
+  // Verify that 'permutation' is in fact a permutation.
+  // Store where a certain number occurred.
+  SmallVector<int64_t> position(rank, -1);
+  for (const auto &it : llvm::enumerate(permutation())) {
+    int64_t dim = it.value();
+    if (dim < 0 || dim >= rank) {
+      return emitOpError("permutation[")
+             << it.index() << "] = " << dim << " is outside of range [0, "
+             << rank - 1 << "]";
+    }
+    if (position[dim] >= 0) {
+      return emitOpError(
+                 "expected permutation attribute to contain no duplicate "
+                 "values, but got ")
+             << dim << " at positions " << position[dim] << " and "
+             << it.index();
+    }
+    position[dim] = it.index();
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SetYieldOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult SetYieldOp::verify() { return success(); }
+using AccumulatorRegionBuilderFn =
+    function_ref<void(OpBuilder &, Location, Value, Value)>;
+
+void SetYieldOp::build(OpBuilder &builder, OperationState &result) {
+  build(builder, result, llvm::None, llvm::None, llvm::None);
+}
+
+void SetYieldOp::build(OpBuilder &builder, OperationState &result,
+                       ValueRange srcs, ValueRange dsts, ValueRange sets) {
+  SmallVector<bool, 2> accumulatorFlags(srcs.size(), false);
+  build(builder, result, srcs, dsts, sets,
+        builder.getBoolArrayAttr(accumulatorFlags), llvm::None);
+}
+
+void SetYieldOp::build(
+    OpBuilder &builder, OperationState &result, ValueRange srcs,
+    ValueRange dsts, ValueRange sets, ArrayAttr accumulatorFlags,
+    ArrayRef<AccumulatorRegionBuilderFn> accumulatorBuilderFns) {
+  assert(dsts.size() == srcs.size() &&
+         "`dsts` and `srcs` should have the same size");
+  assert(sets.size() == srcs.size() &&
+         "`sets` and `srcs` should have the same size");
+  assert(accumulatorFlags.size() == srcs.size() &&
+         "`accumulatorFlags` and `srcs` should have the same size");
+
+  auto accumulatorCount = llvm::count_if(accumulatorFlags, [](Attribute attr) {
+    return attr.cast<BoolAttr>().getValue();
+  });
+  (void)accumulatorCount;
+  assert(accumulatorCount == accumulatorBuilderFns.size() &&
+         "the number of flags set in `accumulatorFlags` attribute should be "
+         "equal to the number of `accumulatorBuilderFns`");
+
+  result.addOperands(srcs);
+  result.addOperands(dsts);
+  result.addOperands(sets);
+  result.addAttribute(SetYieldOp::accumulatorFlagsAttrName(result.name),
+                      accumulatorFlags);
+
+  const auto *builderFnIt = accumulatorBuilderFns.begin();
+  for (auto item : llvm::zip(srcs, accumulatorFlags)) {
+    Value src = std::get<0>(item);
+    auto accumulatorFlag = std::get<1>(item).cast<BoolAttr>();
+
+    if (!accumulatorFlag.getValue()) continue;
+    Region *region = result.addRegion();
+    OpBuilder::InsertionGuard g(builder);
+    SmallVector<Type, 2> argTypes(2, src.getType());
+    builder.createBlock(region);
+    Block &bodyBlock = region->front();
+    bodyBlock.addArguments(argTypes, {result.location, result.location});
+
+    builder.setInsertionPointToStart(&bodyBlock);
+    (*builderFnIt)(builder, result.location, bodyBlock.getArgument(0),
+                   bodyBlock.getArgument(1));
+    std::next(builderFnIt);
+  }
+}
+
+LogicalResult SetYieldOp::verify() {
+  auto accumulatorCount = llvm::count_if(
+      accumulatorFlags(),
+      [](Attribute attr) { return attr.cast<BoolAttr>().getValue(); });
+  if (accumulatorCount != accumulators().size())
+    return emitOpError("expected the number of accumulator regions ")
+           << accumulators().size()
+           << " to match the number of set accumulator flags "
+           << accumulatorCount;
+
+  auto *regionIt = accumulators().begin();
+  for (auto item : llvm::zip(srcs(), accumulatorFlags())) {
+    Type srcType = std::get<0>(item).getType();
+    BoolAttr accumulatorFlag = std::get<1>(item).cast<BoolAttr>();
+    if (!accumulatorFlag.getValue()) continue;
+
+    Block &block = regionIt->front();
+    if (block.getArgumentTypes() != SmallVector<Type>{srcType, srcType})
+      return emitOpError()
+             << "expected accumulator region to have 2 arguments of type "
+             << srcType;
+    std::next(regionIt);
+  }
+  return success();
+}
+
+void SetYieldOp::print(OpAsmPrinter &p) {
+  p.printOptionalAttrDict(getOperation()->getAttrs(), /*elidedAttrs = */
+                          {accumulatorFlagsAttrName().str()});
+
+  auto *regionIt = getOperation()->getRegions().begin();
+  for (auto &en :
+       llvm::enumerate(llvm::zip(srcs(), dsts(), sets(), accumulatorFlags()))) {
+    if (en.index() > 0) p.printNewline();
+    Value src = std::get<0>(en.value());
+    Value dst = std::get<1>(en.value());
+    Value set = std::get<2>(en.value());
+    auto accumulatorFlag = std::get<3>(en.value()).cast<BoolAttr>();
+
+    p << ' ' << src << " into " << dst << '[' << set << ']';
+
+    if (accumulatorFlag.getValue()) {
+      auto &block = regionIt->getBlocks().front();
+      Value newValue = block.getArgument(0);
+      Value oldValue = block.getArgument(1);
+      p << " acc (" << newValue << ", " << oldValue << ": "
+        << oldValue.getType() << ") ";
+
+      p.printRegion(*regionIt, false);
+      std::next(regionIt);
+    }
+
+    p << " : " << src.getType() << " into " << dst.getType() << '['
+      << set.getType() << ']';
+  }
+}
+
+ParseResult SetYieldOp::parse(OpAsmParser &parser, OperationState &result) {
+  if (parser.parseOptionalAttrDict(result.attributes)) return failure();
+
+  SmallVector<bool, 2> accumulatorFlags;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> srcs, dsts, sets;
+  SmallVector<Type, 4> srcTypes, dstTypes, setTypes;
+
+  auto parseElt = [&]() -> ParseResult {
+    OpAsmParser::UnresolvedOperand src;
+    auto parseResult = parser.parseOptionalOperand(src, false);
+
+    if (!parseResult.hasValue()) return success();
+    srcs.push_back(src);
+
+    if (parser.parseKeyword("into") ||
+        parser.parseOperand(dsts.emplace_back()) || parser.parseLSquare() ||
+        parser.parseOperand(sets.emplace_back()) || parser.parseRSquare())
+      return failure();
+
+    OpBuilder b(parser.getBuilder().getContext());
+    bool hasAccumulatorRegion = succeeded(parser.parseOptionalKeyword("acc"));
+    accumulatorFlags.push_back(hasAccumulatorRegion);
+    if (hasAccumulatorRegion) {
+      auto region = std::make_unique<Region>();
+      OpAsmParser::UnresolvedOperand newValue, oldValue;
+      Type argType;
+      if (parser.parseLParen() || parser.parseOperand(newValue) ||
+          parser.parseComma() || parser.parseOperand(oldValue) ||
+          parser.parseColonType(argType) || parser.parseRParen())
+        return failure();
+
+      SmallVector<OpAsmParser::Argument, 4> regionArgs;
+      for (auto value : {newValue, oldValue}) {
+        auto &arg = regionArgs.emplace_back();
+        arg.ssaName = value;
+        arg.type = argType;
+      }
+
+      if (parser.parseRegion(*region, regionArgs)) return failure();
+      result.addRegion(std::move(region));
+    }
+    if (parser.parseColon() || parser.parseType(srcTypes.emplace_back()) ||
+        parser.parseKeyword("into") ||
+        parser.parseType(dstTypes.emplace_back()) || parser.parseLSquare() ||
+        parser.parseType(setTypes.emplace_back()) || parser.parseRSquare())
+      return failure();
+
+    return success();
+  };
+  if (parser.parseCommaSeparatedList(AsmParser::Delimiter::None, parseElt))
+    return failure();
+
+  if (parser.resolveOperands(srcs, srcTypes, parser.getCurrentLocation(),
+                             result.operands) ||
+      parser.resolveOperands(dsts, dstTypes, parser.getCurrentLocation(),
+                             result.operands) ||
+      parser.resolveOperands(sets, setTypes, parser.getCurrentLocation(),
+                             result.operands))
+    return failure();
+
+  result.addAttribute(SetYieldOp::accumulatorFlagsAttrName(result.name),
+                      parser.getBuilder().getBoolArrayAttr(accumulatorFlags));
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // DynamicBroadcastInDimOp
@@ -1457,12 +1930,12 @@ Value DynamicBroadcastInDimOp::fuse(Location loc, Value set,
 
   // Materialize offsets and sizes for operand tile.
   auto collapsedTile =
-      builder.create<CollapseTileOp>(loc, tile, broadcast_dimensions());
+      builder.create<CollapseTileOp>(loc, tile, broadcast_dimensionsAttr());
   SmallVector<Value> argTileOffsets;
   SmallVector<Value> argTileSizes;
   for (const auto &it : llvm::enumerate(broadcast_dimensions())) {
     Value argIdx = getIndexConstant(it.index());
-    Value resultIdx = getIndexConstant(it.value().getLimitedValue());
+    Value resultIdx = getIndexConstant(it.value());
 
     // If corresponding operand and result dimensions are different, the
     // dimension is expanding.
@@ -1501,8 +1974,65 @@ Value DynamicBroadcastInDimOp::fuse(Location loc, Value set,
   auto tiledResultTy =
       RankedTensorType::get(tileTy.getShape(), resultTy.getElementType());
   return builder.create<DynamicBroadcastInDimOp>(
-      loc, tiledResultTy, tiledInit, tiledOperand, broadcast_dimensions(),
+      loc, tiledResultTy, tiledOperand, tiledInit, broadcast_dimensionsAttr(),
       known_expanding_dimensionsAttr(), known_nonexpanding_dimensionsAttr());
+}
+
+//===----------------------------------------------------------------------===//
+// OffsetOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult OffsetOp::fold(ArrayRef<Attribute> operands) {
+  auto idxAttr = operands[1].dyn_cast_or_null<IntegerAttr>();
+  if (!idxAttr) return {};
+
+  if (auto tileOp = tile().getDefiningOp<TileOp>()) {
+    auto idx = idxAttr.getInt();
+    if (tileOp.isDynamicOffset(idx)) return tileOp.getDynamicOffset(idx);
+
+    Builder b(idxAttr.getContext());
+    return b.getIndexAttr(tileOp.getStaticOffset(idx));
+  }
+  // TODO(unknown): Handle space op, as well.
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// SizeOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult SizeOp::fold(ArrayRef<Attribute> operands) {
+  auto idxAttr = operands[1].dyn_cast_or_null<IntegerAttr>();
+  if (!idxAttr) return {};
+
+  if (auto tileOp = tile().getDefiningOp<TileOp>()) {
+    auto idx = idxAttr.getInt();
+    if (tileOp.isDynamicSize(idx)) return tileOp.getDynamicSize(idx);
+
+    Builder b(idxAttr.getContext());
+    return b.getIndexAttr(tileOp.getStaticSize(idx));
+  }
+  // TODO(unknown): Handle space op, as well.
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// StrideOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StrideOp::fold(ArrayRef<Attribute> operands) {
+  auto idxAttr = operands[1].dyn_cast_or_null<IntegerAttr>();
+  if (!idxAttr) return {};
+
+  if (auto tileOp = tile().getDefiningOp<TileOp>()) {
+    auto idx = idxAttr.getInt();
+    if (tileOp.isDynamicStride(idx)) return tileOp.getDynamicStride(idx);
+
+    Builder b(idxAttr.getContext());
+    return b.getIndexAttr(tileOp.getStaticStride(idx));
+  }
+  // TODO(unknown): Handle space op, as well.
+  return {};
 }
 
 }  // namespace gml_st

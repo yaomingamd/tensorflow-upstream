@@ -156,14 +156,30 @@ typedef struct {
   PJRT_Device** addressable_devices;  // out
   size_t num_addressable_devices;     // out
 } PJRT_Client_AddressableDevices_Args;
-const size_t PJRT_Client_AddressableDevices_Args_STRUCT_SIZE =
-    PJRT_STRUCT_SIZE(PJRT_Client_AddressableDevices_Args, addressable_devices);
+const size_t PJRT_Client_AddressableDevices_Args_STRUCT_SIZE = PJRT_STRUCT_SIZE(
+    PJRT_Client_AddressableDevices_Args, num_addressable_devices);
 
 // Returns a list of devices that are addressable from the client.
 // Addressable devices are those that the client can issue commands to.
 // All devices are addressable in a single-process environment.
 typedef PJRT_Error* PJRT_Client_AddressableDevices(
     PJRT_Client_AddressableDevices_Args* args);
+
+typedef struct {
+  size_t struct_size;
+  void* priv;
+  PJRT_Client* client;
+  int id;
+  // `device` has the same lifetime as `client`. It is owned by `client`.
+  PJRT_Device* device;  // out
+} PJRT_Client_LookupDevice_Args;
+
+const size_t PJRT_Client_LookupDevice_Args_STRUCT_SIZE =
+    PJRT_STRUCT_SIZE(PJRT_Client_LookupDevice_Args, device);
+
+// Returns a PJRT_Device* with the specified ID as returned by PJRT_Device_Id.
+typedef PJRT_Error* PJRT_Client_LookupDevice(
+    PJRT_Client_LookupDevice_Args* args);
 
 // --------------------------------- Devices -----------------------------------
 
@@ -210,6 +226,22 @@ const size_t PJRT_Device_IsAddressable_Args_STRUCT_SIZE =
 // Whether client can issue command to this device.
 typedef PJRT_Error* PJRT_Device_IsAddressable(
     PJRT_Device_IsAddressable_Args* args);
+
+typedef struct {
+  size_t struct_size;
+  void* priv;
+  PJRT_Device* device;
+  // `device_kind` string is owned by `device` and has same lifetime as
+  // `device`.
+  const char* device_kind;  // out
+  size_t device_kind_size;  // out
+} PJRT_Device_Kind_Args;
+const size_t PJRT_Device_Kind_Args_STRUCT_SIZE =
+    PJRT_STRUCT_SIZE(PJRT_Device_Kind_Args, device_kind_size);
+
+// A vendor-dependent string that uniquely identifies the kind of device,
+// e.g., "Tesla V100-SXM2-16GB".
+typedef PJRT_Error* PJRT_Device_Kind(PJRT_Device_Kind_Args* args);
 
 // ------------------------------- Executables ---------------------------------
 
@@ -295,6 +327,20 @@ typedef struct {
   size_t struct_size;
   void* priv;
   PJRT_Buffer* buffer;
+  size_t on_device_size_in_bytes;  // out
+} PJRT_Buffer_OnDeviceSizeInBytes_Args;
+const size_t PJRT_Buffer_OnDeviceSizeInBytes_Args_STRUCT_SIZE =
+    PJRT_STRUCT_SIZE(PJRT_Buffer_OnDeviceSizeInBytes_Args,
+                     on_device_size_in_bytes);
+
+// Gets the number of bytes of the buffer storage on the device
+typedef PJRT_Error* PJRT_Buffer_OnDeviceSizeInBytes(
+    PJRT_Buffer_OnDeviceSizeInBytes_Args* args);
+
+typedef struct {
+  size_t struct_size;
+  void* priv;
+  PJRT_Buffer* buffer;
 } PJRT_Buffer_Delete_Args;
 const size_t PJRT_Buffer_Delete_Args_STRUCT_SIZE =
     PJRT_STRUCT_SIZE(PJRT_Buffer_Delete_Args, buffer);
@@ -332,48 +378,49 @@ typedef PJRT_Error* PJRT_Buffer_IsOnCpu(PJRT_Buffer_IsOnCpu_Args* args);
 
 // -------------------------------- API access ---------------------------------
 
-#define PJRT_API_STRUCT_FIELD(fn_type) fn_type* fn_type
+#define _PJRT_API_STRUCT_FIELD(fn_type) fn_type* fn_type
 
 // Please modify PJRT_Api_STRUCT_SIZE if the last field of PJRT_Api is changed.
 typedef struct {
   size_t struct_size;
   void* priv;
 
-  PJRT_API_STRUCT_FIELD(PJRT_Error_Destroy);
-  PJRT_API_STRUCT_FIELD(PJRT_Error_Message);
+  _PJRT_API_STRUCT_FIELD(PJRT_Error_Destroy);
+  _PJRT_API_STRUCT_FIELD(PJRT_Error_Message);
 
-  PJRT_API_STRUCT_FIELD(PJRT_Client_Create);
-  PJRT_API_STRUCT_FIELD(PJRT_Client_Destroy);
-  PJRT_API_STRUCT_FIELD(PJRT_Client_PlatformName);
-  PJRT_API_STRUCT_FIELD(PJRT_Client_ProcessIndex);
-  PJRT_API_STRUCT_FIELD(PJRT_Client_PlatformVersion);
-  PJRT_API_STRUCT_FIELD(PJRT_Client_Devices);
-  PJRT_API_STRUCT_FIELD(PJRT_Client_AddressableDevices);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_Create);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_Destroy);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_PlatformName);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_ProcessIndex);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_PlatformVersion);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_Devices);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_AddressableDevices);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_LookupDevice);
 
-  PJRT_API_STRUCT_FIELD(PJRT_Device_Id);
-  PJRT_API_STRUCT_FIELD(PJRT_Device_ProcessIndex);
-  PJRT_API_STRUCT_FIELD(PJRT_Device_IsAddressable);
+  _PJRT_API_STRUCT_FIELD(PJRT_Device_Id);
+  _PJRT_API_STRUCT_FIELD(PJRT_Device_ProcessIndex);
+  _PJRT_API_STRUCT_FIELD(PJRT_Device_IsAddressable);
+  _PJRT_API_STRUCT_FIELD(PJRT_Device_Kind);
 
-  PJRT_API_STRUCT_FIELD(PJRT_Executable_Destroy);
-  PJRT_API_STRUCT_FIELD(PJRT_Executable_Name);
-  PJRT_API_STRUCT_FIELD(PJRT_Executable_AddressableDevices);
-  PJRT_API_STRUCT_FIELD(PJRT_Executable_Delete);
-  PJRT_API_STRUCT_FIELD(PJRT_Executable_IsDeleted);
+  _PJRT_API_STRUCT_FIELD(PJRT_Executable_Destroy);
+  _PJRT_API_STRUCT_FIELD(PJRT_Executable_Name);
+  _PJRT_API_STRUCT_FIELD(PJRT_Executable_AddressableDevices);
+  _PJRT_API_STRUCT_FIELD(PJRT_Executable_Delete);
+  _PJRT_API_STRUCT_FIELD(PJRT_Executable_IsDeleted);
 
-  PJRT_API_STRUCT_FIELD(PJRT_Buffer_Delete);
-  PJRT_API_STRUCT_FIELD(PJRT_Buffer_IsDeleted);
-  PJRT_API_STRUCT_FIELD(PJRT_Buffer_IsOnCpu);
+  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_OnDeviceSizeInBytes);
+  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_Delete);
+  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_IsDeleted);
+  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_IsOnCpu);
 } PJRT_Api;
 
 const size_t PJRT_Api_STRUCT_SIZE =
     PJRT_STRUCT_SIZE(PJRT_Api, PJRT_Buffer_IsOnCpu);
 
-#undef PJRT_API_STRUCT_FIELD
+#undef _PJRT_API_STRUCT_FIELD
 
 #ifdef __cplusplus
 }
 #endif
-
-#undef PJRT_API_STRUCT_FIELD
 
 #endif  // TENSORFLOW_COMPILER_XLA_PJRT_C_PJRT_C_API_H_

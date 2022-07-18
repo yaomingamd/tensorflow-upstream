@@ -1863,6 +1863,56 @@ TEST_F(HloVerifierTest, FusionShapeVerifier) {
               HasSubstr("Fused computation shape"));
 }
 
+TEST_F(HloVerifierTest, FusionThreadVerifier) {
+  const char* const kModuleStr = R"(
+  HloModule test
+
+  fused_computation {
+    ROOT p0 = f32[8,12] parameter(0)
+  }, thread_name="parallel_thread"
+
+  ENTRY entry {
+    p0 = f32[8,12] parameter(0)
+    ROOT out = f32[8,12] fusion(p0), kind=kInput, calls=fused_computation
+  }
+  )";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnUnverifiedModule(kModuleStr));
+  EXPECT_THAT(verifier().Run(module.get()).status().error_message(),
+              HasSubstr("expects parent computation thread name same as called "
+                        "computation's thread name"));
+}
+
+TEST_F(HloVerifierTest, FusionNestedComputationThreadVerifier) {
+  const char* const kModuleStr = R"(
+  HloModule test
+
+  add {
+    lhs = f32[] parameter(0)
+    rhs = f32[] parameter(1)
+    ROOT add = f32[] add(lhs, rhs)
+  }, thread_name="parallel_thread"
+
+  fused_computation {
+    p0 = f32[8,12] parameter(0)
+    p1 = f32[8,12] parameter(1)
+    crs0 = f32[8,12] all-reduce(p1), replica_groups={}, to_apply=add
+    ROOT result = add(p0, crs0)
+  }
+
+  ENTRY entry {
+    p0 = f32[8,12] parameter(0)
+    p1 = f32[8,12] parameter(1)
+    ROOT out = f32[8,12] fusion(p0, p1), kind=kInput, calls=fused_computation
+  }
+  )";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnUnverifiedModule(kModuleStr));
+  EXPECT_THAT(
+      verifier().Run(module.get()).status().error_message(),
+      HasSubstr("Nested computations expects same computation's thread name"));
+}
+
 TEST_F(HloVerifierTest, AllReduceVerifier) {
   const char* const kModuleStr = R"(
   HloModule test
@@ -2210,6 +2260,79 @@ TEST_F(HloVerifierTest, ReduceScatterNonUniformGroups) {
   ASSERT_FALSE(status.ok());
   EXPECT_THAT(status.error_message(),
               HasSubstr("Replica groups expected to be of uniform size"));
+}
+
+TEST_F(HloVerifierTest, VerifyBroadcastDimensionsOrder) {
+  const char* const hlo = R"(
+HloModule module
+
+ENTRY computation {
+  mul = f32[32,32,32]{2,1,0} parameter(0)
+  ROOT broadcast = f32[32,32,32,32]{3,2,1,0} broadcast(mul), dimensions={3,2,1}
+}
+)";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnUnverifiedModule(hlo));
+  auto status = HloVerifier{HloVerifierOpts{}.VerifyBroadcastDimensionsOrder()}
+                    .Run(module.get())
+                    .status();
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.error_message(),
+              HasSubstr("Broadcast dimensions should be ordered"));
+}
+
+TEST_F(HloVerifierTest, VerifyBroadcastDimensionsOrderOK) {
+  const char* const hlo = R"(
+HloModule module
+
+ENTRY computation {
+  mul = f32[4,5] parameter(0)
+  ROOT broadcast = f32[4,3,2,5] broadcast(mul), dimensions={0,3}
+}
+)";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnUnverifiedModule(hlo));
+  TF_ASSERT_OK(HloVerifier{HloVerifierOpts{}.VerifyBroadcastDimensionsOrder()}
+                   .Run(module.get())
+                   .status());
+}
+
+TEST_F(HloVerifierTest, ReshapeIsNotBitcast) {
+  const char* const hlo = R"(
+HloModule Module
+
+ENTRY main {
+  p = f32[8,3]{1,0} parameter(0)
+  ROOT r = f32[4,2,3]{0,1,2} reshape(p)
+}
+)";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnUnverifiedModule(hlo));
+  auto status =
+      HloVerifier{
+          HloVerifierOpts{}.MakeLayoutSensitive().VerifyReshapeIsBitcast()}
+          .Run(module.get())
+          .status();
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.error_message(),
+              HasSubstr("Reshape should be a physical bitcast"));
+}
+
+TEST_F(HloVerifierTest, ReshapeIsBitcast) {
+  const char* const hlo = R"(
+HloModule Module
+
+ENTRY main {
+  p = f32[8]{0} parameter(0)
+  ROOT r = f32[4,2]{1,0} reshape(p)
+}
+)";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnUnverifiedModule(hlo));
+  TF_ASSERT_OK(HloVerifier{
+      HloVerifierOpts{}.MakeLayoutSensitive().VerifyReshapeIsBitcast()}
+                   .Run(module.get())
+                   .status());
 }
 
 TEST_F(HloVerifierTestLayoutFusion, DynamicUpdateSliceWithMemorySpace) {
