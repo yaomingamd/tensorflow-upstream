@@ -285,6 +285,7 @@ namespace wrap {
   __macro(miopenSet4dTensorDescriptor)                               \
   __macro(miopenGetTensorDescriptor)                                 \
   __macro(miopenSetTensorDescriptor)                                 \
+  __macro(miopenSetNdTensorDescriptorWithLayout)                     \
   __macro(miopenGetTensorDescriptorSize)                             \
   __macro(miopenPoolingForward)                                      \
   __macro(miopenPoolingGetWorkSpaceSizeV2)                           \
@@ -656,26 +657,36 @@ class ScopedTensorDescriptor {
                  << ToString(status);
     }
 
-    switch (batch_descriptor.layout()) {
+
+      switch (batch_descriptor.layout()) {
       case dnn::DataLayout::kBatchYXDepth:
       case dnn::DataLayout::kBatchDepthYX: {
         const int nd = batch_descriptor.ndims() + 2;
 
         // MIOpen requires the strides and dims to be ordered as BDYX.
-        std::vector<int64_t> strides64 =
-            batch_descriptor.full_strides(dnn::DataLayout::kBatchDepthYX);
+        //std::vector<int64_t> strides64 =
+        //    batch_descriptor.full_strides(dnn::DataLayout::kBatchDepthYX);
         std::vector<int64_t> dims64 =
-            batch_descriptor.full_dims(dnn::DataLayout::kBatchDepthYX);
+            batch_descriptor.full_dims(batch_descriptor.layout());
 
         // MIOpen requires arrays of ints.
-        std::vector<int> strides(nd);
+        //std::vector<int> strides(nd);
         std::vector<int> dims(nd);
-        std::transform(strides64.cbegin(), strides64.cend(), strides.begin(),
-                       &CheckedNarrowing<int64_t, int>);
+        //std::transform(strides64.cbegin(), strides64.cend(), strides.begin(),
+        //               &CheckedNarrowing<int64_t, int>);
         std::transform(dims64.cbegin(), dims64.cend(), dims.begin(),
                        &CheckedNarrowing<int64_t, int>);
-        status = wrap::miopenSetTensorDescriptor(handle_, elem_type, nd,
-                                                 dims.data(), strides.data());
+        //status = wrap::miopenSetTensorDescriptor(handle_, elem_type, nd,
+        //                                         dims.data(), strides.data());
+
+        miopenTensorLayout_t layout;
+        if (batch_descriptor.layout() == dnn::DataLayout::kBatchYXDepth) {
+          layout = miopenTensorNHWC;
+        } else {
+          layout = miopenTensorNCHW;
+        }
+        status = wrap::miopenSetNdTensorDescriptorWithLayout(handle_, elem_type, 
+                                                            layout, dims.data(), nd);
 
         if (status != miopenStatusSuccess) {
           LOG(FATAL) << "could not convert BatchDescriptor "
@@ -758,20 +769,30 @@ class ScopedFilterDescriptor {
         const int nd = filter_descriptor.ndims() + 2;
 
         // MIOpen requires the strides and dims to be ordered as BDYX.
-        std::vector<int64_t> strides64 =
-            filter_descriptor.full_strides(dnn::FilterLayout::kOutputInputYX);
+        //std::vector<int64_t> strides64 =
+        //    filter_descriptor.full_strides(dnn::FilterLayout::kOutputInputYX);
         std::vector<int64_t> dims64 =
             filter_descriptor.full_dims(dnn::FilterLayout::kOutputInputYX);
 
         // MIOpen requires arrays of ints.
-        std::vector<int> strides;
+        //std::vector<int> strides;
         std::vector<int> dims;
-        absl::c_transform(strides64, std::back_inserter(strides),
-                          &CheckedNarrowing<int64_t, int>);
+        //absl::c_transform(strides64, std::back_inserter(strides),
+        //                  &CheckedNarrowing<int64_t, int>);
         absl::c_transform(dims64, std::back_inserter(dims),
                           &CheckedNarrowing<int64_t, int>);
-        status = wrap::miopenSetTensorDescriptor(handle_, elem_type, nd,
-                                                 dims.data(), strides.data());
+        //status = wrap::miopenSetTensorDescriptor(handle_, elem_type, nd,
+        //                                         dims.data(), strides.data());
+        miopenTensorLayout_t layout;
+        if (filter_descriptor.layout() == dnn::DataLayout::kBatchYXDepth) {
+          layout = miopenTensorNHWC;
+        } else {
+          layout = miopenTensorNCHW;
+        }
+
+        status = wrap::miopenSetNdTensorDescriptorWithLayout(handle_, elem_type, 
+                                                            layout, dims.data(), nd);
+
 
         if (status != miopenStatusSuccess) {
           LOG(FATAL) << "could not convert FilterDescriptor "
