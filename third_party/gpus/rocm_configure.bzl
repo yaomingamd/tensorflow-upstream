@@ -6,6 +6,7 @@
   * `GCC_HOST_COMPILER_PATH`: The GCC host compiler path
   * `ROCM_PATH`: The path to the ROCm toolkit. Default is `/opt/rocm`.
   * `TF_ROCM_AMDGPU_TARGETS`: The AMDGPU targets.
+  * `TF_SYSROOT`: The sysroot to use when compiling.
 """
 
 load(
@@ -34,6 +35,7 @@ _GCC_HOST_COMPILER_PREFIX = "GCC_HOST_COMPILER_PREFIX"
 _ROCM_TOOLKIT_PATH = "ROCM_PATH"
 _TF_ROCM_AMDGPU_TARGETS = "TF_ROCM_AMDGPU_TARGETS"
 _TF_ROCM_CONFIG_REPO = "TF_ROCM_CONFIG_REPO"
+_TF_SYSROOT = "TF_SYSROOT"
 
 _DEFAULT_ROCM_TOOLKIT_PATH = "/opt/rocm"
 
@@ -91,12 +93,15 @@ def _cxx_inc_convert(path):
     path = path.strip()
     return path
 
-def _get_cxx_inc_directories_impl(repository_ctx, cc, lang_is_cpp):
+def _get_cxx_inc_directories_impl(repository_ctx, cc, lang_is_cpp, tf_sysroot):
     """Compute the list of default C or C++ include directories."""
     if lang_is_cpp:
         lang = "c++"
     else:
         lang = "c"
+    sysroot = []
+    if tf_sysroot:
+        sysroot += ["--sysroot", tf_sysroot]
 
     # TODO: We pass -no-canonical-prefixes here to match the compiler flags,
     #       but in rocm_clang CROSSTOOL file that is a `feature` and we should
@@ -108,7 +113,7 @@ def _get_cxx_inc_directories_impl(repository_ctx, cc, lang_is_cpp):
         "-x" + lang,
         "-",
         "-v",
-    ])
+    ] + sysroot)
     stderr = err_out(result)
     index1 = stderr.find(_INC_DIR_MARKER_BEGIN)
     if index1 == -1:
@@ -130,14 +135,14 @@ def _get_cxx_inc_directories_impl(repository_ctx, cc, lang_is_cpp):
         for p in inc_dirs.split("\n")
     ]
 
-def get_cxx_inc_directories(repository_ctx, cc):
+def get_cxx_inc_directories(repository_ctx, cc, tf_sysroot):
     """Compute the list of default C and C++ include directories."""
 
     # For some reason `clang -xc` sometimes returns include paths that are
     # different from the ones from `clang -xc++`. (Symlink and a dir)
     # So we run the compiler with both `-xc` and `-xc++` and merge resulting lists
-    includes_cpp = _get_cxx_inc_directories_impl(repository_ctx, cc, True)
-    includes_c = _get_cxx_inc_directories_impl(repository_ctx, cc, False)
+    includes_cpp = _get_cxx_inc_directories_impl(repository_ctx, cc, True, tf_sysroot)
+    includes_c = _get_cxx_inc_directories_impl(repository_ctx, cc, False, tf_sysroot)
 
     includes_cpp_set = depset(includes_cpp)
     return includes_cpp + [
@@ -531,6 +536,9 @@ def _genrule(src_dir, genrule_name, command, outs):
         ")\n"
     )
 
+def _tf_sysroot(repository_ctx):
+    return get_host_environ(repository_ctx, _TF_SYSROOT, "")
+
 def _compute_rocm_extra_copts(repository_ctx, amdgpu_targets):
     amdgpu_target_flags = ["--amdgpu-target=" +
                            amdgpu_target for amdgpu_target in amdgpu_targets]
@@ -680,19 +688,27 @@ def _create_local_rocm_repository(repository_ctx):
         repository_dict,
     )
 
+    tf_sysroot = _tf_sysroot(repository_ctx)
+
     # Set up crosstool/
 
     cc = find_cc(repository_ctx)
+    print("### cc:  ", cc)
 
-    host_compiler_includes = get_cxx_inc_directories(repository_ctx, cc)
-
+    host_compiler_includes = get_cxx_inc_directories(repository_ctx, cc, tf_sysroot,)
+    print("### host_compiler_includes:  ", host_compiler_includes)
+    
     host_compiler_prefix = get_host_environ(repository_ctx, _GCC_HOST_COMPILER_PREFIX, "/usr/bin")
+    print("### host_compiler_prefix:  ", host_compiler_prefix)
 
     rocm_defines = {}
-
+    rocm_defines["%{builtin_sysroot}"] = tf_sysroot
     rocm_defines["%{host_compiler_prefix}"] = host_compiler_prefix
+    print("### host_compiler_prefix:  ", rocm_defines["%{host_compiler_prefix}"])
 
-    rocm_defines["%{linker_bin_path}"] = rocm_config.rocm_toolkit_path + "/hcc/compiler/bin"
+    #rocm_defines["%{linker_bin_path}"] = rocm_config.rocm_toolkit_path + "/hcc/compiler/bin"
+    rocm_defines["%{linker_bin_path}"] = "/usr/bin"
+    print("### linker_bin_path:  ", rocm_defines["%{linker_bin_path}"])
 
     # For gcc, do not canonicalize system header paths; some versions of gcc
     # pick the shortest possible path for system includes when creating the
@@ -709,9 +725,14 @@ def _create_local_rocm_repository(repository_ctx):
 
     rocm_defines["%{host_compiler_path}"] = "clang/bin/crosstool_wrapper_driver_is_not_gcc"
 
+    userinclude = "/usr/include"
     rocm_defines["%{cxx_builtin_include_directories}"] = to_list_of_strings(
         host_compiler_includes + _rocm_include_path(repository_ctx, rocm_config, bash_bin),
     )
+    #rocm_defines["%{cxx_builtin_include_directories}"] = to_list_of_strings(
+    #    host_compiler_includes + _rocm_include_path(repository_ctx, rocm_config, bash_bin) + ["/dt9/usr/include", "/usr/include"],
+    #)
+    print("### cxx_builtin_include_directories:  ", rocm_defines["%{cxx_builtin_include_directories}"])
 
     verify_build_defines(rocm_defines)
 

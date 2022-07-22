@@ -101,6 +101,7 @@ cc_toolchain_config(
         "-D__TIME__=\"redacted\"",
     ] + [%{unfiltered_compile_flags}],
     linker_bin_path = "%{linker_bin_path}",
+    builtin_sysroot = "%{builtin_sysroot}",
     coverage_compile_flags = ["--coverage"],
     coverage_link_flags = ["--coverage"],
     supports_start_end_lib = True,
