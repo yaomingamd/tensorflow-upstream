@@ -2055,6 +2055,7 @@ tf_xla_py_test(
     tags = [
         "no_pip",
         "notap",
+		"no_rocm",
     ],
     use_xla_device = False,
     deps = [
