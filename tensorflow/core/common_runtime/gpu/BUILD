@@ -404,6 +404,7 @@ tf_cuda_cc_test(
     tags = tf_cuda_tests_tags() + [
         "guitar",
         "multi_gpu",
+		"no_rocm",
     ],
     deps = [
         ":gpu_id",
