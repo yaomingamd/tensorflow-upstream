@@ -1745,6 +1745,7 @@ cc_library(
         ":target_constants",
         ":tree_reduction_rewriter",
         ":variadic_op_splitter",
+        "//tensorflow/compiler/xla/service:gather_simplifier",
         "//tensorflow/compiler/xla/service:layout_normalization",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
@@ -2262,6 +2263,7 @@ cc_library(
     name = "gpu_hlo_cost_analysis",
     srcs = ["gpu_hlo_cost_analysis.cc"],
     hdrs = ["gpu_hlo_cost_analysis.h"],
+    compatible_with = get_compatible_with_cloud(),
     deps = [
         ":backend_configs_cc",
         ":cublas_cudnn",

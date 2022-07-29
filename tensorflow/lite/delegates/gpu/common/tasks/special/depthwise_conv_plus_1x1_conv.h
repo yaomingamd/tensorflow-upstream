@@ -16,31 +16,55 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_DELEGATES_GPU_COMMON_TASKS_SPECIAL_DEPTHWISE_CONV_PLUS_1X1_CONV_H_
 #define TENSORFLOW_LITE_DELEGATES_GPU_COMMON_TASKS_SPECIAL_DEPTHWISE_CONV_PLUS_1X1_CONV_H_
 
+#include <map>
+#include <set>
+#include <string>
 #include <vector>
 
-#include "tensorflow/lite/delegates/gpu/common/data_type.h"
+#include "tensorflow/lite/delegates/gpu/common/model.h"
 #include "tensorflow/lite/delegates/gpu/common/operations.h"
-#include "tensorflow/lite/delegates/gpu/common/shape.h"
-#include "tensorflow/lite/delegates/gpu/common/status.h"
-#include "tensorflow/lite/delegates/gpu/common/task/buffer_desc.h"
-#include "tensorflow/lite/delegates/gpu/common/task/gpu_object_desc.h"
-#include "tensorflow/lite/delegates/gpu/common/task/gpu_operation.h"
-#include "tensorflow/lite/delegates/gpu/common/tensor.h"
-#include "tensorflow/lite/delegates/gpu/common/types.h"
+#include "tensorflow/lite/delegates/gpu/common/precision.h"
+#include "tensorflow/lite/delegates/gpu/common/selectors/subgraph.h"
+#include "tensorflow/lite/delegates/gpu/common/task/tensor_desc.h"
 
 namespace tflite {
 namespace gpu {
 
-bool IsDepthwiseConvPlus1x1ConvSupported(
-    const OperationDef& definition, const GpuInfo& gpu_info,
-    const DepthwiseConvolution2DAttributes& dw_attr,
-    const Convolution2DAttributes& conv_attr, const BHWC* dst_shape = nullptr);
+class ThinPointwiseFuser {
+ public:
+  void Init(CalculationsPrecision precision);
+  void AddConvNode(const GpuInfo& gpu_info,
+                   const Convolution2DAttributes& attr);
+  void AddReluNode(const ReLUAttributes& attr);
+  void AddDepthwiseConvNode(const GpuInfo& gpu_info,
+                            const TensorDescriptor& src_desc,
+                            const DepthwiseConvolution2DAttributes& attr);
+  GPUOperation Finalize(const GpuInfo& gpu_info,
+                        const TensorDescriptor& dst_desc);
+
+ private:
+  void AddConvData(const Convolution2DAttributes& conv_attr);
+  void AddDepthwiseConvData(const DepthwiseConvolution2DAttributes& dw_attr);
+  void CreateConstantsGpuBuffer(const GpuInfo& gpu_info);
+  OperationDef op_def_;
+  Arguments args_;
+  std::string code_;
+  std::vector<std::string> outputs_;
+  std::vector<float> gpu_data_;
+  int weights_counter_ = 0;
+};
 
 GPUOperation CreateDepthwiseConvPlus1x1Conv(
     const OperationDef& definition, const GpuInfo& gpu_info,
     const DepthwiseConvolution2DAttributes& dw_attr,
     const Convolution2DAttributes& conv_attr,
     ReLUAttributes* relu_attr_ptr = nullptr);
+
+absl::Status TryDepthwiseConvPlus1x1Conv(
+    const GpuInfo& gpu_info, CalculationsPrecision precision,
+    const GraphFloat32& graph, NodeId first_node_id,
+    const std::map<ValueId, TensorDescriptor>& tensor_descriptors,
+    std::set<NodeId>* consumed_nodes, GPUOperationsSubgraph* gpu_subgraph);
 
 }  // namespace gpu
 }  // namespace tflite

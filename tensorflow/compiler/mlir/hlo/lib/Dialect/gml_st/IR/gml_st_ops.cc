@@ -105,6 +105,82 @@ LogicalResult verifyDestinationStyleOp(Operation *op,
   return success();
 }
 
+ParseResult parseAssignmentListWithTypes(
+    OpAsmParser &parser, SmallVectorImpl<OpAsmParser::UnresolvedOperand> &lhs,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &rhs,
+    SmallVectorImpl<Type> &types) {
+  auto parseElt = [&]() -> ParseResult {
+    if (parser.parseOperand(lhs.emplace_back(), /*allowResultNumber=*/false) ||
+        parser.parseEqual() || parser.parseOperand(rhs.emplace_back()) ||
+        parser.parseColon() || parser.parseType(types.emplace_back())) {
+      return failure();
+    }
+    return success();
+  };
+  return parser.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseElt);
+}
+
+template <typename DstOpTy>
+void printDstStyleOp(DstOpTy op, OpAsmPrinter &p) {
+  if (op.getNumInputs() != 0) {
+    p << " ins(";
+    llvm::interleaveComma(
+        op.getOperands().take_front(op.getNumInputs()), p,
+        [&](Value input) { p << input << " : " << input.getType(); });
+    p << ")";
+  }
+  p << " outs(";
+  llvm::interleaveComma(
+      op.getOperands().take_back(op.getNumOutputs()), p,
+      [&](Value output) { p << output << " : " << output.getType(); });
+  p << ")";
+
+  p.printOptionalAttrDict(op->getAttrs());
+}
+
+ParseResult parseKeywordOperandListWithTypes(
+    OpAsmParser &parser, OperationState &result, StringRef keyword,
+    SmallVectorImpl<Type> *operandTypes) {
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> operands;
+  if (succeeded(parser.parseOptionalKeyword(keyword))) {
+    SMLoc operandsOperandsLoc = parser.getCurrentLocation();
+
+    if (parser.parseCommaSeparatedList(
+            AsmParser::Delimiter::Paren, [&]() -> ParseResult {
+              if (parser.parseOperand(operands.emplace_back(),
+                                      /*allowResultNumber=*/false) ||
+                  parser.parseColon() ||
+                  parser.parseType(operandTypes->emplace_back())) {
+                return failure();
+              }
+              return success();
+            }))
+      return failure();
+
+    if (parser.resolveOperands(operands, *operandTypes, operandsOperandsLoc,
+                               result.operands))
+      return failure();
+  }
+  return success();
+}
+
+ParseResult parseDstStyleOp(OpAsmParser &parser, OperationState &result) {
+  // Parse `ins` and `outs`.
+  SmallVector<Type, 4> inputTypes, outputTypes;
+  if (parseKeywordOperandListWithTypes(parser, result, "ins", &inputTypes) ||
+      parseKeywordOperandListWithTypes(parser, result, "outs", &outputTypes))
+    return failure();
+
+  // Add result types.
+  for (Type outputType : outputTypes) {
+    if (outputType.isa<RankedTensorType>()) result.addTypes(outputType);
+  }
+
+  // Parse optional attributes.
+  if (parser.parseOptionalAttrDict(result.attributes)) return failure();
+  return success();
+}
+
 }  // namespace
 }  // namespace mlir
 
@@ -272,23 +348,6 @@ void LoopOp::print(OpAsmPrinter &p) {
                        LoopOp::getIteratorTypesAttrName(),
                        LoopOp::getDistributionTypesAttrName()});
 }
-
-namespace {
-ParseResult parseAssignmentListWithTypes(
-    OpAsmParser &parser, SmallVectorImpl<OpAsmParser::UnresolvedOperand> &lhs,
-    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &rhs,
-    SmallVectorImpl<Type> &types) {
-  auto parseElt = [&]() -> ParseResult {
-    if (parser.parseOperand(lhs.emplace_back(), /*allowResultNumber=*/false) ||
-        parser.parseEqual() || parser.parseOperand(rhs.emplace_back()) ||
-        parser.parseColon() || parser.parseType(types.emplace_back())) {
-      return failure();
-    }
-    return success();
-  };
-  return parser.parseCommaSeparatedList(AsmParser::Delimiter::Paren, parseElt);
-}
-}  // namespace
 
 ParseResult LoopOp::parse(OpAsmParser &parser, OperationState &result) {
   auto &builder = parser.getBuilder();
@@ -1250,7 +1309,7 @@ LogicalResult YieldOp::verify() {
            << tensorOuts.size()
            << " to match the number of yield operands = " << values().size();
 
-  TypeRange tensorTypes(llvm::makeArrayRef(tensorOuts));
+  TypeRange tensorTypes{ValueRange{tensorOuts}};
   for (auto &item :
        llvm::enumerate(llvm::zip(tensorTypes, getOperandTypes()))) {
     Type outType, resultType;
@@ -1307,35 +1366,24 @@ mlir::Value SpaceOp::getDynamicSize(unsigned idx) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult PointOp::verify() {
-  auto supersetTy = superset().getType();
-  if (supersetTy.isa<PointType>()) {
-    if (!static_indices().empty() || !dynamic_indices().empty()) {
-      return emitOpError(
-          "expected empty indices and static_indices for a set of type "
-          "PointType");
+  auto tileShape = superset().getType().cast<TileType>().getShape();
+  if (failed(mlir::verifyListOfOperandsOrIntegers(
+          getOperation(), "index", tileShape.size(), static_indices(),
+          dynamic_indices(), ShapedType::isDynamicStrideOrOffset))) {
+    return failure();
+  }
+  // Check whether the known indices are in-bounds of known dimension sizes.
+  for (auto dimAndIndex : llvm::zip(tileShape, static_indices())) {
+    auto dimSize = std::get<0>(dimAndIndex);
+    auto index =
+        std::get<1>(dimAndIndex).dyn_cast<mlir::IntegerAttr>().getInt();
+    if (index == ShapedType::kDynamicStrideOrOffset) continue;
+    if (index < 0) {
+      return emitOpError("expected index = ") << index << " to be non-negative";
     }
-  } else {
-    auto tileTy = supersetTy.cast<TileType>();
-    auto tileShape = tileTy.getShape();
-    if (failed(mlir::verifyListOfOperandsOrIntegers(
-            getOperation(), "index", tileShape.size(), static_indices(),
-            dynamic_indices(), ShapedType::isDynamicStrideOrOffset))) {
-      return failure();
-    }
-    // Check whether the known indices are in-bounds of known dimension sizes.
-    for (auto dimAndIndex : llvm::zip(tileShape, static_indices())) {
-      auto dimSize = std::get<0>(dimAndIndex);
-      auto index =
-          std::get<1>(dimAndIndex).dyn_cast<mlir::IntegerAttr>().getInt();
-      if (index == ShapedType::kDynamicStrideOrOffset) continue;
-      if (index < 0) {
-        return emitOpError("expected index = ")
-               << index << " to be non-negative";
-      }
-      if (dimSize != ShapedType::kDynamicSize && index >= dimSize) {
-        return emitOpError("expected index = ")
-               << index << " to be between 0 and " << (dimSize - 1);
-      }
+    if (dimSize != ShapedType::kDynamicSize && index >= dimSize) {
+      return emitOpError("expected index = ")
+             << index << " to be between 0 and " << (dimSize - 1);
     }
   }
   return success();
@@ -1623,43 +1671,13 @@ LogicalResult DropDimsOp::inferReturnTypes(
   return failure();
 }
 
-//===----------------------------------------------------------------------===//
-// TransposeDimsOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult TransposeDimsOp::inferReturnTypes(
-    MLIRContext *ctx, Optional<Location> /*loc*/, ValueRange operands,
-    DictionaryAttr attributes, RegionRange regions,
-    SmallVectorImpl<Type> &inferredReturnTypes) {
-  TransposeDimsOp::Adaptor adaptor(operands, attributes, regions);
-  Type argTy = adaptor.superset().getType();
-
-  // If the argument is of point type, so is the result.
-  if (auto pointTy = argTy.dyn_cast<PointType>()) {
-    inferredReturnTypes.push_back(argTy);
-    return success();
-  }
-
-  // If the argument is of tile type, we can transpose the type's dimensions.
-  if (auto tileTy = argTy.dyn_cast<TileType>()) {
-    auto argShape = tileTy.getShape();
-    SmallVector<int64_t> resultShape = llvm::to_vector(llvm::map_range(
-        adaptor.permutation(), [&](const auto &d) { return argShape[d]; }));
-    auto resultTy = TileType::get(ctx, resultShape);
-    inferredReturnTypes.push_back(resultTy);
-    return success();
-  }
-
-  return failure();
-}
-
-Value TransposeDimsOp::compose(OpBuilder &builder) {
-  // We can compose with a TileOp operand which has a SpaceOp operand, or
-  // compose with a SpaceOp operand. transpose_tile(tile(space, offsets, sizes,
-  // strides)) is replaced by tile(transpose(space), transpose(offsets),
-  // transpose(sizes), transpose(strides)). transpose_tile(space) is replaced by
-  // transpose(space).
-  Operation *definingOp = superset().getDefiningOp();
+namespace {
+// Composition with a superset by selecting a subset of dimensions from the
+// superset. Both the dimensions to select, and the order in which they should
+// be selected, are specified by 'dims'.
+Value selectDimsFromSuperset(OpBuilder &builder, Location loc, Type type,
+                             Value superset, ArrayRef<int64_t> dims) {
+  Operation *definingOp = superset.getDefiningOp();
   auto spaceOp = llvm::dyn_cast_or_null<SpaceOp>(definingOp);
   auto tileOp = llvm::dyn_cast_or_null<TileOp>(definingOp);
   if (tileOp) {
@@ -1668,19 +1686,16 @@ Value TransposeDimsOp::compose(OpBuilder &builder) {
   }
   if (!spaceOp) return {};
 
-  auto loc = getLoc();
-  ArrayRef<int64_t> perm = permutation();
-  int64_t rank = perm.size();
-
-  // Create a new space op that has the permutation applied.
+  // Create a new space op consisting of the subset of dimensions defined by
+  // 'dims'.
   SmallVector<Value> dynamicDims;
   SmallVector<Attribute> staticDims;
   SmallVector<int64_t> shape;
   auto originalShape = spaceOp.getType().getShape();
-  dynamicDims.reserve(spaceOp.dynamic_sizes().size());
+  const size_t rank = dims.size();
   staticDims.reserve(rank);
   shape.reserve(rank);
-  for (int64_t dim : perm) {
+  for (const int64_t dim : dims) {
     shape.push_back(originalShape[dim]);
     staticDims.push_back(spaceOp.static_sizes()[dim]);
     if (ShapedType::isDynamic(staticDims.back().cast<IntegerAttr>().getInt())) {
@@ -1692,7 +1707,7 @@ Value TransposeDimsOp::compose(OpBuilder &builder) {
                                            builder.getArrayAttr(staticDims));
   if (!tileOp) return newSpace;
 
-  // Otherwise we need to apply the permutation to the 'tileOp' operand.
+  // Otherwise we need to extract 'dims' dimensions from the 'tileOp' operand.
   SmallVector<Value> inputTileOffsets, inputTileSizes, inputTileStrides;
   SmallVector<int64_t> inputStaticOffsets, inputStaticSizes, inputStaticStrides;
   inputStaticOffsets.reserve(rank);
@@ -1701,7 +1716,7 @@ Value TransposeDimsOp::compose(OpBuilder &builder) {
   inputTileOffsets.reserve(tileOp.offsets().size());
   inputTileSizes.reserve(tileOp.sizes().size());
   inputTileStrides.reserve(tileOp.strides().size());
-  for (int64_t dim : perm) {
+  for (const int64_t dim : dims) {
     if (tileOp.isDynamicOffset(dim)) {
       inputTileOffsets.push_back(tileOp.getDynamicOffset(dim));
       inputStaticOffsets.push_back(ShapedType::kDynamicStrideOrOffset);
@@ -1722,11 +1737,60 @@ Value TransposeDimsOp::compose(OpBuilder &builder) {
     }
   }
 
-  return builder.create<TileOp>(loc, getType(), newSpace, inputTileOffsets,
+  return builder.create<TileOp>(loc, type, newSpace, inputTileOffsets,
                                 inputTileSizes, inputTileStrides,
                                 builder.getI64ArrayAttr(inputStaticOffsets),
                                 builder.getI64ArrayAttr(inputStaticSizes),
                                 builder.getI64ArrayAttr(inputStaticStrides));
+}
+}  // namespace
+
+Value DropDimsOp::compose(OpBuilder &builder) {
+  // We can compose with a TileOp operand which has a SpaceOp operand, or
+  // compose with a SpaceOp operand.
+  return selectDimsFromSuperset(builder, getLoc(), getType(), superset(),
+                                remaining_dims());
+}
+
+//===----------------------------------------------------------------------===//
+// TransposeDimsOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult TransposeDimsOp::inferReturnTypes(
+    MLIRContext *ctx, Optional<Location> /*loc*/, ValueRange operands,
+    DictionaryAttr attributes, RegionRange regions,
+    SmallVectorImpl<Type> &inferredReturnTypes) {
+  TransposeDimsOp::Adaptor adaptor(operands, attributes, regions);
+  const Type argTy = adaptor.superset().getType();
+
+  // If the argument is of point type, so is the result.
+  if (auto pointTy = argTy.dyn_cast<PointType>()) {
+    inferredReturnTypes.push_back(argTy);
+    return success();
+  }
+
+  // If the argument is of tile type, we can transpose the type's dimensions.
+  if (auto tileTy = argTy.dyn_cast<TileType>()) {
+    auto argShape = tileTy.getShape();
+    const SmallVector<int64_t> resultShape = llvm::to_vector(llvm::map_range(
+        adaptor.permutation(), [&](const auto &d) { return argShape[d]; }));
+    auto resultTy = TileType::get(ctx, resultShape);
+    inferredReturnTypes.push_back(resultTy);
+    return success();
+  }
+
+  return failure();
+}
+
+Value TransposeDimsOp::compose(OpBuilder &builder) {
+  // We can compose with a TileOp operand which has a SpaceOp operand, or
+  // compose with a SpaceOp operand. transpose_tile(tile(space, offsets, sizes,
+  // strides)) is replaced by tile(transpose(space), transpose(offsets),
+  // transpose(sizes), transpose(strides)). transpose_tile(space) is replaced by
+  // transpose(space).
+
+  return selectDimsFromSuperset(builder, getLoc(), getType(), superset(),
+                                permutation());
 }
 
 LogicalResult TransposeDimsOp::verify() {
@@ -1953,15 +2017,24 @@ ParseResult SetYieldOp::parse(OpAsmParser &parser, OperationState &result) {
 // DynamicBroadcastInDimOp
 //===----------------------------------------------------------------------===//
 
+ParseResult DynamicBroadcastInDimOp::parse(OpAsmParser &parser,
+                                           OperationState &result) {
+  return parseDstStyleOp(parser, result);
+}
+
+void DynamicBroadcastInDimOp::print(OpAsmPrinter &p) {
+  printDstStyleOp(cast<DynamicBroadcastInDimOp>(getOperation()), p);
+}
+
 LogicalResult DynamicBroadcastInDimOp::verify() {
-  return verifyDestinationStyleOp(this->getOperation());
+  return verifyDestinationStyleOp(this->getOperation(), getNumOutputs());
 }
 
 Value DynamicBroadcastInDimOp::fuse(Location loc, Value subset,
                                     OpBuilder &builder) {
   Type subsetTy = subset.getType();
   auto operandTy = operand().getType().cast<RankedTensorType>();
-  auto resultTy = getType().cast<RankedTensorType>();
+  auto resultTy = getType(0).cast<RankedTensorType>();
   int64_t operandRank = operandTy.getRank();
 
   // Create the needed constants only once.
@@ -1993,11 +2066,14 @@ Value DynamicBroadcastInDimOp::fuse(Location loc, Value subset,
   }
 
   // Collapse the subset to operate only on corresponding dimensions.
+  // TODO(frgossen): Only generate this when needed.
   auto collapsedSubset =
       builder.create<DropDimsOp>(loc, subset, broadcast_dimensionsAttr());
 
   // Find the expanding dimensions. If corresponding operand and result
   // dimensions are different then the dimension is expanding.
+  // TODO(frgossen): Use info from known expanding and known non-expanding
+  // dimensions here.
   SmallVector<Value> operandExpandingDims;
   for (const auto &it : llvm::enumerate(broadcast_dimensions())) {
     auto operandDim = operandDims[it.index()];
@@ -2063,9 +2139,12 @@ Value DynamicBroadcastInDimOp::fuse(Location loc, Value subset,
     // Finally, materialize tiled broadcast.
     auto tiledResultTy =
         RankedTensorType::get(tileTy.getShape(), resultTy.getElementType());
-    return builder.create<DynamicBroadcastInDimOp>(
-        loc, tiledResultTy, tiledOperand, tiledInit, broadcast_dimensionsAttr(),
-        known_expanding_dimensionsAttr(), known_nonexpanding_dimensionsAttr());
+    return builder
+        .create<DynamicBroadcastInDimOp>(
+            loc, TypeRange{tiledResultTy}, tiledOperand, tiledInit,
+            broadcast_dimensionsAttr(), known_expanding_dimensionsAttr(),
+            known_nonexpanding_dimensionsAttr())
+        .getResult(0);
   }
 
   return {};
@@ -2075,16 +2154,32 @@ Value DynamicBroadcastInDimOp::fuse(Location loc, Value subset,
 // ScatterOp
 //===----------------------------------------------------------------------===//
 
+ParseResult ScatterOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseDstStyleOp(parser, result);
+}
+
+void ScatterOp::print(OpAsmPrinter &p) {
+  printDstStyleOp(cast<ScatterOp>(getOperation()), p);
+}
+
 LogicalResult ScatterOp::verify() {
-  return verifyDestinationStyleOp(this->getOperation());
+  return verifyDestinationStyleOp(getOperation(), getNumOutputs());
 }
 
 //===----------------------------------------------------------------------===//
 // GatherOp
 //===----------------------------------------------------------------------===//
 
+ParseResult GatherOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseDstStyleOp(parser, result);
+}
+
+void GatherOp::print(OpAsmPrinter &p) {
+  printDstStyleOp(cast<GatherOp>(getOperation()), p);
+}
+
 LogicalResult GatherOp::verify() {
-  return verifyDestinationStyleOp(this->getOperation());
+  return verifyDestinationStyleOp(this->getOperation(), getNumOutputs());
 }
 
 //===----------------------------------------------------------------------===//
