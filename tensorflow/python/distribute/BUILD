@@ -677,7 +677,7 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # b/213388775
-        "no_rocm", # very slow (15+ min) as of 220613
+        #"no_rocm", # very slow (15+ min) as of 220613
     ],
     tpu_tags = [
         "no_oss",
@@ -1154,9 +1154,9 @@ distribute_py_test(
     tags = [
         "multi_and_single_gpu",
         "no_cuda_asan",  # times out
-        "no_gpu",  # TODO(b/213596871): times out
+        #"no_gpu",  # TODO(b/213596871): times out
         "notsan",  # b/177098062
-        "no_rocm", # broken in 4.1
+        #"no_rocm", # broken in 4.1
     ],
     deps = [
         ":collective_all_reduce_strategy",
@@ -2227,7 +2227,7 @@ distribute_py_test(
     disable_mlir_bridge = False,
     tags = [
         "multi_and_single_gpu",
-        "no_rocm" # flaky/timeout with 4.1
+        #"no_rocm" # flaky/timeout with 4.1
     ],
     deps = [
         ":combinations",
