@@ -1,3 +1,4 @@
+31
 load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 
 package(
@@ -35,7 +36,7 @@ cc_library(
     tags = ["no_oss"],
     deps = [
         ":graph_execution_options",
-        "//learning/brain/experimental/tfrt/native_lowering/saved_model:saved_model_translate",
+#        "//learning/brain/experimental/tfrt/native_lowering/saved_model:saved_model_translate",
         "//tensorflow/compiler/mlir/tensorflow:import_model",
         "//tensorflow/compiler/mlir/tfrt:import_model",
         "//tensorflow/compiler/mlir/tfrt:tf_jitrt_request_context",

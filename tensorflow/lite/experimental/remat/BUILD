@@ -3,7 +3,7 @@ cc_library(
     srcs = ["metadata_util.cc"],
     hdrs = ["metadata_util.h"],
     deps = [
-        "//base",
+#        "//base",
         "//tensorflow/lite:graph_info",
     ],
 )
