@@ -39,6 +39,7 @@ def rocm_version_number():
     return %{rocm_version_number}
 
 def if_rocm_is_configured(x):
+    # NOTE: if if_rocm_is_configured code
     """Tests if the ROCm was enabled during the configure process.
 
     Unlike if_rocm(), this does not require that we are building with

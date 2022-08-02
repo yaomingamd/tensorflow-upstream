@@ -233,6 +233,8 @@ def main():
 
     gpu_linker_flags.append('-L' + ROCR_RUNTIME_PATH)
     gpu_linker_flags.append('-Wl,-rpath=' + ROCR_RUNTIME_PATH)
+    gpu_linker_flags.append('-Wl,-rpath=' + "/dt9/lib/x86_64-linux-gnu/")
+    gpu_linker_flags.append('-Wl,--dynamic-linker=' + "/dt9/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2")
     gpu_linker_flags.append('-l' + ROCR_RUNTIME_LIBRARY)
     gpu_linker_flags.append('-L' + HIP_RUNTIME_PATH)
     gpu_linker_flags.append('-Wl,-rpath=' + HIP_RUNTIME_PATH)

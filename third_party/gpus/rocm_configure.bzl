@@ -707,7 +707,8 @@ def _create_local_rocm_repository(repository_ctx):
     print("### host_compiler_prefix:  ", rocm_defines["%{host_compiler_prefix}"])
 
     #rocm_defines["%{linker_bin_path}"] = rocm_config.rocm_toolkit_path + "/hcc/compiler/bin"
-    rocm_defines["%{linker_bin_path}"] = "/usr/bin"
+    # rocm_defines["%{linker_bin_path}"] = "/usr/bin"
+    rocm_defines["%{linker_bin_path}"]=host_compiler_prefix
     print("### linker_bin_path:  ", rocm_defines["%{linker_bin_path}"])
 
     # For gcc, do not canonicalize system header paths; some versions of gcc

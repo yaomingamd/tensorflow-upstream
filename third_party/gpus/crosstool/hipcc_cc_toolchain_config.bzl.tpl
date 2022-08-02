@@ -398,6 +398,18 @@ def _impl(ctx):
                             ),
                             flag_group(
                                 flags = [
+                                    "-Wl,-rpath=/dt9/lib/x86_64-linux-gnu/",
+                                ],
+                                expand_if_true = "is_cc_test",
+                            ),
+                            flag_group(
+                                flags = [
+                                    "-Wl,--dynamic-linker=/dt9/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+                                ],
+                                expand_if_true = "is_cc_test",
+                            ),
+                            flag_group(
+                                flags = [
                                     "-Wl,-rpath,$ORIGIN/%{runtime_library_search_directories}",
                                 ],
                                 expand_if_false = "is_cc_test",
