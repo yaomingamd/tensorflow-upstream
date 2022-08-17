@@ -206,6 +206,7 @@ cc_library(
         ":rocblas_if_static",
         ":rocblas_wrapper",
         ":rocm_gpu_executor",
+        ":rocm_collect_value_distribution",
         ":rocm_platform_id",
         "//third_party/eigen3",
         "//tensorflow/core:lib",

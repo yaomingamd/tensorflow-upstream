@@ -624,9 +624,10 @@ private:
   T* host_dst_;
 };
 
-CollectValueDistribution<half> conv_forward_data_values("conv_fwd");
-CollectValueDistribution<half> conv_backprop_data_grad_values("conv_bwd_data");
-CollectValueDistribution<half> conv_backprop_filter_grad_values("conv_bwd_filter");
+CollectValueDistribution<half> conv_forward_data_values("conv_input");
+CollectValueDistribution<half> conv_forward_filter_values("conv_filter");
+CollectValueDistribution<half> conv_backprop_grad_values("conv_bwd_grad");
+
 
 MIOpenSupport::MIOpenSupport(GpuExecutor* parent) : parent_(parent) {
   // by default, the Get*Algorithm API will return the list of all applicable
@@ -3088,6 +3089,15 @@ class RocmConvRunner : public dnn::ConvRunner {
 
     const bool is_profiling = profile_result != nullptr;
 
+    bool is_collecting_data;
+    tensorflow::ReadBoolFromEnvVar("TF_ROCM_COLLECT_STATS", false, &is_collecting_data);
+    bool collect_on_single_gpu;
+    tensorflow::ReadBoolFromEnvVar("TF_ROCM_COLLECT_STATS_ON_SGPU", false, &collect_on_single_gpu);
+
+    int device_idx;
+    hipGetDevice(&device_idx);
+    is_collecting_data = is_collecting_data && (!collect_on_single_gpu || (device_idx==0) );
+
     std::unique_ptr<GpuTimer> timer;
     if (is_profiling) {
       timer.reset(new GpuTimer(parent_));
@@ -3124,11 +3134,9 @@ class RocmConvRunner : public dnn::ConvRunner {
         }
 	if (elem_datatype_ == dnn::DataType::kHalf) {
 	  hipStream_t hip_stream = (hipStream_t) AsGpuStreamValue(stream);
-	  //ScopedDataProcessor<half> data_processor(num_output_elems_);
-	  //data_processor.copy_data_to_host(hip_stream, output_data.opaque());
-	  //data_processor.process_data(&conv_forward_data_values);
-	  conv_forward_data_values.process_data_gpu(hip_stream, output_data.opaque(), num_output_elems_);
-	  //conv_forward_data_values.dump_data();
+	  if (is_collecting_data) {
+            conv_forward_filter_values.process_data_gpu(hip_stream, filter_data.opaque(), num_filter_elems_);
+	  }
 	}
         break;
       }
@@ -3151,11 +3159,8 @@ class RocmConvRunner : public dnn::ConvRunner {
         }
 	if (elem_datatype_ == dnn::DataType::kHalf) {
 	  hipStream_t hip_stream = (hipStream_t) AsGpuStreamValue(stream);
-	  //ScopedDataProcessor<half> data_processor(num_input_elems_);
-	  //data_processor.copy_data_to_host(hip_stream, input_data.opaque());
-	  //data_processor.process_data(&conv_backprop_data_grad_values);
-          conv_backprop_data_grad_values.process_data_gpu(hip_stream, input_data.opaque(), num_input_elems_);
-	  //conv_backprop_data_grad_values.dump_data();
+	  if (is_collecting_data)
+            conv_backprop_grad_values.process_data_gpu(hip_stream, output_data.opaque(), num_output_elems_);
 	}
         break;
       }
@@ -3178,11 +3183,8 @@ class RocmConvRunner : public dnn::ConvRunner {
         }
 	if (elem_datatype_ == dnn::DataType::kHalf) {
 	  hipStream_t hip_stream = (hipStream_t) AsGpuStreamValue(stream);
-	  //ScopedDataProcessor<half> data_processor(num_filter_elems_);
-	  //data_processor.copy_data_to_host(hip_stream, filter_data.opaque());
-	  //data_processor.process_data(&conv_backprop_filter_grad_values);
-	  conv_backprop_filter_grad_values.process_data_gpu(hip_stream, filter_data.opaque(), num_filter_elems_);
-	  //conv_backprop_filter_grad_values.dump_data();
+	  if (is_collecting_data) 
+            conv_forward_data_values.process_data_gpu(hip_stream, input_data.opaque(), num_input_elems_);
 	}
         break;
       }

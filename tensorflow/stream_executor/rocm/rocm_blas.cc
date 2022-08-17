@@ -17,6 +17,8 @@ limitations under the License.
 
 #include "tensorflow/stream_executor/rocm/rocblas_wrapper.h"
 
+#include "tensorflow/stream_executor/rocm/utils/rocm_collect_value_distribution.h"
+
 #define EIGEN_USE_GPU
 #include <assert.h>
 
@@ -42,6 +44,7 @@ limitations under the License.
 #include "tensorflow/stream_executor/rocm/rocm_platform_id.h"
 #include "tensorflow/stream_executor/scratch_allocator.h"
 #include "tensorflow/stream_executor/stream_executor.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace stream_executor {
 namespace gpu {
@@ -1359,6 +1362,9 @@ bool ROCMBlas::DoBlasTrsv(Stream *stream, blas::UpperLower uplo,
       ROCMBlasDiagonal(diag), n, complex_cast(a), lda, complex_cast(x), incx);
 }
 
+
+CollectValueDistribution<half> gemm_input_values("gemm_input");
+
 port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                                   blas::Transpose transb, uint64_t m, uint64 n,
                                   uint64_t k, blas::DataType dtype,
@@ -1398,8 +1404,23 @@ port::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
     }
   }
 
+    bool is_collecting_data;
+    tensorflow::ReadBoolFromEnvVar("TF_ROCM_COLLECT_STATS", false, &is_collecting_data);
+    bool collect_on_single_gpu;
+    tensorflow::ReadBoolFromEnvVar("TF_ROCM_COLLECT_STATS_ON_SGPU", false, &collect_on_single_gpu);
+
+    int device_idx;
+    hipGetDevice(&device_idx);
+    is_collecting_data = is_collecting_data && (!collect_on_single_gpu || (device_idx==0) );
+
+
   switch (dtype) {
     case blas::DataType::kHalf: {
+      hipStream_t hip_stream = (hipStream_t) AsGpuStreamValue(stream);
+      if (is_collecting_data) {
+        gemm_input_values.process_data_gpu(hip_stream, a.opaque(), m*k);
+        gemm_input_values.process_data_gpu(hip_stream, b.opaque(), n*k);
+      } 
       port::StatusOr<bool> maybe_hasXDLOPS = GpuDriver::GetMFMASupport();
       if (maybe_hasXDLOPS.ok() && maybe_hasXDLOPS.ValueOrDie()) {
         VLOG(1) << "Using rocblas_gemm_ex";

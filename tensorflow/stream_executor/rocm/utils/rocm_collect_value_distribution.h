@@ -19,7 +19,7 @@ class CollectValueDistribution {
 
   void process_data(T* data, int num_elems);
 
-  void process_data_gpu(hipStream_t stream, void* data, int num_elems);
+  void process_data_gpu(hipStream_t stream, const void* data, int num_elems);
 
   void dump_data();
 

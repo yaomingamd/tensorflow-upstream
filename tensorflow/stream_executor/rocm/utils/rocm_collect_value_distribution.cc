@@ -206,7 +206,7 @@ void CollectValueDistribution<T>::process_data(T* data, int num_elems) {
 }
 
 template <typename T>
-__global__ void exponent_bucket_count_gpu_kernel(T* data, int num_elems, uint32_t* result) {
+__global__ void exponent_bucket_count_gpu_kernel(const T* data, int num_elems, uint32_t* result) {
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
   if (idx < num_elems) {
     uint32_t sign, exponent, mantissa;
@@ -220,14 +220,14 @@ __global__ void exponent_bucket_count_gpu_kernel(T* data, int num_elems, uint32_
 }
 
 template <typename T>
-void CollectValueDistribution<T>::process_data_gpu(hipStream_t stream, void* data, int num_elems) {
+void CollectValueDistribution<T>::process_data_gpu(hipStream_t stream, const void* data, int num_elems) {
 
   uint32_t* result;
   size_t result_size = sizeof(uint32_t)*get_num_buckets();
   hipMalloc(&result, result_size);
   hipMemsetAsync(result, 0, result_size, stream);
 
-  T* data_T = reinterpret_cast<T*>(data);
+  const T* data_T = reinterpret_cast<const T*>(data);
 
   int threads_per_block = 256;
   int num_blocks = (num_elems + threads_per_block -1 ) / threads_per_block;
