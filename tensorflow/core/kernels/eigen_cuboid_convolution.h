@@ -29,6 +29,10 @@ namespace Eigen {
 
 namespace internal {
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wignored-attributes"
+
+
 // WARNING: Most of the code here implicitly assumes that the matrix is in
 // ColMajor layout. This is guaranteed by the tensor contraction (see
 // TensorContraction.h).
@@ -1990,5 +1994,7 @@ CuboidConvolution(const Input& input, const Kernel& kernel,
 }
 
 }  // end namespace Eigen
+
+#pragma GCC diagnostic pop
 
 #endif  // TENSORFLOW_CORE_KERNELS_EIGEN_CUBOID_CONVOLUTION_H_

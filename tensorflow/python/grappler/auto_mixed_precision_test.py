@@ -678,8 +678,9 @@ class AutoMixedPrecisionTest(test.TestCase, parameterized.TestCase):
       self._assert_output_f16(mode, node_map, 'Conv2D' + suffix)
       self._assert_output_f16(mode, node_map, 'Relu' + suffix)
       self._assert_output_f16(mode, node_map, 'MaxPool' + suffix)
-    self._assert_output_f16(mode, node_map, 'concat')
-    self.assertAllClose(output_val_ref, output_val, atol=1e-3, rtol=1e-3)
+      self._assert_output_f16(mode, node_map, 'concat')
+      tol=1e-2 if test.is_built_with_rocm else 1e-3
+      self.assertAllClose(output_val_ref, output_val, atol=tol, rtol=tol)
 
   @parameterized.parameters(['cuda', 'mkl'])
   @test_util.run_deprecated_v1

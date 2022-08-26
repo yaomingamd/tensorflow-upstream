@@ -3130,6 +3130,8 @@ def matmul(a,
            adjoint_b=False,
            a_is_sparse=False,
            b_is_sparse=False,
+           grad_a=False,
+           grad_b=False,
            name=None):
   """Multiplies matrix `a` by matrix `b`, producing `a` * `b`.
 
@@ -3274,7 +3276,8 @@ def matmul(a,
         b = conj(b)
         adjoint_b = True
       return gen_math_ops.batch_mat_mul_v2(
-          a, b, adj_x=adjoint_a, adj_y=adjoint_b, name=name)
+          a, b, adj_x=adjoint_a, adj_y=adjoint_b,
+          grad_x=grad_a, grad_y=grad_b, name=name)
 
     # Neither matmul nor sparse_matmul support adjoint, so we conjugate
     # the matrix and use transpose instead. Conj() is a noop for real
@@ -3312,7 +3315,8 @@ def matmul(a,
       return ret
     else:
       return gen_math_ops.mat_mul(
-          a, b, transpose_a=transpose_a, transpose_b=transpose_b, name=name)
+          a, b, transpose_a=transpose_a, transpose_b=transpose_b, 
+          grad_a=grad_a, grad_b=grad_b, name=name)
 
 
 @tf_export("linalg.batch_gemm", "batch_gemm")
@@ -3324,6 +3328,8 @@ def batch_gemm(a,
            transpose_b=False,
            alpha=1.0,
            beta=0.0,
+           grad_a=False,
+           grad_b=False,
            name=None):
   with ops.name_scope(name, "BatchGemm", [a, b]) as name:
     if context.executing_eagerly():
@@ -3338,7 +3344,8 @@ def batch_gemm(a,
       b = ops.convert_to_tensor(b, name="b")
       c = ops.convert_to_tensor(c, name="c")
 
-    return gen_math_ops.batch_gemm(a, b, c, adj_x=transpose_a, adj_y=transpose_b, alpha=alpha, beta=beta, name=name)
+    return gen_math_ops.batch_gemm(a, b, c, adj_x=transpose_a, adj_y=transpose_b, alpha=alpha, beta=beta, 
+      grad_x=grad_a, grad_y=grad_b, name=name)
 
 @tf_export("linalg.matvec")
 @dispatch.add_dispatch_support

@@ -41,6 +41,7 @@ limitations under the License.
 #include "tensorflow/stream_executor/scratch_allocator.h"
 #include "tensorflow/stream_executor/stream.h"
 #include "tensorflow/stream_executor/stream_executor_pimpl.h"
+#include "rocm/rocm_config.h"
 
 namespace {
 
@@ -369,6 +370,12 @@ namespace wrap {
 // clang-format on
 
 MIOPEN_DNN_ROUTINE_EACH(STREAM_EXECUTOR_MIOPEN_WRAP)
+
+#if TF_ROCM_VERSION >= 50000
+
+STREAM_EXECUTOR_MIOPEN_WRAP(miopenSetConvolutionAttribute)
+
+#endif
 
 #undef MIOPEN_DNN_ROUTINE_EACH
 
@@ -3064,7 +3071,7 @@ port::Status MIOpenSupport::DoConvolve(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
-    dnn::ProfileResult* output_profile_result) {
+    dnn::CallContext call_context, dnn::ProfileResult* output_profile_result) {
   auto miopen = miopen_->GetHandle(parent_, stream);
   ScopedTensorDescriptor input_nd{input_descriptor,
                                   ToMIOpenDataType(element_type)};
@@ -3098,6 +3105,19 @@ port::Status MIOpenSupport::DoConvolve(
   }
 
   miopenStatus_t status = miopenStatusSuccess;
+
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+  bool hasXDLOPS = false, gfx90a = false;
+  GpuDriver::GetMFMASupport(hasXDLOPS, gfx90a);
+
+#if TF_ROCM_VERSION >= 50000
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf) && gfx90a) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
+#endif
   switch (kind) {
     case dnn::ConvolutionKind::FORWARD: {
       if (use_immediate_mode_) {
@@ -3222,18 +3242,19 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithms(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     ScratchAllocator* scratch_allocator,
+    dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   return use_immediate_mode_
              ? GetMIOpenConvolveAlgorithmsImmediateMode(
                    kind, element_type, stream, input_descriptor, input_data,
                    filter_descriptor, filter_data, output_descriptor,
                    output_data, convolution_descriptor, scratch_allocator,
-                   out_algorithms)
+                   call_context, out_algorithms)
              : GetMIOpenConvolveAlgorithmsFindMode(
                    kind, element_type, stream, input_descriptor, input_data,
                    filter_descriptor, filter_data, output_descriptor,
                    output_data, convolution_descriptor, scratch_allocator,
-                   out_algorithms);
+                   call_context, out_algorithms);
 }
 
 bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
@@ -3244,6 +3265,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     ScratchAllocator* scratch_allocator,
+    dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
@@ -3256,6 +3278,15 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
 
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+#if TF_ROCM_VERSION >= 50000
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
+#endif
   // First determine the number of algorityhms available
   size_t maxSolutionCount = 0;
 
@@ -3452,7 +3483,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
     DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
-    ScratchAllocator* scratch_allocator,
+    ScratchAllocator* scratch_allocator, dnn::CallContext call_context,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   auto miopen = miopen_->GetHandle(parent_, stream);
 
@@ -3465,6 +3496,15 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
 
+  bool is_backprop = (call_context == dnn::CallContext::kBackpropData) ||
+                     (call_context == dnn::CallContext::kBackpropFilter);
+
+#if TF_ROCM_VERSION >= 50000
+  if (is_backprop && (ToMIOpenDataType(element_type) == miopenHalf)) {
+    wrap::miopenSetConvolutionAttribute(
+        conv.handle(), MIOPEN_CONVOLUTION_ATTRIB_FP16_ALT_IMPL, 1);
+  }
+#endif
   // Determine the workspace memory size that will need by the call to Find
   size_t scratch_memory_size = 0;
   switch (kind) {
@@ -3982,9 +4022,10 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
     const int64 m = output_dimensions.NodesAcrossFeatureMaps();
     const int64 n = input_dimensions.count();
     const int64 k = input_dimensions.NodesAcrossFeatureMaps();
-    stream->ThenBlasGemm(blas::Transpose::kNoTranspose,
-                         blas::Transpose::kNoTranspose, m, n, k, alpha, weights,
-                         m, input_data, k, beta, output_data, m);
+    stream->ThenBlasGemm(blas::GemmCallContext<float>{blas::Transpose::kNoTranspose,
+                         blas::Transpose::kNoTranspose, m, n, k,
+                         alpha, beta, &weights, m, &input_data, k, output_data, m,
+                         blas::CallContext::kNone}); // TODO: should callcontext be passed through?
   } else {
     // This is a slower and more complex path that supports output
     // width() * height() > 1, though it only supports the
@@ -4061,10 +4102,11 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
       return ptrs;
     };
 
-    stream->ThenBlasGemmBatched(blas::Transpose::kNoTranspose,
+    port::ArraySlice<DeviceMemory<float>*> aa = toPtrs(a), bb = toPtrs(b), cc = toPtrs(c);
+    stream->ThenBlasGemmBatched(blas::BatchedGemmCallContext<float>{blas::Transpose::kNoTranspose,
                                 blas::Transpose::kNoTranspose, m, n, k, alpha,
-                                toPtrs(a), lda, toPtrs(b), ldb, beta, toPtrs(c),
-                                ldc, batch_count);
+                                beta, &aa, lda, &bb, ldb, &cc,
+                                ldc, batch_count, blas::CallContext::kNone}); // TODO: call context must be passed through
   }
 
   return stream->ok();

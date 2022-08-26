@@ -61,6 +61,8 @@ struct GpuConvConfig {
     double side_input_scale;
   };
 
+  se::dnn::CallContext call_context;
+
   PrimitiveType input_type;
   PrimitiveType output_type;
   CudnnConvKind kind;
@@ -94,6 +96,8 @@ struct GpuConvParams {
 };
 
 // This file contains low-level routines for running cudnn convolutions.
+
+se::dnn::CallContext GetCallContext(const absl::string_view call_context);
 
 // Calls into cudnn to run the specified convolution.
 //
