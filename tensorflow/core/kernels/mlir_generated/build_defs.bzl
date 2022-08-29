@@ -69,6 +69,7 @@ def _gen_mlir_op_impl(ctx):
                 ctx.outputs.out.path,
             )
         ),
+        use_default_shell_env = True,
     )
 
 _gen_mlir_op_rule = rule(
@@ -158,6 +159,7 @@ def _gen_kernel_bin_impl(ctx):
             "--enable_ftz=%s" % (ctx.attr.data_type == "f32"),
             "--cpu_codegen=%s" % ctx.attr.cpu_codegen,
         ],
+        use_default_shell_env = True,
         mnemonic = "compile",
     )
     compilation_outputs = cc_common.create_compilation_outputs(
