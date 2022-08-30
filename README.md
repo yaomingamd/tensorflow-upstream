@@ -65,6 +65,7 @@ pip3 install --user tensorflow-rocm --upgrade
 For details on Tensorflow ROCm port, please take a look at the [ROCm-specific README file](README.ROCm.md).
 
 ## Install
+### x86
 
 See the [TensorFlow install guide](https://www.tensorflow.org/install) for the
 [pip package](https://www.tensorflow.org/install/pip), to
@@ -92,6 +93,18 @@ commands.
 *Nightly binaries are available for testing using the
 [tf-nightly](https://pypi.python.org/pypi/tf-nightly) and
 [tf-nightly-cpu](https://pypi.python.org/pypi/tf-nightly-cpu) packages on PyPi.*
+
+### aarch64
+To install the current release on aarch64 cpu
+
+```
+$ pip install tensorflow
+```
+To update TensorFlow to the latest version, add `--upgrade` flag to the above
+commands.
+
+*Nightly binaries are available for testing using the
+[tf-nightly](https://pypi.python.org/pypi/tf-nightly) package on PyPi.*
 
 #### *Try your first TensorFlow program*
 
