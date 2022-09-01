@@ -25,7 +25,8 @@ of servers to mobile and edge devices.
 Originally developed by researchers and engineers from the Google Brain team
 within Google's AI organization, it comes with strong support for machine
 learning and deep learning and the flexible numerical computation core is used
-across many other scientific domains.
+across many other scientific domains. TensorFlow is licensed under [Apache
+2.0](https://github.com/tensorflow/tensorflow/blob/master/LICENSE).
 """
 
 import fnmatch
@@ -46,7 +47,7 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.10.0-rc2'
+_VERSION = '2.10.0-rc3'
 
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
