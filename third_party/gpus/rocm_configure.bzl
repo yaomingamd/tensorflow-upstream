@@ -335,7 +335,7 @@ def _find_libs(repository_ctx, rocm_config, hipfft_or_rocfft, miopen_path, rccl_
             ("rocblas", rocm_config.rocm_toolkit_path),
             (hipfft_or_rocfft, rocm_config.rocm_toolkit_path),
             ("hiprand", rocm_config.rocm_toolkit_path),
-            ("MIOpen", miopen_path),
+            ("MIOpen", rocm_config.rocm_toolkit_path),
             ("rccl", rccl_path),
             ("hipsparse", rocm_config.rocm_toolkit_path),
             ("roctracer64", rocm_config.rocm_toolkit_path + "/roctracer"),
@@ -562,12 +562,6 @@ def _create_local_rocm_repository(repository_ctx):
             src_dir = rocm_toolkit_path + "/include",
             out_dir = "rocm/include",
             exceptions = ["gtest", "gmock"],
-        ),
-        make_copy_dir_rule(
-            repository_ctx,
-            name = "miopen-include",
-            src_dir = rocm_toolkit_path + "/miopen/include",
-            out_dir = "rocm/include/miopen",
         )
     ]
 
@@ -659,7 +653,6 @@ def _create_local_rocm_repository(repository_ctx):
             "%{roctracer_lib}": rocm_libs["roctracer64"].file_name,
             "%{copy_rules}": "\n".join(copy_rules),
             "%{rocm_headers}": ('":rocm-include",\n' +
-                                '":miopen-include",\n' +
                                 hiprand_include +
                                 rocrand_include),
         },
