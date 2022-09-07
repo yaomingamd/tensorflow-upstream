@@ -24,6 +24,10 @@ __global__ void broadcast_fp32_kernel(float* dst, int dst_stride, int batches,
   }
 }
 
+// GPU kernel to populate an array of pointers:
+//
+//   [base + stride * i for i in range(n)].
+//
 void broadcast_fp32(void* stream, float* dst, int dst_stride, int batches,
                     float* src, int size) {
   int x_blocks = (size+255)/256;
