@@ -1125,19 +1125,6 @@ Status IrEmitterUnnested::EmitGemmThunk(mlir::Operation* op) {
   TF_ASSIGN_OR_RETURN(auto a, GetAllocationSlice(gemm.getA()));
   TF_ASSIGN_OR_RETURN(auto b, GetAllocationSlice(gemm.getB()));
   TF_ASSIGN_OR_RETURN(auto c, GetAllocationSlice(gemm.getC()));
-  auto attr_grad_x = op->template getAttrOfType<mlir::BoolAttr>("grad_x");
-  if (attr_grad_x) {
-    backend.set_grad_x(attr_grad_x.getValue());
-  } else {
-    backend.set_grad_x(false);
-  }
-
-  auto attr_grad_y = op->template getAttrOfType<mlir::BoolAttr>("grad_y");
-  if (attr_grad_y) {
-    backend.set_grad_y(attr_grad_y.getValue());
-  } else {
-    backend.set_grad_y(false);
-  }
 
   TF_ASSIGN_OR_RETURN(GemmConfig config, GemmConfig::For(gemm));
   auto thunk =
