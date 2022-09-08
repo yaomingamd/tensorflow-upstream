@@ -1932,7 +1932,7 @@ class BlasSupport {
       const DeviceMemory<std::complex<double>> &a, int lda,                    \
       const DeviceMemory<std::complex<double>> &b, int ldb,                    \
       std::complex<double> beta, DeviceMemory<std::complex<double>> *c,        \
-      int ldc, , blas::CallContext context,                                    \
+      int ldc, blas::CallContext context,                                      \
       blas::ProfileResult *output_profile_result) override;                    \
   bool GetBlasGemmAlgorithms(Stream *stream,                                   \
                              std::vector<blas::AlgorithmType> *out_algorithms) \

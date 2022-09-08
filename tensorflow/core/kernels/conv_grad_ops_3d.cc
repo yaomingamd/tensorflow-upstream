@@ -1709,7 +1709,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
                      stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                           se::blas::Transpose::kTranspose, n, m,
                                           k, a_ptr, n, b_ptr, m, &c_ptr, n,
-                                          se::blas::kDefaultComputePrecision
+                                          se::blas::kDefaultComputePrecision,
                                           se::blas::CallContext::kBackpropInput2));
       return;
     } else if (!is_grouped_convolution &&
