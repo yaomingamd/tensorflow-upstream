@@ -788,7 +788,7 @@ class Stream {
                             const DeviceMemory<InputType> &b, int ldb,
                             ConstantType beta, DeviceMemory<InputType> *c,
                             int ldc, blas::ComputePrecision precision,
-			     blas::CallContext contex) {
+			     blas::CallContext context) {
     static_assert(
         detail::is_any_of<InputType, Eigen::half, Eigen::bfloat16, float,
                           double, std::complex<float>, std::complex<double>>(),
@@ -987,7 +987,7 @@ class Stream {
       const port::ArraySlice<DeviceMemory<double> *> &b,  // non-absl ok
       int ldb, double beta,
       const port::ArraySlice<DeviceMemory<double> *> &c,  // non-absl ok
-      int ldc, int batch_count);
+      int ldc, int batch_count, blas::CallContext context);
   Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
                               uint64_t m, uint64 n, uint64_t k,
                               std::complex<float> alpha,

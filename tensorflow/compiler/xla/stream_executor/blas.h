@@ -419,7 +419,7 @@ class BlasSupport {
       const DeviceMemoryBase &b, DataType type_b, int ldb, const void *beta,
       DeviceMemoryBase *c, DataType type_c, int ldc,
       ComputationType computation_type, AlgorithmType algorithm,
-      ProfileResult *output_profile_result, blas::CallContext context,
+      ProfileResult *output_profile_result,
       blas::CallContext context) = 0;
 
   virtual port::Status DoBlasGemmStridedBatchedWithAlgorithm(
@@ -489,7 +489,8 @@ class BlasSupport {
       uint64_t m, uint64_t n, uint64 k, DataType dtype, const void *alpha,
       const DeviceMemoryBase &a, int lda, int64_t stride_a,
       const DeviceMemoryBase &b, int ldb, int64_t stride_b, const void *beta,
-      DeviceMemoryBase *c, int ldc, int64_t stride_c, int batch_count) = 0;
+      DeviceMemoryBase *c, int ldc, int64_t stride_c, int batch_count,
+      blas::CallContext context) = 0;
 
   // Solves a triangular matrix equation.
   //
