@@ -811,6 +811,8 @@ void SetMatmulAttributes(OpT op, const xla::gpu::GemmBackendConfig& config,
   }
   op.setPrecisionConfigAttr(
       xla::ConvertPrecisionConfig(&config.precision_config(), &builder));
+  op.setGradXAttr(builder.getBoolAttr(config.grad_x()));
+  op.setGradYAttr(builder.getBoolAttr(config.grad_y()));
 }
 
 StatusOr<lmhlo_gpu::CublasLtMatmulEpilogue> AsLhloEpilogue(
@@ -1000,6 +1002,8 @@ StatusOr<Operation*> LhloDialectEmitter::EmitDnnConvolution(
     attrs.set(op.getBackendConfigAttrName(), config);
     op->setAttrs(attrs.getDictionary(op->getContext()));
 
+    op->setAttr("call_context",
+                builder_.getStringAttr(backend_config.call_context()));
     return op.getOperation();
   };
 
