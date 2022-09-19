@@ -176,7 +176,7 @@ bash -c 'echo -e "gfx900\ngfx906\ngfx908\ngfx90a\ngfx1030" >> $ROCM_PATH/bin/tar
 cd $HOME
 if [ "$TF_VERSION" = "nightly" ]; then
     export TF_ROCM_GCC=1
-    git clone https://github.com/ROCmSoftwarePlatform/tensorflow-upstream tensorflow
+    git clone --branch many_linux_build https://github.com/ROCmSoftwarePlatform/tensorflow-upstream tensorflow
     # build:rbe_linux_rocm_base --action_env=TF_ROCM_GCC=1
     REF_LINE='build:rbe_linux_rocm_base --action_env=TF_ROCM_CONFIG_REPO="@ubuntu20.04-gcc9_manylinux2014-rocm_config_rocm"'
     sed -i "s/$REF_LINE/$REF_LINE\nbuild:rbe_linux_rocm_base --action_env=TF_ROCM_GCC=1/" $HOME/tensorflow/.bazelrc
