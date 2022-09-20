@@ -91,10 +91,8 @@ fi
 
 # Pip version required by manylinux2014
 pip3 install --upgrade pip
-PYTHON_PACKAGES="six numpy==${NUMPY_VERSION} scipy wheel argparse keras_applications keras_preprocessing tqdm Pillow portpicker h5py==2.10.0 wheel scikit-learn packaging"
+PYTHON_PACKAGES="six numpy==${NUMPY_VERSION} scipy wheel argparse keras_applications keras_preprocessing tqdm Pillow portpicker h5py==2.10.0 wheel scikit-learn packaging requests"
 if [ "$TF_VERSION" == "2.10" ]; then
-    pip3 --no-cache-dir install ${PYTHON_PACKAGES} requests
-elif [ "$TF_VERSION" == "2.9" ]; then
     pip3 --no-cache-dir install ${PYTHON_PACKAGES}
 else
     pip3 --no-cache-dir install ${PYTHON_PACKAGES}
