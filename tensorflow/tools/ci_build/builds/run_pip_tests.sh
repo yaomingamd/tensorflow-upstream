@@ -153,6 +153,7 @@ if [[ $IS_GPU == 1 ]] || [[ $IS_ROCM == 1 ]]; then
     BAZEL_PARALLEL_TEST_FLAGS="--local_test_jobs=${N_TEST_JOBS} \
         --test_env=TF_GPU_COUNT=$TF_GPU_COUNT \
         --test_env=TF_TESTS_PER_GPU=$TF_TESTS_PER_GPU \
+	--test_env=HSA_TOOLS_LIB=libroctracer64.so \
         --test_sharding_strategy=disabled \
         --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute"
   else
