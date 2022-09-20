@@ -1,7 +1,7 @@
 set -x
 
 # set environment vars
-export HOME=/root/
+export BUILD_DIR=/tmp
 
 # set vars
 MAYBE_NO_CACHE=--no-cache
@@ -173,20 +173,20 @@ yum install -y miopen-hip miopen-hip-devel miopengemm rocblas rocblas-devel rocs
 bash -c 'echo -e "gfx900\ngfx906\ngfx908\ngfx90a\ngfx1030" >> $ROCM_PATH/bin/target.lst'
 
 #Clone and install Tensorflow with rocm
-cd $HOME
+cd $BUILD_DIR
 if [ "$TF_VERSION" = "nightly" ]; then
     export TF_ROCM_GCC=1
-    git clone --branch many_linux_build https://github.com/ROCmSoftwarePlatform/tensorflow-upstream tensorflow
+    git clone https://github.com/ROCmSoftwarePlatform/tensorflow-upstream tensorflow
     # build:rbe_linux_rocm_base --action_env=TF_ROCM_GCC=1
     REF_LINE='build:rbe_linux_rocm_base --action_env=TF_ROCM_CONFIG_REPO="@ubuntu20.04-gcc9_manylinux2014-rocm_config_rocm"'
-    sed -i "s/$REF_LINE/$REF_LINE\nbuild:rbe_linux_rocm_base --action_env=TF_ROCM_GCC=1/" $HOME/tensorflow/.bazelrc
-    cat $HOME/tensorflow/.bazelrc
+    sed -i "s/$REF_LINE/$REF_LINE\nbuild:rbe_linux_rocm_base --action_env=TF_ROCM_GCC=1/" $BUILD_DIR/tensorflow/.bazelrc
+    cat $BUILD_DIR/tensorflow/.bazelrc
 else
     git clone --branch r${TF_VERSION}-rocm-enhanced https://github.com/ROCmSoftwarePlatform/tensorflow-upstream tensorflow
 fi
 
 # Install Bazel
-BAZEL_VERSION=$(cat $HOME/tensorflow/.bazelversion) # get the right version of bazel
+BAZEL_VERSION=$(cat $BUILD_DIR/tensorflow/.bazelversion) # get the right version of bazel
 wget https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh &&
     chmod -x bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh && bash bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh
 
@@ -201,7 +201,7 @@ export ROCM_INSTALL_DIR=$ROCM_PATH
 export ROCM_TOOLKIT_PATH=$ROCM_INSTALL_DIR
 
 # build wheel
-cd $HOME/tensorflow && yes "" | TF_NEED_ROCM=1 ROCM_TOOLKIT_PATH=${ROCM_INSTALL_DIR} PYTHON_BIN_PATH=${PYTHON_BIN_PATH} ./configure &&
+cd $BUILD_DIR/tensorflow && yes "" | TF_NEED_ROCM=1 ROCM_TOOLKIT_PATH=${ROCM_INSTALL_DIR} PYTHON_BIN_PATH=${PYTHON_BIN_PATH} ./configure &&
     bazel build --config=opt --action_env TF_ROCM_GCC=1 --config=rocm //tensorflow/tools/pip_package:build_pip_package --verbose_failures &&
     bazel-bin/tensorflow/tools/pip_package/build_pip_package $TF_PKG_LOC --rocm --project_name tensorflow_rocm
 
