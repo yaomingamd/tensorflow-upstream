@@ -142,13 +142,21 @@ TEST_F(GpuIndexTest, CompatibleUseLinearIndexWithReshapeAndBroadcast) {
   // the addrspace(1) attribute for the lines being checked by the following
   // patterns.
   // need to investigate why that is the case, and whether or not it is ok
-  CompileAndVerifyIr(std::move(module),
-                     R"(
+  auto expected_ir = is_built_with_rocm_ ? R"(
+; CHECK: %[[urem1:.*]] = urem i{{[0-9]*}} %[[linear_index:.*]], 14
+; CHECK: %[[bitcast:.*]] = bitcast i8{{( addrspace\(1\))?}}* %[[alloc:.*]] to float{{( addrspace\(1\))?}}*
+; CHECK: %[[addrspacecast:.*]] = addrspacecast float* %[[bitcast]] to float{{( addrspace\(1\))?}}
+; CHECK: %[[idx1:.*]] = zext i{{[0-9]*}} %[[urem1]] to i64
+; CHECK: getelementptr inbounds float, float{{( addrspace\(1\))?}}* %[[addrspacecast]], i64 %[[idx1]]
+  )" :                                    R"(
 ; CHECK: %[[urem1:.*]] = urem i{{[0-9]*}} %[[linear_index:.*]], 14
 ; CHECK: %[[bitcast:.*]] = bitcast i8{{( addrspace\(1\))?}}* %[[alloc:.*]] to float{{( addrspace\(1\))?}}*
 ; CHECK: %[[idx1:.*]] = zext i{{[0-9]*}} %[[urem1]] to i64
 ; CHECK: getelementptr inbounds float, float{{( addrspace\(1\))?}}* %[[bitcast]], i64 %[[idx1]]
-      )",
+  )";
+
+  CompileAndVerifyIr(std::move(module),
+                     expected_ir,
                      /*match_optimized_ir=*/true);
 }
 
