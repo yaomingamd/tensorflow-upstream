@@ -97,7 +97,6 @@ if [ "$TF_VERSION" == "2.10" ]; then
 else
     pip3 --no-cache-dir install ${PYTHON_PACKAGES}
 fi
-# yum -y install https://packages.endpoint.com/rhel/7/os/x86_64/endpoint-repo-1.7-1.x86_64.rpm
 
 # Install required base build and packaging commands for ROCm
 yum -y install \
@@ -164,7 +163,6 @@ echo -e "[amdgpu]\nname=amdgpu\nbaseurl=https://repo.radeon.com/amdgpu/latest/rh
 yum clean all
 yum install -y libdrm-amdgpu
 yum install -y rocm-dev
-# yum install -y miopen-hip miopengemm rocblas rocrand rocfft hipfft hipblas rocprim hipcub rccl hipsparse
 yum install -y miopen-hip miopen-hip-devel miopengemm rocblas rocblas-devel rocsolver-devel rocrand-devel rocfft-devel hipfft-devel hipblas-devel rocprim-devel hipcub-devel rccl-devel hipsparse-devel hipsolver-devel
 
 # Ensure the ROCm target list is set up
@@ -206,21 +204,8 @@ cd $BUILD_DIR/tensorflow && yes "" | TF_NEED_ROCM=1 ROCM_TOOLKIT_PATH=${ROCM_INS
 # check that wheels are manylinux compatiable
 echo "Checking $TF_WHEEL..."
 pip3 install auditwheel
-# time auditwheel repair --plat manylinux2014_x86_64 "$TF_WHEEL" --wheel-dir $TF_PKG_LOC 2>&1 | tee ${TF_WHEEL}_check.txt
-# NEW_TF_WHEEL=$(grep --extended-regexp --only-matching "$TF_PKG_LOC/\S+.whl" ${TF_WHEEL}_check.txt)
-# if [[ "$NEW_TF_WHEEL" != "$TF_WHEEL" ]]; then
-#     rm "$TF_WHEEL" # We don't need the original wheel if it was renamed
-# fi
 TF_WHEEL=$(ls -Art $TF_PKG_LOC/tensorflow*.whl | tail -n 1)
 NEW_TF_WHEEL=${TF_WHEEL/linux/"manylinux2014"}
 echo "rename whl to $NEW_TF_WHEEL"
 mv $TF_WHEEL $NEW_TF_WHEEL
-
-
 auditwheel show "$NEW_TF_WHEEL"
-
-# yum install -y bats
-# TF_WHEEL="$NEW_TF_WHEEL" bats /tensorflow/wheel_verification.bats
-
-# install wheel
-# pip3 install $TF_PKG_LOC/tensorflow*.whl
