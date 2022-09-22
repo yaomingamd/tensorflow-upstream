@@ -204,14 +204,18 @@ cd $BUILD_DIR/tensorflow && yes "" | TF_NEED_ROCM=1 ROCM_TOOLKIT_PATH=${ROCM_INS
     bazel-bin/tensorflow/tools/pip_package/build_pip_package $TF_PKG_LOC --rocm --project_name tensorflow_rocm
 
 # check that wheels are manylinux compatiable
-TF_WHEEL=$(ls -Art $TF_PKG_LOC/tensorflow*.whl | tail -n 1)
 echo "Checking $TF_WHEEL..."
 pip3 install auditwheel
-time auditwheel repair --plat manylinux2014_x86_64 "$TF_WHEEL" --wheel-dir $TF_PKG_LOC 2>&1 | tee ${TF_WHEEL}_check.txt
-NEW_TF_WHEEL=$(grep --extended-regexp --only-matching "$TF_PKG_LOC/\S+.whl" ${TF_WHEEL}_check.txt)
-if [[ "$NEW_TF_WHEEL" != "$TF_WHEEL" ]]; then
-    rm "$TF_WHEEL" # We don't need the original wheel if it was renamed
-fi
+# time auditwheel repair --plat manylinux2014_x86_64 "$TF_WHEEL" --wheel-dir $TF_PKG_LOC 2>&1 | tee ${TF_WHEEL}_check.txt
+# NEW_TF_WHEEL=$(grep --extended-regexp --only-matching "$TF_PKG_LOC/\S+.whl" ${TF_WHEEL}_check.txt)
+# if [[ "$NEW_TF_WHEEL" != "$TF_WHEEL" ]]; then
+#     rm "$TF_WHEEL" # We don't need the original wheel if it was renamed
+# fi
+TF_WHEEL=$(ls -Art $TF_PKG_LOC/tensorflow*.whl | tail -n 1)
+NEW_TF_WHEEL=${TF_WHEEL/linux/"manylinux2014"}
+echo "rename whl to $NEW_TF_WHEEL"
+mv $TF_WHEEL $NEW_TF_WHEEL
+
 
 auditwheel show "$NEW_TF_WHEEL"
 
