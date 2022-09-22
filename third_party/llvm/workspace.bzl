@@ -17,5 +17,8 @@ def repo(name):
 	    "https://github.com/ROCmSoftwarePlatform/llvm-project/archive/{commit}.tar.gz".format(commit = LLVM_COMMIT),
         ],
         build_file = "//third_party/llvm:BUILD.bazel",
-        patch_file = "//third_party/llvm:macos_build_fix.patch",
+        patch_file = [
+            "//third_party/llvm:macos_build_fix.patch",
+            "//third_party/llvm:amdgpu_gfx90a_fix.patch",
+        ],
     )
