@@ -1571,7 +1571,10 @@ tf_py_test(
     srcs = ["importer_test.py"],
     main = "importer_test.py",
     python_version = "PY3",
-    tags = ["no_rocm"],
+    tags = [
+        "no_oss",
+        "no_rocm",
+    ],
     deps = [
         ":for_generated_wrappers",
         ":framework",
