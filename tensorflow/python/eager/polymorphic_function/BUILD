@@ -150,6 +150,7 @@ tf_xla_py_test(
         "no_pip",
         "no_tfrt",  # TODO(b/185944215)
         "no_windows",
+        "no_rocm"
     ],
     use_xla_device = False,
     deps = [
