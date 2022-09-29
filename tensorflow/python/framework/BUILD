@@ -1078,6 +1078,7 @@ cuda_py_test(
     tags = [
         "multi_gpu",
         "no_pip",
+        "no_rocm"
     ],  # test_ops are not available in pip.
     deps = [
         ":config",
