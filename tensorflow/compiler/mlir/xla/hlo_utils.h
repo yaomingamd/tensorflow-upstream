@@ -15,17 +15,17 @@ limitations under the License.
 
 // This file defines helpers useful when creating or manipulating lhlo/hlo.
 
-#ifndef TENSORFLOW_COMPILER_MLIR_XLA_UTILS_H_
-#define TENSORFLOW_COMPILER_MLIR_XLA_UTILS_H_
+#ifndef TENSORFLOW_COMPILER_MLIR_XLA_HLO_UTILS_H_
+#define TENSORFLOW_COMPILER_MLIR_XLA_HLO_UTILS_H_
 
 #include "llvm/ADT/STLExtras.h"
 #include "mlir/IR/Attributes.h"  // from @llvm-project
 #include "mlir/IR/Builders.h"  // from @llvm-project
 #include "mlir/IR/BuiltinTypes.h"  // from @llvm-project
-#include "tensorflow/compiler/mlir/hlo/include/mlir-hlo/Dialect/mhlo/IR/hlo_ops.h"
-#include "tensorflow/compiler/mlir/hlo/include/mlir-hlo/utils/convert_op_folder.h"
+#include "tensorflow/compiler/xla/mlir_hlo/include/mlir-hlo/Dialect/mhlo/IR/hlo_ops.h"
+#include "tensorflow/compiler/xla/mlir_hlo/include/mlir-hlo/utils/convert_op_folder.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
-#include "tensorflow/core/platform/errors.h"
+#include "tensorflow/tsl/platform/errors.h"
 
 namespace xla {
 
@@ -75,7 +75,7 @@ static StatusOr<TypeT> ConvertTensorShapeToType(const Shape& xla_ty,
   if (is_dynamic) {
     extensions = TypeExtensionsAttr::get(builder.getContext(), bounds);
   }
-  return TypeT::get(shape, element_type_or.ValueOrDie(), extensions);
+  return TypeT::get(shape, element_type_or.value(), extensions);
 }
 
 StatusOr<mlir::MemRefType> ConvertTensorShapeToMemRefType(
@@ -85,7 +85,7 @@ template <>
 inline StatusOr<mlir::MemRefType> ConvertTensorShapeToType(
     const Shape& shape, mlir::Builder builder) {
   if (shape.is_dynamic()) {
-    return tensorflow::errors::FailedPrecondition(
+    return tsl::errors::FailedPrecondition(  // NOLINT
         "MemRefType don't support dynamic shapes");
   }
   return ConvertTensorShapeToMemRefType(shape, builder);
@@ -115,4 +115,4 @@ static StatusOr<mlir::Type> ConvertShapeToType(const Shape& shape,
 
 }  // namespace xla
 
-#endif  // TENSORFLOW_COMPILER_MLIR_XLA_UTILS_H_
+#endif  // TENSORFLOW_COMPILER_MLIR_XLA_HLO_UTILS_H_

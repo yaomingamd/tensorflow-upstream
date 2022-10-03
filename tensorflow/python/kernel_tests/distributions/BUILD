@@ -2,10 +2,7 @@
 
 load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 
-package(
-    default_visibility = ["//tensorflow:internal"],
-    licenses = ["notice"],
-)
+package(licenses = ["notice"])
 
 cuda_py_test(
     name = "bijector_test",
@@ -20,7 +17,6 @@ cuda_py_test(
         "//tensorflow/python:platform_test",
         "//tensorflow/python/ops/distributions",
         "//third_party/py/numpy",
-        "@six_archive//:six",
     ],
 )
 
@@ -173,9 +169,6 @@ cuda_py_test(
 cuda_py_test(
     name = "gamma_test",
     srcs = ["gamma_test.py"],
-    tags = [
-        "noasan",  # b/237093318
-    ],
     deps = [
         "//tensorflow/python:client",
         "//tensorflow/python:client_testlib",
@@ -307,6 +300,5 @@ cuda_py_test(
         "//tensorflow/python:platform_test",
         "//tensorflow/python/ops/distributions",
         "//third_party/py/numpy",
-        "@six_archive//:six",
     ],
 )

@@ -106,7 +106,7 @@ class BincountTest(test_util.TensorFlowTestCase):
             np.bincount(arr, weights))
 
   @test_util.run_gpu_only
-  @test_util.disable_xla("XLA uses scatter and could be non-deterministic")
+  @test_util.disable_xla("Bincount is deterministic with XLA")
   def test_bincount_determinism_error(self):
     arr = np.random.randint(0, 1000, size=1000)
     with test_util.deterministic_ops(), self.assertRaisesRegex(
@@ -734,6 +734,18 @@ class RaggedBincountOpTest(test_util.TensorFlowTestCase,
               binary_output=False,
               name=None))
 
+  @test_util.run_in_graph_and_eager_modes
+  def test_splits_empty(self):  # b/238450914
+    with self.assertRaisesRegex((ValueError, errors.InvalidArgumentError),
+                                "Splits must be non-empty"):
+      self.evaluate(
+          gen_math_ops.ragged_bincount(
+              splits=[],  # Invalid splits
+              values=[1],
+              size=1,
+              weights=[1],
+              binary_output=False,
+              name=None))
 
 if __name__ == "__main__":
   googletest.main()

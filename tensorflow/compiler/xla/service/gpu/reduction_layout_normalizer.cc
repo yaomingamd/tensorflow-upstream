@@ -28,8 +28,8 @@ limitations under the License.
 #include "tensorflow/compiler/xla/shape_util.h"
 #include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/compiler/xla/statusor.h"
+#include "tensorflow/compiler/xla/stream_executor/lib/statusor.h"
 #include "tensorflow/core/lib/core/errors.h"
-#include "tensorflow/stream_executor/lib/statusor.h"
 
 namespace xla {
 namespace gpu {
@@ -179,9 +179,12 @@ class EnforceMinorToMajorReduceOpVisitor : public DfsHloRewriteVisitor {
   }
 };
 
-StatusOr<bool> ReductionLayoutNormalizer::Run(HloModule *module) {
+StatusOr<bool> ReductionLayoutNormalizer::Run(
+    HloModule *module,
+    const absl::flat_hash_set<absl::string_view> &execution_threads) {
   TF_ASSIGN_OR_RETURN(bool changed,
-                      EnforceMinorToMajorReduceOpVisitor().RunOnModule(module));
+                      EnforceMinorToMajorReduceOpVisitor().RunOnModule(
+                          module, execution_threads));
   return changed;
 }
 
