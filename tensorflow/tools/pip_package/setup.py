@@ -113,7 +113,7 @@ REQUIRED_PACKAGES = [
     standard_or_nightly('tensorboard >= 2.10, < 2.11',
                         'tb-nightly ~= 2.11.0.a'),
     standard_or_nightly('tensorflow_estimator >= 2.10.0rc0, < 2.11',
-                        'tf-estimator-nightly ~= 2.11.0.dev'),
+                        'tf-estimator-nightly == 2.11.0.dev2022092808'),
     standard_or_nightly('keras >= 2.10.0rc0, < 2.11',
                         'keras-nightly == 2.11.0.dev2022092807'),
 ]
