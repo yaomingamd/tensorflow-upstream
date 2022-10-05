@@ -1,6 +1,6 @@
-load("//tensorflow:tensorflow.bzl", "filegroup")
+load("//tensorflow:tensorflow.default.bzl", "filegroup")
 load(
-    "//tensorflow/core/platform:rules_cc.bzl",
+    "//tensorflow/tsl/platform:rules_cc.bzl",
     "cc_library",
 )
 
@@ -19,6 +19,7 @@ package(
         "//tensorflow/compiler/xla/stream_executor:__subpackages__",
         "//tensorflow/core/lib/monitoring:__subpackages__",
         "//tensorflow/compiler/xla/service:__subpackages__",
+        "//tensorflow/tsl/framework:__subpackages__",
     ],
     licenses = ["notice"],
 )

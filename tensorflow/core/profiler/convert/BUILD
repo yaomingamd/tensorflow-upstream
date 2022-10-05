@@ -343,6 +343,7 @@ cc_library(
     deps = [
         ":op_metrics_db_combiner",
         ":op_stats_combiner",
+        ":preprocess_single_host_xplane",
         ":repository",
         ":step_events_to_steps_db",
         ":xplane_to_kernel_stats_db",
@@ -693,10 +694,22 @@ cc_library(
     deps = [
         "//tensorflow/core:lib",
         "//tensorflow/core/profiler/protobuf:xplane_proto_cc",
-        "//tensorflow/core/profiler/utils:derived_timeline",
-        "//tensorflow/core/profiler/utils:group_events",
         "//tensorflow/core/profiler/utils:xplane_schema",
         "//tensorflow/core/profiler/utils:xplane_utils",
+    ],
+)
+
+cc_library(
+    name = "preprocess_single_host_xplane",
+    srcs = ["preprocess_single_host_xplane.cc"],
+    hdrs = ["preprocess_single_host_xplane.h"],
+    copts = tf_profiler_copts(),
+    visibility = ["//tensorflow/core/profiler:internal"],
+    deps = [
+        "//tensorflow/core/profiler/protobuf:xplane_proto_cc",
+        "//tensorflow/core/profiler/utils:derived_timeline",
+        "//tensorflow/core/profiler/utils:group_events",
+        "//tensorflow/tsl/profiler/utils:xplane_utils",
     ],
 )
 
@@ -712,6 +725,7 @@ cc_library(
         ":op_stats_to_overview_page",
         ":op_stats_to_pod_viewer",
         ":op_stats_to_tf_stats",
+        ":preprocess_single_host_xplane",
         ":repository",
         ":tool_options",
         ":xplane_to_memory_profile",
@@ -840,32 +854,17 @@ cc_library(
         "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/service:hlo_proto_cc",
         "//tensorflow/core:lib",
-        "//tensorflow/core:lib_internal",
         "//tensorflow/core/profiler/protobuf:memory_viewer_preprocess_proto_cc",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/container:node_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-tf_cc_test(
-    name = "hlo_proto_to_memory_visualization_utils_test",
-    srcs = ["hlo_proto_to_memory_visualization_utils_test.cc"],
-    deps = [
-        ":hlo_proto_to_memory_visualization_utils",
-        "//tensorflow/compiler/xla/service:hlo_proto_cc",
-        "//tensorflow/core:lib",
-        "//tensorflow/core:lib_internal",
-        "//tensorflow/core:test",
-        "//tensorflow/core:test_main",
-        "//tensorflow/core/profiler/protobuf:memory_viewer_preprocess_proto_cc",
-        "//tensorflow/core/util/proto:proto_utils",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_googletest//:gtest_main",
     ],
 )
 

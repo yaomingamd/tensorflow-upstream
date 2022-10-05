@@ -22,7 +22,7 @@ limitations under the License.
 #include "mlir-hlo/Dialect/gml_st/IR/gml_st_ops.h"
 #include "mlir-hlo/Dialect/gml_st/transforms/passes.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -114,7 +114,7 @@ static LaunchOp createInitialGpuLaunchOp(Location loc, Value defaultSize,
   auto launch =
       rewriter.create<LaunchOp>(loc, defaultSize, defaultSize, defaultSize,
                                 defaultSize, defaultSize, defaultSize);
-  Block* body = &launch.body().front();
+  Block* body = &launch.getBody().front();
   rewriter.setInsertionPointToEnd(body);
   rewriter.create<gpu::TerminatorOp>(loc);
   rewriter.setInsertionPointToStart(body);
@@ -212,7 +212,7 @@ static Value matchLaunchSpaceToLoop(ParallelOp parallel,
           rewriter.getAffineSymbolExpr(0));
   Value inductionVar = rewriter.create<AffineApplyOp>(
       loc, inductionVarMap,
-      ValueRange{launch.body().getArgument(launchIdx), lowerBound, step});
+      ValueRange{launch.getBody().getArgument(launchIdx), lowerBound, step});
 
   // Infer the launch bound from the loop bounds and the step.
   Value iterIndependentUpperBound =

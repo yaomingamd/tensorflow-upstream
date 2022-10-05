@@ -295,6 +295,9 @@ std::unique_ptr<OperationPass<ModuleOp>> CreateRemoveUnusedArgumentsPass();
 std::unique_ptr<OperationPass<func::FuncOp>>
 CreateRemoveUnusedWhileResultsPass();
 
+// Creates VarHandleOps right next to the operations that use them.
+std::unique_ptr<OperationPass<ModuleOp>> CreateLocalizeVarHandlesPass();
+
 // Populates the supplied passmanager with the passes required to run the
 // CPU/GPU bridge.
 void CreateTFXLABridgePipeline(OpPassManager& pm);
@@ -583,6 +586,17 @@ inline void registerTensorFlowPasses() {
 
 namespace TFDevice {
 #define GEN_PASS_REGISTRATION
+#define GEN_PASS_DECL_ANNOTATEPARAMETERREPLICATIONPASS
+#define GEN_PASS_DECL_DECOMPOSERESOURCEOPSINCLUSTERPASS
+#define GEN_PASS_DECL_DECOMPOSERESOURCEOPSPASS
+#define GEN_PASS_DECL_DEVICEATTRIBUTETOLAUNCHPASS
+#define GEN_PASS_DECL_HOSTLAUNCHTOOUTSIDECOMPILEDPASS
+#define GEN_PASS_DECL_LAUNCHTODEVICEATTRIBUTEPASS
+#define GEN_PASS_DECL_RESOURCEOPLIFTINGFORMAINFUNCTIONPASS
+#define GEN_PASS_DECL_RESOURCEOPLIFTINGPASS
+#define GEN_PASS_DECL_XLACLUSTERFORMATIONPASS
+#define GEN_PASS_DECL_XLAINLINEDEVICEOPSPASS
+#define GEN_PASS_DECL_XLAREWRITEPASS
 #include "tensorflow/compiler/mlir/tensorflow/transforms/tf_device_passes.h.inc"
 }  // namespace TFDevice
 

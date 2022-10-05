@@ -1,10 +1,12 @@
 load("//tensorflow/core/platform:build_config_root.bzl", "if_static")
-load("//tensorflow/core/platform:rules_cc.bzl", "cc_library")
+load("//tensorflow/tsl/platform:rules_cc.bzl", "cc_library")
 load("//tensorflow/tsl/profiler/builds:build_config.bzl", "tf_profiler_copts")
 load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 
 package(
-    default_visibility = ["//tensorflow/core/profiler:internal"],
+    default_visibility = [
+        "//tensorflow/tsl/profiler:internal",
+    ],
     licenses = ["notice"],
 )
 
@@ -64,8 +66,8 @@ tf_cc_test(
     srcs = ["timespan_test.cc"],
     deps = [
         ":timespan",
-        "//tensorflow/core/platform:test_main",
         "//tensorflow/tsl/platform:test",
+        "//tensorflow/tsl/platform:test_main",
     ],
 )
 
@@ -181,6 +183,7 @@ cc_library(
     visibility = [":friends"],
     deps = [
         ":math_utils",
+        ":tf_xplane_visitor",
         ":timespan",
         ":trace_utils",
         ":xplane_builder",
