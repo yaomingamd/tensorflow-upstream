@@ -148,23 +148,24 @@ class RocmComputeCapability {
         "gfx906",  // MI50 / MI60
         "gfx908",  // MI100
         "gfx90a",  // MI200
+        "gfx940",  // MI300
         "gfx1030"  // Navi21
     };
   }
   std::set<std::string> gfx_versions_with_nhwc_layout_support() {
-    return {"gfx908", "gfx90a"};
+    return {"gfx908", "gfx90a", "gfx940"};
   }
   std::set<std::string> gfx_versions_with_fast_bf16_support() {
-    return {"gfx908", "gfx90a"};
+    return {"gfx908", "gfx90a", "gfx940"};
   }
   std::set<std::string> gfx_versions_with_fast_fp16_support() {
-    return {"gfx906", "gfx908", "gfx90a", "gfx1030"};
+    return {"gfx906", "gfx908", "gfx90a", "gfx940", "gfx1030"};
   }
   std::set<std::string> gfx_versions_with_mfma_instr_support() {
-    return {"gfx908", "gfx90a"};
+    return {"gfx908", "gfx90a", "gfx940"};
   }
   std::set<std::string> gfx_versions_with_fp16_atomics_support() {
-    return {"gfx90a"};
+    return {"gfx90a", "gfx940"};
   }
 };
 
