@@ -1786,7 +1786,7 @@ cc_library(
 tf_cc_test(
     name = "gpu_compiler_test",
     srcs = ["gpu_compiler_test.cc"],
-    tags = tf_cuda_tests_tags(),
+    tags = tf_cuda_tests_tags() + ["no_rocm"],
     deps = [
         ":horizontal_loop_fusion",
         "//tensorflow/compiler/xla/service:gpu_plugin",
