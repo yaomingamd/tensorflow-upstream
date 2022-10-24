@@ -476,6 +476,7 @@ cc_library(
         "@stablehlo//:base",
         "@stablehlo//:broadcast_utils",
         "@stablehlo//:chlo_ops",
+        "@stablehlo//:stablehlo_assembly_format",
         "@stablehlo//:stablehlo_type_inference",
     ],
 )
@@ -1527,6 +1528,7 @@ cc_library(
         ":gml_st_ops_inc_gen",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:ArithUtils",
         "@llvm-project//mlir:ControlFlowInterfaces",
         "@llvm-project//mlir:DialectUtils",
         "@llvm-project//mlir:IR",

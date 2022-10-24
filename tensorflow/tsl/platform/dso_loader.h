@@ -13,9 +13,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_STREAM_EXECUTOR_CUDA_CUDNN_VERSION_H_
-#define TENSORFLOW_STREAM_EXECUTOR_CUDA_CUDNN_VERSION_H_
+#ifndef TENSORFLOW_TSL_PLATFORM_DSO_LOADER_H_
+#define TENSORFLOW_TSL_PLATFORM_DSO_LOADER_H_
 
-#include "tensorflow/compiler/xla/stream_executor/cuda/cudnn_version.h"
+#include "tensorflow/tsl/platform/platform.h"
 
-#endif  // TENSORFLOW_STREAM_EXECUTOR_CUDA_CUDNN_VERSION_H_
+// Include appropriate platform-dependent implementations
+#if defined(PLATFORM_GOOGLE) || defined(PLATFORM_CHROMIUMOS)
+#include "tensorflow/tsl/platform/google/dso_loader.h"
+#elif defined(PLATFORM_POSIX) || defined(PLATFORM_POSIX_ANDROID) || \
+    defined(PLATFORM_GOOGLE_ANDROID) || defined(PLATFORM_WINDOWS)
+#include "tensorflow/tsl/platform/default/dso_loader.h"
+#else
+#error Define the appropriate PLATFORM_<foo> macro for this platform
+#endif
+
+#endif  // TENSORFLOW_TSL_PLATFORM_DSO_LOADER_H_

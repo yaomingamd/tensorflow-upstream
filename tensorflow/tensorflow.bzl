@@ -1704,7 +1704,7 @@ def tf_gpu_kernel_library(
         hdrs = hdrs,
         copts = copts,
         deps = deps + if_cuda([
-            clean_dep("//tensorflow/stream_executor/cuda:cudart_stub"),
+            clean_dep("//tensorflow/tsl/cuda:cudart_stub"),
         ]) + if_cuda_or_rocm([
             clean_dep("//tensorflow/core:gpu_lib"),
         ]),
@@ -1742,7 +1742,7 @@ def tf_gpu_library(deps = None, cuda_deps = None, copts = tf_copts(), **kwargs):
         kwargs.pop("default_copts", None)
     cc_library(
         deps = deps + if_cuda([
-            clean_dep("//tensorflow/stream_executor/cuda:cudart_stub"),
+            clean_dep("//tensorflow/tsl/cuda:cudart_stub"),
             "@local_config_cuda//cuda:cuda_headers",
         ]) + if_rocm_is_configured([
             "@local_config_rocm//rocm:rocm_headers",
@@ -2358,13 +2358,6 @@ def pywrap_tensorflow_macro_opensource(
         ],
     })
     additional_linker_inputs = if_windows([], otherwise = ["%s.lds" % vscriptname])
-
-    # This is needed so that libtensorflow_cc is included in the pip package.
-    srcs += select({
-        clean_dep("//tensorflow:macos"): [clean_dep("//tensorflow:libtensorflow_cc.%s.dylib" % VERSION_MAJOR)],
-        clean_dep("//tensorflow:windows"): [],
-        "//conditions:default": [clean_dep("//tensorflow:libtensorflow_cc.so.%s" % VERSION_MAJOR)],
-    })
 
     tf_cc_shared_library_opensource(
         name = cc_shared_library_name,

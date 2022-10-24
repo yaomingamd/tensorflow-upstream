@@ -78,6 +78,7 @@ limitations under the License.
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/InliningUtils.h"
+#include "stablehlo/dialect/AssemblyFormat.h"
 #include "stablehlo/dialect/TypeInference.h"
 
 namespace mlir {
@@ -160,10 +161,10 @@ void createArgs(ArrayRef<OpAsmParser::UnresolvedOperand> operands,
   }
 }
 
-const auto hasDuplicates = [](SmallVector<int64_t>& nums) {
-  if (!llvm::is_sorted(nums)) std::sort(nums.begin(), nums.end());
-  auto* last = std::unique(nums.begin(), nums.end());
-  return last != nums.end();
+// Checks if the vector `nums` has duplicates.
+const auto hasDuplicates = [](const ArrayRef<int64_t> nums) {
+  llvm::SmallDenseSet<int64_t> set(nums.begin(), nums.end());
+  return set.size() != nums.size();
 };
 
 //===----------------------------------------------------------------------===//
@@ -3160,7 +3161,6 @@ LogicalResult BroadcastInDimOp::verify() {
                       operandRank));
   }
 
-  auto dimensions = getBroadcastDimensions();
   auto dimensionsType = getBroadcastDimensions().getType();
   auto dimensionsRank = dimensionsType.getRank();
   if (dimensionsRank != 1) {
@@ -3175,16 +3175,15 @@ LogicalResult BroadcastInDimOp::verify() {
         dimensionsSize, operandRank));
   }
 
+  auto dimensions =
+      llvm::to_vector(getBroadcastDimensions().getValues<int64_t>());
+  if (hasDuplicates(dimensions))
+    return emitOpError("broadcast_dimensions should not have duplicates");
+
   auto resultType = getResult().getType().cast<RankedTensorType>();
   auto resultRank = resultType.getRank();
-  if (resultRank < operandRank) {
-    return emitOpError(
-        llvm::formatv("result rank ({0}) is less than operand rank ({1})",
-                      resultRank, operandRank));
-  }
-
   for (int i = 0; i != dimensionsSize; ++i) {
-    auto dimIndex = dimensions.getValues<int64_t>()[i];
+    auto dimIndex = dimensions[i];
     if (dimIndex >= resultRank) {
       return emitOpError(
           llvm::formatv("broadcast_dimensions contains invalid value {0} for "
@@ -5956,51 +5955,6 @@ void CaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
 // UnaryOps
 //===----------------------------------------------------------------------===//
 
-ParseResult parseUnaryOp(OpAsmParser& parser, OperationState& result) {
-  SmallVector<OpAsmParser::UnresolvedOperand> operands;
-  Type type;
-  // If the operand is in-between parentheses, use generic form.
-  SMLoc loc = parser.getCurrentLocation();
-  if (!parser.parseOptionalLParen()) {
-    if (parser.parseOperandList(operands) || parser.parseRParen() ||
-        parser.parseOptionalAttrDict(result.attributes) ||
-        parser.parseColon() || parser.parseType(type))
-      return failure();
-    auto fnType = type.dyn_cast<FunctionType>();
-    if (!fnType) {
-      parser.emitError(loc, "expected function type");
-      return failure();
-    }
-    if (parser.resolveOperands(operands, fnType.getInputs(), loc,
-                               result.operands))
-      return failure();
-    result.addTypes(fnType.getResults());
-    return success();
-  }
-  // Otherwise, use shorthand syntax.
-  return failure(parser.parseOperandList(operands) ||
-                 parser.parseOptionalAttrDict(result.attributes) ||
-                 parser.parseColonType(type) ||
-                 parser.resolveOperands(operands, type, result.operands) ||
-                 parser.addTypeToList(type, result.types));
-}
-
-void printUnaryOp(Operation* op, OpAsmPrinter& p) {
-  assert(op->getNumResults() == 1 && "op should have one result");
-  assert(op->getNumOperands() == 1 && "op should have one input");
-  // If not all types are the same, use generic form.
-  auto resultType = op->getResult(0).getType();
-  if (resultType != op->getOperandTypes()[0]) {
-    p.printGenericOp(op, /*printOpName=*/false);
-    return;
-  }
-  // Otherwise, use the shorthand syntax.
-  p << ' ';
-  p.printOperands(op->getOperands());
-  p.printOptionalAttrDict(op->getAttrs());
-  p << " : " << resultType;
-}
-
 template <typename ValType>
 struct AnyValue {
   bool operator()(const ValType&) { return true; }
@@ -6170,51 +6124,6 @@ UNARY_FOLDER_UPCAST_TO_F64(TanhOp, std::tanh, AnyValue)
 //===----------------------------------------------------------------------===//
 // BinaryOps
 //===----------------------------------------------------------------------===//
-
-ParseResult parseBinaryOp(OpAsmParser& parser, OperationState& result) {
-  SmallVector<OpAsmParser::UnresolvedOperand> operands;
-  Type type;
-  // If the operand list is in-between parentheses, use generic form.
-  SMLoc loc = parser.getCurrentLocation();
-  if (!parser.parseOptionalLParen()) {
-    if (parser.parseOperandList(operands) || parser.parseRParen() ||
-        parser.parseOptionalAttrDict(result.attributes) ||
-        parser.parseColon() || parser.parseType(type))
-      return failure();
-    auto fnType = type.dyn_cast<FunctionType>();
-    if (!fnType) {
-      parser.emitError(loc, "expected function type");
-      return failure();
-    }
-    if (parser.resolveOperands(operands, fnType.getInputs(), loc,
-                               result.operands))
-      return failure();
-    result.addTypes(fnType.getResults());
-    return success();
-  }
-  // Otherwise, use shorthand syntax.
-  return failure(parser.parseOperandList(operands) ||
-                 parser.parseOptionalAttrDict(result.attributes) ||
-                 parser.parseColonType(type) ||
-                 parser.resolveOperands(operands, type, result.operands) ||
-                 parser.addTypeToList(type, result.types));
-}
-
-void printBinaryOp(Operation* op, OpAsmPrinter& p) {
-  assert(op->getNumResults() == 1 && "op should have one result");
-  // If not all types are the same, use generic form.
-  auto resultType = op->getResult(0).getType();
-  if (llvm::any_of(op->getOperandTypes(),
-                   [&](Type type) { return type != resultType; })) {
-    p.printGenericOp(op, /*printOpName=*/false);
-    return;
-  }
-  // Otherwise, use the shorthand syntax.
-  p << ' ';
-  p.printOperands(op->getOperands());
-  p.printOptionalAttrDict(op->getAttrs());
-  p << " : " << resultType;
-}
 
 template <typename Op, typename ElementType = Type, typename ValType,
           typename Convert>
@@ -8064,6 +7973,15 @@ using mlir::hlo::printWindowAttributes;
 
 }  // namespace mhlo
 }  // namespace mlir
+
+// clang-format off
+using mlir::hlo::printSameOperandsAndResultType;
+using mlir::hlo::parseSameOperandsAndResultType;
+using mlir::hlo::printPairwiseOpType;
+using mlir::hlo::parsePairwiseOpType;
+using mlir::hlo::printTupleOpType;
+using mlir::hlo::parseTupleOpType;
+// clang-format on
 
 #define GET_OP_CLASSES
 #include "mlir-hlo/Dialect/mhlo/IR/hlo_ops.cc.inc"
