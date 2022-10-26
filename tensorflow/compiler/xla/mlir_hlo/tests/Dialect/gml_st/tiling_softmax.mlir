@@ -3,8 +3,8 @@
 // RUN:     --canonicalize --cse | \
 // RUN: FileCheck %s
 
-// CHECK: #map0 = affine_map<(d0, d1) -> (d0, d1)>
-// CHECK: #map1 = affine_map<(d0, d1) -> (d0)>
+// CHECK: #map{{[0-9]*}} = affine_map<(d0, d1) -> (d0, d1)>
+// CHECK: #map{{[0-9]*}} = affine_map<(d0, d1) -> (d0)>
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 #map1 = affine_map<(d0, d1) -> (d0)>
 
@@ -28,7 +28,7 @@ func.func @partial_softmax(%arg0: tensor<64x128xf32>) -> tensor<64x128xf32> {
   // CHECK-DAG:     %[[TILE_0:.*]] = gml_st.tile %[[SPACE_0]] [%[[ARG1]]] [8] [1]
   // CHECK-DAG:     %[[MATERIALIZE_0:.*]] = gml_st.materialize %[[FILL]][%[[TILE_0]]]
   // CHECK:         %[[GENERIC:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map0, #map1],
+  // CHECK-SAME:        indexing_maps = [#[[MAP0:map[0-9]*]], #[[MAP1:map[0-9]*]]],
   // CHECK-SAME:        iterator_types = ["parallel", "reduction"]}
   // CHECK-SAME:        ins(%[[MATERIALIZE]] : tensor<8x128xf32>)
   // CHECK-SAME:        outs(%[[MATERIALIZE_0]] : tensor<8xf32>)
@@ -37,14 +37,14 @@ func.func @partial_softmax(%arg0: tensor<64x128xf32>) -> tensor<64x128xf32> {
   // CHECK:           linalg.yield %[[MAXF]]
   // CHECK:         %[[MATERIALIZE_1:.*]] = gml_st.materialize %[[INIT_0]][%[[TILE]]]
   // CHECK:         %[[GENERIC_0:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map1, #map0],
+  // CHECK-SAME:        indexing_maps = [#[[MAP1]], #[[MAP0]]],
   // CHECK-SAME:        iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:        ins(%[[GENERIC]] : tensor<8xf32>)
   // CHECK-SAME:        outs(%[[MATERIALIZE_1]] : tensor<8x128xf32>)
   // CHECK:         ^bb0(%[[ARG3_0:.*]]: f32, %[[ARG4_0:.*]]: f32):
   // CHECK:           linalg.yield %[[ARG3_0]]
   // CHECK:         %[[GENERIC_1:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map0, #map0, #map0],
+  // CHECK-SAME:        indexing_maps = [#[[MAP0]], #[[MAP0]], #[[MAP0]]],
   // CHECK-SAME:        iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:        ins(%[[MATERIALIZE]], %[[GENERIC_0]] : tensor<8x128xf32>, tensor<8x128xf32>)
   // CHECK-SAME:        outs(%[[MATERIALIZE_1]] : tensor<8x128xf32>)
@@ -83,8 +83,8 @@ func.func @partial_softmax(%arg0: tensor<64x128xf32>) -> tensor<64x128xf32> {
 
 // -----
 
-// CHECK: #map0 = affine_map<(d0, d1) -> (d0, d1)>
-// CHECK: #map1 = affine_map<(d0, d1) -> (d0)>
+// CHECK: #map{{[0-9]*}} = affine_map<(d0, d1) -> (d0, d1)>
+// CHECK: #map{{[0-9]*}} = affine_map<(d0, d1) -> (d0)>
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 #map1 = affine_map<(d0, d1) -> (d0)>
 
@@ -108,7 +108,7 @@ func.func @partial_softmax_fusion(%arg0: tensor<64x128xf32>, %arg1: index)
   // CHECK-DAG:   %[[CAST:.*]] = tensor.cast %[[MATERIALIZE_0]] : tensor<?xf32> to tensor<8xf32>
   // CHECK-DAG:   %[[CAST_0:.*]] = tensor.cast %[[MATERIALIZE]] : tensor<?x128xf32> to tensor<8x128xf32>
   // CHECK:       %[[GENERIC:.*]] = linalg.generic
-  // CHECK-SAME:      indexing_maps = [#map0, #map1],
+  // CHECK-SAME:      indexing_maps = [#[[MAP0:map[0-9]*]], #[[MAP1:map[0-9]*]]],
   // CHECK-SAME:      iterator_types = ["parallel", "reduction"]}
   // CHECK-SAME:      ins(%[[CAST_0]] : tensor<8x128xf32>)
   // CHECK-SAME:      outs(%[[CAST]] : tensor<8xf32>)
@@ -119,14 +119,14 @@ func.func @partial_softmax_fusion(%arg0: tensor<64x128xf32>, %arg1: index)
   // CHECK-DAG:   %[[MATERIALIZE_1:.*]] = gml_st.materialize %[[INIT_0]][%[[TILE_1]]]
   // CHECK-DAG:   %[[CAST_1:.*]] = tensor.cast %[[MATERIALIZE_1]] : tensor<?x?xf32> to tensor<8x128xf32>
   // CHECK:       %[[GENERIC_0:.*]] = linalg.generic
-  // CHECK-SAME:      indexing_maps = [#map1, #map0],
+  // CHECK-SAME:      indexing_maps = [#[[MAP1]], #[[MAP0]]],
   // CHECK-SAME:      iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:      ins(%[[GENERIC]] : tensor<8xf32>)
   // CHECK-SAME:      outs(%[[CAST_1]] : tensor<8x128xf32>)
   // CHECK:       ^bb0(%[[ARG2_0:.*]]: f32, %[[ARG3_0:.*]]: f32):
   // CHECK:         linalg.yield %[[ARG2_0]]
   // CHECK:       %[[GENERIC_1:.*]] = linalg.generic
-  // CHECK-SAME:      indexing_maps = [#map0, #map0, #map0],
+  // CHECK-SAME:      indexing_maps = [#[[MAP0]], #[[MAP0]], #[[MAP0]]],
   // CHECK-SAME:      iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:      ins(%[[CAST_0]], %[[GENERIC_0]] : tensor<8x128xf32>, tensor<8x128xf32>)
   // CHECK-SAME:      outs(%[[CAST_1]] : tensor<8x128xf32>)
@@ -169,8 +169,8 @@ func.func @partial_softmax_fusion(%arg0: tensor<64x128xf32>, %arg1: index)
 
 // -----
 
-// CHECK: #map0 = affine_map<(d0, d1) -> (d0, d1)>
-// CHECK: #map1 = affine_map<(d0, d1) -> (d0)>
+// CHECK: #map{{[0-9]*}} = affine_map<(d0, d1) -> (d0, d1)>
+// CHECK: #map{{[0-9]*}} = affine_map<(d0, d1) -> (d0)>
 #map0 = affine_map<(d0, d1) -> (d0, d1)>
 #map1 = affine_map<(d0, d1) -> (d0)>
 
@@ -199,7 +199,7 @@ func.func @softmax(%arg0: tensor<64x128xf32>) -> tensor<64x128xf32> {
   // CHECK:         %[[CAST:.*]] = tensor.cast %[[MATERIALIZE_0]] : tensor<?xf32> to tensor<8xf32>
   // CHECK:         %[[CAST_0:.*]] = tensor.cast %[[MATERIALIZE]] : tensor<?x128xf32> to tensor<8x128xf32>
   // CHECK:         %[[GENERIC:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map0, #map1],
+  // CHECK-SAME:        indexing_maps = [#[[MAP0:map[0-9]*]], #[[MAP1:map[0-9]*]]],
   // CHECK-SAME:        iterator_types = ["parallel", "reduction"]}
   // CHECK-SAME:        ins(%[[CAST_0]] : tensor<8x128xf32>)
   // CHECK-SAME:        outs(%[[CAST]] : tensor<8xf32>)
@@ -210,14 +210,14 @@ func.func @softmax(%arg0: tensor<64x128xf32>) -> tensor<64x128xf32> {
   // CHECK:         %[[MATERIALIZE_1:.*]] = gml_st.materialize %[[INIT_0]][%[[TILE_1]]]
   // CHECK:         %[[CAST_1:.*]] = tensor.cast %[[MATERIALIZE_1]] : tensor<?x?xf32> to tensor<8x128xf32>
   // CHECK:         %[[GENERIC_0:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map1, #map0],
+  // CHECK-SAME:        indexing_maps = [#[[MAP1]], #[[MAP0]]],
   // CHECK-SAME:        iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:        ins(%[[GENERIC]] : tensor<8xf32>)
   // CHECK-SAME:        outs(%[[CAST_1]] : tensor<8x128xf32>)
   // CHECK:         ^bb0(%[[ARG3_0:.*]]: f32, %[[ARG4_0:.*]]: f32):
   // CHECK:           linalg.yield %[[ARG3_0]]
   // CHECK:         %[[GENERIC_1:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map0, #map0, #map0],
+  // CHECK-SAME:        indexing_maps = [#[[MAP0]], #[[MAP0]], #[[MAP0]]],
   // CHECK-SAME:        iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:        ins(%[[CAST_0]], %[[GENERIC_0]] : tensor<8x128xf32>, tensor<8x128xf32>)
   // CHECK-SAME:        outs(%[[CAST_1]] : tensor<8x128xf32>)
@@ -227,7 +227,7 @@ func.func @softmax(%arg0: tensor<64x128xf32>) -> tensor<64x128xf32> {
   // CHECK:         %[[TILE_2:.*]] = gml_st.tile %[[SPACE]] [%[[ARG1]], 0] [8, 128] [1, 1]
   // CHECK:         %[[MATERIALIZE_2:.*]] = gml_st.materialize %[[INIT_0]][%[[TILE_2]]]
   // CHECK:         %[[GENERIC_2:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map0, #map0],
+  // CHECK-SAME:        indexing_maps = [#[[MAP0]], #[[MAP0]]],
   // CHECK-SAME:        iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:        ins(%[[GENERIC_1]] : tensor<8x128xf32>)
   // CHECK-SAME:        outs(%[[MATERIALIZE_2]] : tensor<8x128xf32>)
@@ -237,7 +237,7 @@ func.func @softmax(%arg0: tensor<64x128xf32>) -> tensor<64x128xf32> {
   // CHECK:         %[[TILE_3:.*]] = gml_st.tile %[[SPACE_0]] [%[[ARG1]]] [8] [1]
   // CHECK:         %[[MATERIALIZE_3:.*]] = gml_st.materialize %[[FILL_0]][%[[TILE_3]]]
   // CHECK:         %[[GENERIC_3:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map0, #map1],
+  // CHECK-SAME:        indexing_maps = [#[[MAP0]], #[[MAP1]]],
   // CHECK-SAME:        iterator_types = ["parallel", "reduction"]}
   // CHECK-SAME:        ins(%[[GENERIC_2]] : tensor<8x128xf32>)
   // CHECK-SAME:        outs(%[[MATERIALIZE_3]] : tensor<8xf32>)
@@ -245,14 +245,14 @@ func.func @softmax(%arg0: tensor<64x128xf32>) -> tensor<64x128xf32> {
   // CHECK:           %[[ADDF:.*]] = arith.addf %[[ARG4_3]], %[[ARG3_3]]
   // CHECK:           linalg.yield %[[ADDF]]
   // CHECK:         %[[GENERIC_4:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map1, #map0],
+  // CHECK-SAME:        indexing_maps = [#[[MAP1]], #[[MAP0]]],
   // CHECK-SAME:        iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:        ins(%[[GENERIC_3]] : tensor<8xf32>)
   // CHECK-SAME:        outs(%[[MATERIALIZE_2]] : tensor<8x128xf32>)
   // CHECK:         ^bb0(%[[ARG3_4:.*]]: f32, %[[ARG4_4:.*]]: f32):
   // CHECK:           linalg.yield %[[ARG3_4]]
   // CHECK:         %[[GENERIC_5:.*]] = linalg.generic
-  // CHECK-SAME:        indexing_maps = [#map0, #map0, #map0],
+  // CHECK-SAME:        indexing_maps = [#[[MAP0]], #[[MAP0]], #[[MAP0]]],
   // CHECK-SAME:        iterator_types = ["parallel", "parallel"]}
   // CHECK-SAME:        ins(%[[GENERIC_2]], %[[GENERIC_4]] : tensor<8x128xf32>, tensor<8x128xf32>)
   // CHECK-SAME:        outs(%[[MATERIALIZE_2]] : tensor<8x128xf32>)
