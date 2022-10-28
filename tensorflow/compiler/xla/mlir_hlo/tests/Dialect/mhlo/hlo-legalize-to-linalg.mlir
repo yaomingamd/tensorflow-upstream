@@ -220,6 +220,11 @@ func.func @float_abs(%arg0: tensor<2x2xf32>) -> tensor<2x2xf32> {
   // CHECK: linalg.generic
   // CHECK-SAME: {someattr}
   // CHECK: math.absf
+  // CHECK-PRIMITIVE: linalg.map
+  // CHECK-PRIMITIVE-NEXT: ins(
+  // CHECK-PRIMITIVE-NEXT: outs(
+  // CHECK-PRIMITIVE-SAME: {someattr}
+  // CHECK-PRIMITIVE: math.absf
   %0 = "mhlo.abs"(%arg0) {someattr} : (tensor<2x2xf32>) -> tensor<2x2xf32>
   func.return %0 : tensor<2x2xf32>
 }
@@ -521,6 +526,23 @@ func.func @float_cmp_totalorder(%lhs: tensor<2x2xbf16>,
 // CHECK-NEXT:   %[[RESULT:.*]] = arith.cmpi slt, %[[LHS_SELECT]], %[[RHS_SELECT]] : i16
 // CHECK-NEXT:   linalg.yield %[[RESULT]] : i1
 
+// CHECK-PRIMITIVE-DAG: %[[C0:.*]] = arith.constant 0 : i16
+// CHECK-PRIMITIVE-DAG: %[[C32767:.*]] = arith.constant 32767 : i16
+// CHECK-PRIMITIVE: linalg.map
+// CHECK-PRIMITIVE-NEXT: ins(
+// CHECK-PRIMITIVE-NEXT: outs(
+// CHECK-PRIMITIVE-NEXT: (%[[LHS_IN:[a-zA-Z0-9]*]]: bf16, %[[RHS_IN:.*]]: bf16) {
+// CHECK-PRIMITIVE-NEXT:   %[[LHS_INT:.*]] = arith.bitcast %[[LHS_IN]] : bf16 to i16
+// CHECK-PRIMITIVE-NEXT:   %[[LHS_CMP:.*]] = arith.cmpi slt, %[[LHS_INT]], %[[C0]] : i16
+// CHECK-PRIMITIVE-NEXT:   %[[LHS_SUB:.*]] = arith.subi %[[C32767]], %[[LHS_INT]] : i16
+// CHECK-PRIMITIVE-NEXT:   %[[LHS_SELECT:.*]] = arith.select %[[LHS_CMP]], %[[LHS_SUB]], %[[LHS_INT]] : i16
+// CHECK-PRIMITIVE-NEXT:   %[[RHS_INT:.*]] = arith.bitcast %[[RHS_IN]] : bf16 to i16
+// CHECK-PRIMITIVE-NEXT:   %[[RHS_CMP:.*]] = arith.cmpi slt, %[[RHS_INT]], %[[C0]] : i16
+// CHECK-PRIMITIVE-NEXT:   %[[RHS_SUB:.*]] = arith.subi %[[C32767]], %[[RHS_INT]] : i16
+// CHECK-PRIMITIVE-NEXT:   %[[RHS_SELECT:.*]] = arith.select %[[RHS_CMP]], %[[RHS_SUB]], %[[RHS_INT]] : i16
+// CHECK-PRIMITIVE-NEXT:   %[[RESULT:.*]] = arith.cmpi slt, %[[LHS_SELECT]], %[[RHS_SELECT]] : i16
+// CHECK-PRIMITIVE-NEXT:   linalg.yield %[[RESULT]] : i1
+
 // -----
 
 // CHECK-LABEL: func @int_cmp
@@ -671,6 +693,15 @@ func.func @select(%pred: tensor<2x2xi1>, %lhs: tensor<2x2xf32>,
 // CHECK-NEXT:   %[[RESULT:.*]] = arith.select %[[PRED_IN]], %[[LHS_IN]], %[[RHS_IN]] : f32
 // CHECK-NEXT:   linalg.yield %[[RESULT]] : f32
 
+// CHECK-PRIMITIVE-LABEL: func @select
+// CHECK-PRIMITIVE: tensor.empty() : tensor<2x2xf32>
+// CHECK-PRIMITIVE: linalg.map
+// CHECK-PRIMITIVE-NEXT: ins(
+// CHECK-PRIMITIVE-NEXT: outs(
+// CHECK-PRIMITIVE-NEXT: (%[[PRED_IN:[a-zA-Z0-9]*]]: i1, %[[LHS_IN:.*]]: f32, %[[RHS_IN:.*]]: f32) {
+// CHECK-PRIMITIVE-NEXT:   %[[RESULT:.*]] = arith.select %[[PRED_IN]], %[[LHS_IN]], %[[RHS_IN]] : f32
+// CHECK-PRIMITIVE-NEXT:   linalg.yield %[[RESULT]] : f32
+
 // -----
 
 // CHECK-DAG:   #[[SCALAR_MAP:.*]] = affine_map<(d0, d1) -> ()>
@@ -693,6 +724,20 @@ func.func @select_scalar_pred_dyn(%pred : tensor<i1>, %lhs: tensor<2x?xf32>, %rh
 // CHECK:      ^bb0(%[[PRED_:.*]]: i1, %[[LHS_:.*]]: f32, %[[RHS_:.*]]: f32, %{{.*}}: f32):
 // CHECK:        %[[RES:.*]] = arith.select %[[PRED_]], %[[LHS_]], %[[RHS_]] : f32
 // CHECK:        linalg.yield %[[RES]]
+
+// CHECK-PRIMITIVE-LABEL: func @select_scalar_pred_dyn
+// CHECK-PRIMITIVE-SAME:  (%[[PRED:.*]]: tensor<i1>, %[[LHS:.*]]: tensor<2x?xf32>, %[[RHS:.*]]: tensor<2x?xf32>)
+// CHECK-PRIMITIVE-DAG:  %[[C1:.*]] = arith.constant 1
+// CHECK-PRIMITIVE-DAG:  %[[DIM:.*]] = tensor.dim %[[LHS]], %[[C1]]
+// CHECK-PRIMITIVE-DAG:  %[[DST:.*]] = tensor.empty(%[[DIM]])
+// CHECK-PRIMITIVE-DAG:  %[[PRED_ELEM:.*]] = tensor.extract %[[PRED]]
+// CHECK-PRIMITIVE:      linalg.map
+// CHECK-PRIMITIVE-NEXT:   ins(%[[LHS]], %[[RHS]] : tensor<2x?xf32>, tensor<2x?xf32>)
+// CHECK-PRIMITIVE-NEXT:   outs(%[[DST]] : tensor<2x?xf32>)
+// CHECK-PRIMITIVE-SAME:   {someattr}
+// CHECK-PRIMITIVE:      (%[[LHS_:.*]]: f32, %[[RHS_:.*]]: f32) {
+// CHECK-PRIMITIVE:        %[[RES:.*]] = arith.select %[[PRED_ELEM]], %[[LHS_]], %[[RHS_]] : f32
+// CHECK-PRIMITIVE:        linalg.yield %[[RES]]
 
 // -----
 
@@ -2518,6 +2563,21 @@ func.func @map_compare(%arg0: tensor<?xcomplex<f32>>,
 // CHECK: }
 // CHECK: return %[[MAP]] : tensor<?xi1>
 
+// CHECK-PRIMITIVE-LABEL: @map_compare
+// CHECK-PRIMITIVE-SAME: %[[ARG0:.*]]: tensor<?xcomplex<f32>>,
+// CHECK-PRIMITIVE-SAME: %[[ARG1:.*]]: tensor<?xcomplex<f32>>)
+
+// CHECK-PRIMITIVE: %[[INIT:.+]] = tensor.empty
+// CHECK-PRIMITIVE: %[[MAP:.+]] = linalg.map
+// CHECK-PRIMITIVE-NEXT: ins(%[[ARG0]], %[[ARG1]]
+// CHECK-PRIMITIVE-NEXT: outs(%[[INIT]] : tensor<?xi1>)
+// CHECK-PRIMITIVE-NEXT: (%[[A:.+]]: complex<f32>, %[[B:.+]]: complex<f32>) {
+// CHECK-PRIMITIVE: %[[RE1:.+]] = complex.re %[[A]] : complex<f32>
+// CHECK-PRIMITIVE: %[[RE2:.+]] = complex.re %[[B]] : complex<f32>
+// CHECK-PRIMITIVE: %[[CMP:.+]] = arith.cmpf oeq, %[[RE1]], %[[RE2]] : f32
+// CHECK-PRIMITIVE: linalg.yield %[[CMP]] : i1
+// CHECK-PRIMITIVE: }
+// CHECK-PRIMITIVE: return %[[MAP]] : tensor<?xi1>
 // -----
 
 func.func @reduce_add(%arg0: tensor<5x4xi32>, %arg1: tensor<i32>) -> tensor<5xi32> {
@@ -4413,7 +4473,8 @@ func.func @gather_unranked(%operand : tensor<*xi32>, %start_indices : tensor<?x?
 // CHECK-DAG:         %[[CLAMP0:.+]] = arith.maxsi %[[S0]], %[[C0]] : index
 // CHECK-DAG:         %[[CLAMP0_1:.+]] = arith.minsi %[[CLAMP0]], %[[L0]] : index
 // CHECK-DAG:         %[[IN0:.+]] = arith.addi %[[CLAMP0_1]], %[[IDX0]] : index
-// CHECK:             %[[Y:.+]] = tensor.extract %[[OPERAND]][%[[IN0]], %[[IDX1]]] : tensor<*xi32>
+// CHECK-DAG:         %[[OPERAND_CASTED:.+]] = tensor.cast %[[OPERAND]] : tensor<*xi32> to tensor<?x?xi32>
+// CHECK:             %[[Y:.+]] = tensor.extract %[[OPERAND_CASTED]][%[[IN0]], %[[IDX1]]] : tensor<?x?xi32>
 // CHECK:             linalg.yield %[[Y]] : i32
 // CHECK:           %[[CAST:.+]] = tensor.cast %[[RES]]
 // CHECK:           return %[[CAST]]
