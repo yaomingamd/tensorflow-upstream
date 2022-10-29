@@ -255,7 +255,7 @@ struct ReductionPattern : public OpConversionPattern<mhlo::ReduceOp> {
       mhlo::ReduceOp op, OpAdaptor adaptor,
       ConversionPatternRewriter& rewriter) const final {
     auto srcRank =
-        adaptor.operands()[0].getType().cast<RankedTensorType>().getRank();
+        adaptor.getInputs()[0].getType().cast<RankedTensorType>().getRank();
     auto reductionDims =
         llvm::to_vector(op.getDimensions().getValues<int64_t>());
     // mhlo.reduce doesn't specify the order of the reduction dimensions.
@@ -273,7 +273,7 @@ struct ReductionPattern : public OpConversionPattern<mhlo::ReduceOp> {
 
     Location loc = op.getLoc();
     for (auto [operand, initValue, resultType] :
-         llvm::zip(adaptor.operands(), adaptor.getInitValues(), resultTypes)) {
+         llvm::zip(adaptor.getInputs(), adaptor.getInitValues(), resultTypes)) {
       auto initType = toRankedTensor(initValue);
       if (!initType)
         return rewriter.notifyMatchFailure(op,
@@ -297,7 +297,7 @@ struct ReductionPattern : public OpConversionPattern<mhlo::ReduceOp> {
     }
 
     auto thloReduction = rewriter.create<thlo::ReductionOp>(
-        loc, resultTypes, adaptor.operands(), outputs,
+        loc, resultTypes, adaptor.getInputs(), outputs,
         rewriter.getDenseI64ArrayAttr(reductionDims));
     Region& region = thloReduction.getCombiner();
     rewriter.inlineRegionBefore(op.getBody(), region, region.end());
@@ -311,18 +311,18 @@ struct ReductionPattern : public OpConversionPattern<mhlo::ReduceOp> {
     // while the thlo.reduction op expects the init values as the last
     // parameters of the 'combiner' region apply function.
     TypeConverter::SignatureConversion signatureConverter(
-        thloReduction.getNumInputs() * 2);
-    assert(thloReduction.getNumInputs() == thloReduction.getNumOutputs());
+        thloReduction.getNumDpsInputs() * 2);
+    assert(thloReduction.getNumDpsInputs() == thloReduction.getNumDpsInits());
     for (const auto& [idx, val] : llvm::enumerate(operandTypes)) {
       signatureConverter.addInputs(
-          /*origInputNo=*/idx + thloReduction.getNumInputs(),
+          /*origInputNo=*/idx + thloReduction.getNumDpsInputs(),
           // type for new operand number 'idx'.
           typeConverter->convertType(val.getElementType()));
     }
     for (const auto& [idx, val] : llvm::enumerate(initTypes)) {
       signatureConverter.addInputs(
           /*origInputNo=*/idx,
-          // type for new operand number 'idx' + thloReduction.getNumInputs()
+          // type for new operand number 'idx' + thloReduction.getNumDpsInputs()
           typeConverter->convertType(val.getElementType()));
     }
     rewriter.applySignatureConversion(&region, signatureConverter,
@@ -440,7 +440,7 @@ struct MapPattern : public OpConversionPattern<mhlo::MapOp> {
     rewriter.inlineRegionBefore(op.getComputation(), region, region.end());
 
     TypeConverter::SignatureConversion signatureConverter(
-        thloMap.getNumInputs());
+        thloMap.getNumDpsInputs());
     for (const auto& [idx, val] : llvm::enumerate(thloMap.getInputs())) {
       signatureConverter.addInputs(
           idx,
@@ -561,11 +561,11 @@ struct SortPattern : public OpConversionPattern<mhlo::SortOp> {
     Region& region = thloSort.getComparator();
     rewriter.inlineRegionBefore(op.getComparator(), region, region.end());
 
-    assert(thloSort.getNumInputs() == thloSort.getNumOutputs());
+    assert(thloSort.getNumDpsInputs() == thloSort.getNumDpsInits());
 
     // Convert the signature of the comparator.
     TypeConverter::SignatureConversion signatureConverter(
-        thloSort.getNumInputs() * 2);
+        thloSort.getNumDpsInputs() * 2);
     for (const auto& [idx, val] : llvm::enumerate(operandTypes)) {
       signatureConverter.addInputs(
           /*origInputNo=*/2 * idx,

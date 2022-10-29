@@ -145,8 +145,8 @@ void generateLoopNest(OpBuilder &b, Location loc, ArrayRef<Range> loopRanges,
     nestedBuilder.create<gml_st::YieldOp>(nestedLoc, results);
   };
 
-  SmallVector<Value> inputs{linalgOp.getInputOperands()};
-  SmallVector<Value> outputs{linalgOp.getOutputOperands()};
+  SmallVector<Value> inputs{linalgOp.getDpsInputOperands()};
+  SmallVector<Value> outputs{linalgOp.getDpsInitOperands()};
 
   SmallVector<Value> lbsValue =
       mlir::getValueOrCreateConstantIndexOp(b, loc, lbs);
@@ -230,7 +230,7 @@ FailureOr<linalg::TiledLinalgOp> tileLinalgOpImpl(
         /*omitPartialTileCheck=*/false);
 
     SmallVector<Type, 4> resultTensorTypes;
-    for (OpOperand *opOperand : op.getOutputOperands())
+    for (OpOperand *opOperand : op.getDpsInitOperands())
       resultTensorTypes.push_back(
           tiledOperands[opOperand->getOperandNumber()].getType());
 
@@ -238,7 +238,7 @@ FailureOr<linalg::TiledLinalgOp> tileLinalgOpImpl(
 
     // Insert a insert_slice for each output tensor.
     unsigned resultIdx = 0;
-    for (OpOperand *opOperand : op.getOutputOperands()) {
+    for (OpOperand *opOperand : op.getDpsInitOperands()) {
       Value outputTensor = tiledOperands[opOperand->getOperandNumber()];
       IRRewriter rewriter(b);
       if (auto sliceOp = outputTensor.getDefiningOp<tensor::ExtractSliceOp>()) {
