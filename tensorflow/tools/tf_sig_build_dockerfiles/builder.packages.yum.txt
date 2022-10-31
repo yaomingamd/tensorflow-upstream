@@ -1,0 +1,17 @@
+# Packages needed to install Python from source
+# See https://github.com/pyenv/pyenv/wiki#suggested-build-environment
+curl
+libffi-devel
+xz-devel
+ncurses-devel
+readline-devel
+sqlite-devel
+openssl-devel
+libxml2-devel
+llvm-toolset-7
+make
+tk-devel
+wget
+zlib-devel
+git
+which
