@@ -18,7 +18,6 @@ limitations under the License.
 #include <string>
 #include <vector>
 
-#include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 #include "tensorflow/compiler/xla/runtime/custom_call.h"
 #include "tensorflow/compiler/xla/runtime/executable.h"
 #include "tensorflow/compiler/xla/service/gpu/runtime/kernel_launch.h"
@@ -30,6 +29,33 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+#if TENSORFLOW_USE_ROCM
+  #include "rocm/include/hip/hip_runtime_api.h"
+  using gpuGraph_t = hipGraph_t;
+  using gpuGraphExec_t = hipGraphExec_t;
+  using gpuError_t = hipError_t;
+  #define gpuStreamBeginCapture hipStreamBeginCapture
+  #define gpuStreamCaptureModeGlobal hipStreamCaptureModeGlobal
+  #define gpuStreamEndCapture hipStreamEndCapture
+  #define gpuSuccess hipSuccess
+  #define gpuGraphInstantiate hipGraphInstantiate
+  #define gpuGraphLaunch hipGraphLaunch
+  #define gpuGraphExecDestroy hipGraphExecDestroy
+  #define gpuGraphDestroy hipGraphDestroy
+#else
+  #include "third_party/gpus/cuda/include/cuda_runtime_api.h"
+  using gpuGraph_t = cudaGraph_t;
+  using gpuGraphExec_t = cudaGraphExec_t;
+  using gpuError_t = cudaError_t;
+  #define gpuStreamBeginCapture cudaStreamBeginCapture
+  #define gpuStreamCaptureModeGlobal cudaStreamCaptureModeGlobal
+  #define gpuStreamEndCapture cudaStreamEndCapture
+  #define gpuSuccess cudaSuccess
+  #define gpuGraphInstantiate cudaGraphInstantiate
+  #define gpuGraphLaunch cudaGraphLaunch
+  #define gpuGraphExecDestroy cudaGraphExecDestroy
+  #define gpuGraphDestroy cudaGraphDestroy
+#endif
 using xla::runtime::Arguments;
 using xla::runtime::AsyncTaskRunner;
 using xla::runtime::CustomCall;
@@ -50,7 +76,7 @@ static absl::Status LaunchGraph(
   // Get a reference to exported function that captures the cuda graph.
   runtime::FunctionRef function_ref = executable->function_ref(capture.ordinal);
 
-  VLOG(1) << "Launch Cuda Graph: capture=" << capture.ordinal;
+  VLOG(1) << "Launch GPU Graph: capture=" << capture.ordinal;
 
   // Forward user data required for launching kernels.
   CustomCall::UserData user_data;
@@ -92,43 +118,44 @@ static absl::Status LaunchGraph(
   // compiler pass that outlines sequences of device function launches.
 
   // Construct cuda graph from the exported function.
-  cudaGraph_t graph;
-  cudaGraphExec_t instance;
+  gpuGraph_t graph;
+  gpuGraphExec_t instance;
 
   // Get the underlying cuda stream.
   auto stream = se::gpu::AsGpuStreamValue(run_options->stream());
 
-  cudaError_t err;
+  gpuError_t err;
 
   // Capture graph constructed by the exported graph capture function.
-  err = cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
-  if (err != cudaSuccess)
+  err = gpuStreamBeginCapture(stream, gpuStreamCaptureModeGlobal);
+  if (err != gpuSuccess)
     return absl::InternalError("Stream begin capture failed");
 
   // Call into graph capture function.
   auto captured = function_ref(args, runtime::NoResultConverter{}, opts);
   if (!captured.ok()) return captured;
 
-  err = cudaStreamEndCapture(stream, &graph);
-  if (err != cudaSuccess)
+  err = gpuStreamEndCapture(stream, &graph);
+  if (err != gpuSuccess)
     return absl::InternalError("Stream end capture failed");
 
-  err = cudaGraphInstantiate(&instance, graph, nullptr, nullptr, 0);
-  if (err != cudaSuccess)
+  err = gpuGraphInstantiate(&instance, graph, nullptr, nullptr, 0);
+  if (err != gpuSuccess)
     return absl::InternalError("Graph instantiation failed");
 
   // Run captured graph.
-  cudaGraphLaunch(instance, stream);
-  if (err != cudaSuccess)
+  gpuGraphLaunch(instance, stream);
+  if (err != gpuSuccess)
     return absl::InternalError("Failed to run captured graph");
 
   // Destroy captured graph.
-  err = cudaGraphExecDestroy(instance);
-  if (err != cudaSuccess) return absl::InternalError("Instance destroy failed");
-  err = cudaGraphDestroy(graph);
-  if (err != cudaSuccess) return absl::InternalError("Graph destroy failed");
+  err = gpuGraphExecDestroy(instance);
+  if (err != gpuSuccess) return absl::InternalError("Instance destroy failed");
+  err = gpuGraphDestroy(graph);
+  if (err != gpuSuccess) return absl::InternalError("Graph destroy failed");
 
   return absl::OkStatus();
+  return absl::InternalError("Cuda graphs are not supported");
 }
 
 //===----------------------------------------------------------------------===//
