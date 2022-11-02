@@ -3123,7 +3123,8 @@ LogicalResult ConvertTFLCustomOp::matchAndRewrite(
     Operation* op, PatternRewriter& rewriter) const {
   auto tfl_custom_op = cast<TFL::CustomOp>(op);
   rewriter.replaceOpWithNewOp<tosa::CustomOp>(
-      op, op->getResultTypes(), tfl_custom_op.custom_code(), op->getOperands());
+      op, op->getResultTypes(), tfl_custom_op.custom_code(), StringRef{},
+      StringRef{}, op->getOperands());
 
   return success();
 }
