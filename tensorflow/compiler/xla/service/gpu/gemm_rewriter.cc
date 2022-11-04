@@ -484,7 +484,8 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
             dot_dims.rhs_contracting_dimensions(),
             /*output_shape=*/instr->shape(), gemm_backend_config.alpha_real(),
             gemm_backend_config.alpha_imag(), gemm_backend_config.beta(),
-            /*algorithm*/ std::nullopt, se::blas::kDefaultComputePrecision));
+            /*algorithm*/ std::nullopt, se::blas::kDefaultComputePrecision,
+            gemm_backend_config.grad_x(), gemm_backend_config.grad_y()));
     if (gemm_config.output_layout.order != MatrixLayout::Order::kColumnMajor) {
       // cublasLt's matmul output is column major by default. This gemm requires
       // the output to be in row major. Later we will swap lhs & rhs (and

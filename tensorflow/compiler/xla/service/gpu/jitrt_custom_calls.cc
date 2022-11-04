@@ -284,11 +284,12 @@ static StatusOr<GemmConfig> GetGemmConfig(const runtime::StridedMemrefView& lhs,
                                           ArrayRef<int64_t> lhs_batch,
                                           ArrayRef<int64_t> lhs_contract,
                                           ArrayRef<int64_t> rhs_batch,
-                                          ArrayRef<int64_t> rhs_contract) {
+                                          ArrayRef<int64_t> rhs_contract,
+                                          bool grad_x, bool grad_y) {
   return GemmConfig::For(ToShape(lhs), lhs_batch, lhs_contract, ToShape(rhs),
                          rhs_batch, rhs_contract, ToShape(out), alpha_real,
                          alpha_imag, beta, algorithm,
-                         se::blas::kDefaultComputePrecision);
+                         se::blas::kDefaultComputePrecision, grad_x, grad_y);
 }
 
 // -------------------------------------------------------------------------- //
@@ -381,7 +382,8 @@ absl::Status Gemm::operator()(const ServiceExecutableRunOptions* run_options,
   if (config == nullptr) {
     auto cfg = GetGemmConfig(lhs, rhs, out, algorithm, alpha_real, alpha_imag,
                              beta, dot_dims.lhs_batch, dot_dims.lhs_contract,
-                             dot_dims.rhs_batch, dot_dims.rhs_contract);
+                             dot_dims.rhs_batch, dot_dims.rhs_contract,
+                             false, false);
     if (!cfg.ok()) return ToAbslStatus(cfg.status());
     config = configs->Set(uid, std::move(*cfg));
   }
@@ -452,7 +454,8 @@ absl::Status CublasLtMatmul::operator()(
   // Construct a plan from a gemm config and an epilogue.
   auto cfg = GetGemmConfig(a, b, c, algorithm, alpha_real, alpha_imag, beta,
                            dot_dims.lhs_batch, dot_dims.lhs_contract,
-                           dot_dims.rhs_batch, dot_dims.rhs_contract);
+                           dot_dims.rhs_batch, dot_dims.rhs_contract,
+                           false, false);
   if (!cfg.ok()) return ToAbslStatus(cfg.status());
 
   auto plan = cublas_lt::MatmulPlan::From(*cfg, epilogue);
