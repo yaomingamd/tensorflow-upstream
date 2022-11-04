@@ -549,10 +549,10 @@ xla::XlaOp Einsum(xla::XlaOp x, absl::Span<const int64_t> x_config,
     auto dot =
         DotGeneral(x, y, dnums, &precision_proto, preferred_element_type);
 
-    builder->SetInstructionFrontendAttribute(dot, "grad_x",
-                                             (grad_x ? "true" : "false"));
-    builder->SetInstructionFrontendAttribute(dot, "grad_y",
-                                             (grad_y ? "true" : "false"));
+    TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(dot, "grad_x",
+                                             (grad_x ? "true" : "false")));
+    TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(dot, "grad_y",
+                                             (grad_y ? "true" : "false")));
 
     dot = Transpose(dot, transpose_dims);
     if (transpose_rank == output_rank) {

@@ -293,8 +293,8 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, conv_forward->opcode());
-  builder->SetInstructionFrontendAttribute(conv_forward, "call_context",
-                                           "kForward");
+  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(conv_forward, "call_context",
+                                           "kForward"));
 
   return conv_forward;
 }
@@ -401,8 +401,8 @@ StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, input_backprop->opcode());
-  builder->SetInstructionFrontendAttribute(input_backprop, "call_context",
-                                           "kBackpropData");
+  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(input_backprop, "call_context",
+                                           "kBackpropData"));
 
   return input_backprop;
 }
@@ -559,8 +559,8 @@ StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, filter_backprop->opcode());
-  builder->SetInstructionFrontendAttribute(filter_backprop, "call_context",
-                                           "kBackpropFilter");
+  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(filter_backprop, "call_context",
+                                           "kBackpropFilter"));
 
   if (attrs.depthwise) {
     filter_backprop = xla::Reshape(filter_backprop, filter_shape.dimensions());
