@@ -296,16 +296,9 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
         /*batch_group_count=*/1, precision_config);
   }
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-  // Set call_context attribute, but only if !MLIR_BRIDGE_ROLLOUT_ENABLED
-  auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
-  state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
-  if (state != tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
-    // TODO : CHECK_EQ(HloOpcode::kConvolution, conv_forward->opcode());
-    TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(conv_forward, "call_context",
+  // TODO : CHECK_EQ(HloOpcode::kConvolution, conv_forward->opcode());
+  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(conv_forward, "call_context",
                                            "kForward"));
-  }
-#endif
 
   return conv_forward;
 }
@@ -412,8 +405,8 @@ StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, input_backprop->opcode());
-  builder->SetInstructionFrontendAttribute(input_backprop, "call_context",
-                                           "kBackpropData");
+  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(input_backprop, "call_context",
+                                           "kBackpropData"));
 
   return input_backprop;
 }
@@ -570,8 +563,8 @@ StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, filter_backprop->opcode());
-  builder->SetInstructionFrontendAttribute(filter_backprop, "call_context",
-                                           "kBackpropFilter");
+  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(filter_backprop, "call_context",
+                                           "kBackpropFilter"));
 
   if (attrs.depthwise) {
     filter_backprop = xla::Reshape(filter_backprop, filter_shape.dimensions());
