@@ -2218,6 +2218,9 @@ xla_test(
         "cpu",
         "gpu",
     ],
+    tags = [
+        "no_rocm", # doesn't work in CI with reduced resources
+    ],
     deps = [
         ":hlo_test_base",
         ":xla_internal_test_main",
