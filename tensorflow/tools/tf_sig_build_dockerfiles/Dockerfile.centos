@@ -1,7 +1,0 @@
-FROM quay.io/pypa/manylinux2014_x86_64
-
-# copy build script
-COPY manylinux_build.sh manylinux_build.sh
-
-# ./manylinux_build.sh TF_VERSION PYTHON_VERSION ROCM_VERSION
-RUN bash ./manylinux_build.sh nightly 3.10 5.2.0
