@@ -22,5 +22,7 @@ docker exec tf \
 	--project_name tensorflow_rocm
 
 # check wheel
-docker exec tf \
-	auditwheel show /tf/pkg/tensorflow*.whl
+docker exec tf bash -c \
+	'TF_WHEEL=$(ls -Art /tf/pkg/tensorflow*.whl) && NEW_TF_WHEEL=${TF_WHEEL/linux/"manylinux2014"} && 
+	mv $TF_WHEEL $NEW_TF_WHEEL && 
+	auditwheel show $NEW_TF_WHEEL'
