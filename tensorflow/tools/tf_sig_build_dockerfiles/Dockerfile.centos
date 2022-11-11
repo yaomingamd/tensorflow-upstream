@@ -1,0 +1,50 @@
+################################################################################
+FROM quay.io/pypa/manylinux2014_x86_64 as builder
+################################################################################
+
+# Install devtoolset build dependencies
+COPY setup.packages.yum.sh setup.packages.yum.sh
+COPY builder.packages.yum.txt builder.packages.yum.txt
+RUN /setup.packages.yum.sh /builder.packages.yum.txt
+
+################################################################################
+FROM centos:centos7.9.2009 as devel
+################################################################################
+#COPY --from=builder /opt/rh/devtoolset-9 /opt/rh/devtoolset-9
+COPY --from=builder /opt /opt
+
+# Install required ROCM development packages
+COPY setup.packages.yum.sh /setup.packages.yum.sh
+COPY amdgpu.repo /etc/yum.repos.d/
+COPY rocm.repo /etc/yum.repos.d/
+COPY setup.rocm.sh /setup.rocm.sh
+RUN /setup.rocm.sh 5.3
+
+# Install various tools.
+# - bats: bash unit testing framework
+# - bazelisk: always use the correct bazel version
+# - buildifier: clean bazel build deps
+# - buildozer: clean bazel build deps
+# - gcloud SDK: communicate with Google Cloud Platform (GCP) for RBE, CI
+RUN git clone --branch v1.7.0 https://github.com/bats-core/bats-core.git && bats-core/install.sh /usr/local && rm -rf bats-core
+RUN wget https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64 -O /usr/local/bin/bazel && chmod +x /usr/local/bin/bazel
+RUN wget https://github.com/bazelbuild/buildtools/releases/download/3.5.0/buildifier -O /usr/local/bin/buildifier && chmod +x /usr/local/bin/buildifier
+RUN wget https://github.com/bazelbuild/buildtools/releases/download/3.5.0/buildozer -O /usr/local/bin/buildozer && chmod +x /usr/local/bin/buildozer
+RUN curl -sSL https://sdk.cloud.google.com > /tmp/gcloud && bash /tmp/gcloud --install-dir=~/usr/local/bin --disable-prompts
+
+
+# All lines past this point are reset when $CACHEBUSTER is set. We need this
+# for Python specifically because we install some nightly packages which are
+# likely to change daily.
+ARG CACHEBUSTER=0
+RUN echo $CACHEBUSTER
+
+# Setup Python environment. PYTHON_VERSION is e.g. "python3.8"
+ARG PYTHON_VERSION
+COPY setup.python.sh /setup.python.sh
+COPY devel.requirements.txt /devel.requirements.txt
+RUN /setup.python.sh $PYTHON_VERSION devel.requirements.txt
+
+# Setup build and environment
+COPY devel.usertools /usertools
+COPY devel.bashrc /root/.bashrc
