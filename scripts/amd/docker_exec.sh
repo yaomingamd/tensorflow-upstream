@@ -23,4 +23,4 @@ docker exec tf \
 
 # check wheel
 docker exec tf \
-	auditwheel show $(ls /tf/pkg/tensorflow*.whl -Art | tail -n 1)
+	auditwheel show /tf/pkg/tensorflow*.whl
