@@ -15,15 +15,15 @@
 # limitations under the License.
 # ==============================================================================
 #
-# setup.cuda.sh: Clean up and prepare the CUDA installation on the container.
-# TODO(@perfinion) Review this file
+# setup.rocm.sh: Prepare the ROCM installation on the container.
+# Usage: setup.rocm.sh <ROCM_VERSION>
 set -x
 
-# Add the ROCm package repo location
-ROCM_REL=$1 # e.g. 5.2.0
-export ROCM_PATH=/opt/rocm-${ROCM_REL}
-ROCM_REL_REPO=$(echo $ROCM_REL | grep -o "\w.\w") # e.g 5.2
-RPM_ROCM_REPO=http://repo.radeon.com/rocm/yum/$(echo $ROCM_REL | grep -o "\w.\w")/main
+# # Add the ROCm package repo location
+ROCM_VERSION=$1 # e.g. 5.2.0
+ROCM_PATH=/opt/rocm-${ROCM_VERSION}
+ROCM_VERSION_REPO=$(echo $ROCM_VERSION | grep -o "\w.\w") # e.g 5.2
+RPM_ROCM_REPO=http://repo.radeon.com/rocm/yum/$(echo $ROCM_VERSION | grep -o "\w.\w")/main
 echo -e "[ROCm]\nname=ROCm\nbaseurl=$RPM_ROCM_REPO\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/rocm.repo
 echo -e "[amdgpu]\nname=amdgpu\nbaseurl=https://repo.radeon.com/amdgpu/latest/rhel/7.9/main/x86_64/\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/amdgpu.repo
 
@@ -35,9 +35,15 @@ export PCP_DIR=/opt/rh/devtoolset-10/root
 export PERL5LIB=/opt/rh/devtoolset-10/root//usr/lib64/perl5/vendor_perl:/opt/rh/devtoolset-10/root/usr/lib/perl5:/opt/rh/devtoolset-10/root//usr/share/perl5/
 export LD_LIBRARY_PATH=${ROCM_PATH}/lib:/usr/local/lib:/opt/rh/devtoolset-10/root$rpmlibdir$rpmlibdir32${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 export LDFLAGS="-Wl,-rpath=/opt/rh/devtoolset-10/root/usr/lib64 -Wl,-rpath=/opt/rh/devtoolset-10/root/usr/lib"
+GPU_DEVICE_TARGETS="gfx900 gfx906 gfx908 gfx90a gfx1030"
+
+echo $ROCM_VERSION
+echo $ROCM_REPO
+echo $ROCM_PATH
 
 # install rocm
 /setup.packages.rocm.sh /devel.packages.rocm.txt
 
 # Ensure the ROCm target list is set up
 bash -c "echo -e 'gfx900\ngfx906\ngfx908\ngfx90a\ngfx1030' >> $ROCM_PATH/bin/target.lst"
+touch ${ROCM_PATH}/.info/version

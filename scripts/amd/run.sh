@@ -1,4 +1,7 @@
-set -x 
+clear
+
+set -x
+set -e
 
 ROOT_DIR=$(pwd)
 DEFAULT_LOG_DIR=$ROOT_DIR/log_$(git rev-parse --symbolic-full-name --abbrev-ref HEAD)

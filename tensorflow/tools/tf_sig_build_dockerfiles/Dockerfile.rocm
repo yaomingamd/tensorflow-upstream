@@ -12,11 +12,11 @@ RUN /setup.packages.rocm.sh /builder.packages.rocm.txt
 # COPY builder.devtoolset/fixlinks.sh /fixlinks.sh
 # COPY builder.devtoolset/rpm-patch.sh /rpm-patch.sh
 # COPY builder.devtoolset/build_devtoolset.sh /build_devtoolset.sh
-# RUN /build_devtoolset.sh devtoolset-7 /dt7 
+# RUN /build_devtoolset.sh devtoolset-7 /dt7
 
 # Install devtoolset-9 in /dt9 with glibc 2.17 and libstdc++ 4.8, for building
 # manylinux2014-compatible packages.
-# RUN /build_devtoolset.sh devtoolset-9 /dt9 
+# RUN /build_devtoolset.sh devtoolset-9 /dt9
 
 ################################################################################
 # FROM nvidia/cuda:11.2.2-base-ubuntu20.04 as devel
@@ -31,7 +31,10 @@ COPY setup.packages.rocm.sh /setup.packages.rocm.sh
 COPY setup.rocm.sh /setup.rocm.sh
 COPY devel.packages.rocm.txt /devel.packages.rocm.txt
 # RUN /setup.sources.sh && /setup.packages.rocm.sh /devel.packages.rocm.txt && /setup.rocm.sh
+
+# Add the ROCm package repo location
 ARG ROCM_VERSION
+ENV ROCM_PATH=/opt/rocm-${ROCM_VERSION}
 RUN /setup.rocm.sh $ROCM_VERSION
 
 # Install various tools.
@@ -45,8 +48,7 @@ RUN git clone --branch v1.5.0 https://github.com/bats-core/bats-core.git && bats
 RUN wget https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64 -O /usr/local/bin/bazel && chmod +x /usr/local/bin/bazel
 RUN wget https://github.com/bazelbuild/buildtools/releases/download/3.5.0/buildifier -O /usr/local/bin/buildifier && chmod +x /usr/local/bin/buildifier
 RUN wget https://github.com/bazelbuild/buildtools/releases/download/3.5.0/buildozer -O /usr/local/bin/buildozer && chmod +x /usr/local/bin/buildozer
-RUN curl -sSL https://sdk.cloud.google.com > /tmp/gcloud && bash /tmp/gcloud --install-dir=~/usr/local/bin --disable-prompts
-
+RUN curl -sSL https://sdk.cloud.google.com >/tmp/gcloud && bash /tmp/gcloud --install-dir=~/usr/local/bin --disable-prompts
 
 # All lines past this point are reset when $CACHEBUSTER is set. We need this
 # for Python specifically because we install some nightly packages which are
@@ -56,6 +58,8 @@ RUN curl -sSL https://sdk.cloud.google.com > /tmp/gcloud && bash /tmp/gcloud --i
 
 # Setup Python environment. PYTHON_VERSION is e.g. "python3.8"
 ARG PYTHON_VERSION
+ENV PYTHON_LIB_PATH=/usr/local/lib/python${PYTHON_VERSION}/site-packages
+ENV PYTHON_BIN_PATH=/usr/local/bin/python${PYTHON_VERSION}
 COPY setup.python.rocm.sh /setup.python.rocm.sh
 COPY devel.requirements.txt /devel.requirements.txt
 RUN /setup.python.rocm.sh $PYTHON_VERSION devel.requirements.rocm.txt
@@ -65,12 +69,11 @@ COPY devel.usertools /usertools
 COPY devel.bashrc /root/.bashrc
 
 # Setup ENV variables for tensorflow pip build
-ENV TF_NEED_ROCM=1 
+ENV TF_NEED_ROCM=1
 ENV TF_ROCM_GCC=1
-# ENV ROCM_TOOLKIT_PATH=${ROCM_INSTALL_DIR} 
+ENV ROCM_TOOLKIT_PATH=${ROCM_PATH}
 # ENV PYTHON_BIN_PATH=${PYTHON_BIN_PATH}
 
 # clone rocm fork of tensorflow
 # RUN git clone https://github.com/ROCmSoftwarePlatform/tensorflow-upstream /tf/tensorflow
-# RUN cd /tf/tensorflow ./configure 
-
+# RUN cd /tf/tensorflow ./configure

@@ -24,27 +24,12 @@ PYTHON_VERSION=$1
 REQUIREMENTS=$2
 
 # PYTHON
-if [ "$PYTHON_VERSION" = "3.6" ]; then
-    yum install -y rh-python36
-
-    scl enable devtoolset-10 rh-python36 'bash'
-    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
-
-    export PYTHON_LIB_PATH=/opt/rh/rh-python36/root/usr/lib/python3.6/site-packages
-    export PYTHON_BIN_PATH=/opt/rh/rh-python36/root/usr/bin/python3.6
-
-    ln -sf /opt/rh/rh-python36/root/usr/bin/python3.6 /usr/bin/python3 && ln -sf /opt/rh/rh-python36/root/usr/bin/pip3.6 /usr/bin/pip3
-
-    NUMPY_VERSION=1.18.5
-elif [ "$PYTHON_VERSION" = "3.7" ]; then
+if [ "$PYTHON_VERSION" = "3.7" ]; then
     wget https://www.python.org/ftp/python/3.7.11/Python-3.7.11.tgz && tar xvf Python-3.7.11.tgz && cd Python-3.7*/ && ./configure --enable-optimizations && make altinstall
     ln -sf /usr/local/bin/python3.7 /usr/bin/python3 && ln -sf /usr/local/bin/pip3.7 /usr/bin/pip3
 
     scl enable devtoolset-10 'bash'
     rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
-
-    export PYTHON_LIB_PATH=/usr/local/lib/python3.7/site-packages
-    export PYTHON_BIN_PATH=/usr/local/bin/python3.7
 
     NUMPY_VERSION=1.18.5
 elif [ "$PYTHON_VERSION" = "3.8" ]; then
@@ -54,9 +39,6 @@ elif [ "$PYTHON_VERSION" = "3.8" ]; then
     scl enable devtoolset-10 'bash'
     rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
 
-    export PYTHON_LIB_PATH=/usr/local/lib/python3.8/site-packages
-    export PYTHON_BIN_PATH=/usr/local/bin/python3.8
-
     NUMPY_VERSION=1.18.5
 elif [ "$PYTHON_VERSION" = "3.9" ]; then
     wget https://www.python.org/ftp/python/3.9.7/Python-3.9.7.tgz && tar xvf Python-3.9.7.tgz && cd Python-3.9*/ && ./configure --enable-optimizations && make altinstall
@@ -64,9 +46,6 @@ elif [ "$PYTHON_VERSION" = "3.9" ]; then
 
     scl enable devtoolset-10 'bash'
     rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
-
-    export PYTHON_LIB_PATH=/usr/local/lib/python3.9/site-packages
-    export PYTHON_BIN_PATH=/usr/local/bin/python3.9
 
     NUMPY_VERSION=1.20.3
 elif [ "$PYTHON_VERSION" = "3.10" ]; then
@@ -81,17 +60,17 @@ elif [ "$PYTHON_VERSION" = "3.10" ]; then
     scl enable devtoolset-10 'bash'
     rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
 
-    export PYTHON_LIB_PATH=/usr/local/lib/python3.10/site-packages
-    export PYTHON_BIN_PATH=/usr/local/bin/python3.10
-
     NUMPY_VERSION=1.21.4
 else
     printf '%s\n' "Python Version not Supported" >&2
     exit 1
 fi
 
+export PYTHON_LIB_PATH=/usr/local/lib/python${PYTHON_VERSION}/site-packages
+export PYTHON_BIN_PATH=/usr/local/bin/python${PYTHON_VERSION}
+
 # Pip version required by manylinux2014
 pip3 install --upgrade pip
-echo "numpy==${NUMPY_VERSION}" >> $REQUIREMENTS
+echo "numpy==${NUMPY_VERSION}" >>$REQUIREMENTS
 cat $REQUIREMENTS
 pip3 --no-cache-dir install -r ${REQUIREMENTS}

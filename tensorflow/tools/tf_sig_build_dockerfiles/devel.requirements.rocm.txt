@@ -10,4 +10,5 @@ portpicker
 h5py==2.10.0 
 wheel 
 scikit-learn 
-packaging requests
+packaging
+requests
