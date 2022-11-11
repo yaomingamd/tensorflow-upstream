@@ -36,5 +36,21 @@ namespace gpu {
   return d;
 }
 
+/*static*/ GpuDeviceInfo TestGpuDeviceInfo::AMDMI210DeviceInfo() {
+  GpuDeviceInfo d;
+  d.threads_per_block_limit = 1024;
+  d.threads_per_warp = 64;
+  d.shared_memory_per_block = 65536;
+  d.threads_per_core_limit = 2048;
+  d.core_count = 104;
+  d.block_dim_limit_x = 2147483647;
+  d.block_dim_limit_y = 2147483647;
+  d.block_dim_limit_z = 2147483647;
+  d.memory_bandwidth = 1638400000000;
+  // d.l2_cache_size = 8192 * 1024;
+  d.clock_rate_ghz = 1.7;
+  return d;
+}
+
 }  // namespace gpu
 }  // namespace xla

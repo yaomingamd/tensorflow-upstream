@@ -13,16 +13,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA
+
 
 #include <memory>
 #include <string>
 
 #include <gtest/gtest.h>
-#include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_device_info_for_tests.h"
+
+#if GOOGLE_CUDA
+#include "third_party/gpus/cuda/include/cuda_runtime_api.h"
+
 #include "tensorflow/compiler/xla/stream_executor/cuda/cuda_driver.h"
 #include "tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.h"
+#elif TENSORFLOW_USE_ROCM
+
+#include "tensorflow/compiler/xla/stream_executor/rocm/rocm_driver_wrapper.h"
+#include "tensorflow/compiler/xla/stream_executor/rocm/rocm_gpu_executor.h"
+#endif
 #include "tensorflow/compiler/xla/stream_executor/device_description.h"
 
 namespace stream_executor {
@@ -30,10 +38,15 @@ namespace gpu {
 namespace {
 
 TEST(DeviceInfoTest, DeviceInfo) {
+#if GOOGLE_CUDA    
   ASSERT_FALSE(cuInit(/*Flags=*/0));
+#elif TENSORFLOW_USE_ROCM
+  ASSERT_FALSE(hipInit(/*Flags=*/0));
+#endif
   std::unique_ptr<DeviceDescription> d =
       GpuExecutor::CreateDeviceDescription(/*device_ordinal=*/0).value();
   const std::string &name = d->name();
+#if GOOGLE_CUDA  
   if (name == "NVIDIA RTX A6000") {
     auto t = xla::gpu::TestGpuDeviceInfo::RTXA6000DeviceInfo();
     EXPECT_EQ(t.threads_per_block_limit, d->threads_per_block_limit());
@@ -59,10 +72,25 @@ TEST(DeviceInfoTest, DeviceInfo) {
   } else {
     VLOG(1) << "Not tested for " << name;
   }
+#elif TENSORFLOW_USE_ROCM  
+  auto t = xla::gpu::TestGpuDeviceInfo::AMDMI210DeviceInfo();
+    //EXPECT_EQ("1", d->name());
+    EXPECT_EQ(t.threads_per_block_limit, d->threads_per_block_limit());
+    EXPECT_EQ(t.threads_per_warp, d->threads_per_warp());
+    EXPECT_EQ(t.shared_memory_per_block, d->shared_memory_per_block());
+    EXPECT_EQ(t.threads_per_core_limit, d->threads_per_core_limit());
+    EXPECT_EQ(t.core_count, d->core_count());
+    EXPECT_EQ(t.block_dim_limit_x, d->block_dim_limit().x);
+    EXPECT_EQ(t.block_dim_limit_y, d->block_dim_limit().y);
+    EXPECT_EQ(t.block_dim_limit_z, d->block_dim_limit().z);
+    EXPECT_EQ(t.memory_bandwidth, d->memory_bandwidth());
+    // EXPECT_EQ(t.l2_cache_size, d->l2_cache_size());
+    // Clock rate can vary between base and boost values.
+    EXPECT_LE(t.clock_rate_ghz, d->clock_rate_ghz());  
 }
 
 }  // namespace
 }  // namespace gpu
 }  // namespace stream_executor
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
