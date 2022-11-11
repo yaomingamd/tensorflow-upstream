@@ -1,4 +1,4 @@
-/* Copyright 2022 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,22 +12,17 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+#ifndef TENSORFLOW_COMPILER_XLA_STREAM_EXECUTOR_ROCM_ROCM_GPU_EXECUTOR_H_
+#define TENSORFLOW_COMPILER_XLA_STREAM_EXECUTOR_ROCM_ROCM_GPU_EXECUTOR_H_
 
-#ifndef TENSORFLOW_COMPILER_XLA_SERVICE_GPU_GPU_DEVICE_INFO_FOR_TESTS_H_
-#define TENSORFLOW_COMPILER_XLA_SERVICE_GPU_GPU_DEVICE_INFO_FOR_TESTS_H_
+#include "tensorflow/compiler/xla/stream_executor/gpu/gpu_executor.h"
 
-#include "tensorflow/compiler/xla/service/gpu/gpu_device_info.h"
+namespace stream_executor {
+namespace rocm {
 
-namespace xla {
-namespace gpu {
+using ROCMExecutor = gpu::GpuExecutor;
 
-class TestGpuDeviceInfo {
- public:
-  static GpuDeviceInfo RTXA6000DeviceInfo();
-  static GpuDeviceInfo AMDMI210DeviceInfo();
-};
+}  // namespace rocm
+}  // namespace stream_executor
 
-}  // namespace gpu
-}  // namespace xla
-
-#endif  // TENSORFLOW_COMPILER_XLA_SERVICE_GPU_GPU_DEVICE_INFO_FOR_TESTS_H_
+#endif  // TENSORFLOW_COMPILER_XLA_STREAM_EXECUTOR_ROCM_ROCM_GPU_EXECUTOR_H_

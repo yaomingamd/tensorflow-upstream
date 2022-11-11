@@ -83,6 +83,7 @@ cc_library(
 cc_library(
     name = "rocm_gpu_executor",
     srcs = if_rocm_is_configured(["rocm_gpu_executor.cc"]),
+    hdrs = if_rocm_is_configured(["rocm_gpu_executor.h"]),
     deps = if_rocm_is_configured([
         ":rocm_diagnostics",
         ":rocm_driver",
