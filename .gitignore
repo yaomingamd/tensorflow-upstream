@@ -47,7 +47,3 @@ gradleBuild
 Podfile.lock
 Pods
 xcuserdata
-
-
-# micmelesse
-log_*
