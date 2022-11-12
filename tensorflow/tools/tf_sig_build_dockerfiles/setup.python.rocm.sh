@@ -71,6 +71,7 @@ export PYTHON_BIN_PATH=/usr/local/bin/python${PYTHON_VERSION}
 
 # Pip version required by manylinux2014
 pip3 install --upgrade pip
-echo "numpy==${NUMPY_VERSION}" | tee -a ${REQUIREMENTS}
+cat $REQUIREMENTS
+echo -e "\nnumpy==${NUMPY_VERSION}" | tee -a ${REQUIREMENTS}
 cat $REQUIREMENTS
 pip3 --no-cache-dir install -r ${REQUIREMENTS}
