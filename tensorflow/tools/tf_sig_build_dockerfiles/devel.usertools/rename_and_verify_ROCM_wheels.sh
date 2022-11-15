@@ -19,7 +19,7 @@
 # "manylinux_xyz" into the wheel filename.
 set -euxo pipefail
 
-TF_WHEEL=$(ls -Art /tf/pkg/tensorflow*.whl)
+TF_WHEEL=$(ls -Art /tf/pkg/tensorflow*-linux_x86_64.whl | tail -n 1)
 echo "Checking and renaming $TF_WHEEL..."
 NEW_TF_WHEEL=${TF_WHEEL/linux/"manylinux2014"}
 mv $TF_WHEEL $NEW_TF_WHEEL
