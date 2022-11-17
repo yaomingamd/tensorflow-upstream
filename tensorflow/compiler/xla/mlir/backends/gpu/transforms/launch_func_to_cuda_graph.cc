@@ -128,7 +128,7 @@ static void Outline(CustomCallDeclarations& custom_calls,
 
   // Create a function in the compiled module.
   auto func_type = FunctionType::get(ctx, args_types, TypeRange());
-  auto func = b.create<func::FuncOp>("xla.gpu.cuda.graph.capture", func_type);
+  auto func = b.create<func::FuncOp>("xla.gpu.graph.capture", func_type);
 
   // Add graph building function to the module.
   sym_table.insert(func);
@@ -140,7 +140,7 @@ static void Outline(CustomCallDeclarations& custom_calls,
   // Create a custom call declaration corresponding to the outlined graph
   // capture function.
   func::FuncOp graph_launch = custom_calls.GetOrCreate(
-      b, "xla.gpu.cuda.graph.launch", args_types, TypeRange());
+      b, "xla.gpu.graph.launch", args_types, TypeRange());
 
   // Call the cuda graph launch custom call.
   b.setInsertionPoint(seq.ops.front());

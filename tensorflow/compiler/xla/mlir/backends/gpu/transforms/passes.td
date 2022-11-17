@@ -153,7 +153,7 @@ def AddHloTraceAnnotationsPass :
 //===----------------------------------------------------------------------===//
 
 def ConvertLaunchFuncToCudaGraphPass :
-    Pass<"xla-gpu-launch-func-to-cuda-graphs", "mlir::ModuleOp"> {
+    Pass<"xla-gpu-launch-func-to-graphs", "mlir::ModuleOp"> {
   let summary = "Capture sequence of Gpu function launches as cuda graphs";
 
   let description = [{
