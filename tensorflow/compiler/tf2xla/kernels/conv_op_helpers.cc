@@ -39,6 +39,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/conv_grad_shape_utils.h"
 #include "tensorflow/core/util/padding.h"
 #include "tensorflow/core/util/tensor_format.h"
+#include "tensorflow/compiler/jit/flags.h"
 
 namespace tensorflow {
 namespace {
@@ -293,8 +294,14 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, conv_forward->opcode());
-  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(conv_forward, "call_context",
+  
+  // Set call_context attribute, but only if MLIR_BRIDGE_ROLLOUT_DISABLED
+  auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
+  state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
+  if (state == tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED) {
+    TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(conv_forward, "call_context",
                                            "kForward"));
+  }
 
   return conv_forward;
 }
@@ -401,8 +408,14 @@ StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, input_backprop->opcode());
-  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(input_backprop, "call_context",
+
+  // Set call_context attribute, but only if MLIR_BRIDGE_ROLLOUT_DISABLED
+  auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
+  state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
+  if (state == tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED) {
+    TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(input_backprop, "call_context",
                                            "kBackpropData"));
+  }
 
   return input_backprop;
 }
@@ -559,8 +572,14 @@ StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, filter_backprop->opcode());
-  TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(filter_backprop, "call_context",
+
+  // Set call_context attribute, but only if MLIR_BRIDGE_ROLLOUT_DISABLED
+  auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
+  state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
+  if (state == tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED) {
+    TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(filter_backprop, "call_context",
                                            "kBackpropFilter"));
+  }
 
   if (attrs.depthwise) {
     filter_backprop = xla::Reshape(filter_backprop, filter_shape.dimensions());
