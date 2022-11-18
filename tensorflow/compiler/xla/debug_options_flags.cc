@@ -75,7 +75,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_enable_cublaslt(false);
 
   // TODO(b/258036887): Remove this flag once CUDA Graphs are fully supported.
-  opts.set_xla_gpu_enable_cuda_graphs(false);
+  opts.set_xla_gpu_enable_graphs(false);
 
   // Despite the name, fast min/max on GPUs does not seem to be any faster, and
   // adds very counter-intuitive "NaN-swallowing" behavior.
@@ -751,9 +751,9 @@ static void AllocateFlags() {
                 flag_values->xla_gpu_enable_cublaslt(),
                 "Use cuBLASLt for GEMMs when possible."));
   flag_objects->push_back(tsl::Flag(
-      "xla_gpu_enable_cuda_graphs",
-      bool_setter_for(&DebugOptions::set_xla_gpu_enable_cuda_graphs),
-      flag_values->xla_gpu_enable_cuda_graphs(),
+      "xla_gpu_enable_graphs",
+      bool_setter_for(&DebugOptions::set_xla_gpu_enable_graphs),
+      flag_values->xla_gpu_enable_graphs(),
       "Use CUDA graphs to execute XLA GPU executables when possible."));
   flag_objects->push_back(
       tsl::Flag("xla_dump_disable_metadata",

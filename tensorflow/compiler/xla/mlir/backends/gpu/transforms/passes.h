@@ -39,7 +39,7 @@ struct GpuPipelineOpts {
   // Enable experimental pass that outlines parts of the XLA computation into
   // CUDA Graphs, which allows us to amortize the cost of launching multiple
   // device kernels.
-  bool enable_cuda_graphs = false;
+  bool enable_gpu_graphs = false;
 };
 
 // Populate passes that lower MLIR modules from a combination of LMHLO and
