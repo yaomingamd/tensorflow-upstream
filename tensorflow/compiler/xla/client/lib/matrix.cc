@@ -44,6 +44,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/statusor.h"
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/compiler/xla/xla_data.pb.h"
+#include "tensorflow/compiler/jit/flags.h"
 
 namespace xla {
 
@@ -549,10 +550,15 @@ xla::XlaOp Einsum(xla::XlaOp x, absl::Span<const int64_t> x_config,
     auto dot =
         DotGeneral(x, y, dnums, &precision_proto, preferred_element_type);
 
-    TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(dot, "grad_x",
+    // Set grad_x, grad_y attributes, but only if MLIR_BRIDGE_ROLLOUT_DISABLED
+    auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
+    state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
+    if (state == tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED) {
+      TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(dot, "grad_x",
                                              (grad_x ? "true" : "false")));
-    TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(dot, "grad_y",
+      TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(dot, "grad_y",
                                              (grad_y ? "true" : "false")));
+    }
 
     dot = Transpose(dot, transpose_dims);
     if (transpose_rank == output_rank) {
