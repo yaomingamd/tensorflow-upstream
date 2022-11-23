@@ -1350,7 +1350,8 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       OP_REQUIRES_OK(
           context, stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr,
                                         k, a_ptr, k, &c_ptr, n,
-                                        se::blas::kDefaultComputePrecision));
+                                        se::blas::kDefaultComputePrecision,
+                                        stream_executor::blas::CallContext::kBackpropInput1));
       return;
     } else if (!is_grouped_convolution &&
                dims.filter_size(0) == dims.input_size(0) &&
@@ -1375,7 +1376,8 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
       OP_REQUIRES_OK(
           context, stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr,
                                         k, a_ptr, k, &c_ptr, n,
-                                        se::blas::kDefaultComputePrecision));
+                                        se::blas::kDefaultComputePrecision,
+                                        stream_executor::blas::CallContext::kBackpropInput1));
       return;
     }
 
@@ -1744,7 +1746,8 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
                      stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                           se::blas::Transpose::kTranspose, n, m,
                                           k, a_ptr, n, b_ptr, m, &c_ptr, n,
-                                          se::blas::kDefaultComputePrecision));
+                                          se::blas::kDefaultComputePrecision,
+                                          se::blas::CallContext::kBackpropInput2));
       return;
     } else if (!is_grouped_convolution &&
                dims.filter_size(0) == dims.input_size(0) &&
@@ -1767,7 +1770,8 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
                      stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
                                           se::blas::Transpose::kTranspose, n, m,
                                           k, b_ptr, n, a_ptr, m, &c_ptr, n,
-                                          se::blas::kDefaultComputePrecision));
+                                          se::blas::kDefaultComputePrecision,
+                                          se::blas::CallContext::kBackpropInput2));
       return;
     }
 

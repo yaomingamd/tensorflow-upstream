@@ -136,7 +136,10 @@ def LHLOGPU_GEMMOp : LHLOGPU_Op<"gemm"> {
     F64Attr:$alpha_real,
     F64Attr:$alpha_imag,
     F64Attr:$beta,
-    OptionalAttr<I64Attr>:$algorithm);
+    OptionalAttr<I64Attr>:$algorithm,
+    OptionalAttr<BoolAttr>:$grad_x,
+    OptionalAttr<BoolAttr>:$grad_y
+    );
 }
 
 def LHLOGPU_CublasLtMatmulOp : LHLOGPU_Op<"cublas.lt.matmul"> {
@@ -152,7 +155,9 @@ def LHLOGPU_CublasLtMatmulOp : LHLOGPU_Op<"cublas.lt.matmul"> {
     F64Attr:$alpha_imag,
     F64Attr:$beta,
     CublasLtMatmulEpilogueAttr:$epilogue,
-    I64Attr:$algorithm);
+    I64Attr:$algorithm,
+    OptionalAttr<BoolAttr>:$grad_x,
+    OptionalAttr<BoolAttr>:$grad_y);
 }
 
 def LHLOGPU_CholeskyOp : LHLOGPU_Op<"cholesky"> {
