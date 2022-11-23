@@ -295,10 +295,10 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, conv_forward->opcode());
   
-  // Set call_context attribute, but only if MLIR_BRIDGE_ROLLOUT_DISABLED
+  // Set call_context attribute, but only if !MLIR_BRIDGE_ROLLOUT_ENABLED
   auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
   state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
-  if (state == tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED) {
+  if (state != tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
     TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(conv_forward, "call_context",
                                            "kForward"));
   }
@@ -409,10 +409,10 @@ StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, input_backprop->opcode());
 
-  // Set call_context attribute, but only if MLIR_BRIDGE_ROLLOUT_DISABLED
+  // Set call_context attribute, but only if !MLIR_BRIDGE_ROLLOUT_ENABLED
   auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
   state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
-  if (state == tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED) {
+  if (state != tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
     TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(input_backprop, "call_context",
                                            "kBackpropData"));
   }
@@ -573,10 +573,10 @@ StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, filter_backprop->opcode());
 
-  // Set call_context attribute, but only if MLIR_BRIDGE_ROLLOUT_DISABLED
+  // Set call_context attribute, but only if !MLIR_BRIDGE_ROLLOUT
   auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
   state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
-  if (state == tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED) {
+  if (state != tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
     TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(filter_backprop, "call_context",
                                            "kBackpropFilter"));
   }
