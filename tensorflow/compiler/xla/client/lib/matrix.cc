@@ -550,10 +550,10 @@ xla::XlaOp Einsum(xla::XlaOp x, absl::Span<const int64_t> x_config,
     auto dot =
         DotGeneral(x, y, dnums, &precision_proto, preferred_element_type);
 
-    // Set grad_x, grad_y attributes, but only if MLIR_BRIDGE_ROLLOUT_DISABLED
+    // Set grad_x, grad_y attributes, but only if !MLIR_BRIDGE_ROLLOUT_ENABLED
     auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
     state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
-    if (state == tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED) {
+    if (state != tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
       TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(dot, "grad_x",
                                              (grad_x ? "true" : "false")));
       TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(dot, "grad_y",
