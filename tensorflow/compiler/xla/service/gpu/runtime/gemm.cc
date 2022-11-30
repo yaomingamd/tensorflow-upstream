@@ -84,7 +84,8 @@ absl::Status Gemm::operator()(const ServiceExecutableRunOptions* run_options,
   if (config == nullptr) {
     auto cfg = GetGemmConfig(lhs, rhs, out, algorithm, alpha_real, alpha_imag,
                              beta, dot_dims.lhs_batch, dot_dims.lhs_contract,
-                             dot_dims.rhs_batch, dot_dims.rhs_contract);
+                             dot_dims.rhs_batch, dot_dims.rhs_contract,
+                             false, false);
     if (!cfg.ok()) return ToAbslStatus(cfg.status());
     config = configs->Set(uid, std::move(*cfg));
   }
