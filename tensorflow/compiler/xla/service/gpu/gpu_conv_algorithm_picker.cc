@@ -957,7 +957,7 @@ GpuConvAlgorithmPicker::PickBestAlgorithmNoCacheRocm(
   TF_ASSIGN_OR_RETURN(
       std::vector<std::unique_ptr<const se::dnn::ConvRunner>> runners,
       GetMIOpenAlgorithms(instr, absl::MakeSpan(operand_buffers), result_buffer,
-                          stream_exec_, &scratch_allocator, call_context,
+                          stream_exec, &scratch_allocator, call_context,
                           stream));
 
   std::vector<AutotuneResult> profile_results;
