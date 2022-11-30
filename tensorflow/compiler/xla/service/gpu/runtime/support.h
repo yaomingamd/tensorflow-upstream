@@ -86,11 +86,11 @@ inline StatusOr<GemmConfig> GetGemmConfig(
     const runtime::StridedMemrefView& out, int64_t algorithm, double alpha_real,
     double alpha_imag, double beta, llvm::ArrayRef<int64_t> lhs_batch,
     llvm::ArrayRef<int64_t> lhs_contract, llvm::ArrayRef<int64_t> rhs_batch,
-    llvm::ArrayRef<int64_t> rhs_contract) {
+    llvm::ArrayRef<int64_t> rhs_contract, bool grad_x, bool grad_y) {
   return GemmConfig::For(ToShape(lhs), lhs_batch, lhs_contract, ToShape(rhs),
                          rhs_batch, rhs_contract, ToShape(out), alpha_real,
                          alpha_imag, beta, algorithm,
-                         se::blas::kDefaultComputePrecision);
+                         se::blas::kDefaultComputePrecision, grad_x, grad_y);
 }
 
 }  // namespace gpu

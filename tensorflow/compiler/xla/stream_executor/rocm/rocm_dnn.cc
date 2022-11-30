@@ -366,7 +366,6 @@ namespace wrap {
   __macro(miopenGetCTCLossWorkspaceSize)                             \
   __macro(miopenCTCLoss)                                             \
   __macro(miopenDestroyCTCLossDescriptor)			     \
-  __macro(miopenSetConvolutionAttribute)                             \
 // clang-format on
 #else
 // clang-format off
