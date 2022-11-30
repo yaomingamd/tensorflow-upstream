@@ -378,8 +378,9 @@ StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
       lhs_shape, dot_dims.lhs_batch_dimensions(),
       dot_dims.lhs_contracting_dimensions(), rhs_shape,
       dot_dims.rhs_batch_dimensions(), dot_dims.rhs_contracting_dimensions(),
-      output_shape, config.alpha_real(), config.alpha_imag(), config.beta(),
-      algorithm, se::blas::kDefaultComputePrecision,gx,gy);
+      /*output_shape=*/gemm->shape(), config.alpha_real(), config.alpha_imag(),
+      config.beta(), algorithm, se::blas::kDefaultComputePrecision,
+      gx, gy);
 }
 
 /*static*/ StatusOr<GemmConfig> GemmConfig::For(mlir::lmhlo_gpu::GEMMOp op) {
