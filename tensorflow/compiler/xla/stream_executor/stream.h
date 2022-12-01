@@ -807,9 +807,14 @@ class Stream {
     UpcastHalfToFloat<ConstantType>(&alpha_ptr, &beta_ptr, &alpha_storage,
                                     &beta_storage);
 
-    return blas->DoBlasGemm(this, transa, transb, m, n, k,
-                            blas::ToDataType<InputType>::value, alpha_ptr, a,
-                            lda, b, ldb, beta_ptr, c, ldc, precision);
+    blas::GemmCall call{ transa, transb, m, n, k,
+                         blas::ToDataType<InputType>::value,
+                         alpha_ptr,
+                         &a, lda,
+                         &b, ldb, beta_ptr, c,
+                         ldc};
+    call.precision = precision;
+    return blas->DoBlasGemm(this, call);
   }
 
   // TODO(parkers): Update all callers to pass kDefaultComputePrecision.
@@ -904,12 +909,19 @@ class Stream {
     UpcastHalfToFloat<ConstantType>(&alpha_ptr, &beta_ptr, &alpha_storage,
                                     &beta_storage);
 
-    port::Status st = blas->DoBlasGemmWithAlgorithm(
-        this, transa, transb, m, n, k, alpha_ptr, a,
-        blas::ToDataType<InputType>::value, lda, b,
-        blas::ToDataType<InputType>::value, ldb, beta_ptr, c,
-        blas::ToDataType<OutputType>::value, ldc, computation_type, algorithm,
-        precision, output_profile_result);
+    static_assert(std::is_same_v<InputType, OutputType> ||
+      (std::is_same_v<InputType, int8_t> && std::is_same_v<OutputType, int32_t>), 
+      "ThenBlasGemmWithAlgorithm requires input type = output type");
+    blas::GemmCall call{ transa, transb, m, n, k,
+                         blas::ToDataType<InputType>::value,
+                         alpha_ptr,
+                         &a, lda,
+                         &b, ldb, beta_ptr, c,
+                         ldc};
+    call.algorithm = algorithm;
+    call.precision = precision;
+    call.output_profile_result = output_profile_result;
+    port::Status st = blas->DoBlasGemm(this, call);
     if (output_profile_result) {
       // The error is recorded in the profile.
       return ::tsl::OkStatus();
@@ -941,12 +953,20 @@ class Stream {
     float alpha_storage, beta_storage;
     UpcastHalfToFloat<ConstantType>(&alpha_ptr, &beta_ptr, &alpha_storage,
                                     &beta_storage);
-    port::Status st = blas->DoBlasGemmStridedBatchedWithAlgorithm(
-        this, transa, transb, m, n, k, alpha_ptr, a,
-        blas::ToDataType<InputType>::value, lda, stride_a, b,
-        blas::ToDataType<InputType>::value, ldb, stride_b, beta_ptr, c,
-        blas::ToDataType<OutputType>::value, ldc, stride_c, batch_count,
-        computation_type, algorithm, precision, output_profile_result);
+    static_assert(std::is_same_v<InputType, OutputType> ||
+      (std::is_same_v<InputType, int8_t> && std::is_same_v<OutputType, int32_t>), 
+      "ThenBlasGemmStridedBatchedWithAlgorithm requires input type = output type");
+    blas::GemmCall call{ transa, transb, m, n, k,
+                         blas::ToDataType<InputType>::value,
+                         alpha_ptr,
+                         &a, lda,
+                         &b, ldb, beta_ptr, c,
+                         ldc,
+                         stride_a, stride_b, stride_c, batch_count};
+    call.algorithm = algorithm;
+    call.precision = precision;
+    call.output_profile_result = output_profile_result;
+    port::Status st = blas->DoBlasGemm(this, call);
     if (output_profile_result) {
       // The error is recorded in the profile.
       return ::tsl::OkStatus();
@@ -1061,10 +1081,15 @@ class Stream {
     UpcastHalfToFloat<ConstantType>(&alpha_ptr, &beta_ptr, &alpha_storage,
                                     &beta_storage);
 
-    return blas->DoBlasGemmStridedBatched(
-        this, transa, transb, m, n, k, blas::ToDataType<InputType>::value,
-        alpha_ptr, a, lda, stride_a, b, ldb, stride_b, beta_ptr, c, ldc,
-        stride_c, batch_count, precision);
+    blas::GemmCall call{ transa, transb, m, n, k,
+                         blas::ToDataType<InputType>::value,
+                         alpha_ptr,
+                         &a, lda,
+                         &b, ldb, beta_ptr, c,
+                         ldc,
+                         stride_a, stride_b, stride_c, batch_count};
+    call.precision = precision;
+    return blas->DoBlasGemm(this, call);
   }
 
   // See BlasSupport::DoBlasTrsm.
@@ -1576,6 +1601,8 @@ class Stream {
   friend class host::HostRng;   // for parent_.
   template <typename... Args>
   friend struct ThenBlasImpl;  // for implementing ThenBlasXXX.
+  template <typename T>
+  friend struct ThenBlasImplPacked;
   friend class ocl::CLBlas;    // for parent_.
 
   // Checks whether types match before a call to extended BLAS version.
@@ -1609,6 +1636,8 @@ class Stream {
           return detail::is_any_of<CType, double, std::complex<double>>();
         case blas::ComputationType::kI32:
           return std::is_same_v<CType, int32_t>;
+        case blas::ComputationType::kUndefined:
+          return true;
         case blas::ComputationType::kF16AsF32:   // fall-through
         case blas::ComputationType::kBF16AsF32:  // fall-through
         case blas::ComputationType::kTF32AsF32:

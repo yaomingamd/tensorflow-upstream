@@ -90,6 +90,8 @@ std::string ComputationTypeString(ComputationType ty) {
       return "bf16 (w/ f32 accumulation)";
     case ComputationType::kTF32AsF32:
       return "tf32 (w/ f32 accumulation)";
+    case ComputationType::kUndefined:
+      return "undefined";
   }
 }
 

@@ -1097,6 +1097,47 @@ Stream &ThenBlasImpl<Args...>::Run(
   return *stream;
 }
 
+
+template <typename T>
+struct ThenBlasImplPacked {
+  // blas_func is the DoBlasXXX member function pointer, and args are its
+  // arguments except the first one of Stream* type.
+  Stream &operator()(Stream *stream,
+                     port::Status (blas::BlasSupport::*blas_func)(Stream *, const T&),
+                     const T& call) {
+    bool record_error = call.output_profile_result == nullptr;
+    return Run(stream, blas_func, record_error, call);
+  }
+
+  // Like operator(), but only calls stream->CheckError() if record_error is
+  // true.
+  Stream &Run(Stream *stream,
+              port::Status (blas::BlasSupport::*blas_func)(Stream *, const T&),
+              bool record_error, const T& call);
+};
+
+template <typename T>
+Stream &ThenBlasImplPacked<T>::Run(
+    Stream *stream, port::Status (blas::BlasSupport::*blas_func)(Stream *, const T&),
+    bool record_error, const T& call) {
+  if (stream->ok()) {
+    bool ok;
+    if (blas::BlasSupport *blas = stream->parent_->AsBlas()) {
+      ok = (blas->*blas_func)(stream, call).ok();
+    } else {
+      LOG(WARNING)
+          << "attempting to perform BLAS operation using StreamExecutor "
+             "without BLAS support";
+      ok = false;
+    }
+    if (record_error) {
+      stream->CheckError(ok);
+    }
+  }
+  return *stream;
+}
+
+
 Stream &Stream::ThenBlasAxpy(uint64_t elem_count, float alpha,
                              const DeviceMemory<float> &x, int incx,
                              DeviceMemory<float> *y, int incy) {
@@ -1372,6 +1413,7 @@ struct ThenBlasWithProfileImpl {
     return Runner.Run(stream, blas_func, record_error, args..., profile_result);
   }
 };
+
 }  // anonymous namespace
 
 Stream &Stream::ThenBlasGemvWithProfiling(
@@ -1459,14 +1501,13 @@ Stream &Stream::ThenBlasGemmWithProfiling(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc));
 
-  ThenBlasWithProfileImpl<blas::Transpose, blas::Transpose, uint64_t, uint64_t,
-                          uint64_t, float, const DeviceMemory<Eigen::half> &,
-                          int, const DeviceMemory<Eigen::half> &, int, float,
-                          DeviceMemory<Eigen::half> *, int>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmWithProfiling, transa, transb,
-              m, n, k, alpha, a, lda, b, ldb, beta, c, ldc,
-              output_profile_result);
+  ThenBlasImplPacked<blas::GemmCall> impl;
+  blas::GemmCall call{
+    transa, transb, m, n, k, 
+    blas::DataType::kHalf,
+    &alpha, &a, lda, &b, ldb, &beta, c, ldc};
+  call.output_profile_result = output_profile_result;
+  return impl(this, &blas::BlasSupport::DoBlasGemm, call);
 }
 
 Stream &Stream::ThenBlasGemmWithProfiling(
@@ -1478,14 +1519,13 @@ Stream &Stream::ThenBlasGemmWithProfiling(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc));
 
-  ThenBlasWithProfileImpl<blas::Transpose, blas::Transpose, uint64_t, uint64_t,
-                          uint64_t, float, const DeviceMemory<float> &, int,
-                          const DeviceMemory<float> &, int, float,
-                          DeviceMemory<float> *, int>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmWithProfiling, transa, transb,
-              m, n, k, alpha, a, lda, b, ldb, beta, c, ldc,
-              output_profile_result);
+  ThenBlasImplPacked<blas::GemmCall> impl;
+  blas::GemmCall call{
+    transa, transb, m, n, k, 
+    blas::DataType::kFloat,
+    &alpha, &a, lda, &b, ldb, &beta, c, ldc};
+  call.output_profile_result = output_profile_result;
+  return impl(this, &blas::BlasSupport::DoBlasGemm, call);
 }
 
 Stream &Stream::ThenBlasGemmWithProfiling(
@@ -1498,14 +1538,13 @@ Stream &Stream::ThenBlasGemmWithProfiling(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc));
 
-  ThenBlasWithProfileImpl<blas::Transpose, blas::Transpose, uint64_t, uint64_t,
-                          uint64_t, double, const DeviceMemory<double> &, int,
-                          const DeviceMemory<double> &, int, double,
-                          DeviceMemory<double> *, int>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmWithProfiling, transa, transb,
-              m, n, k, alpha, a, lda, b, ldb, beta, c, ldc,
-              output_profile_result);
+  ThenBlasImplPacked<blas::GemmCall> impl;
+  blas::GemmCall call{
+    transa, transb, m, n, k, 
+    blas::DataType::kDouble,
+    &alpha, &a, lda, &b, ldb, &beta, c, ldc};
+  call.output_profile_result = output_profile_result;
+  return impl(this, &blas::BlasSupport::DoBlasGemm, call);
 }
 
 Stream &Stream::ThenBlasGemmWithProfiling(
@@ -1519,15 +1558,13 @@ Stream &Stream::ThenBlasGemmWithProfiling(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc));
 
-  ThenBlasWithProfileImpl<
-      blas::Transpose, blas::Transpose, uint64_t, uint64_t, uint64,
-      std::complex<float>, const DeviceMemory<std::complex<float>> &, int,
-      const DeviceMemory<std::complex<float>> &, int, std::complex<float>,
-      DeviceMemory<std::complex<float>> *, int>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmWithProfiling, transa, transb,
-              m, n, k, alpha, a, lda, b, ldb, beta, c, ldc,
-              output_profile_result);
+  ThenBlasImplPacked<blas::GemmCall> impl;
+  blas::GemmCall call{
+    transa, transb, m, n, k, 
+    blas::DataType::kComplexFloat,
+    &alpha, &a, lda, &b, ldb, &beta, c, ldc};
+  call.output_profile_result = output_profile_result;
+  return impl(this, &blas::BlasSupport::DoBlasGemm, call);
 }
 
 Stream &Stream::ThenBlasGemmWithProfiling(
@@ -1541,15 +1578,13 @@ Stream &Stream::ThenBlasGemmWithProfiling(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc));
 
-  ThenBlasWithProfileImpl<
-      blas::Transpose, blas::Transpose, uint64_t, uint64_t, uint64,
-      std::complex<double>, const DeviceMemory<std::complex<double>> &, int,
-      const DeviceMemory<std::complex<double>> &, int, std::complex<double>,
-      DeviceMemory<std::complex<double>> *, int>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmWithProfiling, transa, transb,
-              m, n, k, alpha, a, lda, b, ldb, beta, c, ldc,
-              output_profile_result);
+  ThenBlasImplPacked<blas::GemmCall> impl;
+  blas::GemmCall call{
+    transa, transb, m, n, k, 
+    blas::DataType::kComplexDouble,
+    &alpha, &a, lda, &b, ldb, &beta, c, ldc};
+  call.output_profile_result = output_profile_result;
+  return impl(this, &blas::BlasSupport::DoBlasGemm, call);
 }
 
 Stream &Stream::ThenBlasTrsm(blas::Side side, blas::UpperLower uplo,
@@ -1719,18 +1754,12 @@ Stream &Stream::ThenBlasGemmBatchedWithScratch(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc), PARAM(batch_count));
 
-  ThenBlasImpl<
-      blas::Transpose, blas::Transpose, uint64_t, uint64_t, uint64, float,
-      const port::ArraySlice<DeviceMemory<Eigen::half> *> &,  // non-absl ok
-      int,
-      const port::ArraySlice<DeviceMemory<Eigen::half> *> &,  // non-absl ok
-      int, float,
-      const port::ArraySlice<DeviceMemory<Eigen::half> *> &,  // non-absl ok
-      int, int, ScratchAllocator *>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, transa, transb, m, n,
-              k, alpha, a, lda, b, ldb, beta, c, ldc, batch_count,
-              scratch_allocator);
+  ThenBlasImplPacked<blas::BatchedGemmCall<Eigen::half> > impl;
+  blas::BatchedGemmCall<Eigen::half> call{
+    transa, transb, m, n, k, 
+    alpha, &a, lda, &b, ldb, beta, &c, ldc, batch_count};
+  call.scratch_allocator = scratch_allocator;
+  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, call);
 }
 
 Stream &Stream::ThenBlasGemmBatched(
@@ -1741,9 +1770,11 @@ Stream &Stream::ThenBlasGemmBatched(
     int ldb, float beta,
     const port::ArraySlice<DeviceMemory<float> *> &c,  // non-absl ok
     int ldc, int batch_count) {
-  return ThenBlasGemmBatchedWithScratch(transa, transb, m, n, k, alpha, a, lda,
-                                        b, ldb, beta, c, ldc, batch_count,
-                                        /*scratch_allocator=*/nullptr);
+  ThenBlasImplPacked<blas::BatchedGemmCall<float> > impl;
+  blas::BatchedGemmCall<float> call{
+    transa, transb, m, n, k, 
+    alpha, &a, lda, &b, ldb, beta, &c, ldc, batch_count};
+  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, call);
 }
 
 Stream &Stream::ThenBlasGemmBatchedWithScratch(
@@ -1757,17 +1788,12 @@ Stream &Stream::ThenBlasGemmBatchedWithScratch(
   VLOG_CALL(PARAM(transa), PARAM(transb), PARAM(m), PARAM(n), PARAM(k),
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc), PARAM(batch_count));
-
-  ThenBlasImpl<
-      blas::Transpose, blas::Transpose, uint64_t, uint64_t, uint64, float,
-      const port::ArraySlice<DeviceMemory<float> *> &, int,    // non-absl ok
-      const port::ArraySlice<DeviceMemory<float> *> &, int,    // non-absl ok
-      float, const port::ArraySlice<DeviceMemory<float> *> &,  // non-absl ok
-      int, int, ScratchAllocator *>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, transa, transb, m, n,
-              k, alpha, a, lda, b, ldb, beta, c, ldc, batch_count,
-              scratch_allocator);
+  ThenBlasImplPacked<blas::BatchedGemmCall<float> > impl;
+  blas::BatchedGemmCall<float> call{
+    transa, transb, m, n, k, 
+    alpha, &a, lda, &b, ldb, beta, &c, ldc, batch_count};
+  call.scratch_allocator = scratch_allocator;
+  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, call);
 }
 
 Stream &Stream::ThenBlasGemmBatched(
@@ -1795,17 +1821,12 @@ Stream &Stream::ThenBlasGemmBatchedWithScratch(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc), PARAM(batch_count));
 
-  ThenBlasImpl<
-      blas::Transpose, blas::Transpose, uint64_t, uint64_t, uint64, double,
-      const port::ArraySlice<DeviceMemory<double> *> &,       // non-absl ok
-      int, const port::ArraySlice<DeviceMemory<double> *> &,  // non-absl ok
-      int, double,
-      const port::ArraySlice<DeviceMemory<double> *> &,  // non-absl ok
-      int, int, ScratchAllocator *>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, transa, transb, m, n,
-              k, alpha, a, lda, b, ldb, beta, c, ldc, batch_count,
-              scratch_allocator);
+  ThenBlasImplPacked<blas::BatchedGemmCall<double> > impl;
+  blas::BatchedGemmCall<double> call{
+    transa, transb, m, n, k, 
+    alpha, &a, lda, &b, ldb, beta, &c, ldc, batch_count};
+  call.scratch_allocator = scratch_allocator;
+  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, call);
 }
 
 Stream &Stream::ThenBlasGemmBatched(
@@ -1841,16 +1862,12 @@ Stream &Stream::ThenBlasGemmBatchedWithScratch(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc), PARAM(batch_count));
 
-  ThenBlasImpl<
-      blas::Transpose, blas::Transpose, uint64_t, uint64_t, uint64,
-      std::complex<float>, const DeviceMemorySlice<std::complex<float>> &, int,
-      const DeviceMemorySlice<std::complex<float>> &, int, std::complex<float>,
-      const DeviceMemorySlice<std::complex<float>> &, int, int,
-      ScratchAllocator *>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, transa, transb, m, n,
-              k, alpha, a, lda, b, ldb, beta, c, ldc, batch_count,
-              scratch_allocator);
+  ThenBlasImplPacked<blas::BatchedGemmCall<std::complex<float> > > impl;
+  blas::BatchedGemmCall<std::complex<float> > call{
+    transa, transb, m, n, k, 
+    alpha, &a, lda, &b, ldb, beta, &c, ldc, batch_count};
+  call.scratch_allocator = scratch_allocator;
+  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, call);
 }
 
 Stream &Stream::ThenBlasGemmBatched(
@@ -1877,16 +1894,12 @@ Stream &Stream::ThenBlasGemmBatchedWithScratch(
             PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
             PARAM(beta), PARAM(c), PARAM(ldc), PARAM(batch_count));
 
-  ThenBlasImpl<
-      blas::Transpose, blas::Transpose, uint64_t, uint64_t, uint64,
-      std::complex<double>, const DeviceMemorySlice<std::complex<double>> &,
-      int, const DeviceMemorySlice<std::complex<double>> &, int,
-      std::complex<double>, const DeviceMemorySlice<std::complex<double>> &,
-      int, int, ScratchAllocator *>
-      impl;
-  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, transa, transb, m, n,
-              k, alpha, a, lda, b, ldb, beta, c, ldc, batch_count,
-              scratch_allocator);
+  ThenBlasImplPacked<blas::BatchedGemmCall<std::complex<double> > > impl;
+  blas::BatchedGemmCall<std::complex<double> > call{
+    transa, transb, m, n, k, 
+    alpha, &a, lda, &b, ldb, beta, &c, ldc, batch_count};
+  call.scratch_allocator = scratch_allocator;
+  return impl(this, &blas::BlasSupport::DoBlasGemmBatched, call);
 }
 
 Stream &Stream::ThenSetRngSeed(const uint8 *seed, uint64_t seed_bytes) {
