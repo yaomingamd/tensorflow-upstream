@@ -149,6 +149,7 @@ cuda_py_test(
     shard_count = 2,
     tags = [
         "optonly",  # flaky timeouts unless optimized
+        "no_oss",  # TODO(b/258503209): Disable the test. 
     ],
     deps = [
         "//tensorflow/python:array_ops",
@@ -639,7 +640,10 @@ cuda_py_test(
     name = "xent_op_d9m_test",
     size = "medium",
     srcs = ["xent_op_d9m_test.py"],
-    tags = ["notsan"],  # TODO(b/200548634): Remove.
+    tags = [
+        "notsan",  # TODO(b/200548634): Remove.
+        "no_oss",  # TODO(b/258503209): Disable the test.
+    ],
     xla_enable_strict_auto_jit = False,
     deps = [
         ":xent_op_test_base",
