@@ -70,7 +70,7 @@ RUN apt-get install -y software-properties-common
 # For precompiled miopen kernels search for all unversioned packages
 # if search fails it will abort so use true to avoid case where search fails
 RUN MIOPENKERNELS=$( \
-                    apt-cache search --names-only miopenkernels | \
+                    apt-cache search --names-only miopen-hip-gfx | \
                     awk '{print $1}' | \
                     grep -F -v . || \
                     true \
