@@ -13,11 +13,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <memory>
 #include <utility>
 
 #include "mhlo/IR/hlo_ops.h"
 #include "mhlo_tosa/Transforms/passes.h"
-#include "mlir/Dialect/Quant/QuantTypes.h"
 #include "mlir/Dialect/Tosa/IR/TosaOps.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/Parser/Parser.h"
@@ -26,7 +26,7 @@ limitations under the License.
 #define GEN_PASS_DEF_TOSALEGALIZEMHLOPASS
 #include "mhlo_tosa/Transforms/passes.h.inc"
 
-#define PASS_NAME "tosa-legalize-tf"
+#define PASS_NAME "tosa-legalize-mhlo"
 #define DEBUG_TYPE PASS_NAME
 
 #include "mhlo_tosa/Transforms/legalize_mhlo.pdll.h.inc"
@@ -296,6 +296,17 @@ struct ConvertMhloReduceOp : public OpRewritePattern<mhlo::ReduceOp> {
   }
 };
 
+struct ConvertMhloReturnOp : public OpRewritePattern<mhlo::ReturnOp> {
+  using OpRewritePattern<mhlo::ReturnOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(mhlo::ReturnOp op,
+                                PatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<tosa::YieldOp>(op, op->getResultTypes(),
+                                               op.getResults());
+    return success();
+  }
+};
+
 struct ConvertMhloSliceOp : public OpRewritePattern<mhlo::SliceOp> {
   using OpRewritePattern<mhlo::SliceOp>::OpRewritePattern;
 
@@ -357,6 +368,31 @@ struct ConvertMhloTransposeOp : public OpRewritePattern<mhlo::TransposeOp> {
   }
 };
 
+struct ConvertMhloWhileOp : public OpRewritePattern<mhlo::WhileOp> {
+  using OpRewritePattern<mhlo::WhileOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(mhlo::WhileOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* cond = &op.getCond();
+    auto* body = &op.getBody();
+    auto newWhileOp = rewriter.create<tosa::WhileOp>(
+        op->getLoc(), op->getResultTypes(), op->getOperands());
+
+    auto* newCond = &newWhileOp->getRegion(0);
+    auto* newBody = &newWhileOp->getRegion(1);
+    rewriter.createBlock(newCond);
+    rewriter.createBlock(newBody);
+
+    rewriter.cloneRegionBefore(*cond, &newCond->back());
+    rewriter.eraseBlock(&newCond->back());
+    rewriter.cloneRegionBefore(*body, &newBody->back());
+    rewriter.eraseBlock(&newBody->back());
+
+    rewriter.replaceOp(op, newWhileOp.getResults());
+    return success();
+  }
+};
+
 LogicalResult LegalizeMhlo::initialize(MLIRContext* ctx) {
   RewritePatternSet patternList(ctx);
   populateGeneratedPDLLPatterns(patternList);
@@ -365,8 +401,10 @@ LogicalResult LegalizeMhlo::initialize(MLIRContext* ctx) {
   patternList.addWithLabel<ConvertMhloDotOp>({"MhloDot"}, ctx);
   patternList.addWithLabel<ConvertMhloIotaOp>({"MhloIota"}, ctx);
   patternList.addWithLabel<ConvertMhloReduceOp>({"MhloReduce"}, ctx);
+  patternList.addWithLabel<ConvertMhloReturnOp>({"MhloReturn"}, ctx);
   patternList.addWithLabel<ConvertMhloSliceOp>({"MhloSlice"}, ctx);
   patternList.addWithLabel<ConvertMhloTransposeOp>({"MhloTranspose"}, ctx);
+  patternList.addWithLabel<ConvertMhloWhileOp>({"MhloWhile"}, ctx);
   patterns = std::move(patternList);
   return success();
 }

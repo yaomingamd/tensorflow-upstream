@@ -29,12 +29,14 @@ limitations under the License.
 #include "mlir/Dialect/SCF/IR/SCF.h"  // from @llvm-project
 #include "mlir/IR/Attributes.h"  // from @llvm-project
 #include "mlir/IR/BlockAndValueMapping.h"  // from @llvm-project
+#include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
 #include "mlir/IR/ImplicitLocOpBuilder.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "mlir/IR/PatternMatch.h"  // from @llvm-project
 #include "mlir/IR/SymbolTable.h"  // from @llvm-project
 #include "mlir/Pass/Pass.h"  // from @llvm-project
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"  // from @llvm-project
+#include "tensorflow/compiler/xla/mlir/backends/gpu/transforms/uid_generator.h"
 #include "tensorflow/compiler/xla/mlir/runtime/utils/custom_calls.h"
 #include "tensorflow/compiler/xla/mlir_hlo/lhlo/IR/lhlo_ops.h"
 #include "tensorflow/compiler/xla/mlir_hlo/lhlo_gpu/IR/lhlo_gpu_ops.h"
@@ -142,8 +144,43 @@ class CustomCallOpLowering : public OpRewritePattern<CustomCallOp> {
   CustomCallOpLowering(MLIRContext* ctx, CustomCallDeclarations& custom_calls)
       : OpRewritePattern(ctx), custom_calls_(custom_calls) {}
 
+  // Rewrite custom call with `API_VERSION_TYPED_FFI` version into XLA runtime
+  // custom calls bypassing custom call adaptor.
+  LogicalResult rewriteTypedCustomCall(CustomCallOp op,
+                                       PatternRewriter& rewriter) const {
+    // TODO(ezhulenev): Support target arg mapping, or explain why we do not
+    // need them for typed custom calls.
+    if (op.getTargetArgMapping())
+      return op.emitOpError(
+          "API_VERSION_TYPED_FFI custom calls do not "
+          "support target arg mapping");
+
+    // Create a custom call function declaration.
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    func::FuncOp callee =
+        custom_calls_.GetOrCreate(b, op.getCallTargetName(), op);
+    callee->setAttr("rt.dynamic", UnitAttr::get(b.getContext()));
+
+    // Forward backend config to the custom call implementation.
+    auto dict = op.getBackendConfig()
+                    ? op.getBackendConfig()->cast<mlir::DictionaryAttr>()
+                    : nullptr;
+    llvm::SmallVector<NamedAttribute> backend_config(dict.begin(), dict.end());
+
+    // Call the custom call function forwarding user-defined attributes.
+    auto call = rewriter.replaceOpWithNewOp<func::CallOp>(
+        op, callee.getName(), TypeRange(), op.getOperands());
+    AppendCustomCallAttrs(call, backend_config);
+
+    return success();
+  }
+
   LogicalResult matchAndRewrite(CustomCallOp op,
                                 PatternRewriter& rewriter) const override {
+    // Typed custom calls lowered directly to XLA runtime custom calls.
+    if (op.getApiVersion() == mhlo::CustomCallApiVersion::API_VERSION_TYPED_FFI)
+      return rewriteTypedCustomCall(op, rewriter);
+
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
 
     // By default all operands passed to the custom call handler.
@@ -204,8 +241,9 @@ class FftOpLowering : public OpRewritePattern<FftOp> {
   static constexpr const char kCustomCallTarget[] = "xla.gpu.fft";
 
  public:
-  FftOpLowering(MLIRContext* ctx, CustomCallDeclarations& custom_calls)
-      : OpRewritePattern(ctx), custom_calls_(custom_calls) {}
+  FftOpLowering(MLIRContext* ctx, UidGenerator& uid,
+                CustomCallDeclarations& custom_calls)
+      : OpRewritePattern(ctx), uid_(uid), custom_calls_(custom_calls) {}
 
   LogicalResult matchAndRewrite(FftOp op,
                                 PatternRewriter& rewriter) const override {
@@ -215,7 +253,8 @@ class FftOpLowering : public OpRewritePattern<FftOp> {
 
     llvm::SmallVector<NamedAttribute> custom_call_attrs = {
         {b.getStringAttr("fft_length"), op.getFftLengthAttr()},
-        {b.getStringAttr("fft_type"), op.getFftTypeAttr()}};
+        {b.getStringAttr("fft_type"), op.getFftTypeAttr()},
+        {b.getStringAttr("uid"), b.getI64IntegerAttr(uid_.uid())}};
 
     // Convert Fft to a function call.
     auto call = rewriter.replaceOpWithNewOp<func::CallOp>(
@@ -225,6 +264,7 @@ class FftOpLowering : public OpRewritePattern<FftOp> {
   }
 
  private:
+  UidGenerator& uid_;
   CustomCallDeclarations& custom_calls_;
 };
 
@@ -853,8 +893,11 @@ void ConvertLmhloToGpuRuntimePass::runOnOperation() {
   // Convert lmhlo operations to XLA gpu runtime custom calls.
   RewritePatternSet patterns(ctx);
   patterns.insert<TerminatorOpLowering, CaseOpLowering, WhileOpLowering>(ctx);
-  patterns.insert<InfeedOpLowering, OutfeedOpLowering, CustomCallOpLowering,
-                  FftOpLowering>(ctx, custom_calls);
+  patterns.insert<InfeedOpLowering, OutfeedOpLowering, CustomCallOpLowering>(
+      ctx, custom_calls);
+
+  UidGenerator fft_uid;
+  patterns.insert<FftOpLowering>(ctx, fft_uid, custom_calls);
 
   // Assign shared unique id to each unique pair of async start-done operations,
   // all other collective operations will get assigned uid.

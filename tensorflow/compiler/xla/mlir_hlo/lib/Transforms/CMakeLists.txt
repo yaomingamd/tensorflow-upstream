@@ -57,6 +57,7 @@ add_mlir_library(MLIRHLOGPUTransforms
   gpu_kernel_lowering_passes.cc
   gpu_fusion_rewrite.cc
   hlo_to_gpu_pipeline.cc
+  hlo_to_triton_pipeline.cc
 
   DEPENDS
   LMHLOGPUTransformsPassIncGen
@@ -75,4 +76,5 @@ add_mlir_library(MLIRHLOGPUTransforms
   MLIRShapeDialect
   MLIRSCFTransforms
   MLIRTransforms
+  MLIRVectorTransforms
 )

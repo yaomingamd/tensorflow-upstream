@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/tests/hlo_test_base.h"
 #include "tensorflow/compiler/xla/tests/literal_test_util.h"
 #include "tensorflow/compiler/xla/tests/test_macros.h"
+#include "tensorflow/compiler/xla/tests/test_utils.h"
 #include "tensorflow/tsl/lib/core/status_test_util.h"
 #include "tensorflow/tsl/platform/blocking_counter.h"
 #include "tensorflow/tsl/platform/env.h"
@@ -66,10 +67,10 @@ class CollectiveOpsTest : public HloTestBase {
 
       ENTRY test_computation {
         p = SHAPE parameter(0)
-        p2 = SHAPE bitcast(p)
+        p2 = SHAPE reshape(p)
         crs = SHAPE all-reduce(p2), replica_groups=REPLICA_GROUPS, to_apply=apply_op
         copy = SHAPE copy(crs)
-        ROOT out = SHAPE bitcast(copy)
+        ROOT out = SHAPE reshape(copy)
       }
     )";
     std::vector<std::string> replica_group_strs;
@@ -83,7 +84,7 @@ class CollectiveOpsTest : public HloTestBase {
       // Exercise the scalar codepath.
       hlo_template = absl::StrReplaceAll(
           hlo_template,
-          {{"DATATYPE[SHAPE] bitcast(p)", "DATATYPE[] bitcast(p)"},
+          {{"DATATYPE[SHAPE] reshape(p)", "DATATYPE[] reshape(p)"},
            {"DATATYPE[SHAPE] all-reduce", "DATATYPE[] all-reduce"},
            {"DATATYPE[SHAPE] copy", "DATATYPE[] copy"}});
     }
@@ -112,7 +113,8 @@ class CollectiveOpsTest : public HloTestBase {
     TF_ASSERT_OK_AND_ASSIGN(std::vector<Literal> results,
                             ExecuteReplicated(std::move(module), {&input_value},
                                               /*num_replicas=*/kNumReplicas,
-                                              /*use_threads=*/true));
+                                              /*use_threads=*/true,
+                                              /*run_hlo_passes=*/true));
     for (int replica_idx = 0; replica_idx < kNumReplicas; replica_idx++) {
       EXPECT_TRUE(LiteralTestUtil::NearOrEqual(
           expected_value, results[replica_idx], ErrorSpec{1e-5, 1e-5}));
@@ -228,8 +230,7 @@ XLA_TEST_F(CollectiveOpsTest, AllReduceTwoReplicasOneOperand_half) {
   TestAllOpsForReduce<Eigen::half>();
 }
 
-XLA_TEST_F(CollectiveOpsTest,
-           DISABLED_ON_CPU(AllReduceTwoReplicasOneOperand_bfloat16)) {
+XLA_TEST_F(CollectiveOpsTest, AllReduceTwoReplicasOneOperand_bfloat16) {
   TestAllOpsForReduce<bfloat16>();
 }
 
@@ -268,10 +269,10 @@ XLA_TEST_F(CollectiveOpsTest, AllReduceAnd_Pred) {
       id = u32[] replica-id()
       c = u32[] constant(0)
       p = pred[] compare(id, c), direction=EQ
-      p2 = pred[1] bitcast(p)
+      p2 = pred[1] reshape(p)
       crs = pred[1] all-reduce(p2), replica_groups={}, to_apply=apply_op
       copy = pred[1] copy(crs)
-      ROOT out = pred[1] bitcast(copy)
+      ROOT out = pred[1] reshape(copy)
     }
   )";
 
@@ -308,10 +309,10 @@ XLA_TEST_F(CollectiveOpsTest, AllReduceOr_Pred) {
       id = u32[] replica-id()
       c = u32[] constant(0)
       p = pred[] compare(id, c), direction=EQ
-      p2 = pred[1] bitcast(p)
+      p2 = pred[1] reshape(p)
       crs = pred[1] all-reduce(p2), replica_groups={}, to_apply=apply_op
       copy = pred[1] copy(crs)
-      ROOT out = pred[1] bitcast(copy)
+      ROOT out = pred[1] reshape(copy)
     }
   )";
 
@@ -1002,6 +1003,12 @@ XLA_TEST_F(CollectiveOpsTest, AllGather_Dim1) {
 }
 
 XLA_TEST_F(CollectiveOpsTest, AllReduce_TupleAllReduce) {
+  if (IsMlirLoweringEnabled()) {
+    // TupleAllReduce is not supported by MHLO. As of late 2022, there is no
+    // known way to generate it from any frontend.
+    GTEST_SKIP();
+  }
+
   std::string hlo_string = R"(
     HloModule test
 
@@ -1537,6 +1544,42 @@ XLA_TEST_F(CollectiveOpsTest, ReduceScatter_16BitInt) {
   ASSERT_EQ(results.size(), kNumReplicas);
   LiteralTestUtil::ExpectR1Equal<uint16_t>({21}, results[0]);
   LiteralTestUtil::ExpectR1Equal<uint16_t>({31}, results[1]);
+}
+
+XLA_TEST_F(CollectiveOpsTest, AllReduceBFloat16Min) {
+  const char* const kModuleStr = R"(
+  HloModule test
+
+  min {
+    a = bf16[] parameter(0)
+    b = bf16[] parameter(1)
+    ROOT min.2 = bf16[] minimum(a, b)
+  }
+
+  ENTRY test_computation {
+    id32 = u32[] replica-id()
+    one = u32[] constant(1)
+    id32_1 = u32[] add(id32, one)
+    id = bf16[] convert(id32_1)
+    id2 = bf16[2] broadcast(id), dimensions={}
+    ROOT cp = bf16[2] all-reduce(id2), replica_groups={}, to_apply=min
+  }
+  )";
+  const int64_t kNumReplicas = 2;
+  HloModuleConfig config =
+      GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(kModuleStr, config));
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      std::vector<Literal> results,
+      ExecuteReplicated(std::move(module), {}, kNumReplicas,
+                        /*use_threads=*/true, /*run_hlo_passes=*/true));
+  ASSERT_EQ(results.size(), kNumReplicas);
+  const bfloat16 one = static_cast<bfloat16>(1.0f);
+  for (const Literal& result : results) {
+    LiteralTestUtil::ExpectR1Equal<bfloat16>({one, one}, result);
+  }
 }
 
 }  // namespace

@@ -51,14 +51,14 @@ Value transposeReshape(Value arg, Location loc,
   int64_t leftSize = 1;
   for (auto dim : leftDims) {
     leftSize = (ShapedType::isDynamic(argShape[dim]) || leftSize < 0)
-                   ? ShapedType::kDynamicSize
+                   ? ShapedType::kDynamic
                    : leftSize * argShape[dim];
   }
 
   int64_t rightSize = 1;
   for (auto dim : rightDims) {
     rightSize = (ShapedType::isDynamic(argShape[dim]) || rightSize < 0)
-                    ? ShapedType::kDynamicSize
+                    ? ShapedType::kDynamic
                     : rightSize * argShape[dim];
   }
 
@@ -223,7 +223,7 @@ struct GeneralDotConvert : public OpRewritePattern<DotGeneralOp> {
     if (op.getPrecisionConfig()) precisionConfig = *op.getPrecisionConfig();
     SmallVector<Type, 1> results;
     LogicalResult res =
-        DotOp::inferReturnTypes(rewriter.getContext(), None, {lhs, rhs},
+        DotOp::inferReturnTypes(rewriter.getContext(), llvm::None, {lhs, rhs},
                                 op->getAttrDictionary(), {}, results);
     (void)res;
     assert(succeeded(res) && "invalid input to dot");

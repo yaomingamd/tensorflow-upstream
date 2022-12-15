@@ -636,8 +636,7 @@ def MHLO_TanhOp: MHLO_UnaryElementwiseOp<"tanh",
 //===----------------------------------------------------------------------===//
 // See https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations
 
-// TODO(gleasonk): Merge MHLO_BinaryElementwiseOp and MHLO_BinaryElementwiseOpNoAssembly
-class MHLO_BinaryElementwiseOpNoAssembly<string mnemonic, list<Trait> traits> :
+class MHLO_BinaryElementwiseOp<string mnemonic, list<Trait> traits> :
     MHLO_Op<mnemonic, traits # [InferShapedTypeOpInterface,
     SameOperandsAndResultShape, Elementwise]> {
   let arguments = (ins
@@ -659,10 +658,7 @@ class MHLO_BinaryElementwiseOpNoAssembly<string mnemonic, list<Trait> traits> :
   }];
 
   let results = (outs MHLO_Tensor:$result);
-}
 
-class MHLO_BinaryElementwiseOp<string mnemonic, list<Trait> traits> :
-    MHLO_BinaryElementwiseOpNoAssembly<mnemonic, traits> {
   let assemblyFormat = [{
     $lhs `,` $rhs attr-dict
       `:` custom<SameOperandsAndResultType>(type($lhs), type($rhs), type($result))
@@ -705,7 +701,7 @@ def MHLO_Atan2Op : MHLO_BinaryElementwiseOp<"atan2",
   }];
 }
 
-def MHLO_ComplexOp: MHLO_BinaryElementwiseOpNoAssembly<"complex", [Pure,
+def MHLO_ComplexOp: MHLO_BinaryElementwiseOp<"complex", [Pure,
     SameOperandsElementType, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "Complex operator";
   let description = [{
@@ -1467,17 +1463,38 @@ def MHLO_ReduceScatterOp : MHLO_Op<"reduce_scatter",
 }
 
 def MHLO_AllToAllOp : MHLO_Op<"all_to_all",
-    [Pure, SameOperandsElementType, SameOperandsShape,
+    [Pure, SameOperandsElementType, SameOperandsShape, SameVariadicOperandSize,
      InferTensorType]> {
 
   let arguments = (ins
-    MHLO_Tensor:$operand,
-    I64Attr:$split_dimension,
-    I64Attr:$concat_dimension,
-    I64Attr:$split_count,
-    I64ElementsAttr:$replica_groups
+    // ArrayAllToAll must have exactly one operand, TupleAllToAll at least one.
+    Variadic<MHLO_Tensor>:$operand,
+    // split_dimension, concat_dimension and split_count are present for array
+    // all-to-all, absent for tuple all-to-all.
+    OptionalAttr<I64Attr>:$split_dimension,
+    OptionalAttr<I64Attr>:$concat_dimension,
+    OptionalAttr<I64Attr>:$split_count,
+    I64ElementsAttr:$replica_groups,
+    OptionalAttr<MHLO_ChannelHandle>:$channel_handle
   );
-  let results = (outs MHLO_Tensor);
+  let results = (outs Variadic<MHLO_Tensor>);
+  let hasCustomHLOConverter = 1;
+
+  // channel_handle is only used for the SPMD partitioner, so we add a
+  // simplified builder method for convenience.
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Type":$result_type, "::mlir::Value":$operand,
+      "::mlir::IntegerAttr": $split_dimension,
+      "::mlir::IntegerAttr": $concat_dimension,
+      "::mlir::IntegerAttr": $split_count,
+      "::mlir::DenseIntElementsAttr": $replica_groups)>,
+    OpBuilder<(ins
+      "::mlir::TypeRange":$result_type, "::mlir::ValueRange":$operand,
+      "::mlir::IntegerAttr": $split_dimension,
+      "::mlir::IntegerAttr": $concat_dimension,
+      "::mlir::IntegerAttr": $split_count,
+      "::mlir::DenseIntElementsAttr": $replica_groups)>];
 }
 
 def MHLO_ReduceOp: MHLO_ShapedInterfaceOp<"reduce", [
@@ -2097,10 +2114,10 @@ def MHLO_CopyOp: MHLO_Op<"copy", [Pure, HLO_CompatibleOperandsAndResultType]> {
     ```
   }];
   let arguments = (ins
-      MHLO_Tensor:$operand,
+      MHLO_TensorOrTokenOrTuple:$operand,
       UnitAttr:$is_cross_program_prefetch
   );
-  let results = (outs MHLO_Tensor:$result);
+  let results = (outs MHLO_TensorOrTokenOrTuple:$result);
   let hasCustomHLOConverter = 1;
   let hasFolder = 1;
 
@@ -2143,8 +2160,29 @@ def MHLO_CustomCallOp: MHLO_Op<"custom_call",
     backend, a call instruction is emitted which targets a symbol with the name
     `call_target_name`.
 
+    If XLA runtime is enabled for a backend, then custom calls use the runtime
+    custom call calling convention to call into the external functions. This
+    calling convention defines an ABI for encoding arguments, attributes and
+    results.
+
     `call_target_name` and `backend_config` can be arbitrary strings, but
     `call_target_name` should be short as it may be used in labels.
+
+    Depending on the API version there are two ways to pass extra bits of static
+    information to the external function:
+
+    1. For `API_VERSION_TYPED_FFI` custom calls `backend_config` must be a
+       dictionary attribute, that will be encoded according to the custom call
+       calling convention and passed to the external function as the attributes
+       argument. External code is expected to use declarative bindings (see
+       `xla/runtime/custom_call.h`) to decode them at run time.
+
+    2. For previous API versions it is the user responsibility to encode extra
+       bits of static information as a string `backend_config` attribute, and
+       decode it at run time.
+
+    `API_VERSION_TYPED_FFI` custom calls only supported if XLA uses XLA runtime.
+
     `backend_config` can encode arbitrarily large amounts of information.
 
     `has_side_effect` must be true if the custom call has side-effects.
@@ -2169,12 +2207,19 @@ def MHLO_CustomCallOp: MHLO_Op<"custom_call",
        result tuple.
 
     See https://www.tensorflow.org/xla/operation_semantics#customcall.
+
+    Example:
+
+    ```mlir
+    %1 = mhlo.custom_call @foo(%arg0, %arg1) {backend_config = "bar", has_side_effect = true}
+          : (tensor<2x3xf32>, tensor<5x5xf32>) -> tensor<1x2x3xf32>
+    ```
   }];
   let arguments = (ins
     Variadic<MHLO_TensorOrTokenOrTuple>:$inputs,
     StrAttr:$call_target_name,
     DefaultValuedOptionalAttr<BoolAttr, "false">:$has_side_effect,
-    DefaultValuedOptionalStrAttr<StrAttr, "">:$backend_config,
+    OptionalAttr<AnyAttrOf<[StrAttr, DictionaryAttr]>>:$backend_config,
     // TODO(b/189822916): Remove this field when all clients are migrated to
     // the status-returning API.
     DefaultValuedOptionalAttr<
@@ -2182,6 +2227,7 @@ def MHLO_CustomCallOp: MHLO_Op<"custom_call",
         "::mlir::mhlo::CustomCallApiVersion::API_VERSION_ORIGINAL">:
         $api_version,
     DefaultValuedOptionalAttr<MHLO_FlatSymbolRefArrayAttr, "{}">:$called_computations,
+    DefaultValuedOptionalAttr<MHLO_CustomCallScheduleAttr, "::mlir::mhlo::CustomCallSchedule::NONE">:$custom_call_schedule,
     OptionalAttr<MHLO_ArrayOfLayoutAttr>:$operand_layouts,
     OptionalAttr<MHLO_ArrayOfLayoutAttr>:$result_layouts,
     DefaultValuedOptionalAttr<
@@ -2206,6 +2252,11 @@ def MHLO_CustomCallOp: MHLO_Op<"custom_call",
       "::mlir::ArrayAttr":$called_computations,
       "::mlir::ArrayAttr":$operand_layouts,
       "::mlir::ArrayAttr":$result_layouts)>];
+
+  let assemblyFormat = [{
+    custom<CustomCallTarget>($call_target_name) `(` $inputs `)`
+      attr-dict `:` functional-type(operands, results)
+  }];
 }
 
 def MHLO_DotOp: MHLO_Op<"dot",
@@ -2226,7 +2277,6 @@ def MHLO_DotOp: MHLO_Op<"dot",
   // Dot op required custom exporter to pass the preferred element type
   // to Xla builder.
   let hasCustomHLOConverter = 1;
-  let hasVerifier = 1;
 
   let extraClassDeclaration = [{
     static bool isCompatibleReturnTypes(TypeRange l, TypeRange r) {
@@ -2605,7 +2655,8 @@ def MHLO_ReverseOp: MHLO_Op<"reverse",
   let hasFolder = 1;
 }
 
-def MHLO_PartitionIdOp : MHLO_Op<"partition_id", []> {
+def MHLO_PartitionIdOp : MHLO_Op<"partition_id", [
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "PartitionId operator";
   let description = [{
     Returns the value of the partition id of the currently executing device.
@@ -2792,7 +2843,16 @@ def MHLO_ReduceWindowOp: MHLO_Op<"reduce_window", [
       build($_builder, $_state, TypeRange(result_type), ValueRange(operand),
             ValueRange(init_value), window_dimensions, window_strides,
             base_dilations, window_dilations, padding);
-    }]>
+    }]>,
+    OpBuilder<(ins "ValueRange":$operands,
+      "ValueRange":$init_values,
+      "DenseIntElementsAttr":$window_dimensions,
+      "DenseIntElementsAttr":$window_strides,
+      "DenseIntElementsAttr":$base_dilations,
+      "DenseIntElementsAttr":$window_dilations,
+      "DenseIntElementsAttr":$padding,
+      "function_ref<void(OpBuilder &, Location, ValueRange)>":$bodyBuilder
+    )>,
   ];
 
   let hasCustomHLOConverter = 1;
@@ -2835,6 +2895,28 @@ def MHLO_ReturnOp : MHLO_Op<"return", [Pure, Terminator]> {
 }
 
 def MHLO_TorchIndexSelectOp : MHLO_Op<"torch_index_select", [Pure]> {
+  let summary = "Torch Index Select operator";
+  let description = [{
+    Returns a new tensor which indexes the input tensor along dimension `dim`
+    using the entries in `index`.
+
+    The returned tensor has the same dimensions as `operand`, except for the
+    `dim`th dimension which is replaced by the shape of `index` without the
+    leading `batch_dims` dimensions;
+
+    The `batch_dims` attribute specifies the number of major batch dimensions
+    (0 or more) that act like a multidimensional loop over both the input and
+    the index.
+
+    Example:
+
+    ```mlir
+    %0 = "mhlo.torch_index_select"(%arg0, %arg1) {
+      batch_dims = 1 : i64, dim = 2 : i64
+    } : (tensor<8x128x3072x64xf32>, tensor<8x16x1024xi32>) -> tensor<8x128x16x1024x64xf32>
+    ```
+  }];
+
   let arguments = (ins
     MHLO_Tensor:$operand,
     MHLO_Tensor:$index,
