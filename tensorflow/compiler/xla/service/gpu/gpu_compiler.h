@@ -196,7 +196,6 @@ class GpuCompiler : public LLVMCompiler {
 
   virtual Status OptimizeHloConvolutionCanonicalization(
       HloModule* hlo_module, GpuVersion gpu_version,
-      se::dnn::VersionInfo dnn_version,
       se::DeviceMemoryAllocator* device_allocator) = 0;
 
   virtual HloDataflowAnalysis::CanShareBuffer GetCanShareBuffer() {

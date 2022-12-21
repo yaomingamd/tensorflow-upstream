@@ -633,7 +633,7 @@ Status GpuCompiler::OptimizeHloModule(
   }
 
   TF_RETURN_IF_ERROR(OptimizeHloConvolutionCanonicalization(
-      hlo_module, gpu_version, dnn_version, device_allocator));
+      hlo_module, gpu_version, device_allocator));
 
   {
     // Run layout assignment in a separate pipeline from
@@ -819,6 +819,7 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     });
     pipeline.AddPass<HloPassFix<MoveCopyToUsers>>();
 
+#if GOOGLE_CUDA
     // Rewrite GEMMs into custom calls.
     if (debug_options.xla_gpu_enable_triton_gemm()) {
       pipeline.AddPass<GemmRewriterTriton>(
@@ -827,7 +828,6 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     pipeline.AddPass<GemmRewriter>(
         std::get<se::CudaComputeCapability>(gpu_target_config.gpu_version));
 
-#if GOOGLE_CUDA
     // TODO(b/266210099): Make autotuning work with AOT.
     if (stream_exec) {
       pipeline.AddPass<TritonAutotuner>(
@@ -852,7 +852,7 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     pipeline.AddPass<ReductionDimensionGrouper>();
     pipeline.AddPass<HloPassFix<ReductionSplitter>>();
     pipeline.AddPass<HloPassFix<GpuTreeReductionRewriter>>(
-        std::get<se::CudaComputeCapability>(gpu_target_config.gpu_version));
+                                      gpu_target_config.gpu_version);
     TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
   }
 
