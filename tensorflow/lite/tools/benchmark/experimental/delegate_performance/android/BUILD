@@ -6,6 +6,7 @@ load("//tensorflow/lite/experimental/acceleration/mini_benchmark:build_defs.bzl"
 load("//tensorflow/lite:build_def.bzl", "tflite_jni_binary")
 load("//tensorflow:tensorflow.bzl", "clean_dep")
 load("@build_bazel_rules_android//android:rules.bzl", "android_binary")
+load(":proto.bzl", "proto_data")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -18,18 +19,25 @@ android_binary(
     srcs = glob([
         "src/**/*.java",
     ]),
-    assets = [":mobilenet_float_with_validation.tflite"],
-    assets_dir = "",
+    assets = [
+        ":accuracy_models",
+        ":default_latency_criteria",
+    ],
+    assets_dir = "assets",
     custom_package = "org.tensorflow.lite.benchmark.delegate_performance",
     manifest = "AndroidManifest.xml",
     multidex = "native",
+    nocompress_extensions = [".tflite"],
     # In some platforms we don't have an Android SDK/NDK and this target
     # can't be built. We need to prevent the build system from trying to
     # use the target in that case.
     tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
+        ":delegate_performance_java_proto_lite",
         ":tensorflowlite_delegate_performance_benchmark_native",
+        "//tensorflow/lite/experimental/acceleration/configuration:configuration_fbs_android",
+        "@flatbuffers//:runtime_android",
     ],
 )
 
@@ -40,14 +48,72 @@ validation_model(
     metrics_model = "//tensorflow/lite/experimental/acceleration/mini_benchmark/metrics:mobilenet_metrics_tflite",
 )
 
+validation_model(
+    name = "mobilenet_quant_with_validation.tflite",
+    jpegs = "//tensorflow/lite/experimental/acceleration/mini_benchmark:odt_classifier_testfiles",
+    main_model = "//tensorflow/lite/experimental/acceleration/mini_benchmark/models:mobilenet_v1_1.0_224_quant.tflite",
+    metrics_model = "//tensorflow/lite/experimental/acceleration/mini_benchmark/metrics:mobilenet_metrics_tflite",
+)
+
+ACCURACY_MODELS = [
+    "mobilenet_float_with_validation.tflite",
+    "mobilenet_quant_with_validation.tflite",
+]
+
+genrule(
+    name = "accuracy_models",
+    srcs = [":%s" % model for model in ACCURACY_MODELS],
+    outs = ["assets/accuracy/%s" % model for model in ACCURACY_MODELS],
+    cmd = """
+      srcs=($(SRCS))
+      outs=($(OUTS))
+      for ((i = 0; i < $${#srcs[@]}; ++i)); do
+        echo $${srcs[$$i]};
+        cp $${srcs[$$i]} $${outs[$$i]};
+      done
+    """,
+)
+
 tflite_jni_binary(
     name = "libtensorflowlite_delegate_performance_benchmark.so",
     srcs = ["jni/delegate_performance_benchmark_jni.cc"],
     deps = [
         ":accuracy_benchmark",
+        ":delegate_performance_cc_proto",
         ":latency_benchmark",
+        "//tensorflow/lite/delegates/utils/experimental/stable_delegate:tflite_settings_json_parser",
+        "//tensorflow/lite/experimental/acceleration/configuration:configuration_fbs",
         "//tensorflow/lite/java/jni",
+        "@flatbuffers",
     ],
+)
+
+cc_library(
+    name = "status_codes",
+    hdrs = ["jni/status_codes.h"],
+)
+
+proto_library(
+    name = "delegate_performance_proto",
+    srcs = ["proto/delegate_performance.proto"],
+)
+
+cc_proto_library(
+    name = "delegate_performance_cc_proto",
+    deps = [":delegate_performance_proto"],
+)
+
+java_lite_proto_library(
+    name = "delegate_performance_java_proto_lite",
+    deps = [":delegate_performance_proto"],
+)
+
+proto_data(
+    name = "default_latency_criteria",
+    src = "proto/default_latency_criteria.textproto",
+    out = "assets/proto/default_latency_criteria.binarypb",
+    proto_deps = [":delegate_performance_proto"],
+    proto_name = "tflite.proto.benchmark.LatencyCriteria",
 )
 
 cc_library(
@@ -55,8 +121,31 @@ cc_library(
     srcs = ["jni/latency_benchmark.cc"],
     hdrs = ["jni/latency_benchmark.h"],
     deps = [
+        ":delegate_performance_cc_proto",
+        "//tensorflow/core/util:stats_calculator_portable",
         "//tensorflow/lite:minimal_logging",
+        "//tensorflow/lite/experimental/acceleration/configuration:configuration_fbs",
+        "//tensorflow/lite/profiling:memory_info",
         "//tensorflow/lite/tools/benchmark:benchmark_tflite_model_lib",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_test(
+    name = "latency_benchmark_test",
+    srcs = ["jni/latency_benchmark_test.cc"],
+    data = [
+        "//tensorflow/lite/delegates/utils/experimental/sample_stable_delegate:tensorflowlite_sample_stable_delegate",
+        "//tensorflow/lite/java/demo/app/src/main/assets:mobilenet_v1_1.0_224.tflite",
+        "//tensorflow/lite/tools/delegates/experimental/stable_delegate:test_sample_stable_delegate_settings.json",
+    ],
+    deps = [
+        ":delegate_performance_cc_proto",
+        ":latency_benchmark",
+        "//tensorflow/lite/delegates/utils/experimental/stable_delegate:tflite_settings_json_parser",
+        "//tensorflow/lite/experimental/acceleration/configuration:configuration_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
     ],
 )
 
@@ -65,8 +154,9 @@ cc_library(
     srcs = ["jni/accuracy_benchmark.cc"],
     hdrs = ["jni/accuracy_benchmark.h"],
     deps = [
+        ":status_codes",
         "//tensorflow/lite:minimal_logging",
-        "@flatbuffers//:public_headers_lib",
+        "@flatbuffers//:flatbuffers",
         "//tensorflow/lite/experimental/acceleration/configuration:configuration_fbs",
         "//tensorflow/lite/experimental/acceleration/mini_benchmark:blocking_validator_runner",
         "//tensorflow/lite/experimental/acceleration/mini_benchmark:status_codes",
@@ -95,14 +185,17 @@ cc_test(
     data = [
         "//tensorflow/lite/delegates/utils/experimental/sample_stable_delegate:tensorflowlite_sample_stable_delegate",
         "//tensorflow/lite/delegates/utils/experimental/stable_delegate:test_xnnpack_settings.json",
-        "//tensorflow/lite/tools/delegates/experimental/stable_delegate:test_invalid_settings.json",
         "//tensorflow/lite/tools/delegates/experimental/stable_delegate:test_sample_stable_delegate_settings.json",
     ],
     deps = [
         ":accuracy_benchmark",
+        ":status_codes",
+        "//tensorflow/lite/delegates/utils/experimental/stable_delegate:tflite_settings_json_parser",
+        "//tensorflow/lite/experimental/acceleration/configuration:configuration_fbs",
         "//tensorflow/lite/experimental/acceleration/mini_benchmark:embedded_mobilenet_validation_model",
         "//tensorflow/lite/experimental/acceleration/mini_benchmark:mini_benchmark_test_helper",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
     ],
 )
 

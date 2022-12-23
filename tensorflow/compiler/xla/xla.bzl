@@ -4,10 +4,15 @@ load(
     "//tensorflow/tsl:tsl.bzl",
     "clean_dep",
     "if_tsl_link_protobuf",
+    "tsl_copts",
 )
 load(
     "//tensorflow/tsl/platform/default:cuda_build_defs.bzl",
     "if_cuda_is_configured",
+)
+load(
+    "@local_config_rocm//rocm:build_defs.bzl",
+    "if_rocm_is_configured",
 )
 load(
     "//tensorflow/tsl/platform:build_config_root.bzl",
@@ -29,7 +34,7 @@ ORC_JIT_MEMORY_MAPPER_TARGETS = []
 def xla_py_test_deps():
     return []
 
-def xla_cc_binary(deps = None, **kwargs):
+def xla_cc_binary(deps = None, copts = tsl_copts(), **kwargs):
     if not deps:
         deps = []
 
@@ -46,8 +51,9 @@ def xla_cc_binary(deps = None, **kwargs):
         "//tensorflow/tsl/profiler/utils:time_utils_impl",
         "//tensorflow/tsl/profiler/backends/cpu:traceme_recorder_impl",
         "//tensorflow/tsl/protobuf:protos_all_cc_impl",
+        "//tensorflow/tsl/protobuf:dnn_proto_cc_impl",
     ]
-    native.cc_binary(deps = deps, **kwargs)
+    native.cc_binary(deps = deps, copts = copts, **kwargs)
 
 def xla_cc_test(
         name,
@@ -87,6 +93,11 @@ def xla_cc_test(
                    "//tensorflow/compiler/xla/stream_executor/cuda:cuda_stream",
                    "//tensorflow/compiler/xla/stream_executor/cuda:all_runtime",
                    "//tensorflow/compiler/xla/stream_executor/cuda:stream_executor_cuda",
+               ]) +
+               if_rocm_is_configured([
+                   "//tensorflow/compiler/xla/stream_executor/gpu:gpu_stream",
+                   "//tensorflow/compiler/xla/stream_executor/rocm:all_runtime",
+                   "//tensorflow/compiler/xla/stream_executor/rocm:stream_executor_rocm",
                ]),
         exec_properties = tf_exec_properties(kwargs),
         **kwargs

@@ -293,10 +293,12 @@ xla_cc_test(
     srcs = [
         "reduction_layout_normalizer_test.cc",
     ],
+    tags = tf_cuda_tests_tags(),
     deps = [
         "//tensorflow/compiler/xla:debug_options_flags",
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
+        "//tensorflow/compiler/xla/service:gpu_plugin",
         "//tensorflow/compiler/xla/service:hlo_module_config",
         "//tensorflow/compiler/xla/service:hlo_parser",
         "//tensorflow/compiler/xla/service/gpu:reduction_layout_normalizer",
@@ -827,7 +829,6 @@ xla_cc_binary(
         "//tensorflow/tsl/platform:platform_port",
         "//tensorflow/tsl/platform:tensor_float_32_utils",
         "//tensorflow/tsl/protobuf:autotuning_proto_cc_impl",
-        "//tensorflow/tsl/protobuf:dnn_proto_cc_impl",
         "//tensorflow/tsl/profiler/backends/cpu:annotation_stack_impl",
         "//tensorflow/tsl/util:command_line_flags",
         "//tensorflow/tsl/util:determinism",
