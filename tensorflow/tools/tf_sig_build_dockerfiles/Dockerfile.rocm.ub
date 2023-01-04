@@ -20,9 +20,9 @@ FROM ubuntu:20.04 as devel
 COPY --from=builder /dt9 /dt9
 
 # Install dependencies
-COPY setup.packages.rocm.sh setup.packages.rocm.sh
+COPY setup.packages.sh setup.packages.rocm.sh
 COPY builder.packages.rocm.txt builder.packages.rocm.txt
-RUN /setup.packages.rocm.sh /builder.packages.rocm.txt
+RUN /setup.packages.sh /builder.packages.rocm.txt
 
 # Install ROCM with devtoolset-10
 ARG ROCM_VERSION
