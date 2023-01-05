@@ -21,20 +21,24 @@ set -x
 
 # # Add the ROCm package repo location
 ROCM_VERSION=$1 # e.g. 5.2.0
+ROCM_BUILD_NAME=ubuntu
+ROCM_BUILD_NUM=main
 ROCM_PATH=/opt/rocm-${ROCM_VERSION}
 ROCM_VERSION_REPO=$(echo $ROCM_VERSION | grep -o "\w.\w") # e.g 5.2
-RPM_ROCM_REPO=http://repo.radeon.com/rocm/yum/$(echo $ROCM_VERSION | grep -o "\w.\w")/main
-echo -e "[ROCm]\nname=ROCm\nbaseurl=$RPM_ROCM_REPO\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/rocm.repo
-echo -e "[amdgpu]\nname=amdgpu\nbaseurl=https://repo.radeon.com/amdgpu/latest/rhel/7.9/main/x86_64/\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/amdgpu.repo
+ROCM_DEB_REPO=http://repo.radeon.com/rocm/apt/$(echo $ROCM_VERSION | grep -o "\w.\w")
+#apt-get --allow-unauthenticated update && apt install -y wget software-properties-common
+#wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add -;
+echo -e "deb [arch=amd64] $ROCM_DEB_REPO $ROCM_BUILD_NAME $ROCM_BUILD_NUM"
+echo -e "deb [arch=amd64] $ROCM_DEB_REPO $ROCM_BUILD_NAME $ROCM_BUILD_NUM" > /etc/apt/sources.list.d/rocm.list 
 
 # Use devtoolset env
-export PATH=/opt/rh/devtoolset-9/root/usr/bin:${ROCM_PATH}/llvm/bin:${ROCM_PATH}/hip/bin:${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:${PATH:+:${PATH}}
-export MANPATH=/opt/rh/devtoolset-9/root/usr/share/man:${MANPATH}
-export INFOPATH=/opt/rh/devtoolset-9/root/usr/share/info${INFOPATH:+:${INFOPATH}}
-export PCP_DIR=/opt/rh/devtoolset-9/root
-export PERL5LIB=/opt/rh/devtoolset-9/root//usr/lib64/perl5/vendor_perl:/opt/rh/devtoolset-9/root/usr/lib/perl5:/opt/rh/devtoolset-9/root//usr/share/perl5/
-export LD_LIBRARY_PATH=${ROCM_PATH}/lib:/usr/local/lib:/opt/rh/devtoolset-9/root$rpmlibdir$rpmlibdir32${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
-export LDFLAGS="-Wl,-rpath=/opt/rh/devtoolset-9/root/usr/lib64 -Wl,-rpath=/opt/rh/devtoolset-9/root/usr/lib"
+export PATH=/dt-9/root/usr/bin:${ROCM_PATH}/llvm/bin:${ROCM_PATH}/hip/bin:${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:${PATH:+:${PATH}}
+export MANPATH=/dt-9/root/usr/share/man:${MANPATH}
+export INFOPATH=/dt-9/root/usr/share/info${INFOPATH:+:${INFOPATH}}
+export PCP_DIR=/dt-9/root
+export PERL5LIB=/dt-9/root//usr/lib64/perl5/vendor_perl:/dt-9/root/usr/lib/perl5:/dt-9/root//usr/share/perl5/
+export LD_LIBRARY_PATH=${ROCM_PATH}/lib:/usr/local/lib:/opt/rh/devtoolset-10/root$rpmlibdir$rpmlibdir32${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+export LDFLAGS="-Wl,-rpath=/dt-9/root/usr/lib64 -Wl,-rpath=/dt-9/root/usr/lib"
 GPU_DEVICE_TARGETS="gfx900 gfx906 gfx908 gfx90a gfx1030"
 
 echo $ROCM_VERSION
@@ -42,7 +46,7 @@ echo $ROCM_REPO
 echo $ROCM_PATH
 
 # install rocm
-/setup.packages.rocm.sh /devel.packages.rocm.txt
+/setup.packages.sh /devel.packages.rocm.ub.txt
 
 # Ensure the ROCm target list is set up
 bash -c "echo -e 'gfx900\ngfx906\ngfx908\ngfx90a\ngfx1030' >> $ROCM_PATH/bin/target.lst"

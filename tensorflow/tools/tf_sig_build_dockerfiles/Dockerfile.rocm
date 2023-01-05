@@ -1,13 +1,15 @@
 ################################################################################
-FROM quay.io/pypa/manylinux2014_x86_64 as builder
+FROM quay.io/pypa/manylinux2014_x86_64:2021-07-31-381f36f as builder
 ################################################################################
 
-# Install dependencies
+# Install dependencies; switch to devtoolset-9
 COPY setup.packages.rocm.sh setup.packages.rocm.sh
 COPY builder.packages.rocm.txt builder.packages.rocm.txt
+#COPY builder.packages2.rocm.txt builder.packages2.rocm.txt
 RUN /setup.packages.rocm.sh /builder.packages.rocm.txt
+#RUN /setup.packages.rocm.sh /builder.packages2.rocm.txt
 
-# Install ROCM with devtoolset-10
+# Install ROCM
 ARG ROCM_VERSION
 ENV ROCM_PATH=/opt/rocm-${ROCM_VERSION}
 COPY setup.packages.rocm.sh /setup.packages.rocm.sh

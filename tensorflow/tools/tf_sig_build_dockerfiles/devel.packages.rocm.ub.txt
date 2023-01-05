@@ -1,21 +1,21 @@
 # rocm packagaes
-libdrm-amdgpu
+#libdrm-amdgpu
 rocm-dev
 miopen-hip
-miopen-hip-devel
+miopen-hip-dev
 miopengemm
 rocblas
-rocblas-devel
-rocsolver-devel
-rocrand-devel
-rocfft-devel
-hipfft-devel
-hipblas-devel
-rocprim-devel
-hipcub-devel
-rccl-devel
-hipsparse-devel
-hipsolver-devel
+rocblas-dev
+rocsolver-dev
+rocrand-dev
+rocfft-dev
+hipfft-dev
+hipblas-dev
+rocprim-dev
+hipcub-dev
+rccl-dev
+hipsparse-dev
+hipsolver-dev
 
 # Other build-related tools
 apt-transport-https

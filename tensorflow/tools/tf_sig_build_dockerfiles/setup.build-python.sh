@@ -29,8 +29,8 @@ if [ "$PYTHON_VERSION" = "3.7" ]; then
     ln -sf /usr/local/bin/python3.7 /usr/bin/python3 && ln -sf /usr/local/bin/pip3.7 /usr/bin/pip3
     ln -sf /usr/local/bin/python3.7 /usr/bin/python && ln -sf /usr/local/lib/python3.7 /usr/lib/tf_python
 
-    scl enable devtoolset-10 'bash'
-    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
+    scl enable devtoolset-9 'bash'
+    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-9/root/usr/bin/ld /usr/bin/ld
 
     NUMPY_VERSION=1.18.5
 elif [ "$PYTHON_VERSION" = "3.8" ]; then
@@ -38,8 +38,8 @@ elif [ "$PYTHON_VERSION" = "3.8" ]; then
     ln -sf /usr/local/bin/python3.8 /usr/bin/python3 && ln -sf /usr/local/bin/pip3.8 /usr/bin/pip3
     ln -sf /usr/local/bin/python3.8 /usr/bin/python && ln -sf /usr/local/lib/python3.8 /usr/lib/tf_python
 
-    scl enable devtoolset-10 'bash'
-    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
+    scl enable devtoolset-9 'bash'
+    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-9/root/usr/bin/ld /usr/bin/ld
 
     NUMPY_VERSION=1.18.5
 elif [ "$PYTHON_VERSION" = "3.9" ]; then
@@ -47,8 +47,8 @@ elif [ "$PYTHON_VERSION" = "3.9" ]; then
     ln -sf /usr/local/bin/python3.9 /usr/bin/python3 && ln -sf /usr/local/bin/pip3.9 /usr/bin/pip3
     ln -sf /usr/local/bin/python3.9 /usr/bin/python && ln -sf /usr/local/lib/python3.9 /usr/lib/tf_python
 
-    scl enable devtoolset-10 'bash'
-    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
+    scl enable devtoolset-9 'bash'
+    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-9/root/usr/bin/ld /usr/bin/ld
 
     NUMPY_VERSION=1.20.3
 elif [ "$PYTHON_VERSION" = "3.10" ]; then
@@ -61,8 +61,8 @@ elif [ "$PYTHON_VERSION" = "3.10" ]; then
     ln -sf /usr/local/bin/python3.10 /usr/bin/python3 && ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3
     ln -sf /usr/local/bin/python3.10 /usr/bin/python && ln -sf /usr/local/lib/python3.10 /usr/lib/tf_python
 
-    scl enable devtoolset-10 'bash'
-    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-10/root/usr/bin/ld /usr/bin/ld
+    scl enable devtoolset-9 'bash'
+    rm -f /usr/bin/ld && ln -s /opt/rh/devtoolset-9/root/usr/bin/ld /usr/bin/ld
 
     NUMPY_VERSION=1.21.4
 else
