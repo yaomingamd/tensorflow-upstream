@@ -7,8 +7,8 @@
 // CHECK-LABEL: entry:
 // CHECK-DAG:   call i32 @llvm.amdgcn.workgroup.id.x(), !range ![[ctaid_range:[0-9]+]]
 // CHECK-DAG:   call i32 @llvm.amdgcn.workitem.id.x(), !range ![[tid_range:[0-9]+]]
-// CHECK-DAG:   ![[ctaid_range]] = !{i32 0, i32 2}
-// CHECK-DAG:   ![[tid_range]] = !{i32 0, i32 1024}
+// CHECK-DAG:   ![[ctaid_range]] = !{i32 0, i32 8}
+// CHECK-DAG:   ![[tid_range]] = !{i32 0, i32 32}
 
 HloModule Test
 
@@ -24,8 +24,8 @@ ENTRY main {
 // CHECK-LABEL: entry:
 // CHECK-DAG:   call i32 @llvm.amdgcn.workgroup.id.x(), !range ![[ctaid_range:[0-9]+]]
 // CHECK-DAG:   call i32 @llvm.amdgcn.workitem.id.x(), !range ![[tid_range:[0-9]+]]
-// CHECK-DAG:   ![[ctaid_range]] = !{i32 0, i32 1280}
-// CHECK-DAG:   ![[tid_range]] = !{i32 0, i32 128}
+// CHECK-DAG:   ![[ctaid_range]] = !{i32 0, i32 78125}
+// CHECK-DAG:   ![[tid_range]] = !{i32 0, i32 32}
 
 HloModule Test
 
