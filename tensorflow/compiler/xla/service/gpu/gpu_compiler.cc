@@ -710,7 +710,11 @@ Status GpuCompiler::OptimizeHloModule(
   // canonicalization.
   TF_RETURN_IF_ERROR(OptimizeHloConvolutionCanonicalization(
       hlo_module,
+#if GOOGLE_CUDA      
       std::get<se::CudaComputeCapability>(gpu_target_config.gpu_version),
+#elif TENSORFLOW_USE_ROCM
+      std::get<se::RocmComputeCapability>(gpu_target_config.gpu_version),
+#endif      
       device_allocator));
 
   {
@@ -918,7 +922,12 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     pipeline.AddPass<ReductionDimensionGrouper>();
     pipeline.AddPass<HloPassFix<ReductionSplitter>>();
     pipeline.AddPass<HloPassFix<GpuTreeReductionRewriter>>(
-        std::get<se::CudaComputeCapability>(gpu_target_config.gpu_version));
+#if GOOGLE_CUDA
+        std::get<se::CudaComputeCapability>(gpu_target_config.gpu_version)
+#elif TENSORFLOW_USE_ROCM
+        std::get<se::RocmComputeCapability>(gpu_target_config.gpu_version)        
+#endif        
+    );
     TF_RETURN_IF_ERROR(pipeline.Run(hlo_module).status());
   }
 
