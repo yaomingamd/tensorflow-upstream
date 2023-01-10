@@ -370,6 +370,11 @@ class GpuSolver {
   Status Geqrf(int m, int n, Scalar* dev_A, int lda, Scalar* dev_tau,
                int* dev_lapack_info);
 
+
+  template <typename Scalar>
+  Status GeqrfBatched(int m, int n, Scalar* dev_A, int lda, Scalar* dev_tau,
+                     int* dev_lapack_info, int stride, int batch_size);
+
   // This function performs the matrix-matrix addition/transposition
   //   C = alpha * op(A) + beta * op(B).
   template <typename Scalar>

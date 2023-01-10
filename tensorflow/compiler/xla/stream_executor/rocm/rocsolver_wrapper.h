@@ -100,6 +100,10 @@ namespace wrap {
   __macro(rocsolver_dgeqrf)                 \
   __macro(rocsolver_sgeqrf)                 \
   __macro(rocsolver_zgeqrf)                 \
+  __macro(rocsolver_cgeqrf_batched)         \
+  __macro(rocsolver_dgeqrf_batched)         \
+  __macro(rocsolver_sgeqrf_batched)         \
+  __macro(rocsolver_zgeqrf_batched)         \
   __macro(rocsolver_cunmqr)                 \
   __macro(rocsolver_zunmqr)                 \
   __macro(rocsolver_cungqr)                 \

@@ -200,6 +200,10 @@ class QrOpGpu : public AsyncOpKernel {
 
     // Compute QR decomposition in-place in input_transposed.
     std::vector<DeviceLapackInfo> dev_info;
+#if TENSORFLOW_ROCM
+    dev_info.push_back(solver->GetDeviceLapackInfo(batch_size, "geqrfBatched"));
+    
+#else    
     dev_info.push_back(solver->GetDeviceLapackInfo(batch_size, "geqrf"));
     auto input_transposed_reshaped =
         input_transposed.flat_inner_dims<Scalar, 3>();
@@ -213,7 +217,7 @@ class QrOpGpu : public AsyncOpKernel {
                         dev_info.back().mutable_data() + batch),
           done);
     }
-
+#endif
 #if GOOGLE_CUDA
     cublasOperation_t transa = CUBLAS_OP_T;
     cublasOperation_t transb = CUBLAS_OP_N;
