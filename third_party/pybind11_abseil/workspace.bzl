@@ -9,7 +9,7 @@ load("//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
 def repo():
     """Imports pybind11_abseil."""
     PA_COMMIT = "2c4932ed6f6204f1656e245838f4f5eae69d2e29"
-    PA_SHA256 = "0223b647b8cc817336a51e787980ebc299c8d5e64c069829bf34b69d72337449"
+    PA_SHA256 = "6bed43fa446cb654411e309ce91fcc04c0aff3633f3b04b9bc95568b8a3c8e7e"
     tf_http_archive(
         name = "pybind11_abseil",
         sha256 = PA_SHA256,
