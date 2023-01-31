@@ -1,0 +1,14 @@
+# Setup Python environment. PYTHON_VERSION is e.g. "python3.8"
+ARG PYTHON_VERSION
+ARG ROCM_VERSION
+
+################################################################################
+FROM rocm/tensorflow-build:latest-${PYTHON_VERSION} as builder
+################################################################################
+
+ENV ROCM_PATH=/opt/rocm-${ROCM_VERSION}
+# All lines past this point are reset when $CACHEBUSTER is set. We need this
+# for Python specifically because we install some nightly packages which are
+# likely to change daily.
+ARG CACHEBUSTER=0
+RUN echo $CACHEBUSTER
