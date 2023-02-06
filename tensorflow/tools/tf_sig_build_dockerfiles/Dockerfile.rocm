@@ -10,14 +10,14 @@ RUN /setup.packages.rocm.cs7.sh /builder.packages.rocm.cs7.txt
 
 # Install ROCM
 ARG ROCM_VERSION
+ARG INTERNAL_INSTALL
 ARG ROCM_PATH=/opt/rocm-${ROCM_VERSION}
 ENV ROCM_PATH=${ROCM_PATH}
-# Set default value of SETUP_ROCM_CS7_SCRIPT for public release build
-ARG SETUP_ROCM_CS7_SCRIPT='setup.rocm.cs7.sh'
+COPY ${INTERNAL_INSTALL} /${INTERNAL_INSTALL}
 COPY setup.packages.rocm.cs7.sh /setup.packages.rocm.cs7.sh
-COPY ${SETUP_ROCM_CS7_SCRIPT} /${SETUP_ROCM_CS7_SCRIPT}
+COPY setup.rocm.cs7.sh /setup.rocm.cs7.sh
 COPY devel.packages.rocm.cs7.txt /devel.packages.rocm.cs7.txt
-RUN /${SETUP_ROCM_CS7_SCRIPT} $ROCM_VERSION
+RUN /setup.rocm.cs7.sh $ROCM_VERSION
 
 # Install various tools.
 # - bats: bash unit testing framework
