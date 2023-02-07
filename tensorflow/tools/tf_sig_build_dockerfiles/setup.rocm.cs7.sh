@@ -49,5 +49,6 @@ echo $ROCM_PATH
 /setup.packages.rocm.cs7.sh /devel.packages.rocm.cs7.txt
 
 # Ensure the ROCm target list is set up
-bash -c "echo -e 'gfx900\ngfx906\ngfx908\ngfx90a\ngfx1030' >> $ROCM_PATH/bin/target.lst"
-touch ${ROCM_PATH}/.info/version
+#bash -c "echo -e 'gfx900\ngfx906\ngfx908\ngfx90a\ngfx1030' >> $ROCM_PATH/bin/target.lst"
+printf '%s\n' > ${ROCM_PATH}/bin/target.lst ${GPU_DEVICE_TARGETS}
+[ ! -f "${ROCM_PATH}/.info/version" ] && touch ${ROCM_PATH}/.info/version
