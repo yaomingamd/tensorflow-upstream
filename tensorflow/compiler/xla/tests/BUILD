@@ -1299,6 +1299,7 @@ xla_test(
     backend_tags = {"gpu": [
         "gpu",
         "requires-gpu-sm80",
+        "no_rocm"
     ]},
     backends = ["gpu"],
     deps = [
