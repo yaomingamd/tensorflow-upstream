@@ -13,12 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-<<<<<<< HEAD
-#include "tensorflow/core/framework/device_attributes.pb.h"
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-=======
-#ifdef GOOGLE_CUDA
->>>>>>> 3e5b6f1899f8515b3f27c67b5bea7481e990c163
 
 #include <algorithm>
 
