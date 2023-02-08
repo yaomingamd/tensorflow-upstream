@@ -298,7 +298,13 @@ dtensor_test(
         "tpu": 10,
         TPU_V3_DONUT_BACKEND: 32,
     },
+<<<<<<< HEAD
     tags = ["no_oss"],
+=======
+    tags = [
+        "no_oss_py38",  # TODO(b/267017937)
+    ],
+>>>>>>> 3e5b6f1899f8515b3f27c67b5bea7481e990c163
     deps = [
         ":test_util",
         "//tensorflow/dtensor/python:api",
