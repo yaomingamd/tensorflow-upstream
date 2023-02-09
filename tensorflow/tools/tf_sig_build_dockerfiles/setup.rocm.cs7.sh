@@ -19,6 +19,7 @@
 # Usage: setup.rocm.sh <ROCM_VERSION>
 set -x
 
+
 if [ ! -f "/${INTERNAL_INSTALL}" ]; then
 # # Add the ROCm package repo location
 ROCM_VERSION=$1 # e.g. 5.2.0
@@ -28,8 +29,10 @@ RPM_ROCM_REPO=http://repo.radeon.com/rocm/yum/$(echo $ROCM_VERSION | grep -o "\w
 echo -e "[ROCm]\nname=ROCm\nbaseurl=$RPM_ROCM_REPO\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/rocm.repo
 echo -e "[amdgpu]\nname=amdgpu\nbaseurl=https://repo.radeon.com/amdgpu/latest/rhel/7.9/main/x86_64/\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/amdgpu.repo
 else
-    bash /${INTERNAL_INSTALL}
+    bash "/${INTERNAL_INSTALL}"
 fi
+
+ROCM_PATH="$(ls -d /opt/rocm-*)"
 
 # Use devtoolset env
 export PATH=/opt/rh/devtoolset-10/root/usr/bin:${ROCM_PATH}/llvm/bin:${ROCM_PATH}/hip/bin:${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:${PATH:+:${PATH}}
@@ -50,4 +53,4 @@ echo $ROCM_PATH
 
 # Ensure the ROCm target list is set up
 printf '%s\n' "${GPU_DEVICE_TARGETS[@]}" | tee -a "${ROCM_PATH}/bin/target.lst"
-touch ${ROCM_PATH}/.info/version
+touch "${ROCM_PATH}/.info/version"
