@@ -30,5 +30,5 @@ for wheel in /tf/pkg/*.whl; do
     wheel="$new_wheel"
   fi
 
-  auditwheel show $NEW_TF_WHEEL
+  TF_WHEEL="$wheel" bats /usertools/wheel_verification.bats --timing
 done
