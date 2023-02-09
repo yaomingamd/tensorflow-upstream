@@ -20,10 +20,10 @@
 set -x
 
 
-if [ ! -f "/${INTERNAL_INSTALL}" ]; then
 # # Add the ROCm package repo location
 ROCM_VERSION=$1 # e.g. 5.2.0
 ROCM_PATH=/opt/rocm-${ROCM_VERSION}
+if [ ! -f "/${INTERNAL_INSTALL}" ]; then
 ROCM_VERSION_REPO=$(echo $ROCM_VERSION | grep -o "\w.\w") # e.g 5.2
 RPM_ROCM_REPO=http://repo.radeon.com/rocm/yum/$(echo $ROCM_VERSION | grep -o "\w.\w")/main
 echo -e "[ROCm]\nname=ROCm\nbaseurl=$RPM_ROCM_REPO\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/rocm.repo
@@ -31,8 +31,6 @@ echo -e "[amdgpu]\nname=amdgpu\nbaseurl=https://repo.radeon.com/amdgpu/latest/rh
 else
     bash "/${INTERNAL_INSTALL}"
 fi
-
-ROCM_PATH="$(ls -d /opt/rocm-*)"
 
 # Use devtoolset env
 export PATH=/opt/rh/devtoolset-10/root/usr/bin:${ROCM_PATH}/llvm/bin:${ROCM_PATH}/hip/bin:${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:${PATH:+:${PATH}}
