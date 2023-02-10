@@ -95,7 +95,7 @@ pip3 install --upgrade gast
 pip3 install --upgrade termcolor
 
 # Keras
-pip3 install keras-nightly==2.12.0.dev2022111408 --no-deps
+pip3 install keras-nightly==2.12.0.dev2022102807 --no-deps
 pip3 install --upgrade h5py==3.1.0
 
 # Estimator
