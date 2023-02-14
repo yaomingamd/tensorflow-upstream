@@ -21,21 +21,27 @@ set -x
 
 # # Add the ROCm package repo location
 ROCM_VERSION=$1 # e.g. 5.2.0
-ROCM_PATH=/opt/rocm-${ROCM_VERSION}
+ROCM_PATH=${ROCM_PATH:-/opt/rocm-${ROCM_VERSION}}
+
+if [ ! -f "/${INTERNAL_INSTALL}" ]; then
 ROCM_VERSION_REPO=$(echo $ROCM_VERSION | grep -o "\w.\w") # e.g 5.2
 RPM_ROCM_REPO=http://repo.radeon.com/rocm/yum/$(echo $ROCM_VERSION | grep -o "\w.\w")/main
 echo -e "[ROCm]\nname=ROCm\nbaseurl=$RPM_ROCM_REPO\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/rocm.repo
 echo -e "[amdgpu]\nname=amdgpu\nbaseurl=https://repo.radeon.com/amdgpu/latest/rhel/7.9/main/x86_64/\nenabled=1\ngpgcheck=0" >>/etc/yum.repos.d/amdgpu.repo
+else
+    bash "/${INTERNAL_INSTALL}"
+fi
 
 GPU_DEVICE_TARGETS=${GPU_DEVICE_TARGETS:-"gfx900 gfx906 gfx908 gfx90a gfx1030"}
 
 echo $ROCM_VERSION
 echo $ROCM_REPO
 echo $ROCM_PATH
+echo $GPU_DEVICE_TARGETS
 
 # install rocm
 /setup.packages.rocm.cs7.sh /devel.packages.rocm.cs7.txt
 
 # Ensure the ROCm target list is set up
-bash -c "echo -e 'gfx900\ngfx906\ngfx908\ngfx90a\ngfx1030' >> $ROCM_PATH/bin/target.lst"
-touch ${ROCM_PATH}/.info/version
+printf '%s\n' "${GPU_DEVICE_TARGETS[@]}" | tee -a "$ROCM_PATH/bin/target.lst"
+touch "${ROCM_PATH}/.info/version"
