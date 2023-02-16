@@ -452,7 +452,9 @@ xla_test(
     backends = [
         "gpu",
     ],
-    tags = ["nomac"],
+    tags = ["nomac",
+	    "no_rocm",
+	   ],
     deps = [
         ":gemm_rewriter_triton",
         ":gpu_executable",
