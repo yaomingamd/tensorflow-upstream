@@ -45,6 +45,7 @@ limitations under the License.
 #include "tensorflow/tsl/platform/hash.h"
 #include "tensorflow/tsl/util/determinism.h"
 #include "tensorflow/tsl/util/env_var.h"
+#include "rocm/rocm_config.h"
 
 namespace {
 
@@ -251,7 +252,7 @@ namespace wrap {
 
 #endif
 
-#if (TF_ROCM_VERSION >= 50300)
+#if (TF_ROCM_VERSION >= 50000)
 // clang-format off
 #define MIOPEN_DNN_ROUTINE_EACH(__macro)                             \
   __macro(miopenBatchNormalizationBackward)                          \
@@ -480,12 +481,6 @@ namespace wrap {
 #endif
 
 MIOPEN_DNN_ROUTINE_EACH(STREAM_EXECUTOR_MIOPEN_WRAP)
-
-#if TF_ROCM_VERSION >= 50000
-
-STREAM_EXECUTOR_MIOPEN_WRAP(miopenSetConvolutionAttribute)
-
-#endif
 
 #undef MIOPEN_DNN_ROUTINE_EACH
 
