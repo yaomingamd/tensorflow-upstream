@@ -482,12 +482,6 @@ namespace wrap {
 
 MIOPEN_DNN_ROUTINE_EACH(STREAM_EXECUTOR_MIOPEN_WRAP)
 
-#if TF_ROCM_VERSION >= 50000
-
-STREAM_EXECUTOR_MIOPEN_WRAP(miopenSetConvolutionAttribute)
-
-#endif
-
 #undef MIOPEN_DNN_ROUTINE_EACH
 
 }  // namespace wrap
