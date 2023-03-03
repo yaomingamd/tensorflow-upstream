@@ -43,9 +43,7 @@ namespace {
   struct MaxOrMinFunc<T, true> {
       __host__ __device__ __forceinline__ KeyValuePair<T> operator()(
       const KeyValuePair<T>& lhs, const KeyValuePair<T>& rhs) const {
-          // If one value is NaN, we choose the other value. This behavior is not
-          // guaranteed by the op and may change in the future.
-          return (lhs.value > rhs.value || Eigen::numext::isnan(rhs.value)) ? lhs
+          return (lhs.value >= rhs.value || Eigen::numext::isnan(rhs.value)) ? lhs
                                                                             : rhs;
       }
   };
@@ -54,7 +52,7 @@ namespace {
   struct MaxOrMinFunc<T, false> {
       __host__ __device__ __forceinline__ KeyValuePair<T> operator() (
       const KeyValuePair<T>& lhs, const KeyValuePair<T>& rhs) const {
-          return (lhs.value < rhs.value || Eigen::numext::isnan(rhs.value)) ? lhs
+          return (lhs.value <= rhs.value || Eigen::numext::isnan(rhs.value)) ? lhs
 	                                                                    : rhs;
       }
   };
