@@ -301,9 +301,9 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(
   
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   // Set call_context attribute, but only if !MLIR_BRIDGE_ROLLOUT_ENABLED
-  auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
+  auto state = tensorflow::ConfigProto::Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
   state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
-  if (state != tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
+  if (state != tensorflow::ConfigProto::Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
     TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(conv_forward, "call_context",
                                            "kForward"));
   }
@@ -417,9 +417,9 @@ StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   // Set call_context attribute, but only if !MLIR_BRIDGE_ROLLOUT_ENABLED
-  auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
+  auto state = tensorflow::ConfigProto::Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
   state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
-  if (state != tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
+  if (state != tensorflow::ConfigProto::Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
     TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(input_backprop, "call_context",
                                            "kBackpropData"));
   }
@@ -583,9 +583,9 @@ StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   // Set call_context attribute, but only if !MLIR_BRIDGE_ROLLOUT_ENABLED
-  auto state = tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
+  auto state = tensorflow::ConfigProto::Experimental::MLIR_BRIDGE_ROLLOUT_DISABLED;
   state = tensorflow::GetMlirBridgeRolloutState(std::nullopt);
-  if (state != tensorflow::ConfigProto_Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
+  if (state != tensorflow::ConfigProto::Experimental::MLIR_BRIDGE_ROLLOUT_ENABLED) {
     TF_RETURN_IF_ERROR(builder->SetInstructionFrontendAttribute(filter_backprop, "call_context",
                                            "kBackpropFilter"));
   }
