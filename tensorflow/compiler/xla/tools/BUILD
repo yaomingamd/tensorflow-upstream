@@ -21,6 +21,7 @@ load(
     "xla_cc_test",
     "xla_py_proto_library",
 )
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load(
     "//tensorflow/tsl/platform:build_config.bzl",
     "tf_proto_library",

@@ -88,6 +88,7 @@ def xla_cc_test(
                        "//tensorflow/tsl/platform:env_impl",
                        "//tensorflow/tsl/framework:allocator",
                        "//tensorflow/tsl/framework:allocator_registry_impl",
+		       "//tensorflow/tsl/util:determinism",
                    ],
                ) +
                if_cuda_is_configured([
