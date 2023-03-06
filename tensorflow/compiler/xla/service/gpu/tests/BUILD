@@ -3,6 +3,7 @@
 
 load("//tensorflow/tsl:tsl.default.bzl", "filegroup")
 load("//tensorflow/compiler/xla/tests:build_defs.bzl", "xla_test")
+load("//tensorflow:tensorflow.bzl", "tf_cc_binary", "tf_cc_test")
 load(
     "//tensorflow/compiler/xla:xla.bzl",
     "xla_cc_binary",
@@ -795,7 +796,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_binary(
+tf_cc_binary(
     name = "hlo_to_llvm_ir",
     srcs = ["hlo_to_llvm_ir.cc"],
     copts = if_cuda_is_configured(["-DGOOGLE_CUDA=1"]) + if_rocm_is_configured(["-DTENSORFLOW_USE_ROCM=1"]),
