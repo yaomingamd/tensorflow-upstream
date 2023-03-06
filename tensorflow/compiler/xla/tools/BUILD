@@ -21,6 +21,7 @@ load(
     "xla_cc_test",
     "xla_py_proto_library",
 )
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load(
     "//tensorflow/tsl/platform:build_config.bzl",
     "tf_proto_library",
@@ -124,7 +125,7 @@ xla_cc_binary(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "replay_computation_bin_test",
     srcs = ["replay_computation_bin_test.cc"],
     data = [
@@ -140,7 +141,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_binary(
+tf_cc_binary(
     name = "replay_computation_gpu",
     tags = ["gpu"],
     deps = [
@@ -153,7 +154,7 @@ xla_cc_binary(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "replay_computation_bin_gpu_test",
     srcs = ["replay_computation_bin_gpu_test.cc"],
     data = [
@@ -170,7 +171,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_binary(
+tf_cc_binary(
     name = "replay_computation_interpreter",
     deps = [
         ":replay_computation_library",
