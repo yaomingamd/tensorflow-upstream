@@ -7,6 +7,7 @@ load(
     "tf_cuda_tests_tags",
 )
 load("//tensorflow/tsl:tsl.default.bzl", "filegroup")
+load("//tensorflow:tensorflow.bzl", "tf_cc_binary", "tf_cc_test")
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_binary", "xla_cc_test")
 load("//tensorflow/tsl/platform:rules_cc.bzl", "cc_library")
 
@@ -1298,6 +1299,7 @@ xla_test(
     backend_tags = {"gpu": [
         "gpu",
         "requires-gpu-sm70",
+        "no_rocm",
     ]},
     backends = ["gpu"],
     deps = [
@@ -2403,7 +2405,8 @@ xla_test(
     ],
 )
 
-xla_cc_test(
+#xla_cc_test(
+tf_cc_test(
     name = "llvm_compiler_test",
     srcs = ["llvm_compiler_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -2728,7 +2731,8 @@ xla_test(
 )
 
 # A demo of test that loads an hlo module from a file and compares results on gpu and cpu.
-xla_cc_test(
+#xla_cc_test(
+tf_cc_test(
     name = "sample_file_test",
     srcs = ["sample_file_test.cc"],
     data = ["isolated_convolution.hlo"],
