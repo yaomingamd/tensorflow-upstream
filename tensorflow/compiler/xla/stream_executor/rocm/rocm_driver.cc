@@ -922,7 +922,15 @@ GpuDriver::ContextGetSharedMemConfig(GpuContext* context) {
                                                    uint64_t size,
                                                    GpuStreamHandle stream) {
   ScopedActivateContext activation{context};
-  hipError_t result = wrap::hipMemcpyDtoDAsync(gpu_dst, gpu_src, size, stream);
+
+  uint32_t* p1 = (uint32_t*)gpu_src;
+  uint32_t* p2 = (uint32_t*)gpu_dst;
+  hipError_t result = hipDeviceSynchronize();
+  uint8_t* p = new uint8_t[size];
+  result = wrap::hipMemcpyDtoHAsync(p, gpu_src, size, stream);
+  result = wrap::hipMemcpyHtoDAsync(gpu_dst, p, size, stream);
+  result = hipDeviceSynchronize();
+  delete p;
   if (result != hipSuccess) {
     LOG(ERROR) << absl::StrFormat(
         "failed to enqueue async memcpy from device to device: %s"
