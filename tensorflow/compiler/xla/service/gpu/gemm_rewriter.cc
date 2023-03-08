@@ -242,6 +242,20 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
           instr->dot_dimension_numbers();
       *gemm_config.mutable_precision_config() = instr->precision_config();
 
+      auto attributes = instr->frontend_attributes().map();
+      gemm_config.set_grad_x(attributes["grad_x"] == "true");
+      gemm_config.set_grad_y(attributes["grad_y"] == "true");
+
+      int64_t lhs_batch_dims_size =
+          instr->dot_dimension_numbers().lhs_batch_dimensions_size();
+      int64_t lhs_stride = lhs->shape().dimensions(lhs_batch_dims_size) *
+                           lhs->shape().dimensions(lhs_batch_dims_size + 1);
+      int64_t rhs_stride = rhs->shape().dimensions(lhs_batch_dims_size) *
+                           rhs->shape().dimensions(lhs_batch_dims_size + 1);
+
+      gemm_config.set_lhs_stride(lhs_stride);
+      gemm_config.set_rhs_stride(rhs_stride);
+
       TF_ASSIGN_OR_RETURN(absl::string_view gemm_custom_call_target,
                           GetGemmCustomCallTarget(instr, gemm_config));
       HloInstruction *gemm_call =
@@ -1220,7 +1234,8 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
             dot_dims.rhs_contracting_dimensions(),
             /*output_shape=*/instr->shape(), gemm_backend_config.alpha_real(),
             gemm_backend_config.alpha_imag(), gemm_backend_config.beta(),
-            /*algorithm*/ std::nullopt, se::blas::kDefaultComputePrecision));
+            /*algorithm*/ std::nullopt, se::blas::kDefaultComputePrecision,
+            gemm_backend_config.grad_x(), gemm_backend_config.grad_y()));
 
     return gemm_config.output_layout.order == MatrixLayout::Order::kColumnMajor;
   }
@@ -1276,10 +1291,18 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     std::vector<int64_t> rhs_non_contracting_dims;
     const DotDimensionNumbers &dot_dims =
         gemm_backend_config.dot_dimension_numbers();
-
-    TF_ASSIGN_OR_RETURN(bool output_is_column_major,
-                        OutputIsColumnMajor(instr, gemm_backend_config));
-    if (!output_is_column_major) {
+    TF_ASSIGN_OR_RETURN(
+        GemmConfig gemm_config,
+        GemmConfig::For(
+            lhs->shape(), dot_dims.lhs_batch_dimensions(),
+            dot_dims.lhs_contracting_dimensions(), rhs->shape(),
+            dot_dims.rhs_batch_dimensions(),
+            dot_dims.rhs_contracting_dimensions(),
+            /*output_shape=*/instr->shape(), gemm_backend_config.alpha_real(),
+            gemm_backend_config.alpha_imag(), gemm_backend_config.beta(),
+            /*algorithm*/ std::nullopt, se::blas::kDefaultComputePrecision,
+            gemm_backend_config.grad_x(), gemm_backend_config.grad_y()));
+    if (gemm_config.output_layout.order != MatrixLayout::Order::kColumnMajor) {
       // cublasLt's matmul output is column major by default. This gemm requires
       // the output to be in row major. Later we will swap lhs & rhs (and
       // transpose each operand) of this gemm. Since we care about the rhs at

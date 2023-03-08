@@ -117,7 +117,8 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
                       dot_dims.lhs_batch, dot_dims.lhs_contract,
                       dot_dims.rhs_batch, dot_dims.rhs_contract,
                       precision.empty() ? se::blas::kDefaultComputePrecision
-                                        : *absl::c_max_element(precision));
+                                        : *absl::c_max_element(precision),
+                      false,false);
 #if GOOGLE_CUDA
     if (!gemm_config.ok()) return ToAbsl(gemm_config);
     if (gemm_config->algorithm == stream_executor::blas::kRuntimeAutotuning) {
@@ -133,7 +134,10 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
   });
   if (!config.ok()) return config.status();
 
-  Status executed = RunGemm(**config, lhs_data, rhs_data, output_data, stream);
+
+  Status executed = [&]() -> Status {
+    return RunGemm(**config, lhs_data, rhs_data, output_data, stream);
+  }();
 
   if (!executed.ok()) return ToAbslStatus(executed);
 
