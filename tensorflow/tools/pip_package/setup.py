@@ -47,7 +47,8 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.12.0-rc1'
+_VERSION = '2.12.0'
+_RC_VERSION = '-rc1'
 
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
@@ -100,6 +101,9 @@ def _rocm_version(rocm_install_path):
 # Append the ROCM version to the version string
 if project_name.endswith('_rocm'):
   _VERSION = _VERSION + "." + str(_rocm_version(_get_rocm_install_path()).replace('.', ''))
+
+# Apped the RC version
+_VERSION = _VERSION + _RC_VERSION
 
 
 # All versions of TF need these packages. We indicate the widest possible range
