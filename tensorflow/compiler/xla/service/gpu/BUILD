@@ -991,6 +991,7 @@ cc_library(
         "//tensorflow/compiler/xla/hlo/ir:hlo",
         "//tensorflow/compiler/xla/service:hlo_creation_utils",
         "//tensorflow/compiler/xla/service:hlo_pass",
+        "//tensorflow/compiler/xla/service/gpu:gpu_types", 
         "//tensorflow/compiler/xla/service:pattern_matcher",
         "//tensorflow/compiler/xla/stream_executor:blas",
         "//tensorflow/tsl/platform:errors",
