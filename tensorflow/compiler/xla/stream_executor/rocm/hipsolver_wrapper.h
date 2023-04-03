@@ -24,7 +24,7 @@ limitations under the License.
 
 #if TF_ROCM_VERSION >= 40500
 
-#include "rocm/include/hipsolver.h"
+#include "rocm/include/hipsolver/hipsolver.h"
 #include "tensorflow/compiler/xla/stream_executor/platform/dso_loader.h"
 #include "tensorflow/compiler/xla/stream_executor/platform/port.h"
 #include "tensorflow/tsl/platform/env.h"
