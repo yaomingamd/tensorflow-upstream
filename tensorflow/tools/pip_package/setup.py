@@ -151,7 +151,7 @@ REQUIRED_PACKAGES = [
     standard_or_nightly('tensorflow_estimator >= 2.12.0rc0, < 2.13',
                         'tf-estimator-nightly == 2.13.0.dev2023022309'),
     standard_or_nightly('keras >= 2.12.0rc0, < 2.13',
-                        'keras-nightly == 2.13.0.dev2023022308'),
+                        'keras-nightly == 2.13.0.dev2023022508'),
 ]
 REQUIRED_PACKAGES = [p for p in REQUIRED_PACKAGES if p is not None]
 
