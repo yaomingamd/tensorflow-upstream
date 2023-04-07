@@ -398,15 +398,15 @@ tf_module {
   }
   member_method {
     name: "BatchMatMul"
-    argspec: "args=[\'x\', \'y\', \'adj_x\', \'adj_y\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+    argspec: "args=[\'x\', \'y\', \'adj_x\', \'adj_y\', \'grad_x\', \'grad_y\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'False\', \'False\', \'None\'], "
   }
   member_method {
     name: "BatchMatMulV2"
-    argspec: "args=[\'x\', \'y\', \'adj_x\', \'adj_y\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+    argspec: "args=[\'x\', \'y\', \'adj_x\', \'adj_y\', \'grad_x\', \'grad_y\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'False\', \'False\', \'None\'], "
   }
   member_method {
     name: "BatchMatMulV3"
-    argspec: "args=[\'x\', \'y\', \'Tout\', \'adj_x\', \'adj_y\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+    argspec: "args=[\'x\', \'y\', \'Tout\', \'adj_x\', \'adj_y\', \'grad_x\', \'grad_y\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'False\', \'False\', \'None\'], "
   }
   member_method {
     name: "BatchMatrixBandPart"
@@ -1358,7 +1358,7 @@ tf_module {
   }
   member_method {
     name: "DropoutGrad"
-    argspec: "args=[\'gradients\', \'rate\', \'noise_shape\', \'seed1\', \'seed2\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+    argspec: "args=[\'gradients\', \'rate\', \'mask\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "DummyIterationCounter"
@@ -1871,6 +1871,14 @@ tf_module {
   member_method {
     name: "GatherV2"
     argspec: "args=[\'params\', \'indices\', \'axis\', \'batch_dims\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\'], "
+  }
+  member_method {
+    name: "Gelu"
+    argspec: "args=[\'features\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "GeluGrad"
+    argspec: "args=[\'gradients\', \'outputs\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "GenerateBoundingBoxProposals"
@@ -2446,7 +2454,7 @@ tf_module {
   }
   member_method {
     name: "MatMul"
-    argspec: "args=[\'a\', \'b\', \'transpose_a\', \'transpose_b\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+    argspec: "args=[\'a\', \'b\', \'transpose_a\', \'transpose_b\', \'grad_a\', \'grad_b\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'False\', \'False\', \'None\'], "
   }
   member_method {
     name: "MatchingFiles"
