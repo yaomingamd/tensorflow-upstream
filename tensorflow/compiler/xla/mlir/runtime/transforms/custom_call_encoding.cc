@@ -26,6 +26,7 @@ limitations under the License.
 #include "llvm/Support/FormatVariadic.h"
 #include "mlir/Conversion/LLVMCommon/MemRefBuilder.h"  // from @llvm-project
 #include "mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
+#include "mlir/Dialect/Async/IR/AsyncTypes.h"  // from @llvm-project
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"  // from @llvm-project
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"  // from @llvm-project
@@ -41,6 +42,8 @@ limitations under the License.
 #include "tensorflow/compiler/xla/runtime/custom_call.h"
 #include "tensorflow/compiler/xla/runtime/tracing.h"
 #include "tensorflow/compiler/xla/runtime/type_id.h"
+#include "tfrt/concurrency/async_value_ref.h"  // from @tf_runtime
+#include "tfrt/concurrency/chain.h"  // from @tf_runtime
 
 namespace Eigen {
 struct half;
@@ -660,6 +663,28 @@ static TypeID ArrayRuntimeTypeId(Type elem_type) {
   return TypeID::getFromOpaquePointer(reinterpret_cast<void *>(0xDEADBEEF));
 }
 
+static TypeID AsyncValueRuntimeTypeId(Type elem_type) {
+  if (elem_type.isInteger(1))
+    return TypeID::get<Tagged<tsl::AsyncValueRef<bool>>>();
+  if (elem_type.isInteger(8))
+    return TypeID::get<Tagged<tsl::AsyncValueRef<int8_t>>>();
+  if (elem_type.isInteger(16))
+    return TypeID::get<Tagged<tsl::AsyncValueRef<int16_t>>>();
+  if (elem_type.isInteger(32))
+    return TypeID::get<Tagged<tsl::AsyncValueRef<int32_t>>>();
+  if (elem_type.isInteger(64))
+    return TypeID::get<Tagged<tsl::AsyncValueRef<int64_t>>>();
+  if (elem_type.isF32())
+    return TypeID::get<Tagged<tsl::AsyncValueRef<float>>>();
+  if (elem_type.isF64())
+    return TypeID::get<Tagged<tsl::AsyncValueRef<double>>>();
+  if (elem_type.isa<MemRefType>())
+    return TypeID::get<Tagged<tsl::AsyncValueRef<MemrefView>>>();
+
+  assert(false && "unsupported type id");
+  return TypeID::getFromOpaquePointer(reinterpret_cast<void *>(0xDEADBEEF));
+}
+
 static TypeID DenseElementsRuntimeTypeId(Type elem_type) {
   if (elem_type.isInteger(32))
     return TypeID::get<Tagged<CustomCall::TensorRef<int32_t>>>();
@@ -883,6 +908,35 @@ FailureOr<EncodedAttr> UnitAttrEncoding::Encode(mlir::SymbolTable &, Globals &g,
 }
 
 //===----------------------------------------------------------------------===//
+
+LogicalResult DictionaryAttrEncoding::Match(mlir::SymbolTable &,
+                                            std::string_view,
+                                            Attribute attr) const {
+  return success(attr.isa<DictionaryAttr>());
+}
+
+FailureOr<EncodedAttr> DictionaryAttrEncoding::Encode(
+    mlir::SymbolTable &sym_table, Globals &g, ImplicitLocOpBuilder &b,
+    std::string_view name, Attribute attr) const {
+  // TODO(ezhulenev): Add current set of available encodings to `Encode`
+  // arguments and remove it from `AggregateAttrEncoding` constructor.
+  CustomCallAttrEncodingSet encoding = DefaultAttrEncodings();
+
+  auto dict = cast<DictionaryAttr>(attr);
+  auto encoded_dict = EncodeAttributes(
+      sym_table, g, b, encoding, "__rt_dictionary",
+      // We rely on the fact that dictionary keeps attributes sorted by name.
+      llvm::SmallVector<NamedAttribute>(dict.begin(), dict.end()));
+  if (mlir::failed(encoded_dict)) return mlir::failure();
+
+  Encoded encoded;
+  encoded.name = EncodeString(g, b, name, kAttrName);
+  encoded.type_id = EncodeTypeId(g, b, TypeID::get<Tagged<Dictionary>>());
+  encoded.value = *encoded_dict;
+  return encoded;
+}
+
+//===----------------------------------------------------------------------===//
 // Encoding for collection of attributes.
 //===----------------------------------------------------------------------===//
 
@@ -923,7 +977,7 @@ FailureOr<LLVM::GlobalOp> EncodeAttributes(
     insert_value(Globals::AddrOf(b, num_attrs), 0);
 
     // Insert encoded attributes into the allocated storage.
-    for (auto &pair : llvm::enumerate(encoded_attrs)) {
+    for (const auto &pair : llvm::enumerate(encoded_attrs)) {
       CustomCallAttrEncoding::Encoded encoded = pair.value().second;
       int64_t offset = 1 + pair.index() * 3;
 
@@ -1099,11 +1153,10 @@ static Value EncodeMemRef(ImplicitLocOpBuilder &b, MemRefType memref_ty,
   // better canonicalization and cleaner final LLVM IR.
   if (desc.has_value()) {
     Value offset = b.create<ConstantOp>(i64(memref_offset));
-    Value data = b.create<LLVM::GEPOp>(desc->getElementPtrType(),
-                                       desc->alignedPtr(b, loc), offset);
     auto ptr = LLVM::LLVMPointerType::get(b.getContext());
-    memref = b.create<LLVM::InsertValueOp>(
-        memref, b.create<LLVM::BitcastOp>(ptr, data), 2);
+    Value data = b.create<LLVM::GEPOp>(ptr, memref_ty.getElementType(),
+                                       desc->alignedPtr(b, loc), offset);
+    memref = b.create<LLVM::InsertValueOp>(memref, data, 2);
   }
 
   return memref;
@@ -1246,8 +1299,7 @@ FailureOr<Value> MemrefRetEncoding::Decode(ImplicitLocOpBuilder &b, Type type,
 
   // Fill memref descriptor pointers and offset.
   Value gep = b.create<LLVM::GEPOp>(ptr, encoded, alloca, ValueRange({c0, c2}));
-  Value data_ptr = b.create<LLVM::BitcastOp>(memref_desc.getElementPtrType(),
-                                             b.create<LLVM::LoadOp>(ptr, gep));
+  Value data_ptr = b.create<LLVM::LoadOp>(ptr, gep);
   memref_desc.setAllocatedPtr(b, loc, data_ptr);
   memref_desc.setAlignedPtr(b, loc, data_ptr);
 
@@ -1272,6 +1324,69 @@ FailureOr<Value> MemrefRetEncoding::Decode(ImplicitLocOpBuilder &b, Type type,
 }
 
 //===----------------------------------------------------------------------===//
+
+LogicalResult AsyncValueRetEncoding::Match(Type type, Type converted) const {
+  return success(
+      (type.isa<async::ValueType>() || type.isa<async::TokenType>()) &&
+      converted.isa<LLVM::LLVMPointerType>());
+}
+
+FailureOr<EncodedRet> AsyncValueRetEncoding::Encode(Globals &g, Allocas &a,
+                                                    ImplicitLocOpBuilder &b,
+                                                    Type type,
+                                                    Type converted) const {
+  Type ptr = LLVM::LLVMPointerType::get(b.getContext());
+  Value one = b.create<ConstantOp>(b.getI32IntegerAttr(1));
+
+  auto type_id = type.isa<async::ValueType>()
+                     ? AsyncValueRuntimeTypeId(
+                           type.cast<async::ValueType>().getValueType())
+                     : TypeID::get<Tagged<tsl::AsyncValueRef<tsl::Chain>>>();
+
+  Encoded encoded;
+  encoded.type_id = EncodeTypeId(g, b, type_id);
+
+  // for !async.value<memref> encoding its dtype, rank and dims with
+  // EncodedMemRef struct; we use its data field to store async value ptr.
+  if (auto value_ty = type.dyn_cast<async::ValueType>()) {
+    if (auto memref_ty = value_ty.getValueType().dyn_cast<MemRefType>()) {
+      encoded.value =
+          PackValue(b, a, EncodeMemRef(b, memref_ty, /*descriptor=*/nullptr));
+      return encoded;
+    }
+  }
+
+  encoded.value = b.create<LLVM::AllocaOp>(ptr, converted, one, 0);
+
+  return encoded;
+}
+
+FailureOr<Value> AsyncValueRetEncoding::Decode(ImplicitLocOpBuilder &b,
+                                               Type type, Type converted,
+                                               LLVM::AllocaOp alloca) const {
+  if (auto value_ty = type.dyn_cast<async::ValueType>()) {
+    if (auto memref_ty = value_ty.getValueType().dyn_cast<MemRefType>()) {
+      // TODO(ezhulenev): Add support for returning dynamically shaped memref.
+      if (!memref_ty.hasStaticShape()) return failure();
+
+      Value c0 = b.create<ConstantOp>(b.getI64IntegerAttr(0));
+      Value c2 = b.create<ConstantOp>(b.getI64IntegerAttr(2));
+      Type ptr = LLVM::LLVMPointerType::get(b.getContext());
+      LLVM::LLVMStructType encoded = GetEncodeMemRefType(b, memref_ty);
+      Value gep =
+          b.create<LLVM::GEPOp>(ptr, encoded, alloca, ValueRange({c0, c2}));
+      Value async_value = b.create<LLVM::LoadOp>(converted, gep);
+      auto casted = b.create<UnrealizedConversionCastOp>(type, async_value);
+      return casted.getResult(0);
+    }
+  }
+
+  auto async_value = Value{b.create<LLVM::LoadOp>(converted, alloca)};
+  auto casted = b.create<UnrealizedConversionCastOp>(type, async_value);
+  return casted.getResult(0);
+}
+
+//===----------------------------------------------------------------------===//
 // Default encodings for arguments, attributes, and results
 //===----------------------------------------------------------------------===//
 
@@ -1280,13 +1395,11 @@ CustomCallAttrEncodingSet DefaultAttrEncodings() {
   encodings
       .Add<StringAttrEncoding, ScalarAttrEncoding, DenseElementsAttrEncoding,
            ArrayAttrEncoding, DenseArrayAttrEncoding, EmptyArrayAttrEncoding,
-           SymbolRefAttrEncoding, UnitAttrEncoding>();
+           SymbolRefAttrEncoding, UnitAttrEncoding, DictionaryAttrEncoding>();
 
   encodings.Add<AggregateAttrEncoding<HloTraceAttr, HloTrace>>(
-      encodings, AggregateAttrDef<HloTraceAttr>()
-                     .Add("hlo_op", &HloTraceAttr::getHloOp)
-                     .Add("module", &HloTraceAttr::getModule)
-                     .Add("program_id", &HloTraceAttr::getProgramId));
+      encodings,
+      AggregateAttrDef<HloTraceAttr>().Add("hlo_op", &HloTraceAttr::getHloOp));
 
   return encodings;
 }
@@ -1299,7 +1412,8 @@ CustomCallArgEncodingSet DefaultArgEncodings() {
 
 CustomCallRetEncodingSet DefaultRetEncodings() {
   CustomCallRetEncodingSet encodings;
-  encodings.Add<ScalarRetEncoding, OpaqueRetEncoding, MemrefRetEncoding>();
+  encodings.Add<ScalarRetEncoding, OpaqueRetEncoding, MemrefRetEncoding,
+                AsyncValueRetEncoding>();
   return encodings;
 }
 

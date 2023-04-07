@@ -38,8 +38,12 @@ cc_library(
         "dtype.cc",
         "executable.cc",
         "future.cc",
+        "index.cc",
+        "index_domain.cc",
         "shape.cc",
         "sharding.cc",
+        "tuple.cc",
+        "value.cc",
     ],
     hdrs = [
         "array.h",
@@ -49,14 +53,19 @@ cc_library(
         "dtype.h",
         "executable.h",
         "future.h",
+        "index.h",
+        "index_domain.h",
         "shape.h",
         "sharding.h",
+        "tuple.h",
+        "value.h",
     ],
     deps = [
         "//tensorflow/compiler/xla:status",
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla:util",
         "//tensorflow/compiler/xla/pjrt:pjrt_client",
+        "//tensorflow/tsl/platform:logging",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings",
@@ -86,7 +95,28 @@ xla_cc_test(
     deps = [
         ":ifrt",
         "//tensorflow/tsl/lib/core:status_test_util",
+        "//tensorflow/tsl/platform:status_matchers",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+xla_cc_test(
+    name = "index_domain_test",
+    size = "small",
+    srcs = ["index_domain_test.cc"],
+    deps = [
+        ":ifrt",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+xla_cc_test(
+    name = "index_test",
+    size = "small",
+    srcs = ["index_test.cc"],
+    deps = [
+        ":ifrt",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -143,6 +173,8 @@ cc_library(
         ":test_util",
         "//tensorflow/tsl/lib/core:status_test_util",
         "//tensorflow/tsl/platform:test",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:span",
     ],
     alwayslink = 1,
 )
@@ -201,5 +233,30 @@ xla_cc_test(
         ":executable_impl_test_lib",
         ":no_impl_test_main",
         "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
+    name = "tuple_impl_test_lib",
+    testonly = 1,
+    srcs = ["tuple_impl_test_lib.cc"],
+    deps = [
+        ":ifrt",
+        ":test_util",
+        "//tensorflow/tsl/lib/core:status_test_util",
+        "//tensorflow/tsl/platform:statusor",
+        "//tensorflow/tsl/platform:test",
+        "@com_google_absl//absl/types:span",
+        "@tf_runtime//:ref_count",
+    ],
+    alwayslink = 1,
+)
+
+xla_cc_test(
+    name = "tuple_test_no_impl",
+    srcs = [],
+    deps = [
+        ":no_impl_test_main",
+        ":tuple_impl_test_lib",
     ],
 )

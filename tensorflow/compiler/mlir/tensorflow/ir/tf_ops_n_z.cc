@@ -30,8 +30,6 @@ limitations under the License.
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/None.h"
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
@@ -290,7 +288,7 @@ LogicalResult PackOp::verify() {
   return success();
 }
 
-OpFoldResult PackOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult PackOp::fold(FoldAdaptor) {
   // Fold pack operation if it computes the input tensor shape:
   //
   //   %shape  = tf.Shape(%arg)                    // [? x ...]
@@ -329,16 +327,17 @@ OpFoldResult PackOp::fold(ArrayRef<Attribute> operands) {
 
   // Returns a value if the `value` is defined by a ConstOp with a single
   // integer element in it and has an expected rank.
-  auto get_const_int = [](Value value, int expected_rank) -> Optional<int64_t> {
+  auto get_const_int = [](Value value,
+                          int expected_rank) -> std::optional<int64_t> {
     auto const_op = dyn_cast_or_null<ConstOp>(value.getDefiningOp());
-    if (!const_op) return llvm::None;
+    if (!const_op) return std::nullopt;
 
     auto value_attr = const_op.getValue().dyn_cast<DenseIntElementsAttr>();
-    if (!value_attr || value_attr.getNumElements() != 1) return llvm::None;
+    if (!value_attr || value_attr.getNumElements() != 1) return std::nullopt;
 
     auto value_ty = value_attr.getType();
     if (!value_ty.hasRank() || value_ty.getRank() != expected_rank)
-      return llvm::None;
+      return std::nullopt;
 
     auto splat = value_attr.getSplatValue<IntegerAttr>();
     return splat.getValue().getSExtValue();
@@ -442,7 +441,8 @@ LogicalResult PadOp::FoldOperandsPermutation(ArrayRef<int64_t> permutation) {
     return failure();
 
   SmallVector<int32_t, 8> shuffled_paddings(paddings_value.getNumElements());
-  for (auto index_pair : llvm::enumerate(paddings_value.getValues<APInt>())) {
+  for (const auto &index_pair :
+       llvm::enumerate(paddings_value.getValues<APInt>())) {
     size_t outer_idx = index_pair.index() / 2;
     size_t inner_idx = index_pair.index() % 2;
 
@@ -462,7 +462,8 @@ LogicalResult PadOp::FoldOperandsPermutation(ArrayRef<int64_t> permutation) {
 
   // Change the result type.
   getResult().setType(ShuffleRankedTensorType(getResult().getType(),
-                                              ReversePermutation(permutation)));
+                                              ReversePermutation(permutation))
+                          .cast<TensorType>());
 
   return success();
 }
@@ -565,7 +566,8 @@ LogicalResult TPUPartitionedCallOp::verifySymbolUses(
 // PowOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult PowOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult PowOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   auto constant_y = operands[1].dyn_cast_or_null<DenseFPElementsAttr>();
   if (constant_y && constant_y.isSplat()) {
     APFloat y_value = constant_y.getSplatValue<APFloat>();
@@ -706,7 +708,8 @@ void RangeOp::build(OpBuilder &builder, OperationState &result, Value start,
       start, limit, delta);
 }
 
-OpFoldResult RangeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult RangeOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   assert(operands.size() == 3);
   auto start_tensor = operands[0].dyn_cast_or_null<ElementsAttr>();
   auto limit_tensor = operands[1].dyn_cast_or_null<ElementsAttr>();
@@ -764,7 +767,7 @@ void RankOp::build(OpBuilder &builder, OperationState &result, Value input) {
 }
 
 // This will create a constant value for RankOp of a ranked tensor.
-OpFoldResult RankOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult RankOp::fold(FoldAdaptor) {
   auto type = getInput().getType();
   auto ranked_type = type.dyn_cast<RankedTensorType>();
   if (!ranked_type) return {};
@@ -787,7 +790,8 @@ void RealDivOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.add<RealDivWithSqrtDivisor, RealDivWithConstDivisor>(context);
 }
 
-OpFoldResult RealDivOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult RealDivOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return IdentityArithmeticOpFolder<RealDivOp>(*this, operands);
 }
 
@@ -951,7 +955,7 @@ void ReshapeOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.add<RedundantReshape, ReshapeToSelfShape>(context);
 }
 
-OpFoldResult ReshapeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ReshapeOp::fold(FoldAdaptor) {
   Value tensor = this->getTensor();
 
   // Fold reshape if operand and result types are the same and all dimensions
@@ -1142,7 +1146,7 @@ static Attribute ConvertShapeToAttr(Type input_ty, int out_width) {
   return DenseElementsAttr::get(result_type, dimensions);
 }
 
-OpFoldResult ShapeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult ShapeOp::fold(FoldAdaptor) {
   int width =
       getType().cast<ShapedType>().getElementType().getIntOrFloatBitWidth();
   return ConvertShapeToAttr(getOperand().getType(), width);
@@ -1203,7 +1207,7 @@ class ShapeNPartialStaticInputShape : public OpRewritePattern<ShapeNOp> {
     SmallVector<int64_t, 4> dynamic_indices;
     SmallVector<Value, 4> dynamic_inputs;
     SmallVector<Type, 4> result_types;
-    for (auto e : llvm::enumerate(op.getOperands())) {
+    for (const auto &e : llvm::enumerate(op.getOperands())) {
       if (Attribute result = ConvertShapeToAttr(e.value().getType(), width)) {
         results[e.index()] = rewriter.create<TF::ConstOp>(op.getLoc(), result);
       } else {
@@ -1275,7 +1279,7 @@ LogicalResult SizeOp::verify() {
   return success();
 }
 
-OpFoldResult SizeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult SizeOp::fold(FoldAdaptor) {
   ShapedType output_type = getType().cast<ShapedType>();
   if (!output_type.hasRank()) return {};
   ShapedType input_type = getOperand().getType().cast<ShapedType>();
@@ -1577,8 +1581,9 @@ LogicalResult SparseSoftmaxCrossEntropyWithLogitsOp::verify() {
 // Writes the split dimension's index (adjusted with input rank) via `dim_index`
 // if it's a constant.
 template <class Op>
-LogicalResult VerifySplitInputAndSplitDim(Op op, Optional<int64_t> *dim_index) {
-  *dim_index = llvm::None;
+LogicalResult VerifySplitInputAndSplitDim(Op op,
+                                          std::optional<int64_t> *dim_index) {
+  *dim_index = std::nullopt;
 
   Value split_dim = op.getSplitDim();
   if (auto split_dim_type = split_dim.getType().dyn_cast<RankedTensorType>())
@@ -1615,7 +1620,7 @@ LogicalResult VerifySplitInputAndSplitDim(Op op, Optional<int64_t> *dim_index) {
 
 LogicalResult SplitOp::verify() {
   SplitOp op = *this;
-  Optional<int64_t> dim_index;
+  std::optional<int64_t> dim_index;
   if (failed(VerifySplitInputAndSplitDim(op, &dim_index))) return failure();
   if (!dim_index) return success();
 
@@ -1648,7 +1653,7 @@ LogicalResult SplitVOp::verify() {
     return op.emitOpError("split sizes should be a 1D tensor of ")
            << op.getNumResults() << " elements";
 
-  Optional<int64_t> dim_index = 0;
+  std::optional<int64_t> dim_index = 0;
   if (failed(VerifySplitInputAndSplitDim(op, &dim_index))) return failure();
   if (!dim_index) return success();
 
@@ -1663,13 +1668,13 @@ LogicalResult SplitVOp::verify() {
     return success();
 
   int64_t total_dim_size = 0;  // Total dimension size assigned to splits
-  llvm::Optional<int64_t> dynamic_dim_index;
+  std::optional<int64_t> dynamic_dim_index;
 
   SmallVector<int64_t, 4> split_sizes;
   split_sizes.reserve(
       split_sizes_attr.getType().cast<ShapedType>().getNumElements());
 
-  for (auto dim : llvm::enumerate(split_sizes_attr)) {
+  for (const auto &dim : llvm::enumerate(split_sizes_attr)) {
     int64_t dim_val = dim.value().getSExtValue();
     split_sizes.push_back(dim_val);
     if (dim_val == tensorflow::kTFDynamicSize) {
@@ -1740,7 +1745,8 @@ void SubOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.add<SubOfNeg>(context);
 }
 
-OpFoldResult SubOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult SubOp::fold(FoldAdaptor adaptor) {
+  auto operands = adaptor.getOperands();
   return IdentityArithmeticOpFolder<SubOp>(*this, operands);
 }
 
@@ -1755,7 +1761,7 @@ void SumOp::build(OpBuilder &builder, OperationState &result, Value input,
 }
 
 // TODO: Templatize this fold for all reduction ops.
-OpFoldResult SumOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult SumOp::fold(FoldAdaptor) {
   auto input_ty = getInput().getType().template dyn_cast<RankedTensorType>();
   if (!input_ty) return {};
   auto result_ty = getType().template dyn_cast<RankedTensorType>();
@@ -2098,7 +2104,7 @@ bool StridedSliceOp::GetSlicedBoundRanges(
   return true;
 }
 
-OpFoldResult StridedSliceOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult StridedSliceOp::fold(FoldAdaptor) {
   // Fold StridedSlice operation if it extracts statically known dimensions.
   //
   // For example,
@@ -2292,7 +2298,7 @@ SummaryWriterOp::GetResourceHandleValueAndIdList(
 void TPUExecuteOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  effects.reserve(getArgs().size() + 1);
+  effects.reserve(2 * getArgs().size() + 1);
   effects.emplace_back(MemoryEffects::Write::get(),
                        ResourceEffects::TPUExecute::get());
 
@@ -2334,7 +2340,7 @@ LogicalResult TPUExecuteAndUpdateVariablesOp::verify() {
                 "("
              << num_resource_args << "), but got " << indices.size();
 
-    for (auto entry : llvm::enumerate(indices.getValue())) {
+    for (const auto &entry : llvm::enumerate(indices.getValue())) {
       auto int_attr = entry.value().cast<IntegerAttr>();
       if (int_attr.getInt() < min)
         return op.emitOpError()
@@ -2366,7 +2372,7 @@ void TPUExecuteAndUpdateVariablesOp::getEffects(
         .isa<ResourceType>();
   });
 
-  for (auto &entry : llvm::enumerate(resource_handles)) {
+  for (const auto &entry : llvm::enumerate(resource_handles)) {
     Value value = entry.value();
     effects.emplace_back(MemoryEffects::Read::get(), value,
                          ResourceEffects::Variable::get());
@@ -2445,7 +2451,7 @@ LogicalResult TensorListReserveOp::verify() {
 // TensorListElementShapeOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult TensorListElementShapeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult TensorListElementShapeOp::fold(FoldAdaptor) {
   int width =
       getType().cast<ShapedType>().getElementType().getIntOrFloatBitWidth();
   auto variant_type =
@@ -2564,7 +2570,7 @@ LogicalResult TileOp::verify() {
   return success();
 }
 
-OpFoldResult TileOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult TileOp::fold(FoldAdaptor) {
   DenseIntElementsAttr multiples_attr;
   if (matchPattern(getMultiples(), m_Constant(&multiples_attr))) {
     // Return input directly when multiples are all ones,
@@ -2653,11 +2659,37 @@ void ToBoolOp::getCanonicalizationPatterns(RewritePatternSet &results,
 }
 
 LogicalResult ToBoolOp::inferReturnTypes(
-    MLIRContext *context, Optional<Location> location, ValueRange operands,
+    MLIRContext *context, std::optional<Location> location, ValueRange operands,
     DictionaryAttr attributes, RegionRange regions,
     SmallVectorImpl<Type> &inferredReturnTypes) {
   inferredReturnTypes.push_back(
       tensorflow::GetTypeFromTFTensorShape({}, IntegerType::get(context, 1)));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// TPUPartitionedInputV2
+//===----------------------------------------------------------------------===//
+
+// This method mimics this op's core/TF-level shape inference logic
+LogicalResult TPUPartitionedInputV2Op::verify() {
+  TPUPartitionedInputV2Op op = *this;
+
+  int num_partitions = 1;
+  const mlir::ArrayAttr partition_dims = op.getPartitionDims();
+  for (const mlir::Attribute &dim : partition_dims) {
+    num_partitions *= dim.cast<IntegerAttr>().getInt();
+  }
+
+  const bool is_packed = op.getIsPacked();
+  const bool replicated = partition_dims.empty();
+  const int num_inputs_expected = is_packed ? 1 : num_partitions;
+
+  if (!((replicated && !is_packed) || (op.getN() == num_inputs_expected))) {
+    return op.emitOpError() << "expected " << num_inputs_expected
+                            << " inputs, got " << op.getN();
+  }
+
   return success();
 }
 
@@ -2698,10 +2730,17 @@ LogicalResult TransposeOp::verify() {
   if (matchPattern(op.getPerm(), m_Constant(&attr_perm))) {
     // y.shape[i] should be equal to x.shape[perm[i]]
     // for i = [0, 1, ..., rank(x) - 1]
-    for (auto e : llvm::enumerate(attr_perm)) {
+    for (const auto &e : llvm::enumerate(attr_perm)) {
       const int64_t y_idx = e.index();
       const int64_t y_dim = y_type.getDimSize(y_idx);
-      const int64_t x_idx = e.value().getSExtValue();
+      int64_t x_idx = e.value().getSExtValue();
+      int64_t x_rank = x_type.getRank();
+      if (x_idx < -x_rank || x_idx >= x_rank) {
+        return op.emitOpError(
+            llvm::formatv("perm[{0}]={1} must be in range [-{2}, {2})", y_idx,
+                          x_idx, x_rank));
+      }
+      if (x_idx < 0) x_idx += x_rank;
       const int64_t x_dim = x_type.getDimSize(x_idx);
       if (!ShapedType::isDynamic(y_dim) && !ShapedType::isDynamic(x_dim) &&
           y_dim != x_dim) {
@@ -2757,7 +2796,7 @@ OpFoldResult FoldIdentityTranspose(TransposeOp op) {
   if (!matchPattern(op.getPerm(), m_Constant(&perm))) return {};
   const auto elements = perm.getValues<APInt>();
 
-  for (auto it : llvm::enumerate(elements)) {
+  for (const auto &it : llvm::enumerate(elements)) {
     if (it.index() != it.value()) return {};
   }
 
@@ -2792,7 +2831,7 @@ OpFoldResult FoldCancellableTranspose(TransposeOp op) {
 
 }  // namespace
 
-OpFoldResult TransposeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult TransposeOp::fold(FoldAdaptor) {
   if (auto folded = FoldIdentityTranspose(*this)) return folded;
   if (auto folded = FoldCancellableTranspose(*this)) return folded;
   return {};
@@ -2879,6 +2918,33 @@ class ConvertFusedBatchNorm : public OpRewritePattern<TF::FusedBatchNormOp> {
 void FusedBatchNormOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                                    MLIRContext *context) {
   results.add<ConvertFusedBatchNorm>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// XlaLaunchOp
+//===----------------------------------------------------------------------===//
+
+void XlaLaunchOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.reserve(getArgs().size() + 1);
+  effects.emplace_back(MemoryEffects::Write::get(),
+                       ResourceEffects::XlaLaunch::get());
+
+  for (Value value : getArgs()) {
+    if (value.getType()
+            .cast<TensorType>()
+            .getElementType()
+            .isa<ResourceType>()) {
+      // Conservatively mark resource handles as read and write, as without
+      // analyzing XlaLaunch, there is not sufficient information to determine
+      // effects on resources.
+      effects.emplace_back(MemoryEffects::Read::get(), value,
+                           ResourceEffects::Variable::get());
+      effects.emplace_back(MemoryEffects::Write::get(), value,
+                           ResourceEffects::Variable::get());
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -3114,7 +3180,7 @@ LogicalResult VariableShapeOp::verify() {
   }
 }
 
-OpFoldResult VariableShapeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult VariableShapeOp::fold(FoldAdaptor) {
   int width =
       getType().cast<ShapedType>().getElementType().getIntOrFloatBitWidth();
   auto resource_type =
@@ -3402,8 +3468,8 @@ void XdivyOp::getCanonicalizationPatterns(RewritePatternSet &results,
 //===----------------------------------------------------------------------===//
 
 LogicalResult XlaBroadcastHelperOp::inferReturnTypeComponents(
-    MLIRContext *context, Optional<Location> location, ValueShapeRange operands,
-    DictionaryAttr attributes, RegionRange regions,
+    MLIRContext *context, std::optional<Location> location,
+    ValueShapeRange operands, DictionaryAttr attributes, RegionRange regions,
     SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {
   XlaBroadcastHelperOpAdaptor op(operands.getValues(), attributes);
   Value lhs = op.getLhs();
@@ -3451,7 +3517,7 @@ LogicalResult XlaBroadcastHelperOp::inferReturnTypeComponents(
   int64_t output_rank = max_rank_ty.getRank();
   llvm::SmallVector<int64_t, 4> broadcast_shape(output_rank, 1LL);
   llvm::SmallVector<bool, 4> is_broadcasted(output_rank, false);
-  for (auto item : llvm::enumerate(dims)) {
+  for (const auto &item : llvm::enumerate(dims)) {
     int64_t index = item.index();
     int64_t dim = item.value().getSExtValue();
     if (dim < 0 || dim > output_rank) {
@@ -3540,8 +3606,8 @@ LogicalResult XlaConvV2Op::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult XlaSetDynamicDimensionSizeOp::inferReturnTypeComponents(
-    MLIRContext *context, Optional<Location> location, ValueShapeRange operands,
-    DictionaryAttr attributes, RegionRange regions,
+    MLIRContext *context, std::optional<Location> location,
+    ValueShapeRange operands, DictionaryAttr attributes, RegionRange regions,
     SmallVectorImpl<ShapedTypeComponents> &inferredReturnShapes) {
   XlaSetDynamicDimensionSizeOpAdaptor op(operands.getValues(), attributes);
 
@@ -3906,9 +3972,9 @@ LogicalResult SetStaticDimensionBoundsOp::verify() {
 
 namespace {
 
-template <typename UniformQuantizedHybridOp>
-LogicalResult VerifyScalesAndZeroPoints(UniformQuantizedHybridOp op,
-                                        Value scales, Value zero_points,
+template <typename UniformQuantizedOp>
+LogicalResult VerifyScalesAndZeroPoints(UniformQuantizedOp op, Value scales,
+                                        Value zero_points,
                                         int32_t quantization_axis) {
   ShapedType scales_type = scales.getType().cast<ShapedType>();
   ShapedType zero_points_type = zero_points.getType().cast<ShapedType>();
@@ -3941,6 +4007,27 @@ LogicalResult VerifyScalesAndZeroPoints(UniformQuantizedHybridOp op,
   return success();
 }
 
+template <typename UniformQuantizedOp>
+LogicalResult VerifyLhsRhsBothUniformQuantizedOp(UniformQuantizedOp op) {
+  auto verify_lhs_params =
+      VerifyScalesAndZeroPoints(op, op.getLhsScales(), op.getLhsZeroPoints(),
+                                op.getLhsQuantizationAxis());
+  if (failed(verify_lhs_params)) {
+    return failure();
+  }
+
+  auto verify_rhs_params =
+      VerifyScalesAndZeroPoints(op, op.getRhsScales(), op.getRhsZeroPoints(),
+                                op.getRhsQuantizationAxis());
+  if (failed(verify_rhs_params)) {
+    return failure();
+  }
+
+  return VerifyScalesAndZeroPoints(op, op.getOutputScales(),
+                                   op.getOutputZeroPoints(),
+                                   op.getOutputQuantizationAxis());
+}
+
 }  // namespace
 
 //===----------------------------------------------------------------------===//
@@ -3963,6 +4050,64 @@ LogicalResult UniformQuantizedConvolutionHybridOp::verify() {
   UniformQuantizedConvolutionHybridOp op = *this;
   return VerifyScalesAndZeroPoints(op, op.getRhsScales(), op.getRhsZeroPoints(),
                                    op.getRhsQuantizationAxis());
+}
+
+//===----------------------------------------------------------------------===//
+// UniformQuantizeOp
+//===----------------------------------------------------------------------===//
+//
+
+LogicalResult UniformQuantizeOp::verify() {
+  UniformQuantizeOp op = *this;
+  return VerifyScalesAndZeroPoints(op, op.getScales(), op.getZeroPoints(),
+                                   op.getQuantizationAxis());
+}
+
+//===----------------------------------------------------------------------===//
+// UniformRequantizeOp
+//===----------------------------------------------------------------------===//
+//
+
+LogicalResult UniformRequantizeOp::verify() {
+  UniformRequantizeOp op = *this;
+  auto verify_input_params = VerifyScalesAndZeroPoints(
+      op, op.getInputScales(), op.getInputZeroPoints(),
+      op.getInputQuantizationAxis());
+  if (failed(verify_input_params)) {
+    return failure();
+  }
+  return VerifyScalesAndZeroPoints(op, op.getOutputScales(),
+                                   op.getOutputZeroPoints(),
+                                   op.getOutputQuantizationAxis());
+}
+
+//===----------------------------------------------------------------------===//
+// UniformDequantizeOp
+//===----------------------------------------------------------------------===//
+//
+
+LogicalResult UniformDequantizeOp::verify() {
+  UniformDequantizeOp op = *this;
+  return VerifyScalesAndZeroPoints(op, op.getScales(), op.getZeroPoints(),
+                                   op.getQuantizationAxis());
+}
+
+//===----------------------------------------------------------------------===//
+// UniformQuantizedDotOp
+//===----------------------------------------------------------------------===//
+//
+
+LogicalResult UniformQuantizedDotOp::verify() {
+  return VerifyLhsRhsBothUniformQuantizedOp(*this);
+}
+
+//===----------------------------------------------------------------------===//
+// UniformQuantizedConvolutionOp
+//===----------------------------------------------------------------------===//
+//
+
+LogicalResult UniformQuantizedConvolutionOp::verify() {
+  return VerifyLhsRhsBothUniformQuantizedOp(*this);
 }
 
 }  // namespace TF

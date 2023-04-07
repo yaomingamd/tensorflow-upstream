@@ -17,13 +17,13 @@ limitations under the License.
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
-#include "llvm/ADT/None.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"  // from @llvm-project
@@ -106,10 +106,12 @@ struct RuntimeAPI {
 };
 
 // Adds function declaration if it doesn't already exist.
-static void AddDeclaration(ModuleOp module, std::string_view name,
-                           FunctionType type) {
+static void AddDeclaration(SymbolTable &sym_table, ModuleOp module,
+                           std::string_view name, FunctionType type) {
+  assert(sym_table.getOp() == module && "incorrect symbol table");
+  if (sym_table.lookup(name)) return;
+
   auto b = ImplicitLocOpBuilder::atBlockEnd(module.getLoc(), module.getBody());
-  if (module.lookupSymbol(name)) return;
 
   MLIRContext *ctx = module.getContext();
   func::FuncOp func = b.create<func::FuncOp>(name, type);
@@ -118,12 +120,14 @@ static void AddDeclaration(ModuleOp module, std::string_view name,
   // TODO(ezhulenev): Add per-argument nocapture attributes?
   func->setAttr("passthrough",
                 ArrayAttr::get(ctx, {StringAttr::get(ctx, "nounwind")}));
+
+  sym_table.insert(func);
 }
 
 // Adds Runtime C API declarations to the module.
-static void AddRuntimeApiDeclarations(ModuleOp module) {
+static void AddRuntimeApiDeclarations(SymbolTable &sym_table, ModuleOp module) {
   auto add = [&](std::string_view name, FunctionType type) {
-    AddDeclaration(module, name, type);
+    AddDeclaration(sym_table, module, name, type);
   };
 
   MLIRContext *ctx = module.getContext();
@@ -143,16 +147,16 @@ class RuntimeTypeConverter : public TypeConverter {
     addConversion(ConvertOpaqueType);
   }
 
-  static llvm::Optional<Type> ConvertExecutionContextType(
+  static std::optional<Type> ConvertExecutionContextType(
       ExecutionContextType type) {
     return LLVM::LLVMPointerType::get(type.getContext());
   }
 
-  static llvm::Optional<Type> ConvertStatusType(StatusType type) {
+  static std::optional<Type> ConvertStatusType(StatusType type) {
     return IntegerType::get(type.getContext(), 1);
   }
 
-  static llvm::Optional<Type> ConvertOpaqueType(OpaqueType type) {
+  static std::optional<Type> ConvertOpaqueType(OpaqueType type) {
     return LLVM::LLVMPointerType::get(type.getContext());
   }
 };
@@ -252,7 +256,7 @@ static LLVM::GlobalOp EncodeTypeTable(Globals &g, ImplicitLocOpBuilder &b,
   // Global initializer that encodes type ids as pointers.
   auto init = [&](ImplicitLocOpBuilder &ib, Attribute) -> LogicalResult {
     Value arr = b.create<LLVM::UndefOp>(type);
-    for (auto &pair : llvm::enumerate(type_ids)) {
+    for (const auto &pair : llvm::enumerate(type_ids)) {
       arr = b.create<LLVM::InsertValueOp>(arr, Globals::AddrOf(b, pair.value()),
                                           pair.index());
     }
@@ -320,7 +324,7 @@ static FailureOr<EncodedArguments> EncodeArguments(
   if (!encoded.empty()) insert_value(Globals::AddrOf(b, type_table), 1);
 
   // Store pointer to encoded arguments into the allocated storage.
-  for (auto &pair : llvm::enumerate(encoded)) {
+  for (const auto &pair : llvm::enumerate(encoded)) {
     CustomCallArgEncoding::Encoded encoded = pair.value();
     int64_t offset = 2 + pair.index();
     insert_value(AsPtr(b, encoded.value), offset);
@@ -414,7 +418,7 @@ static FailureOr<EncodedResults> EncodeResults(
   if (!encoded.empty()) insert_value(Globals::AddrOf(b, type_table), 1);
 
   // Store encoded results into the allocated storage.
-  for (auto &pair : llvm::enumerate(encoded)) {
+  for (const auto &pair : llvm::enumerate(encoded)) {
     CustomCallRetEncoding::Encoded encoded_pair = pair.value();
     int64_t offset = 2 + pair.index();
     insert_value(encoded_pair.value, offset);
@@ -517,7 +521,8 @@ class CallOpLowering : public OpConversionPattern<CallOp> {
     // Creates a direct custom call resolved at link time.
     auto call_direct = [&]() -> func::CallOp {
       auto type = RuntimeAPI::DirectCustomCallFunctionType(op.getContext());
-      AddDeclaration(op->getParentOfType<ModuleOp>(), op.getCallee(), type);
+      AddDeclaration(sym_table_, op->getParentOfType<ModuleOp>(),
+                     op.getCallee(), type);
 
       return b.create<func::CallOp>(
           op.getCallee(), TypeRange(rewriter.getI1Type()),
@@ -631,7 +636,7 @@ class TraceOpLowering : public OpConversionPattern<TraceOp> {
     // Replace trace operation with inlined region.
     b.setInsertionPointAfter(op);
     auto terminator = cast<YieldOp>(op.getBody().front().getTerminator());
-    rewriter.mergeBlockBefore(terminator->getBlock(), op);
+    rewriter.inlineBlockBefore(terminator->getBlock(), op);
     rewriter.replaceOp(op, terminator->getOperands());
     rewriter.eraseOp(terminator);
 
@@ -674,8 +679,11 @@ void ConvertRuntimeToLLVMPass::runOnOperation() {
   ModuleOp module = getOperation();
   MLIRContext *ctx = module.getContext();
 
+  // A symbol table for resolving symbol references attributes.
+  SymbolTable sym_table(module);
+
   // Add declarations for the runtime API functions.
-  AddRuntimeApiDeclarations(module);
+  AddRuntimeApiDeclarations(sym_table, module);
 
   RuntimeTypeConverter converter;
   RewritePatternSet patterns(ctx);
@@ -692,13 +700,10 @@ void ConvertRuntimeToLLVMPass::runOnOperation() {
   // rewriter function into the CFG and they interact badly.
 
   // Convert all async types to opaque pointers.
-  llvm_converter.addConversion([](Type type) -> Optional<Type> {
+  llvm_converter.addConversion([&](Type type) -> std::optional<Type> {
     if (type.isa<async::TokenType, async::GroupType, async::ValueType>())
-      // TODO(yijiagu): We should change the asyncRuntime function type with
-      // opaque pointer
-      return LLVM::LLVMPointerType::get(IntegerType::get(type.getContext(), 8));
-
-    return llvm::None;
+      return LLVM::LLVMPointerType::get(ctx);
+    return std::nullopt;
   });
 
   // Use UnrealizedConversionCast as the bridge so that we don't need to pull
@@ -706,7 +711,7 @@ void ConvertRuntimeToLLVMPass::runOnOperation() {
   auto add_unrealized_cast = [](OpBuilder &builder, Type type,
                                 ValueRange inputs, Location loc) {
     auto cast = builder.create<UnrealizedConversionCastOp>(loc, type, inputs);
-    return Optional<Value>(cast.getResult(0));
+    return std::optional<Value>(cast.getResult(0));
   };
   converter.addSourceMaterialization(add_unrealized_cast);
 
@@ -722,9 +727,6 @@ void ConvertRuntimeToLLVMPass::runOnOperation() {
   PopulateCustomCallTypeIdNames(type_id_names);
   PopulateTraceTypeIdNames(type_id_names);
   if (opts_.populate_type_id_names) opts_.populate_type_id_names(type_id_names);
-
-  // A symbol table for resolving symbol references attributes.
-  SymbolTable sym_table(module);
 
   // A helper class to create unique global constants.
   Globals globals(module, type_id_names);

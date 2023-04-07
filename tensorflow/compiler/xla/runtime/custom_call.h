@@ -37,12 +37,16 @@ limitations under the License.
 #include "absl/types/span.h"
 #include "third_party/eigen3/Eigen/Core"
 #include "tensorflow/compiler/xla/primitive_util.h"
+#include "tensorflow/compiler/xla/runtime/async_runtime.h"
 #include "tensorflow/compiler/xla/runtime/diagnostics.h"
 #include "tensorflow/compiler/xla/runtime/errors.h"
+#include "tensorflow/compiler/xla/runtime/ffi/ffi_abi.h"
 #include "tensorflow/compiler/xla/runtime/logical_result.h"
 #include "tensorflow/compiler/xla/runtime/map_by_type.h"
 #include "tensorflow/compiler/xla/runtime/state.h"
 #include "tensorflow/compiler/xla/runtime/type_id.h"
+#include "tfrt/concurrency/async_value_ref.h"  // from @tf_runtime
+#include "tfrt/concurrency/chain.h"  // from @tf_runtime
 
 namespace xla {
 namespace runtime {
@@ -139,14 +143,12 @@ class CustomCall {
   }
 
   template <typename T>
-  ABSL_ATTRIBUTE_ALWAYS_INLINE static bool Isa(RuntimeChecks checks,
-                                               TypeID type_id) {
+  static bool Isa(RuntimeChecks checks, TypeID type_id) {
     return !CheckTypes(checks) || type_id == TypeID::get<Tagged<T>>();
   }
 
   template <typename T, typename U, typename... Ts>
-  ABSL_ATTRIBUTE_ALWAYS_INLINE static bool Isa(RuntimeChecks checks,
-                                               TypeID type_id) {
+  static bool Isa(RuntimeChecks checks, TypeID type_id) {
     return !CheckTypes(checks) || type_id == TypeID::get<Tagged<T>>() ||
            Isa<U, Ts...>(checks, type_id);
   }
@@ -394,34 +396,6 @@ template <typename T, CustomCall::RuntimeChecks>
 struct CustomCallRetDecoding;
 
 //===----------------------------------------------------------------------===//
-// C structures corresponding to the `rt-to-llvm` pass LLVM structs encoding
-// various types of arguments/attributes.
-//===----------------------------------------------------------------------===//
-
-namespace internal {
-struct EncodedMemref {
-  uint8_t dtype;
-  uint8_t rank;
-  void* data;
-  int64_t dims[];
-};
-
-template <typename T>
-struct EncodedArray {
-  int64_t size;
-  const T* data;
-};
-
-template <typename T>
-struct EncodedDenseElements {
-  struct EncodedArray<T> payload;
-  int64_t rank;
-  int64_t shape[];
-};
-
-}  // namespace internal
-
-//===----------------------------------------------------------------------===//
 // Helpers for decoding opaque arguments and attributes memory.
 //===----------------------------------------------------------------------===//
 
@@ -443,7 +417,7 @@ struct DecodedAttr {
 // A convenience wrapper around opaque arguments memory.
 class DecodedArgs {
  public:
-  ABSL_ATTRIBUTE_ALWAYS_INLINE explicit DecodedArgs(void** args) {
+  explicit DecodedArgs(void** args) {
     ABSL_ANNOTATE_MEMORY_IS_INITIALIZED(args, sizeof(void*));
     size_ = *reinterpret_cast<int64_t*>(args[0]);
     if (size_) {
@@ -473,8 +447,7 @@ class DecodedArgs {
 // A convenience wrapper around opaque attributes memory.
 class DecodedAttrs {
  public:
-  ABSL_ATTRIBUTE_ALWAYS_INLINE explicit DecodedAttrs(void** attrs)
-      : encoded_(attrs + 1) {
+  explicit DecodedAttrs(void** attrs) : encoded_(attrs + 1) {
     ABSL_ANNOTATE_MEMORY_IS_INITIALIZED(attrs, sizeof(void*));
     size_ = *reinterpret_cast<int64_t*>(attrs[0]);
     ABSL_ANNOTATE_MEMORY_IS_INITIALIZED(encoded_, 3 * size_ * sizeof(void*));
@@ -751,7 +724,7 @@ struct DecodingContext {
 };
 
 template <typename T, CustomCall::RuntimeChecks checks>
-ABSL_ATTRIBUTE_ALWAYS_INLINE FailureOr<T*> DecodeUserData(
+ABSL_ATTRIBUTE_ALWAYS_INLINE inline FailureOr<T*> DecodeUserData(
     const CustomCall::UserData* user_data) {
   if (!CustomCall::CheckUserData(checks)) return user_data->get<T>();
 
@@ -766,7 +739,7 @@ ABSL_ATTRIBUTE_ALWAYS_INLINE FailureOr<T*> DecodeUserData(
 }
 
 template <typename T, CustomCall::RuntimeChecks checks>
-ABSL_ATTRIBUTE_ALWAYS_INLINE FailureOr<T> DecodeAttr(
+ABSL_ATTRIBUTE_ALWAYS_INLINE inline FailureOr<T> DecodeAttr(
     DecodingOffsets& offsets, absl::Span<const std::string> attrs_names,
     absl::Span<const size_t> attrs_idx, internal::DecodedAttrs attrs) {
   // Find decoded attribute corresponding for the given attribute index.
@@ -1286,7 +1259,8 @@ XLA_RUNTIME_REGISTER_EIGEN_FP_ARG_DECODING(Eigen::half, uint16_t);
                                                                             \
       auto* src = reinterpret_cast<PTR*>(value);                            \
       ABSL_ANNOTATE_MEMORY_IS_INITIALIZED(value, sizeof(PTR));              \
-      return (T){*src};                                                     \
+      T ref{*src};                                                          \
+      return std::move(ref);                                                \
     }                                                                       \
   }
 
@@ -1317,9 +1291,11 @@ XLA_RUNTIME_REGISTER_OPAQUE_ARG_DECODING(void*, void*);
                                                                      \
       return Result<T>(reinterpret_cast<T*>(value));                 \
     }                                                                \
-  }
+  };
 
 XLA_RUNTIME_REGISTER_SCALAR_RET_DECODING(bool);
+XLA_RUNTIME_REGISTER_SCALAR_RET_DECODING(int8_t);
+XLA_RUNTIME_REGISTER_SCALAR_RET_DECODING(int16_t);
 XLA_RUNTIME_REGISTER_SCALAR_RET_DECODING(int32_t);
 XLA_RUNTIME_REGISTER_SCALAR_RET_DECODING(int64_t);
 XLA_RUNTIME_REGISTER_SCALAR_RET_DECODING(float);
@@ -1357,7 +1333,7 @@ XLA_RUNTIME_REGISTER_SCALAR_RET_DECODING(double);
                                                                      \
       return Result<T>(reinterpret_cast<PTR*>(value));               \
     }                                                                \
-  }
+  };
 
 XLA_RUNTIME_REGISTER_OPAQUE_RET_DECODING(void*, void*);
 
@@ -1415,6 +1391,146 @@ struct CustomCallRetDecoding<MemrefView, checks> {
     return Result<MemrefView>(encoded);
   }
 };
+
+//===----------------------------------------------------------------------===//
+
+// Custom call AsyncValueRef result decoding
+#define XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING(T)              \
+  template <>                                                                \
+  class Result<tsl::AsyncValueRef<T>> {                                      \
+   public:                                                                   \
+    explicit Result(void** storage) : storage_(storage) {}                   \
+    void Set(tsl::AsyncValueRef<T> value) {                                  \
+      auto write = [](const T* v, std::byte* store) {                        \
+        T* store_t = reinterpret_cast<T*>(store);                            \
+        *store_t = *v;                                                       \
+      };                                                                     \
+      *storage_ = runtime::AsyncRuntime::AsValue<T>(                         \
+          value, sizeof(T), alignof(std::max_align_t), write);               \
+    }                                                                        \
+                                                                             \
+   private:                                                                  \
+    void** storage_;                                                         \
+  };                                                                         \
+                                                                             \
+  template <CustomCall::RuntimeChecks checks>                                \
+  struct CustomCallRetDecoding<tsl::AsyncValueRef<T>, checks> {              \
+    LLVM_ATTRIBUTE_ALWAYS_INLINE                                             \
+    static FailureOr<Result<tsl::AsyncValueRef<T>>> Decode(TypeID type_id,   \
+                                                           void* value) {    \
+      if (!CustomCall::Isa<tsl::AsyncValueRef<T>>(checks, type_id))          \
+        return failure();                                                    \
+      return Result<tsl::AsyncValueRef<T>>(reinterpret_cast<void**>(value)); \
+    }                                                                        \
+  };
+
+XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING(bool);
+XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING(int8_t);
+XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING(int16_t);
+XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING(int32_t);
+XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING(int64_t);
+XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING(float);
+XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING(double);
+
+#undef XLA_RUNTIME_REGISTER_ASYNC_SCALAR_VALUE_RET_DECODING
+
+template <>
+class Result<tsl::AsyncValueRef<tsl::Chain>> {
+ public:
+  explicit Result(void** storage) : storage_(storage) {}
+  void Set(tsl::AsyncValueRef<tsl::Chain> value) {
+    *storage_ = runtime::AsyncRuntime::AsToken(value);
+  }
+
+ private:
+  void** storage_;
+};
+
+template <CustomCall::RuntimeChecks checks>
+struct CustomCallRetDecoding<tsl::AsyncValueRef<tsl::Chain>, checks> {
+  LLVM_ATTRIBUTE_ALWAYS_INLINE
+  static FailureOr<Result<tsl::AsyncValueRef<tsl::Chain>>> Decode(
+      TypeID type_id, void* value) {
+    if (!CustomCall::Isa<tsl::AsyncValueRef<tsl::Chain>>(checks, type_id))
+      return failure();
+
+    return Result<tsl::AsyncValueRef<tsl::Chain>>(
+        reinterpret_cast<void**>(value));
+  }
+};
+
+template <>
+class Result<tsl::AsyncValueRef<MemrefView>> {
+  using EncodedMemref = internal::EncodedMemref;
+
+  struct MemrefDescriptor {
+    void* allocated_ptr;
+    void* aligned_ptr;
+    int64_t offset;
+    int64_t dims[];
+  };
+
+ public:
+  explicit Result(EncodedMemref* storage) : storage_(storage) {}
+  void Set(tsl::AsyncValueRef<MemrefView> value) {
+    auto write = [this](const MemrefView* view, std::byte* store) {
+      assert(IsCompatible(*view) &&
+             "Custom call return types is not compatible with types in MLIR");
+      MemrefDescriptor* store_t = reinterpret_cast<MemrefDescriptor*>(store);
+      store_t->allocated_ptr = view->data;
+      store_t->aligned_ptr = view->data;
+      store_t->offset = 0;
+      for (unsigned i = 0; i < storage_->rank; ++i) {
+        store_t->dims[i] = view->sizes[i];
+      }
+    };
+    storage_->data = runtime::AsyncRuntime::AsValue<MemrefView>(
+        value, 3 * sizeof(int64_t) + 2 * storage_->rank * sizeof(int64_t),
+        alignof(std::max_align_t), write);
+  }
+
+  PrimitiveType GetDType() { return PrimitiveType{storage_->dtype}; }
+  absl::Span<const int64_t> GetDims() {
+    return absl::Span<const int64_t>(storage_->dims, storage_->rank);
+  }
+
+ private:
+  bool IsCompatible(MemrefView value) {
+    bool is_compatible =
+        storage_->dtype == value.dtype && storage_->rank == value.sizes.size();
+    if (!is_compatible) return false;
+
+    for (unsigned i = 0; i < storage_->rank; ++i) {
+      is_compatible = (storage_->dims[i] == value.sizes[i]) ||
+                      (storage_->dims[i] == /*MemrefType::kDynamic=*/-1);
+    }
+
+    return is_compatible;
+  }
+
+  EncodedMemref* storage_;
+};
+
+template <CustomCall::RuntimeChecks checks>
+struct CustomCallRetDecoding<tsl::AsyncValueRef<MemrefView>, checks> {
+  using EncodedMemref = internal::EncodedMemref;
+
+  LLVM_ATTRIBUTE_ALWAYS_INLINE
+  static FailureOr<Result<tsl::AsyncValueRef<MemrefView>>> Decode(
+      TypeID type_id, void* value) {
+    if (!CustomCall::Isa<tsl::AsyncValueRef<MemrefView>>(checks, type_id))
+      return failure();
+
+    auto* encoded = reinterpret_cast<EncodedMemref*>(value);
+    ABSL_ANNOTATE_MEMORY_IS_INITIALIZED(encoded, sizeof(EncodedMemref));
+    ABSL_ANNOTATE_MEMORY_IS_INITIALIZED(
+        encoded, sizeof(EncodedMemref) + encoded->rank * sizeof(int64_t));
+
+    return Result<tsl::AsyncValueRef<MemrefView>>(encoded);
+  }
+};
+
+// XLA_RUNTIME_REGISTER_ASYNC_VALUE_RET_DECODING(MemrefView);
 
 //===----------------------------------------------------------------------===//
 // Custom call attributes decoding.
@@ -1670,6 +1786,45 @@ auto AggregateDecoder(Members... m) {
 }  // namespace internal
 
 //===----------------------------------------------------------------------===//
+// Register an XLA custom call attribute decoding for dictionary attributes.
+//===----------------------------------------------------------------------===//
+
+// Dictionary attributes are encoded using the same scheme as aggregate
+// attributes and as custom call attributes: <type_id, name, data> x length.
+class Dictionary {
+  using RuntimeChecks = CustomCall::RuntimeChecks;
+
+ public:
+  explicit Dictionary(internal::DecodedAttrs attrs) : attrs_(attrs) {}
+
+  int64_t size() { return attrs_.size(); }
+
+  template <typename T, RuntimeChecks checks = RuntimeChecks::kDefault>
+  ABSL_ATTRIBUTE_ALWAYS_INLINE FailureOr<T> get(std::string_view name) const {
+    // TODO(ezhulenev): Use `std::binary_search` because it's guaranteed that
+    // encoded attributes are sorted by name.
+    for (int64_t i = 0; i < attrs_.size(); ++i) {
+      if (auto attr = attrs_[i]; attr.name == name)
+        return CustomCallAttrDecoding<T, checks>::Decode(
+            attr.name, attr.type_id, attr.value);
+    }
+    return failure();
+  }
+
+ private:
+  internal::DecodedAttrs attrs_;
+};
+
+template <CustomCall::RuntimeChecks checks>
+struct CustomCallAttrDecoding<Dictionary, checks> {
+  ABSL_ATTRIBUTE_ALWAYS_INLINE static FailureOr<Dictionary> Decode(
+      std::string_view name, TypeID type_id, void* value) {
+    if (!CustomCall::Isa<Dictionary>(checks, type_id)) return failure();
+    return Dictionary(internal::DecodedAttrs(reinterpret_cast<void**>(value)));
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // XLA Custom Call helper macro for registering custom call handlers.
 //===----------------------------------------------------------------------===//
 
@@ -1717,6 +1872,7 @@ XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(xla::runtime::StridedMemrefView);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(xla::runtime::MemrefView);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(xla::runtime::FlatMemrefView);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(xla::runtime::EmptyArray);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(xla::runtime::Dictionary);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(int32_t);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(int64_t);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(float);
@@ -1725,5 +1881,15 @@ XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(absl::Span<const int32_t>);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(absl::Span<const int64_t>);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(absl::Span<const float>);
 XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(absl::Span<const double>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(tsl::AsyncValueRef<bool>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(tsl::AsyncValueRef<int8_t>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(tsl::AsyncValueRef<int16_t>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(tsl::AsyncValueRef<int32_t>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(tsl::AsyncValueRef<int64_t>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(tsl::AsyncValueRef<float>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(tsl::AsyncValueRef<double>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(
+    tsl::AsyncValueRef<xla::runtime::MemrefView>);
+XLA_RUNTIME_DECLARE_EXPLICIT_TYPE_ID(tsl::AsyncValueRef<tsl::Chain>);
 
 #endif  // TENSORFLOW_COMPILER_XLA_RUNTIME_CUSTOM_CALL_H_

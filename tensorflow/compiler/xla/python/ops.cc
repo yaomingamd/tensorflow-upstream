@@ -17,11 +17,13 @@ limitations under the License.
 
 #include <optional>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "absl/types/span.h"
-#include "pybind11/attr.h"
-#include "pybind11/pybind11.h"
+#include "pybind11/attr.h"  // from @pybind11
+#include "pybind11/pybind11.h"  // from @pybind11
 #include "tensorflow/compiler/xla/client/lib/approx_topk.h"
 #include "tensorflow/compiler/xla/client/lib/approx_topk_shape.h"
 #include "tensorflow/compiler/xla/client/lib/comparators.h"
@@ -33,6 +35,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/client/lib/svd.h"
 #include "tensorflow/compiler/xla/client/xla_builder.h"
 #include "tensorflow/compiler/xla/client/xla_computation.h"
+#include "tensorflow/compiler/xla/python/status_casters.h"
 #include "tensorflow/compiler/xla/python/types.h"
 #include "tensorflow/compiler/xla/xla_data.pb.h"
 
@@ -433,7 +436,12 @@ void BuildOpsSubmodule(py::module* m) {
         return std::make_tuple(svd.u, svd.d, svd.v);
       },
       py::arg("a"), py::arg("max_iter") = 100, py::arg("epsilon") = 1e-6);
-  ops.def("TopK", &TopK, py::arg("input"), py::arg("k"));
+  ops.def(
+      "TopK",
+      [](XlaOp input, int64_t k) {
+        return TopK(input, k, /*index_type=*/PrimitiveType::S32);
+      },
+      py::arg("input"), py::arg("k"));
   ops.def("Transpose", &Transpose, py::arg("operand"), py::arg("permutation"));
   ops.def("TriangularSolve", &TriangularSolve, py::arg("a"), py::arg("b"),
           py::arg("left_side"), py::arg("lower"), py::arg("unit_diagonal"),
@@ -497,6 +505,7 @@ void BuildOpsSubmodule(py::module* m) {
   UNARY_OP(Sign);
   UNARY_OP(Cos);
   UNARY_OP(Sin);
+  UNARY_OP(Tan);
   UNARY_OP(Tanh);
   UNARY_OP(IsFinite);
   UNARY_OP(Neg);

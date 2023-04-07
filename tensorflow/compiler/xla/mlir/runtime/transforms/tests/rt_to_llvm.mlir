@@ -503,10 +503,9 @@ func.func @custom_call_unit_attr(%ctx: !rt.execution_context) {
 
 // CHECK: call @f32_reduce
 
-// CHECK: %[[DESC:.*]] = llvm.mlir.undef : !llvm.struct<(ptr<f32>, ptr<f32>, i64, array<2 x i64>, array<2 x i64>)>
+// CHECK: %[[DESC:.*]] = llvm.mlir.undef : !llvm.struct<(ptr, ptr, i64, array<2 x i64>, array<2 x i64>)>
 // CHECK: %[[DATA_GEP:.*]] = llvm.getelementptr %[[MEMREF_ALLOCA]]
-// CHECK: %[[DATA_PTR:.*]] = llvm.load %[[DATA_GEP]]
-// CHECK: %[[DATA:.*]] = llvm.bitcast %[[DATA_PTR]] : !llvm.ptr to !llvm.ptr<f32>
+// CHECK: %[[DATA:.*]] = llvm.load %[[DATA_GEP]]
 
 // CHECK: llvm.insertvalue %[[DATA]], {{.*}}[0]
 // CHECK: llvm.insertvalue %[[DATA]], {{.*}}[1]
@@ -526,6 +525,22 @@ func.func @custom_call_unit_attr(%ctx: !rt.execution_context) {
 func.func @custom_call(%ctx: !rt.execution_context) -> (memref<2x2xf32>) {
   %status, %0 = rt.call %ctx["f32_reduce"] () : () -> (memref<2x2xf32>)
   return %0 : memref<2x2xf32>
+}
+
+// -----
+
+// CHECK: %[[C1:.*]] = arith.constant 1 : i32
+// CHECK: %[[RETS_ALLOCA:.*]] = llvm.alloca %[[C1]] x !llvm.array<3 x ptr>
+
+// CHECK: %[[C1_0:.*]] = arith.constant 1 : i32
+// CHECK: %[[MEMREF_ALLOCA:.*]] = llvm.alloca %[[C1_0]] x !llvm.struct<(i8, i8, ptr, array<4 x i64>)>
+
+// CHECK: call @f32_reduce
+func.func @custom_call(%ctx: !rt.execution_context)
+                          -> (!async.value<memref<2x2xf32>>) {
+  %status, %0 = rt.call %ctx["f32_reduce"] ()
+                          : () -> (!async.value<memref<2x2xf32>>)
+  return %0 : !async.value<memref<2x2xf32>>
 }
 
 // -----
@@ -562,7 +577,7 @@ func.func @trace(%ctx: !rt.execution_context) -> tensor<?xf32> {
   // CHECK: call @xla.trace.activity_start
   // CHECK: call @compute
   // CHECK: call @xla.trace.activity_end
-  %0 = rt.trace #rt.hlo_trace<"foo", "bar", 0>, %ctx -> tensor<?xf32> {
+  %0 = rt.trace #rt.hlo_trace<"foo">, %ctx -> tensor<?xf32> {
     %1 = func.call @compute(): () -> tensor<?xf32>
     yield %1 : tensor<?xf32>
   }

@@ -438,7 +438,7 @@ class LSTMBlockCellOp : public OpKernel {
     OP_REQUIRES(
         ctx, wcf_tensor->dims() == 1,
         errors::InvalidArgument("wcf_tensor must be rank 1 but is rank ",
-                                wci_tensor->dims(), "."));
+                                wcf_tensor->dims(), "."));
     OP_REQUIRES(
         ctx, wco_tensor->dims() == 1,
         errors::InvalidArgument("wco_tensor must be rank 1 but is rank ",
@@ -901,6 +901,10 @@ class BlockLSTMOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override {
     const Tensor* seq_len_max_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("seq_len_max", &seq_len_max_tensor));
+    OP_REQUIRES(ctx, TensorShapeUtils::IsScalar(seq_len_max_tensor->shape()),
+                errors::InvalidArgument(
+                    "`seq_len_max_tensor` must be rank 0 but is rank ",
+                    seq_len_max_tensor->dims()));
 
     const Tensor* x;
     OP_REQUIRES_OK(ctx, ctx->input("x", &x));
@@ -1135,6 +1139,10 @@ class BlockLSTMGradOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override {
     const Tensor* seq_len_max_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("seq_len_max", &seq_len_max_tensor));
+    OP_REQUIRES(ctx, TensorShapeUtils::IsScalar(seq_len_max_tensor->shape()),
+                errors::InvalidArgument(
+                    "`seq_len_max_tensor` must be rank 0 but is rank ",
+                    seq_len_max_tensor->dims()));
 
     const Tensor* x;
     OP_REQUIRES_OK(ctx, ctx->input("x", &x));

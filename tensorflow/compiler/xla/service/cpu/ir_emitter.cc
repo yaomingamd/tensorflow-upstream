@@ -162,7 +162,7 @@ void IrEmitter::EmitThreadLocalFunctionEpilogue(HloComputation* computation) {
 }
 
 StatusOr<llvm::Function*> IrEmitter::EmitComputation(
-    HloComputation* computation, const std::string& function_name_prefix,
+    HloComputation* computation, absl::string_view function_name_prefix,
     bool is_top_level_computation,
     absl::Span<HloInstruction* const> instruction_order,
     bool allow_reassociation) {
@@ -888,11 +888,11 @@ Status IrEmitter::HandleDot(HloInstruction* dot) {
 
   VLOG(2) << "HandleDot: ";
   VLOG(2) << "  lhs operand: "
-          << llvm_ir::DumpToString(*lhs_array.GetBasePointer());
+          << llvm_ir::DumpToString(lhs_array.GetBasePointer());
   VLOG(2) << "  rhs operand: "
-          << llvm_ir::DumpToString(*rhs_array.GetBasePointer());
+          << llvm_ir::DumpToString(rhs_array.GetBasePointer());
   VLOG(2) << "  target: "
-          << llvm_ir::DumpToString(*target_array.GetBasePointer());
+          << llvm_ir::DumpToString(target_array.GetBasePointer());
 
   // Dot operation is complicated so we delegate to a helper class.
   return EmitDotOperation(*dot, target_array, lhs_array, rhs_array,
@@ -2601,7 +2601,8 @@ Status IrEmitter::HandleWhile(HloInstruction* xla_while) {
   Br(header_bb);
 
   // Adds the exit block to the function and sets the insert point there.
-  compute_function_->function()->getBasicBlockList().push_back(exit_bb);
+  llvm::Function* llvm_fn = compute_function_->function();
+  llvm_fn->insert(llvm_fn->end(), exit_bb);
   b_.SetInsertPoint(exit_bb);
 
   return OkStatus();
@@ -2972,9 +2973,9 @@ Status IrEmitter::FinishVisit(HloInstruction* root) {
   VLOG(2) << "FinishVisit root: " << root->ToString();
   if (root->opcode() == HloOpcode::kOutfeed) {
     VLOG(2) << "  outfeed with value: "
-            << llvm_ir::DumpToString(*GetEmittedValueFor(root->operand(0)));
+            << llvm_ir::DumpToString(GetEmittedValueFor(root->operand(0)));
   } else {
-    VLOG(2) << "  value: " << llvm_ir::DumpToString(*GetEmittedValueFor(root));
+    VLOG(2) << "  value: " << llvm_ir::DumpToString(GetEmittedValueFor(root));
   }
 
   auto record_complete_computation = [&](llvm::Value* prof_counter) {

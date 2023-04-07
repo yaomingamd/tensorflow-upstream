@@ -24,6 +24,8 @@ import numpy as np
 from tensorflow.core.framework import attr_value_pb2
 from tensorflow.core.framework import variable_pb2
 from tensorflow.core.function import trace_type
+from tensorflow.core.protobuf import struct_pb2
+from tensorflow.python.checkpoint import tensor_callable
 from tensorflow.python.client import pywrap_tf_session
 from tensorflow.python.compat import compat as forward_compat
 from tensorflow.python.eager import context
@@ -38,6 +40,7 @@ from tensorflow.python.framework import errors
 from tensorflow.python.framework import indexed_slices
 from tensorflow.python.framework import meta_graph
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import tensor_conversion_registry
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import tensor_spec
 from tensorflow.python.ops import array_ops
@@ -47,11 +50,13 @@ from tensorflow.python.ops import gen_state_ops
 from tensorflow.python.ops import handle_data_util
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import state_ops
+from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
 # go/tf-wildcard-import
 # pylint: disable=wildcard-import
 from tensorflow.python.ops.gen_resource_variable_ops import *
 # pylint: enable=wildcard-import
+from tensorflow.python.saved_model import nested_structure_coder
 from tensorflow.python.trackable import base as trackable
 from tensorflow.python.types import core
 from tensorflow.python.util import _pywrap_utils
@@ -99,7 +104,7 @@ def _set_handle_shapes_and_types(tensor, handle_data, graph_mode):
       [d.size for d in s.dim]  # pylint: disable=g-complex-comprehension
       if not s.unknown_rank else None for s in shapes
   ]
-  with tensor._op._graph._c_graph.get() as c_graph:  # pylint: disable=protected-access
+  with tensor._op.graph._c_graph.get() as c_graph:  # pylint: disable=protected-access
     pywrap_tf_session.TF_GraphSetOutputHandleShapesAndTypes_wrapper(
         c_graph,
         tensor._as_tf_output(),  # pylint: disable=protected-access
@@ -463,6 +468,9 @@ class BaseResourceVariable(variables.VariableV1, core.Tensor):
 
   def __tf_tracing_type__(self, signature_context):
     alias_id = signature_context.alias_global_id(self._handle._id)  # pylint:disable=protected-access
+    # TODO(xjun): Create variable placeholders directly from VariableSpec
+    # without using original values.
+    signature_context.add_placeholder(alias_id, self)
     return VariableSpec(shape=self.shape,
                         dtype=self.dtype,
                         trainable=self.trainable,
@@ -677,6 +685,44 @@ class BaseResourceVariable(variables.VariableV1, core.Tensor):
     object_map[self] = new_variable
     tensor_map[self.handle] = new_variable.handle
     return [self.handle]
+
+  def _serialize_to_tensors(self):
+    """Implements Trackable._serialize_to_tensors."""
+
+    def _read_variable_closure():
+      v = self
+      with ops.device(v.device):
+        if context.executing_eagerly() and not v.is_initialized():
+          # A SaveSpec tensor value of `None` indicates that the variable is
+          # uninitialized.
+          return None
+        # Read the variable without making a copy to limit memory usage.
+        x = v.read_value_no_copy()
+        # To allow variables placed on non-CPU devices to be checkpointed,
+        # we copy them to CPU on the same machine first.
+        with ops.device("/device:CPU:0"):
+          return array_ops.identity(x)
+
+    return {
+        trackable.VARIABLE_VALUE_KEY:
+            tensor_callable.Callable(
+                _read_variable_closure, dtype=self.dtype, device=self.device)
+    }
+
+  def _restore_from_tensors(self, restored_tensors):
+    """Implements Trackable._restore_from_tensors."""
+    with ops.device(self.device):
+      restored_tensor = array_ops.identity(
+          restored_tensors[trackable.VARIABLE_VALUE_KEY])
+      try:
+        assigned_variable = shape_safe_assign_variable_handle(
+            self.handle, self.shape, restored_tensor)
+      except ValueError as e:
+        raise ValueError(
+            f"Received incompatible tensor with shape {restored_tensor.shape} "
+            f"when attempting to restore variable with shape {self.shape} "
+            f"and name {self.name}.") from e
+      return assigned_variable
 
   def _read_variable_op(self, no_copy=False):
     """Reads the value of the variable.
@@ -2231,8 +2277,8 @@ def _dense_var_to_tensor(var, dtype=None, name=None, as_ref=False):
 
 # Register a conversion function which reads the value of the variable,
 # allowing instances of the class to be used as tensors.
-ops.register_tensor_conversion_function(BaseResourceVariable,
-                                        _dense_var_to_tensor)
+tensor_conversion_registry.register_tensor_conversion_function(
+    BaseResourceVariable, _dense_var_to_tensor)
 
 
 class _UnreadVariable(BaseResourceVariable):
@@ -2397,53 +2443,8 @@ def _GatherGrad(op, grad):
   return (indexed_slices.IndexedSlices(values, indices, params_shape), None)
 
 
-def _to_proto_fn(v, export_scope=None):
-  """Converts Variable and ResourceVariable to VariableDef for collections."""
-  return v.to_proto(export_scope=export_scope)
-
-
-def _from_proto_fn(v, import_scope=None):
-  """Creates Variable or ResourceVariable from VariableDef as needed."""
-  if v.is_resource:
-    return ResourceVariable.from_proto(v, import_scope=import_scope)
-  return variables.Variable.from_proto(v, import_scope=import_scope)
-
-
-ops.register_proto_function(
-    ops.GraphKeys.GLOBAL_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.TRAINABLE_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.MOVING_AVERAGE_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.LOCAL_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.MODEL_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.GLOBAL_STEP,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
-ops.register_proto_function(
-    ops.GraphKeys.METRIC_VARIABLES,
-    proto_type=variable_pb2.VariableDef,
-    to_proto=_to_proto_fn,
-    from_proto=_from_proto_fn)
+_to_proto_fn = variable_scope._to_proto_fn  # pylint: disable=protected-access
+_from_proto_fn = variable_scope._from_proto_fn  # pylint: disable=protected-access
 
 
 @tf_export("__internal__.ops.is_resource_variable", v1=[])
@@ -2639,7 +2640,10 @@ class VariableSpec(tensor_spec.DenseSpec):
     return super().most_specific_common_supertype(others)
 
   # TraceType method
-  def _placeholder_value(self, placeholder_context):
+  def placeholder_value(self, placeholder_context):
+    if placeholder_context.unnest_only:
+      return self
+
     name = self.name or placeholder_context.naming_scope
     context_graph = placeholder_context.context_graph
     if placeholder_context.has_placeholder(self.alias_id):
@@ -2651,7 +2655,7 @@ class VariableSpec(tensor_spec.DenseSpec):
       spec_context = trace_type.InternalPlaceholderContext(
           context_graph.outer_graph)
       spec_context.update_naming_scope(name)
-      placeholder = spec._placeholder_value(spec_context)  # pylint: disable=protected-access
+      placeholder = spec.placeholder_value(spec_context)
       variable = self._from_components([placeholder])
       # (b/262771247) ShardedVariable break without this and VariableSpecs
       # without alias_id are not TraceTypes.
@@ -2664,6 +2668,10 @@ class VariableSpec(tensor_spec.DenseSpec):
         "_user_specified_name",
         attr_value_pb2.AttrValue(s=compat.as_bytes(name)))
     return variable
+
+  def _to_tensors(self, value):
+    assert isinstance(value, BaseResourceVariable)
+    return [value.handle]
 
   def _get_structure(self):
     # shape, dtype, trainable, and alias_id are all leaves.
@@ -2680,6 +2688,13 @@ class VariableSpec(tensor_spec.DenseSpec):
     return (type(self) is type(other) and self.shape == other.shape and
             self.dtype == other.dtype and self.trainable == other.trainable and
             self.alias_id == other.alias_id)
+
+
+nested_structure_coder.register_codec(
+    nested_structure_coder.BuiltInTypeSpecCodec(
+        VariableSpec, struct_pb2.TypeSpecProto.VARIABLE_SPEC
+    )
+)
 
 
 _pywrap_utils.RegisterType("VariableSpec", VariableSpec)

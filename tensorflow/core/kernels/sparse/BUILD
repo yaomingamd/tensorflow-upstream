@@ -82,10 +82,10 @@ tf_kernel_library(
         "//tensorflow/core/kernels:dense_update_functor",
         "//tensorflow/core/kernels:fill_functor",
         "//tensorflow/core/kernels:gather_nd_op",
+        "//tensorflow/core/kernels:gpu_prim_hdrs",
         "//tensorflow/core/kernels:scatter_nd_op",
         "//tensorflow/core/kernels:slice_op",
         "//tensorflow/core/kernels:transpose_functor",
-        "//tensorflow/core/kernels:gpu_prim_hdrs",
     ] + if_cuda_or_rocm([
         "//tensorflow/core/util:cuda_solvers",
         "//tensorflow/core/util:cuda_sparse",
@@ -107,6 +107,7 @@ tf_cc_test(
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
         "//tensorflow/core:testlib",
+        "//tensorflow/core/platform:status_matchers",
         "//third_party/eigen3",
     ],
 )
