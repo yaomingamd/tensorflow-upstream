@@ -1,5 +1,6 @@
 # Description:
 #   A tool for reducing a HLO module that produces incorrect results.
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load(
     "//tensorflow/compiler/xla:xla.bzl",
     "xla_cc_binary",
@@ -55,7 +56,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_bisect_state_test",
     srcs = ["hlo_bisect_state_test.cc"],
     deps = [
