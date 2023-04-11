@@ -1,4 +1,5 @@
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 
 package_group(
     name = "friends",
@@ -81,7 +82,7 @@ cc_library(
     alwayslink = 1,
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "pjrt_array_impl_test_tfrt_cpu",
     size = "small",
     srcs = ["pjrt_array_impl_test_tfrt_cpu.cc"],
@@ -92,7 +93,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "pjrt_client_impl_test_tfrt_cpu",
     size = "small",
     srcs = [],
@@ -103,7 +104,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "pjrt_executable_impl_test_tfrt_cpu",
     size = "small",
     srcs = ["pjrt_executable_impl_test_tfrt_cpu.cc"],
@@ -114,7 +115,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "pjrt_tuple_impl_test_tfrt_cpu",
     size = "small",
     srcs = [],
