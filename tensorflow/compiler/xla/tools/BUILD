@@ -281,7 +281,7 @@ xla_cc_binary(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_extractor_test",
     srcs = ["hlo_extractor_test.cc"],
     deps = [
@@ -337,7 +337,7 @@ xla_cc_binary(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "interactive_graphviz_bin_test",
     srcs = ["interactive_graphviz_bin_test.cc"],
     data = [
@@ -373,7 +373,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_module_loader_test",
     srcs = ["hlo_module_loader_test.cc"],
     deps = [
@@ -475,7 +475,7 @@ xla_cc_binary(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "run_hlo_module_bin_test",
     srcs = ["run_hlo_module_bin_test.cc"],
     data = [
@@ -509,7 +509,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_control_flow_flattening_test",
     srcs = ["hlo_control_flow_flattening_test.cc"],
     deps = [

@@ -1,5 +1,6 @@
 load("//tensorflow/tsl/platform:rules_cc.bzl", "cc_library")
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 
 # copybara:uncomment package(default_applicable_licenses = ["//tensorflow:license"])
 
@@ -89,7 +90,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "pjrt_c_api_cpu_test",
     srcs = ["pjrt_c_api_cpu_test.cc"],
     deps = [
