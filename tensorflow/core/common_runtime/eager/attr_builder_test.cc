@@ -162,10 +162,12 @@ TEST(AttrBuilder, BuildNodeDef_Modified) {
   AttrBuilder a("MatMul");
   a.Set("transpose_a", true);
   a.Set("transpose_b", false);
-  a.NumInputs(2);
+  a.Set("grad_a", true);
+  a.Set("grad_b", false);
+  a.NumInputs(4);
 
   const NodeDef& node_def = a.BuildNodeDef();
-  EXPECT_EQ(node_def.attr().size(), 2);
+  EXPECT_EQ(node_def.attr().size(), 4);
 
   a.Set("new_attr", 15);
   a.NumInputs(3);
@@ -173,13 +175,17 @@ TEST(AttrBuilder, BuildNodeDef_Modified) {
   const NodeDef& node_def2 = a.BuildNodeDef();
 
   auto attrs = node_def2.attr();
-  EXPECT_EQ(attrs.size(), 3);
+  EXPECT_EQ(attrs.size(), 5);
   ASSERT_NE(attrs.find("transpose_a"), attrs.end());
   EXPECT_EQ(attrs.find("transpose_a")->second.b(), true);
   ASSERT_NE(attrs.find("transpose_b"), attrs.end());
   EXPECT_EQ(attrs.find("transpose_b")->second.b(), false);
   ASSERT_NE(attrs.find("new_attr"), attrs.end());
   EXPECT_EQ(attrs.find("new_attr")->second.i(), 15);
+  EXPECT_NE(attrs.find("grad_a"), attrs.end());
+  EXPECT_EQ(attrs.find("grad_a")->second.b(), true);
+  ASSERT_NE(attrs.find("grad_b"), attrs.end());
+  EXPECT_EQ(attrs.find("grad_b")->second.b(), false);
 }
 
 }  // namespace
