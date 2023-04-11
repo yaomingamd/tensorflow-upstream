@@ -6,6 +6,7 @@ load(
     "//tensorflow/tsl/platform:build_config.bzl",
     "tf_proto_library",
 )
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load(
     "//tensorflow/tsl/platform:build_config_root.bzl",
     "if_static",
@@ -201,7 +202,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "target_util_test",
     srcs = ["target_util_test.cc"],
     deps = [
@@ -234,7 +235,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_device_info_test",
     srcs = ["gpu_device_info_test.cc"],
     tags = tf_cuda_tests_tags() + ["no_rocm"],
@@ -582,7 +583,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "non_atomically_upgradeable_rw_lock_test",
     srcs = ["non_atomically_upgradeable_rw_lock_test.cc"],
     deps = [
@@ -751,7 +752,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "ir_emission_utils_test",
     srcs = ["ir_emission_utils_test.cc"],
     deps = [
@@ -949,7 +950,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gemm_algorithm_picker_test",
     srcs = ["gemm_algorithm_picker_test.cc"],
     tags = [
@@ -1009,7 +1010,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "matmul_utils_test",
     srcs = ["matmul_utils_test.cc"],
     deps = [
@@ -1038,7 +1039,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "dot_dimension_sorter_test",
     srcs = ["dot_dimension_sorter_test.cc"],
     tags = tf_cuda_tests_tags() + ["no_rocm"],
@@ -1182,7 +1183,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "move_copy_to_users_test",
     srcs = ["move_copy_to_users_test.cc"],
     deps = [
@@ -1199,7 +1200,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_conv_rewriter_test",
     srcs = ["gpu_conv_rewriter_test.cc"],
     deps = [
@@ -1282,7 +1283,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "instruction_fusion_test",
     srcs = ["instruction_fusion_test.cc"],
     tags = ["no_pip"],
@@ -1322,7 +1323,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "multi_output_fusion_test",
     srcs = ["multi_output_fusion_test.cc"],
     tags = ["no_pip"],
@@ -1392,7 +1393,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_sanitize_constant_names_test",
     srcs = ["gpu_sanitize_constant_names_test.cc"],
     deps = [
@@ -1437,7 +1438,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "fusion_merger_test",
     srcs = ["fusion_merger_test.cc"],
     tags = ["no_pip"],
@@ -1475,7 +1476,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_conv_padding_legalization_test",
     srcs = ["gpu_conv_padding_legalization_test.cc"],
     deps = [
@@ -1507,7 +1508,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_support_utils_test",
     srcs = ["cudnn_support_utils_test.cc"],
     deps = [
@@ -1551,7 +1552,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_pad_for_convolutions_test",
     srcs = ["cudnn_pad_for_convolutions_test.cc"],
     deps = [
@@ -1584,7 +1585,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_vectorize_convolutions_test",
     srcs = ["cudnn_vectorize_convolutions_test.cc"],
     deps = [
@@ -1616,7 +1617,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_simplify_padding_test",
     srcs = ["cudnn_simplify_padding_test.cc"],
     deps = [
@@ -1655,7 +1656,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cublas_pad_for_gemms_test",
     srcs = ["cublas_pad_for_gemms_test.cc"],
     tags = ["no_pip"],
@@ -1993,7 +1994,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "nvptx_compiler_test",
     srcs = if_gpu_is_configured([
         "nvptx_compiler_test.cc",
@@ -2017,7 +2018,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_aot_compilation_test",
     srcs = if_cuda_is_configured([
         "gpu_aot_compilation_test.cc",
@@ -2108,7 +2109,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "all_reduce_blueconnect_test",
     srcs = ["all_reduce_blueconnect_test.cc"],
     deps = [
@@ -2258,7 +2259,7 @@ tf_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "while_transformer_test",
     srcs = ["while_transformer_test.cc"],
     tags = ["no_pip"],
@@ -2337,7 +2338,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_hlo_cost_analysis_test",
     srcs = ["gpu_hlo_cost_analysis_test.cc"],
     deps = [
@@ -2359,7 +2360,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_performance_model_test",
     srcs = ["gpu_performance_model_test.cc"],
     deps = [
@@ -2417,7 +2418,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_fusible_test",
     srcs = ["gpu_fusible_test.cc"],
     tags = ["no_pip"],
@@ -2452,7 +2453,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_fused_conv_rewriter_test",
     srcs = ["cudnn_fused_conv_rewriter_test.cc"],
     tags = [
@@ -2490,7 +2491,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "conv_layout_normalization_test",
     srcs = ["conv_layout_normalization_test.cc"],
     tags = tf_cuda_tests_tags() + ["no_rocm"],
@@ -2541,7 +2542,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "variadic_op_splitter_test",
     srcs = ["variadic_op_splitter_test.cc"],
     tags = ["no_pip"],
@@ -2586,7 +2587,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_algorithm_denylist_test",
     srcs = ["hlo_algorithm_denylist_test.cc"],
     data = ["data/hlo_algorithm_denylist.pbtxt"],
@@ -2614,7 +2615,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "alias_passthrough_params_test",
     srcs = ["alias_passthrough_params_test.cc"],
     tags = ["no_pip"],
@@ -2749,7 +2750,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "reduction_splitter_test",
     srcs = ["reduction_splitter_test.cc"],
     deps = [
@@ -3082,7 +3083,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_fusion_stats_test",
     srcs = ["hlo_fusion_stats_test.cc"],
     tags = ["no_pip"],
@@ -3112,7 +3113,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "scatter_slice_simplifier_test",
     srcs = ["scatter_slice_simplifier_test.cc"],
     deps = [
