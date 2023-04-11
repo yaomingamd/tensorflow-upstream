@@ -880,8 +880,10 @@ void SetMatmulAttributes(OpT op, const xla::gpu::GemmBackendConfig& config,
   }
   op.setPrecisionConfigAttr(
       xla::ConvertPrecisionConfig(&config.precision_config(), &builder));
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   op.setGradXAttr(builder.getBoolAttr(config.grad_x()));
   op.setGradYAttr(builder.getBoolAttr(config.grad_y()));
+#endif
 }
 
 tsl::StatusOr<lmhlo_gpu::CublasLtMatmulEpilogue> AsLhloEpilogue(

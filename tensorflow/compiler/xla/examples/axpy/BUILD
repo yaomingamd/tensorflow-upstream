@@ -1,8 +1,9 @@
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 
 # copybara:uncomment package(default_applicable_licenses = ["//tensorflow:license"])
 
-xla_cc_test(
+tf_cc_test(
     name = "stablehlo_compile_test",
     srcs = ["stablehlo_compile_test.cc"],
     data = ["stablehlo_axpy.mlir"],
