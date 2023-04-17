@@ -7,6 +7,7 @@ load(
     "if_cuda_or_rocm",
 )
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load(
     "//tensorflow/compiler/xla:xla.bzl",
     "xla_cc_binary",
