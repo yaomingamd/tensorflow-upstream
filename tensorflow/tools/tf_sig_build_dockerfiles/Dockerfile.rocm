@@ -1,6 +1,6 @@
 # Last hash that uses dt-9
 ################################################################################
-FROM quay.io/pypa/manylinux2014_x86_64:2021-07-31-381f36f as builder
+FROM quay.io/pypa/manylinux2014_x86_64:2022-08-02-3320eea as builder
 ################################################################################
 
 # Install dependencies
