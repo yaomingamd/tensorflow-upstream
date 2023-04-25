@@ -68,7 +68,7 @@ build:rocm --copt="-Wno-error=unused-result"
 # Test-related settings below this point.
 test:cuda --test_env=LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64"
 test:rocm --test_env=HSA_TOOLS_LIB=libroctracer64.so
-test --build_tests_only --keep_going --test_output=errors --verbose_failures=true
+test --build_tests_only --keep_going --test_output=errors --verbose_failures=true --test_sharding_strategy=disabled
 # Set the default local test jobs to 2
 test --test_timeout=920,2400,7200,9600 --local_test_jobs=2 --test_env=TF_TESTS_PER_GPU=1 --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute
 # Give only the list of failed tests at the end of the log
