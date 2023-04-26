@@ -208,6 +208,13 @@ void CollectValueDistribution<T>::process_data(T* data, int num_elems) {
 template <typename T>
 __global__ void exponent_bucket_count_gpu_kernel(const T* data, int num_elems, uint32_t* result) {
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+  __shared__ uint32_t s_result[type_info<T>::num_exponent_value_buckets]; 
+  if (threadIdx.x < type_info<T>::num_exponent_value_buckets)
+    s_result[threadIdx.x] = 0;
+
+  __syncthreads();
+
   if (idx < num_elems) {
     uint32_t sign, exponent, mantissa;
     auto tmp = type_utils<T>::get_sign_exponent_mantissa(data[idx]);
@@ -215,8 +222,14 @@ __global__ void exponent_bucket_count_gpu_kernel(const T* data, int num_elems, u
     exponent = std::get<1>(tmp);
     mantissa = std::get<2>(tmp);
     uint32_t bucket_id = type_utils<T>::get_bucket_id(sign, exponent, mantissa);
-    atomicAdd(&result[bucket_id], 1);
+    atomicAdd(&s_result[bucket_id], 1);
   }
+
+  __syncthreads();
+
+  if (threadIdx.x < type_info<T>::num_exponent_value_buckets)
+    atomicAdd(&result[threadIdx.x], s_result[threadIdx.x]);
+
 }
 
 template <typename T>
@@ -229,7 +242,7 @@ void CollectValueDistribution<T>::process_data_gpu(hipStream_t stream, const voi
 
   const T* data_T = reinterpret_cast<const T*>(data);
 
-  int threads_per_block = 256;
+  int threads_per_block = 1024;
   int num_blocks = (num_elems + threads_per_block -1 ) / threads_per_block;
   hipLaunchKernelGGL(exponent_bucket_count_gpu_kernel, dim3(num_blocks,1,1), dim3(threads_per_block,1,1), 0, stream, data_T, num_elems, result); 
   hipMemcpyAsync(result_host_, result, result_size, hipMemcpyDeviceToHost, stream);
