@@ -523,8 +523,8 @@ xla_test(
     ],
     shard_count = 10,
     tags = ["nomac",
-	    "no_rocm",
-	   ],
+            "no_rocm",
+           ],
     deps = [
         ":backend_configs_cc",
         ":gpu_device_info",
@@ -2736,6 +2736,7 @@ cc_library(
         ":gpu_conv_padding_legalization",
         ":gpu_conv_rewriter",
         ":gpu_layout_assignment",
+        ":cudnn_fused_conv_rewriter",
         ":reduction_degenerate_dim_remover",
         ":reduction_dimension_grouper",
         ":reduction_layout_normalizer",
@@ -3397,7 +3398,7 @@ xla_test(
 xla_cc_test(
     name = "conv_layout_normalization_test",
     srcs = ["conv_layout_normalization_test.cc"],
-    tags = tf_cuda_tests_tags() + ["no_rocm"],
+    tags = tf_cuda_tests_tags(),
     deps = [
         "//tensorflow/compiler/xla/service/gpu/tests:gpu_codegen_test",
         "//tensorflow/compiler/xla/tests:hlo_test_base",
