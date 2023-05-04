@@ -27,7 +27,7 @@ echo "Bazel will use ${N_BUILD_JOBS} concurrent build job(s) and ${N_TEST_JOBS} 
 echo ""
 
 # First positional argument (if any) specifies the ROCM_INSTALL_DIR
-ROCM_INSTALL_DIR=/opt/rocm-5.3.0
+ROCM_INSTALL_DIR=/opt/rocm-5.5.0
 if [[ -n $1 ]]; then
     ROCM_INSTALL_DIR=$1
 fi
@@ -49,7 +49,8 @@ bazel test \
       --local_test_jobs=${N_TEST_JOBS} \
       --test_env=TF_GPU_COUNT=$TF_GPU_COUNT \
       --test_env=TF_TESTS_PER_GPU=$TF_TESTS_PER_GPU \
-      --test_timeout 600,900,2400,7200 \
+      --test_env=HSA_TOOLS_LIB=libroctracer64.so \
+      --test_timeout 920,2400,7200,9600 \
       --build_tests_only \
       --test_output=errors \
       --test_sharding_strategy=disabled \
@@ -61,3 +62,4 @@ bazel test \
       -//tensorflow/core/tpu/... \
       -//tensorflow/lite/... \
       -//tensorflow/compiler/tf2tensorrt/... \
+      -//tensorflow/dtensor/python/tests:multi_client_test_nccl_2gpus
