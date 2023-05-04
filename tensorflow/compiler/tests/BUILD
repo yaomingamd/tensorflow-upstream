@@ -1116,6 +1116,7 @@ tf_xla_py_test(
     ],
     deps = [
         ":xla_test",
+        "//tensorflow:tensorflow_py",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:framework",
         "//tensorflow/python:math_ops",
@@ -1199,6 +1200,30 @@ tf_xla_py_test(
         "//tensorflow/python:platform_test",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# tf_xla_py_test(
+#     name = "reverse_sequence_op_args_test",
+#     size = "medium",
+#     srcs = ["reverse_sequence_op_args_test.py"],
+#     enable_mlir_bridge = False,
+#     main = "reverse_sequence_op_args_test.py",
+#     python_version = "PY3",
+#     tags = [
+#         "no_pip",
+#         "optonly",
+#     ],
+#     deps = [
+#         ":xla_test",
+#         "//tensorflow/compiler/jit:xla_cpu_jit",  # DisableOnExport
+#         "//tensorflow/python:array_ops",
+#         "//tensorflow/python:framework",
+#         "//tensorflow/python:platform_test",
+#         "//tensorflow/python/compat:v2_compat",
+#         "//tensorflow/python/eager:function",
+#     ],
+# )
+# copybara:uncomment_end
 
 tf_xla_py_test(
     name = "rmsprop_test",
@@ -2343,5 +2368,21 @@ tf_xla_py_test(
         "//tensorflow/python:framework",
         "//tensorflow/python:platform_test",
         "//tensorflow/python:training",
+    ],
+)
+
+tf_xla_py_test(
+    name = "bincount_op_test",
+    size = "small",
+    srcs = ["bincount_op_test.py"],
+    enable_mlir_bridge = False,
+    python_version = "PY3",
+    shard_count = 10,
+    tags = [
+        "no_pip",  # TODO(b/149738646): fix pip install so these tests run on kokoro pip
+    ],
+    deps = [
+        ":xla_test",
+        "//tensorflow/python:platform_test",
     ],
 )
