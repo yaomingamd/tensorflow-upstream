@@ -5,3 +5,4 @@ scipy ~= 1.7.2; python_version < '3.11'
 scipy ~= 1.9.2; python_version >= '3.11' # Earliest version for Python 3.11
 jax ~= 0.3.24
 jaxlib ~= 0.3.24
+urllib3<2
