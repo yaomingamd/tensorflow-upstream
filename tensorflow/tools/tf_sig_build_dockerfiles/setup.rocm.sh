@@ -19,12 +19,22 @@
 # Usage: setup.rocm.sh <ROCM_VERSION>
 set -x
 
-# # Add the ROCm package repo location
+# Add the ROCm package repo location
 ROCM_VERSION=$1 # e.g. 5.2.0
 ROCM_PATH=${ROCM_PATH:-/opt/rocm-${ROCM_VERSION}}
-ROCM_DEB_REPO=https://repo.radeon.com/rocm/apt/5.4/
+ROCM_DEB_REPO_HOME=https://repo.radeon.com/rocm/apt/
 ROCM_BUILD_NAME=ubuntu
 ROCM_BUILD_NUM=main
+
+# Adjust the ROCM repo location
+# Intial release don't have the trialing '.0'
+# For example ROCM 5.4.0 is at https://repo.radeon.com/rocm/apt/5.4/
+if [ ${ROCM_VERSION##*[^0-9]} -eq '0' ]; then
+        ROCM_VERS=${ROCM_VERSION%.*}
+else
+        ROCM_VERS=$ROCM_VERSION
+fi
+ROCM_DEB_REPO=${ROCM_DEB_REPO_HOME}${ROCM_VERS}/
 
 if [ ! -f "/${CUSTOM_INSTALL}" ]; then
 # Add rocm repository
@@ -32,11 +42,11 @@ chmod 1777 /tmp
 apt-get --allow-unauthenticated update && apt install -y wget software-properties-common
 apt-get clean all
 wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | apt-key add -;
-bin/bash -c 'if [[ $ROCM_DEB_REPO == https://repo.radeon.com/rocm/*  ]] ; then \
+if [[ $ROCM_DEB_REPO == https://repo.radeon.com/rocm/*  ]] ; then \
       echo "deb [arch=amd64] $ROCM_DEB_REPO $ROCM_BUILD_NAME $ROCM_BUILD_NUM" > /etc/apt/sources.list.d/rocm.list; \
     else \
-      echo "deb [arch=amd64 trusted=yes] https://repo.radeon.com/rocm/apt/5.4/ ubuntu main" > /etc/apt/sources.list.d/rocm.list ; \
-    fi'
+      echo "deb [arch=amd64 trusted=yes] $ROCM_DEB_REPO $ROCM_BUILD_NAME $ROCM_BUILD_NUM" > /etc/apt/sources.list.d/rocm.list ; \
+    fi
 else
     bash "/${CUSTOM_INSTALL}"
 fi
