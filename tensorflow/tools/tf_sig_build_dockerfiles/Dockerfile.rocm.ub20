@@ -46,7 +46,7 @@ COPY devel.requirements.txt /devel.requirements.txt
 RUN /setup.python.sh $PYTHON_VERSION devel.requirements.txt true
 
 ARG TF_WHEEL_URL
-RUN [ -n "$TF_WHEEL_URL" ] && pip install "${TF_WHEEL_URL}"
+RUN if [ -n "$TF_WHEEL_URL" ]; then pip install "${TF_WHEEL_URL}";fi
 ARG DWLD_TF_SRC_CMD
 RUN [ -n ${DWLD_TF_SRC_CMD} ] && ${DWLD_TF_SRC_CMD}
 
