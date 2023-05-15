@@ -421,7 +421,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "convert_async_collectives_to_sync_test",
     srcs = ["convert_async_collectives_to_sync_test.cc"],
     deps = [
@@ -1130,7 +1130,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "profile_guided_latency_estimator_test",
     srcs = ["profile_guided_latency_estimator_test.cc"],
     deps = [
@@ -6933,7 +6933,7 @@ build_test(
     ],
 )
 
-xla_cc_binary(
+tf_cc_binary(
     name = "xla_compile",
     srcs = ["xla_compile_main.cc"],
     visibility = ["//visibility:public"],
