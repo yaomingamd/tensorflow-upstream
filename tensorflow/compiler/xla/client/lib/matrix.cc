@@ -45,7 +45,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/statusor.h"
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/compiler/xla/xla_data.pb.h"
-//#include "tensorflow/compiler/jit/flags.h"
+#include "tensorflow/compiler/jit/flags.h"
 
 namespace xla {
 

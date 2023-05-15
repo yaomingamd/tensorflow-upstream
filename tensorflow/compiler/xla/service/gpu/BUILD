@@ -62,7 +62,7 @@ tf_proto_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "backend_configs_test",
     srcs = ["backend_configs_test.cc"],
     deps = [
@@ -145,7 +145,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "custom_call_test",
     srcs = if_gpu_is_configured(["custom_call_test.cc"]),
     local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
@@ -1344,7 +1344,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_async_collective_annotator_test",
     srcs = ["gpu_async_collective_annotator_test.cc"],
     deps = [
@@ -1371,7 +1371,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_convert_async_collectives_to_sync_test",
     srcs = ["gpu_convert_async_collectives_to_sync_test.cc"],
     deps = [
@@ -1425,7 +1425,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_conv_algorithm_picker_test",
     srcs = ["gpu_conv_algorithm_picker_test.cc"],
     tags = [
@@ -2270,7 +2270,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_compiler_test",
     srcs = ["gpu_compiler_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -2564,7 +2564,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_layout_assignment_test",
     srcs = ["gpu_layout_assignment_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -2607,7 +2607,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_hlo_schedule_test",
     srcs = [
         "gpu_hlo_schedule_test.cc",
@@ -2757,7 +2757,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "buffer_comparator_test",
     srcs = if_cuda_is_configured(["buffer_comparator_test.cc"]),
     tags = tf_cuda_tests_tags(),
@@ -3016,7 +3016,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "horizontal_loop_fusion_test",
     srcs = ["horizontal_loop_fusion_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -3056,7 +3056,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "horizontal_input_fusion_test",
     srcs = ["horizontal_input_fusion_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -3573,7 +3573,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "topk_splitter_test",
     srcs = ["topk_splitter_test.cc"],
     deps = [
