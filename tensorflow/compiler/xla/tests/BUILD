@@ -2432,7 +2432,7 @@ xla_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "llvm_compiler_test",
     srcs = ["llvm_compiler_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -2757,7 +2757,7 @@ xla_test(
 )
 
 # A demo of test that loads an hlo module from a file and compares results on gpu and cpu.
-xla_cc_test(
+tf_cc_test(
     name = "sample_file_test",
     srcs = ["sample_file_test.cc"],
     data = ["isolated_convolution.hlo"],
