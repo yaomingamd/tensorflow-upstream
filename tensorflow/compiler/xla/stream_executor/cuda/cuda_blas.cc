@@ -588,7 +588,8 @@ tsl::Status CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                                  const void *alpha, const DeviceMemoryBase &a,
                                  int lda, const DeviceMemoryBase &b, int ldb,
                                  const void *beta, DeviceMemoryBase *c, int ldc,
-                                 blas::ComputePrecision precision) {
+                                 blas::ComputePrecision precision,
+                                 blas::CallContext context) {
   cublasMath_t math_type = CUBLAS_DEFAULT_MATH;
 
 #if CUDA_VERSION < 11000
@@ -815,7 +816,8 @@ tsl::Status CUDABlas::DoBlasGemmWithAlgorithm(
     blas::DataType type_b, int ldb, const void *beta, DeviceMemoryBase *c,
     blas::DataType type_c, int ldc, blas::ComputationType computation_type,
     blas::AlgorithmType algorithm, blas::ComputePrecision precision,
-    blas::ProfileResult *output_profile_result) {
+    blas::ProfileResult *output_profile_result,
+    blas::CallContext context) {
   TF_ASSIGN_OR_RETURN(
       cublasMath_t math_type,
       GetMathTypeForGemmEx(stream, algorithm, type_a, type_b, precision));
@@ -847,7 +849,8 @@ tsl::Status CUDABlas::DoBlasGemmStridedBatchedWithAlgorithm(
     DeviceMemoryBase *c, blas::DataType type_c, int ldc, int64_t stride_c,
     int batch_count, blas::ComputationType computation_type,
     blas::AlgorithmType algorithm, blas::ComputePrecision precision,
-    blas::ProfileResult *output_profile_result) {
+    blas::ProfileResult *output_profile_result,
+     blas::CallContext context) {
   TF_ASSIGN_OR_RETURN(
       cublasMath_t math_type,
       GetMathTypeForGemmEx(stream, algorithm, type_a, type_b, precision));
@@ -1131,7 +1134,7 @@ bool CUDABlas::DoBlasGemmBatched(
     uint64_t n, uint64 k, float alpha, DeviceMemorySlice<Eigen::half> a_array,
     int lda, DeviceMemorySlice<Eigen::half> b_array, int ldb, float beta,
     DeviceMemorySlice<Eigen::half> c_array, int ldc, int batch_count,
-    ScratchAllocator *scratch_allocator) {
+    ScratchAllocator *scratch_allocator, blas::CallContext context) {
   // Note: The func passed here (cublasSgemmBatched) is not actually called,
   // due to special handling of fp16 inside DoBlasGemmBatchedInternal.
   tsl::Status status = DoBlasGemmBatchedInternal(
@@ -1149,7 +1152,7 @@ bool CUDABlas::DoBlasGemmBatched(
     DeviceMemorySlice<Eigen::bfloat16> a_array, int lda,
     DeviceMemorySlice<Eigen::bfloat16> b_array, int ldb, float beta,
     DeviceMemorySlice<Eigen::bfloat16> c_array, int ldc, int batch_count,
-    ScratchAllocator *scratch_allocator) {
+    ScratchAllocator *scratch_allocator, blas::CallContext context) {
   // Note: The func passed here (cublasSgemmBatched) is not actually called,
   // due to special handling of bf16 inside DoBlasGemmBatchedInternal.
   tsl::Status status = DoBlasGemmBatchedInternal(
@@ -1168,7 +1171,7 @@ bool CUDABlas::DoBlasGemmBatched(Stream *stream, blas::Transpose transa,
                                  DeviceMemorySlice<float> b_array, int ldb,
                                  float beta, DeviceMemorySlice<float> c_array,
                                  int ldc, int batch_count,
-                                 ScratchAllocator *scratch_allocator) {
+                                 ScratchAllocator *scratch_allocator,, blas::CallContext context) {
   tsl::Status status = DoBlasGemmBatchedInternal(
       cublasSgemmBatched, stream, transa, transb, m, n, k, alpha, a_array, lda,
       b_array, ldb, beta, c_array, ldc, batch_count, scratch_allocator);
@@ -1178,14 +1181,13 @@ bool CUDABlas::DoBlasGemmBatched(Stream *stream, blas::Transpose transa,
   return status.ok();
 }
 
-bool CUDABlas::DoBlasGemmBatched(Stream *stream, blas::Transpose transa,
-                                 blas::Transpose transb, uint64_t m, uint64_t n,
-                                 uint64 k, double alpha,
-                                 DeviceMemorySlice<double> a_array, int lda,
-                                 DeviceMemorySlice<double> b_array, int ldb,
-                                 double beta, DeviceMemorySlice<double> c_array,
-                                 int ldc, int batch_count,
-                                 ScratchAllocator *scratch_allocator) {
+bool CUDABlas::DoBlasGemmBatched(
+    Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64_t m,
+    uint64_t n, uint64 k, double alpha,
+    DeviceMemorySlice<double> a_array, int lda,
+    DeviceMemorySlice<double> b_array, int ldb, double beta,
+    DeviceMemorySlice<double> c_array, int ldc, int batch_count,
+    ScratchAllocator *scratch_allocator, blas::CallContext context) {
   tsl::Status status = DoBlasGemmBatchedInternal(
       cublasDgemmBatched, stream, transa, transb, m, n, k, alpha, a_array, lda,
       b_array, ldb, beta, c_array, ldc, batch_count, scratch_allocator);
@@ -1201,7 +1203,7 @@ bool CUDABlas::DoBlasGemmBatched(
     DeviceMemorySlice<std::complex<float>> a_array, int lda,
     DeviceMemorySlice<std::complex<float>> b_array, int ldb,
     std::complex<float> beta, DeviceMemorySlice<std::complex<float>> c_array,
-    int ldc, int batch_count, ScratchAllocator *scratch_allocator) {
+    int ldc, int batch_count, ScratchAllocator *scratch_allocator, blas::CallContext context) {
   tsl::Status status = DoBlasGemmBatchedInternal(
       cublasCgemmBatched, stream, transa, transb, m, n, k, alpha, a_array, lda,
       b_array, ldb, beta, c_array, ldc, batch_count, scratch_allocator);
@@ -1216,8 +1218,10 @@ bool CUDABlas::DoBlasGemmBatched(
     uint64_t n, uint64 k, std::complex<double> alpha,
     DeviceMemorySlice<std::complex<double>> a_array, int lda,
     DeviceMemorySlice<std::complex<double>> b_array, int ldb,
-    std::complex<double> beta, DeviceMemorySlice<std::complex<double>> c_array,
-    int ldc, int batch_count, ScratchAllocator *scratch_allocator) {
+    std::complex<double> beta,
+    DeviceMemorySlice<std::complex<double>> c_array, int ldc,
+    int batch_count, ScratchAllocator *scratch_allocator,
+    blas::CallContext context) {
   tsl::Status status = DoBlasGemmBatchedInternal(
       cublasZgemmBatched, stream, transa, transb, m, n, k, alpha, a_array, lda,
       b_array, ldb, beta, c_array, ldc, batch_count, scratch_allocator);
@@ -1233,7 +1237,8 @@ tsl::Status CUDABlas::DoBlasGemmStridedBatched(
     const DeviceMemoryBase &a, int lda, int64_t stride_a,
     const DeviceMemoryBase &b, int ldb, int64_t stride_b, const void *beta,
     DeviceMemoryBase *c, int ldc, int64_t stride_c, int batch_count,
-    blas::ComputePrecision precision) {
+    blas::ComputePrecision precision,
+    blas::CallContext context) {
   cublasMath_t math_type = CUBLAS_DEFAULT_MATH;
 #if CUDA_VERSION < 11000
   if (dtype == dnn::kHalf) {
