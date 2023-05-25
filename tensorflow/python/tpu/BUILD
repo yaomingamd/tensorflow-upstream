@@ -232,6 +232,7 @@ py_strict_library(
         ":tpu_embedding",
         ":tpu_embedding_for_serving",
         ":tpu_embedding_v1",
+        ":gpu_embedding",
         ":tpu_embedding_v2",
         ":tpu_embedding_v2_utils",
         ":tpu_hardware_feature",
@@ -842,6 +843,7 @@ tf_py_strict_test(
     srcs_version = "PY3",
     deps = [
         ":tpu_embedding_for_serving",
+        ":gpu_embedding",
         ":tpu_embedding_v2_utils",
         "//tensorflow/python:init_ops_v2",
         "//tensorflow/python/compat:v2_compat",
@@ -862,6 +864,31 @@ pytype_strict_library(
     deps = [
         ":tpu_embedding_base",
         ":tpu_embedding_v2_utils",
+        ":tpu_replication",
+        "//tensorflow/python:array_ops",
+        "//tensorflow/python:embedding_ops",
+        "//tensorflow/python:math_ops",
+        "//tensorflow/python:sparse_ops",
+        "//tensorflow/python:variables",
+        "//tensorflow/python/distribute:distribute_lib",
+        "//tensorflow/python/distribute:tpu_strategy",
+        "//tensorflow/python/framework:dtypes",
+        "//tensorflow/python/framework:ops",
+        "//tensorflow/python/framework:sparse_tensor",
+        "//tensorflow/python/ops/ragged:ragged_tensor",
+        "//tensorflow/python/util:nest",
+        "//tensorflow/python/util:tf_export",
+    ],
+)
+
+pytype_strict_library(
+    name = "gpu_embedding",
+    srcs = ["gpu_embedding.py"],
+    srcs_version = "PY3",
+    deps = [
+        ":tpu_embedding_base",
+        ":tpu_embedding_v2_utils",
+        ":tpu_py",
         ":tpu_replication",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:embedding_ops",
