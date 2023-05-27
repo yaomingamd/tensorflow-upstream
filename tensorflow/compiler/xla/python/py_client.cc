@@ -22,16 +22,18 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "absl/base/casts.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/numbers.h"
-#include "tensorflow/compiler/xla/python/ifrt/client.h"
 #include "tensorflow/compiler/xla/pjrt/host_callback.h"
 #include "tensorflow/compiler/xla/pjrt/mlir_to_hlo.h"
 #include "tensorflow/compiler/xla/pjrt/pjrt_client.h"
 #include "tensorflow/compiler/xla/pjrt/pjrt_stream_executor_client.h"
 #include "tensorflow/compiler/xla/python/callback.h"
 #include "tensorflow/compiler/xla/python/exceptions.h"
+#include "tensorflow/compiler/xla/python/ifrt/client.h"
+#include "tensorflow/compiler/xla/python/ifrt/compiler.h"
+#include "tensorflow/compiler/xla/python/ifrt/executable.h"
+#include "tensorflow/compiler/xla/python/pjrt_ifrt/xla_compiler.h"
 #include "tensorflow/compiler/xla/python/pprof_profile_builder.h"
 #include "tensorflow/compiler/xla/python/py_array.h"
 #include "tensorflow/compiler/xla/python/py_buffer.h"
@@ -39,9 +41,9 @@ limitations under the License.
 #include "tensorflow/compiler/xla/python/python_ref_manager.h"
 #include "tensorflow/compiler/xla/python/traceback.h"
 #include "tensorflow/compiler/xla/python/transfer_guard_lib.h"
-#include "tensorflow/compiler/xla/python/types.h"
 #include "tensorflow/compiler/xla/service/custom_call_target_registry.h"
 #include "tensorflow/compiler/xla/service/platform_util.h"
+#include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/tsl/platform/statusor.h"
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -55,12 +57,6 @@ namespace py = pybind11;
 PyClient::PyClient(std::shared_ptr<ifrt::Client> ifrt_client)
     : ifrt_client_(std::move(ifrt_client)) {
   CHECK(ifrt_client_);
-  buffers_.resize(ifrt_client_->device_count());
-  for (ifrt::Device* device : ifrt_client_->addressable_devices()) {
-    if (device->id() >= buffers_.size()) {
-      buffers_.resize(device->id() + 1);
-    }
-  }
 }
 
 PyClient::~PyClient() {
@@ -90,29 +86,8 @@ std::vector<ClientAndPtr<PjRtDevice>> PyClient::LocalDevices() {
 std::vector<py::object> PyClient::LiveBuffers() {
   CHECK(PyGILState_Check());
   std::vector<py::object> buffers;
-  for (PyBuffer* device_buffers : buffers_) {
-    for (PyBuffer* buffer = device_buffers; buffer; buffer = buffer->next_) {
-      if (!buffer->is_deleted()) {
-        buffers.push_back(
-            py::reinterpret_borrow<py::object>(buffer->AsHandle()));
-      }
-    }
-  }
   for (py::object& array : LiveArrays()) {
     buffers.push_back(std::move(array));
-  }
-  return buffers;
-}
-
-std::vector<py::object> PyClient::LiveBuffersOnDevice(PjRtDevice* device) {
-  CHECK_EQ(device->client(), pjrt_client());
-  CHECK(PyGILState_Check());
-  std::vector<py::object> buffers;
-  for (PyBuffer* buffer = buffers_[device->id()]; buffer;
-       buffer = buffer->next_) {
-    if (!buffer->is_deleted()) {
-      buffers.push_back(py::reinterpret_borrow<py::object>(buffer->AsHandle()));
-    }
   }
   return buffers;
 }
@@ -136,10 +111,6 @@ Status PyClient::Defragment() {
   } else if (runtime_type ==
              PjRtRuntimeTypeString(PjRtRuntimeType::kStreamExecutor)) {
     struct TmpBuffer {
-      // TODO(skyewm): Arrays create multiple PyBuffers for the same
-      // PjRtBuffer when Array._arrays is called.  This should theoretically
-      // be a single possibly-null PyBuffer* for Arrays.
-      std::vector<PyBuffer*> py_buffers;
       // Non-empty for buffers found in a PyArray_Storage. Multiple Arrays
       // can reference the same PjRtBuffer.
       std::vector<std::shared_ptr<PjRtBuffer>*> pjrt_buffer_ptrs;
@@ -149,20 +120,6 @@ Status PyClient::Defragment() {
 
     // Synchronously copy all buffers to host
     absl::flat_hash_map<PjRtBuffer*, TmpBuffer> pjrt_buf_to_tmp_buffer;
-    for (PyBuffer* device_buffers : buffers_) {
-      for (PyBuffer* buffer = device_buffers; buffer; buffer = buffer->next_) {
-        if (buffer->is_deleted()) {
-          continue;
-        }
-        auto [iter, inserted] =
-            pjrt_buf_to_tmp_buffer.insert({buffer->pjrt_buffer(), TmpBuffer()});
-        if (inserted) {
-          TF_ASSIGN_OR_RETURN(iter->second.host_copy,
-                              buffer->pjrt_buffer()->ToLiteralSync());
-        }
-        iter->second.py_buffers.push_back(buffer);
-      }
-    }
 
     for (PyArray_Storage* array = arrays_; array; array = array->next) {
       // TODO(hyeontaek): Support non-PjRt Arrays.
@@ -209,7 +166,7 @@ Status PyClient::Defragment() {
                       .status());
     }
 
-    // Copy host copies back to device and update PyBuffers in-place.
+    // Copy host copies back to device and update PyArrays in-place.
     for (auto& it : pjrt_buf_to_tmp_buffer) {
       PjRtBuffer* pjrt_buf = it.first;
       TmpBuffer& tmp_buffer = it.second;
@@ -220,9 +177,6 @@ Status PyClient::Defragment() {
       TF_CHECK_OK(new_copy->BlockHostUntilReady());
 
       std::shared_ptr<PjRtBuffer> new_pjrt_buf_ptr(new_copy.release());
-      for (PyBuffer* py_buffer : tmp_buffer.py_buffers) {
-        py_buffer->SetPjRtBuffer(new_pjrt_buf_ptr);
-      }
       for (std::shared_ptr<PjRtBuffer>* pjrt_buffer_ptr :
            tmp_buffer.pjrt_buffer_ptrs) {
         *pjrt_buffer_ptr = new_pjrt_buf_ptr;
@@ -270,8 +224,7 @@ PyClient::GetDefaultDeviceAssignment1D(int num_replicas) {
 
 StatusOr<py::object> PyClient::BufferFromPyval(
     pybind11::handle argument, PjRtDevice* device, bool force_copy,
-    ifrt::Client::HostBufferSemantics host_buffer_semantics
-) {
+    ifrt::Client::HostBufferSemantics host_buffer_semantics) {
   if (device == nullptr) {
     TF_RET_CHECK(!ifrt_client_->addressable_devices().empty());
     device = ifrt_client_->addressable_devices().front();
@@ -385,11 +338,30 @@ PyClient::MakeCrossHostReceiveBuffers(absl::Span<const Shape> shapes,
   return result;
 }
 
+namespace {
+
+// Makes IFRT `CompileOptions` from XLA `CompileOptions` and optional host
+// callbacks.
+std::unique_ptr<ifrt::CompileOptions> MakeIfrtCompileOptions(
+    CompileOptions options) {
+  return std::make_unique<ifrt::XlaCompileOptions>(std::move(options));
+}
+
+// Makes IFRT `DeserializeOptions` from XLA `CompileOptions` and optional host
+// callbacks.
+std::unique_ptr<ifrt::DeserializeOptions> MakeIfrtDeserializeOptions(
+    std::optional<CompileOptions> options) {
+  return std::make_unique<ifrt::XlaDeserializeOptions>(std::move(options));
+}
+
+}  // namespace
+
 StatusOr<std::shared_ptr<PyLoadedExecutable>> PyClient::Compile(
     std::string mlir_module, CompileOptions options,
     std::vector<pybind11::capsule> host_callbacks) {
   std::unique_ptr<ifrt::LoadedExecutable> ifrt_loaded_executable;
   std::optional<std::string> fingerprint;
+  auto ifrt_compile_options = MakeIfrtCompileOptions(std::move(options));
   {
     py::gil_scoped_release gil_release;
     mlir::MLIRContext context;
@@ -397,7 +369,7 @@ StatusOr<std::shared_ptr<PyLoadedExecutable>> PyClient::Compile(
                         ParseMlirModuleString(mlir_module, context));
     TF_ASSIGN_OR_RETURN(ifrt_loaded_executable,
                         ifrt_client_->GetDefaultCompiler()->Compile(
-                            module.get(), std::move(options)));
+                            module.get(), std::move(ifrt_compile_options)));
     TF_ASSIGN_OR_RETURN(fingerprint, ifrt_loaded_executable->Fingerprint());
   }
   auto traceback = Traceback::Get();
@@ -412,16 +384,18 @@ StatusOr<py::bytes> PyClient::SerializeExecutable(
 }
 
 StatusOr<std::shared_ptr<PyLoadedExecutable>> PyClient::DeserializeExecutable(
-    const std::string& serialized, CompileOptions options,
+    const std::string& serialized, std::optional<CompileOptions> options,
     std::vector<pybind11::capsule> host_callbacks) {
   std::unique_ptr<ifrt::LoadedExecutable> ifrt_loaded_executable;
   std::optional<std::string> fingerprint;
+  auto ifrt_deserialize_options =
+      MakeIfrtDeserializeOptions(std::move(options));
   {
     py::gil_scoped_release gil_release;
     TF_ASSIGN_OR_RETURN(
         ifrt_loaded_executable,
         ifrt_client_->GetDefaultCompiler()->DeserializeLoadedExecutable(
-            serialized, std::move(options)));
+            serialized, std::move(ifrt_deserialize_options)));
     TF_ASSIGN_OR_RETURN(fingerprint, ifrt_loaded_executable->Fingerprint());
   }
   TF_ASSIGN_OR_RETURN(fingerprint, ifrt_loaded_executable->Fingerprint());
@@ -471,7 +445,7 @@ StatusOr<py::bytes> PyClient::HeapProfile() {
 
   auto add_buffer_to_profile = [&](PjRtBuffer* buffer, Traceback* traceback) {
     // We only wish to count each PjRtBuffer once, even though they may be
-    // shared by multiple PyBuffers.
+    // shared by multiple PyArrays.
     if (!buffer->IsDeleted() && buffer_set.insert(buffer).second) {
       TF_ASSIGN_OR_RETURN(size_t size, buffer->GetOnDeviceSizeInBytes());
       HeapProfileKey key{traceback, static_cast<int64_t>(size),
@@ -480,13 +454,6 @@ StatusOr<py::bytes> PyClient::HeapProfile() {
     }
     return OkStatus();
   };
-
-  for (PyBuffer* device_buffers : buffers_) {
-    for (PyBuffer* buffer = device_buffers; buffer; buffer = buffer->next_) {
-      TF_RETURN_IF_ERROR(add_buffer_to_profile(buffer->pjrt_buffer(),
-                                               buffer->traceback().get()));
-    }
-  }
 
   for (PyArray_Storage* array = arrays_; array; array = array->next) {
     if (array->ifrt_array == nullptr) {

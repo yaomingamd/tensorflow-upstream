@@ -32,7 +32,6 @@ namespace profiler {
 const absl::string_view kHostThreadsPlaneName = "/host:CPU";
 const absl::string_view kGpuPlanePrefix = "/device:GPU:";
 const absl::string_view kTpuPlanePrefix = "/device:TPU:";
-// Name prefix of XPlane that contains TPU non-core events such as HBM, ICI etc.
 const absl::string_view kTpuNonCorePlaneNamePrefix = "#Chip";
 const char kTpuPlaneRegex[] = {"/device:TPU:[0-9]*$"};
 // TODO(b/195582092): change it to /device:custom once all literals are
@@ -56,6 +55,7 @@ const absl::string_view kXlaOpLineName = "XLA Ops";
 const absl::string_view kXlaAsyncOpLineName = "Async XLA Ops";
 const absl::string_view kKernelLaunchLineName = "Launch Stats";
 const absl::string_view kSourceLineName = "Source code";
+const absl::string_view kCounterEventsLineName = "_counters_";
 
 const absl::string_view kDeviceVendorNvidia = "Nvidia";
 const absl::string_view kDeviceVendorAMD = "AMD";
@@ -262,6 +262,7 @@ const StatTypeMap& GetStatTypeMap() {
       {"matrix_unit_utilization_percent", kMatrixUnitUtilizationPercent},
       // XLA metadata map related.
       {"Hlo Proto", kHloProto},
+      {"Model information", kModelInfo},
       // Device capability related.
       {"clock_rate", kDevCapClockRateKHz},
       {"core_count", kDevCapCoreCount},
@@ -284,7 +285,7 @@ const StatTypeMap& GetStatTypeMap() {
       {"theoretical_occupancy_pct", kTheoreticalOccupancyPct},
       {"occupancy_min_grid_size", kOccupancyMinGridSize},
       {"occupancy_suggested_block_size", kOccupancySuggestedBlockSize},
-      // Aggregrated Stat
+      // Aggregated Stat
       {"self_duration_ps", kSelfDurationPs},
       {"min_duration_ps", kMinDurationPs},
       {"total_profile_duration_ps", kTotalProfileDurationPs},
@@ -300,6 +301,14 @@ const StatTypeMap& GetStatTypeMap() {
       {"duration_us", kDuration},
       {"buffer_size", kBufferSize},
       {"transfers", kTransfers},
+      // Dcn message Stats
+      {"dcn_label", kDcnLabel},
+      {"dcn_source_slice_id", kDcnSourceSliceId},
+      {"dcn_source_per_slice_device_id", kDcnSourcePerSliceDeviceId},
+      {"dcn_destination_slice_id", kDcnDestinationSliceId},
+      {"dcn_destination_per_slice_device_id", kDcnDestinationPerSliceDeviceId},
+      {"dcn_chunk", kDcnChunk},
+      {"dcn_loop_index", kDcnLoopIndex},
   });
   DCHECK_EQ(stat_type_map->size(), kNumStatTypes);
   return *stat_type_map;
@@ -406,6 +415,29 @@ bool IsTensorCorePlaneName(absl::string_view plane_name) {
 }
 
 /*static*/ std::atomic<uint64_t> XFlow::next_flow_id_(0);
+
+// String constants for XProf TraceMes.
+const absl::string_view kMegaScaleDcnReceive =
+    "MegaScale: Communication Transport Receive";
+const absl::string_view kMegaScaleDcnSend =
+    "MegaScale: Communication Transport Send";
+const absl::string_view kMegaScaleDcnSendFinished = "MegaScale: Send Finished";
+const absl::string_view kMegaScaleTopologyDiscovery =
+    "MegaScale: Communication Topology Discovery.";
+const absl::string_view kMegaScaleBarrier = "MegaScale: Barrier.";
+const absl::string_view kMegaScaleHostCommand = "MegaScale: HostCommandHandle";
+const absl::string_view kMegaScaleD2HTransferStart =
+    "MegaScale: Device to Host Action";
+const absl::string_view kMegaScaleD2HTransferFinished =
+    "MegaScale: Device to Host Transfer Finished";
+const absl::string_view kMegaScaleH2DTransferStart =
+    "MegaScale: Host to Device Action";
+const absl::string_view kMegaScaleH2DTransferFinished =
+    "MegaScale: Host to Device Transfer Finished";
+const char kXProfMetadataKey[] = "key";
+const char kXProfMetadataFlow[] = "flow";
+const char kXProfMetadataTransfers[] = "transfers";
+const char kXProfMetadataBufferSize[] = "buffer_size";
 
 }  // namespace profiler
 }  // namespace tsl

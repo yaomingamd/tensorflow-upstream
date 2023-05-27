@@ -152,11 +152,11 @@ class PjRtLoadedExecutable final
   // PjRtLoadedExecutable::GetHloModules() must be implemented.
   static StatusOr<std::unique_ptr<LoadedExecutable>> Create(
       PjRtCompatibleClient* client, mlir::ModuleOp module,
-      CompileOptions options);
+      xla::CompileOptions compile_options);
   // TODO(phawkins): remove the XlaComputation overload.
   static StatusOr<std::unique_ptr<LoadedExecutable>> Create(
       PjRtCompatibleClient* client, const XlaComputation& computation,
-      CompileOptions options);
+      xla::CompileOptions compile_options);
 
   // PjRtCompatibleLoadedExecutable implementation.
 
@@ -228,10 +228,6 @@ class PjRtLoadedExecutable final
     return pjrt_loaded_executable_->IsDeleted();
   }
 
-  const DeviceAssignment& device_assignment() const override {
-    DCHECK(this);
-    return pjrt_loaded_executable_->device_assignment();
-  }
   absl::Span<const LoadedExecutable::LogicalDeviceIds>
   addressable_device_logical_ids() const override {
     DCHECK(this);

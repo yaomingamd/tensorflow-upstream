@@ -15,16 +15,11 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/service/gpu/nccl_all_to_all_thunk.h"
 
-#include <chrono>  // NOLINT (required by TF interfaces)
 #include <cstdlib>
-#include <memory>
 #include <optional>
-#include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/strings/str_format.h"
-#include "tensorflow/compiler/xla/layout_util.h"
 #include "tensorflow/compiler/xla/service/gpu/ir_emission_utils.h"
 #include "tensorflow/compiler/xla/service/gpu/nccl_collective_thunk.h"
 #include "tensorflow/compiler/xla/shape_util.h"
@@ -84,40 +79,9 @@ Status NcclAllToAllThunkBase::RunAllToAll(const ExecuteParams& params,
                                stream, comm);
 }
 
-NcclAllToAllThunk::NcclAllToAllThunk(
-    ThunkInfo thunk_info, mlir::lmhlo::AllToAllOp op,
-    std::vector<NcclAllToAllThunk::Buffer> buffers)
-    : NcclAllToAllThunkBase(Thunk::kNcclAllToAll, thunk_info,
-                            impl::GetNcclAllToAllConfig(op),
-                            std::move(buffers)) {}
-
-/*static*/ Status NcclAllToAllThunk::CheckImplementable(
-    mlir::lmhlo::AllToAllOp op, int64_t replica_count,
-    int64_t partition_count) {
-  return AddOpDescription<NcclAllToAllThunk>(impl::CheckImplementable(op), op,
-                                             replica_count, partition_count);
-}
-
-/*static*/ bool NcclAllToAllThunk::IsDegenerate(mlir::lmhlo::AllToAllOp op,
-                                                int64_t replica_count,
-                                                int64_t partition_count) {
-  return impl::GetNcclAllToAllConfig(op).config.IsDegenerate(replica_count,
-                                                             partition_count);
-}
-
-/*static*/ CollectiveOpGroupMode NcclAllToAllThunk::GetGroupMode(
-    mlir::lmhlo::AllToAllOp op) {
-  return impl::GetNcclAllToAllConfig(op).config.group_mode;
-}
-
-Status NcclAllToAllThunk::RunNcclCollective(const ExecuteParams& params,
-                                            ncclComm_t comm) {
-  return RunAllToAll(params, *params.stream, comm);
-}
-
 NcclAllToAllStartThunk::NcclAllToAllStartThunk(
     ThunkInfo thunk_info, mlir::lmhlo_gpu::AllToAllStartOp op,
-    std::vector<NcclAllToAllThunk::Buffer> buffers)
+    std::vector<NcclCollectiveThunk::Buffer> buffers)
     : NcclAllToAllThunkBase(Thunk::kNcclAllToAllStart, thunk_info,
                             impl::GetNcclAllToAllConfig(op),
                             std::move(buffers)) {}
