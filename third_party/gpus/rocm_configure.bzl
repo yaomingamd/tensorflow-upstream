@@ -190,6 +190,7 @@ def _rocm_include_path(repository_ctx, rocm_config):
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/llvm/lib/clang/12.0.0/include")
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/llvm/lib/clang/13.0.0/include")
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/llvm/lib/clang/14.0.0/include")
+    inc_dirs.append(rocm_config.rocm_toolkit_path + "/llvm/lib/clang/15.0.0/include")
 
     # Add rocrand and hiprand headers
     inc_dirs.append(rocm_config.rocm_toolkit_path + "/rocrand/include")
@@ -713,27 +714,9 @@ def _create_local_rocm_repository(repository_ctx):
         ),
         make_copy_dir_rule(
             repository_ctx,
-            name = "hipfft-include",
-            src_dir = rocm_toolkit_path + "/hipfft/include",
-            out_dir = "rocm/include/hipfft",
-        ),
-        make_copy_dir_rule(
-            repository_ctx,
-            name = "rocblas-include",
-            src_dir = rocm_toolkit_path + "/rocblas/include",
-            out_dir = "rocm/include/rocblas",
-        ),
-        make_copy_dir_rule(
-            repository_ctx,
             name = "miopen-include",
             src_dir = rocm_toolkit_path + "/miopen/include",
             out_dir = "rocm/include/miopen",
-        ),
-        make_copy_dir_rule(
-            repository_ctx,
-            name = "rccl-include",
-            src_dir = rocm_toolkit_path + "/rccl/include",
-            out_dir = "rocm/include/rccl",
         ),
     ]
 
@@ -804,10 +787,7 @@ def _create_local_rocm_repository(repository_ctx):
             "%{rccl_lib}": rocm_libs["rccl"].file_name,
             "%{copy_rules}": "\n".join(copy_rules),
             "%{rocm_headers}": ('":rocm-include",\n' +
-                                '":hipfft-include",\n' +
-                                '":rocblas-include",\n' +
                                 '":miopen-include",\n' +
-                                '":rccl-include",\n' +
                                 hiprand_include +
                                 rocrand_include),
         },
