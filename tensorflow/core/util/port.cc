@@ -96,7 +96,7 @@ bool IsMklEnabled() {
   });
   return (!oneDNN_disabled);
 #else
-  static bool oneDNN_enabled = DefaultOneDnnPolicy();
+  static bool oneDNN_enabled = false; //DefaultOneDnnPolicy();
   absl::call_once(once, [&] {
     auto status = ReadBoolFromEnvVar("TF_ENABLE_ONEDNN_OPTS", oneDNN_enabled,
                                      &oneDNN_enabled);
