@@ -33,7 +33,7 @@ from absl import flags
 import numpy as np
 import tensorflow as tf
 
-tfe = tf.contrib.eager
+tf.enable_eager_execution()
 
 flags.DEFINE_integer(
     name='log_interval',
@@ -102,12 +102,12 @@ def create_model():
       ])
   # TODO(brianklee): Remove when @kaftan makes this happen by default.
   # TODO(brianklee): remove `autograph=True` when kwarg default is flipped.
-  model.call = tfe.function(model.call, autograph=True)
+  model.call = tf.function(model.call, autograph=True)
   # Needs to have input_signature specified in order to be exported
   # since model.predict() is never called before saved_model.export()
   # TODO(brianklee): Update with input signature, depending on how the impl of
   # saved_model.restore() pans out.
-  model.predict = tfe.function(model.predict, autograph=True)
+  model.predict = tf.function(model.predict, autograph=True)
   # ,input_signature=(tensor_spec.TensorSpec(shape=[28, 28, None], dtype=tf.float32),) # pylint: disable=line-too-long
   return model
 
@@ -165,8 +165,8 @@ def train(model, optimizer, dataset, step_counter, log_interval=None,
 
 def test(model, dataset):
   """Perform an evaluation of `model` on the examples from `dataset`."""
-  avg_loss = tfe.metrics.Mean('loss', dtype=tf.float32)
-  accuracy = tfe.metrics.Accuracy('accuracy', dtype=tf.float32)
+  avg_loss = tf.keras.metrics.Mean('loss', dtype=tf.float32)
+  accuracy = tf.keras.metrics.Accuracy('accuracy', dtype=tf.float32)
 
   for (images, labels) in dataset:
     logits = model(images, training=False)
