@@ -29,27 +29,22 @@ PRICE_NORM_FACTOR = 1000
 def main(argv):
   """Builds, trains, and evaluates the model."""
   assert len(argv) == 1
-  (train, test) = imports85.dataset()
 
   # Switch the labels to units of thousands for better convergence.
   def normalize_price(features, labels):
     return features, labels / PRICE_NORM_FACTOR
 
-  train = train.map(normalize_price)
-  test = test.map(normalize_price)
-
   # Build the training input_fn.
   def input_train():
-    return (
-        # Shuffling with a buffer larger than the data set ensures
-        # that the examples are well mixed.
-        train.shuffle(1000).batch(128)
-        # Repeat forever
-        .repeat())
+    (train, test) = imports85.dataset()
+    train = train.map(normalize_price).shuffle(1000).batch(128 * 4).repeat()
+    return train
 
   # Build the validation input_fn.
   def input_test():
-    return test.shuffle(1000).batch(128)
+    (train, test) = imports85.dataset()
+    test = test.map(normalize_price).shuffle(1000).batch(128)
+    return test
 
   # The first way assigns a unique weight to each category. To do this you must
   # specify the category's vocabulary (values outside this specification will
@@ -78,8 +73,9 @@ def main(argv):
 
   # Build a DNNRegressor, with 2x20-unit hidden layers, with the feature columns
   # defined above as input.
+  config = tf.estimator.RunConfig(train_distribute=tf.distribute.MirroredStrategy())
   model = tf.estimator.DNNRegressor(
-      hidden_units=[20, 20], feature_columns=feature_columns)
+      hidden_units=[20, 20], feature_columns=feature_columns, config=config)
 
   # Train the model.
   model.train(input_fn=input_train, steps=STEPS)

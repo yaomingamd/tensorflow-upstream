@@ -70,7 +70,7 @@ py_test(
     name = "zero_out_1_test",
     size = "small",
     srcs = ["zero_out_1_test.py"],
-    python_version = "PY2",
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     tags = [
         "no_pip",
@@ -87,7 +87,7 @@ py_test(
     name = "zero_out_2_test",
     size = "small",
     srcs = ["zero_out_2_test.py"],
-    python_version = "PY2",
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     tags = [
         "no_pip",
@@ -105,7 +105,7 @@ py_test(
     name = "zero_out_3_test",
     size = "small",
     srcs = ["zero_out_3_test.py"],
-    python_version = "PY2",
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     tags = [
         "no_pip",
@@ -137,7 +137,7 @@ py_test(
     size = "small",
     srcs = ["cuda_op_test.py"],
     exec_compatible_with = tf_exec_compatible_with({"tags": tf_cuda_tests_tags()}),
-    python_version = "PY2",
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     tags = tf_cuda_tests_tags() + [
         "notap",
@@ -153,7 +153,7 @@ py_test(
     name = "fact_test",
     size = "small",
     srcs = ["fact_test.py"],
-    python_version = "PY2",
+    python_version = "PY3",
     srcs_version = "PY2AND3",
     deps = ["//tensorflow:tensorflow_py"],
     tags = ["no_rocm_v2"],
