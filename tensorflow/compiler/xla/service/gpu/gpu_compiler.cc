@@ -829,7 +829,6 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     });
     pipeline.AddPass<HloPassFix<MoveCopyToUsers>>();
 
-#if GOOGLE_CUDA
     // Rewrite GEMMs into custom calls.
     if (debug_options.xla_gpu_enable_triton_gemm()) {
       pipeline.AddPass<GemmRewriterTriton>(
@@ -851,7 +850,6 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
 
     // Rewrite GEMMs with broadcasted inputs as strided GEMMs.
     pipeline.AddPass<GemmBroadcastFoldingRewriter>();
-#endif
     if (debug_options.xla_gpu_normalize_layouts()) {
       pipeline.AddPass<LayoutNormalization>(&NormalizeLayoutForGpuCustomCalls);
       pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);

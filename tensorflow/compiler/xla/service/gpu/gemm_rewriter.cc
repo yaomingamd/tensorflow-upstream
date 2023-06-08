@@ -221,8 +221,7 @@ auto OptionalBitcast(HloInstruction **optional_bitcast, Pattern pattern) {
 class GemmRewriterVisitor : public DfsHloRewriteVisitor {
  public:
   explicit GemmRewriterVisitor(
-      se::CudaComputeCapability cuda_compute_capability)
-      : cuda_compute_capability_(cuda_compute_capability) {}
+      GpuVersion gpu_version): gpu_version_(gpu_version) {}
   Status HandleDot(HloInstruction *instr) override {
     HloInstruction *a, *b, *a_scale, *b_scale, *a_binary, *b_binary,
         *a_bitcast = nullptr, *b_bitcast = nullptr;
@@ -267,6 +266,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       instr = gemm_call;
     }
 
+    /*
     // Attempt to elide an FP8 GEMM with scaled inputs as described by steps 1
     // through 3 detailed above and rewrite into a Custom Call.
     if (Match(
@@ -294,13 +294,14 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
           bool created_call,
           CreateF8CustomCall(
               instr, a, b, a_scale, b_scale, a_bitcast, b_bitcast,
-              /*a_mult_scale=*/a_binary->opcode() == HloOpcode::kMultiply,
-              /*b_mult_scale=*/b_binary->opcode() == HloOpcode::kMultiply));
-      if (created_call) {
+              /*a_mult_scale=*/ //a_binary->opcode() == HloOpcode::kMultiply,
+             // /*b_mult_scale=*/b_binary->opcode() == HloOpcode::kMultiply));
+      /*if (created_call) {
         return OkStatus();
       }
-    }
+    }*/
 
+    /*
     // Attempt to rewrite an FP8 GEMM directly operating on the unscaled but
     // possibly type converted FP8 operands into a Custom Call.
     if (Match(instr,
@@ -314,6 +315,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
         return OkStatus();
       }
     }
+    */
     return OkStatus();
   }
 
@@ -518,6 +520,8 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       HloInstruction *a_scale = nullptr, HloInstruction *b_scale = nullptr,
       HloInstruction *a_bitcast = nullptr, HloInstruction *b_bitcast = nullptr,
       bool a_mult_scale = true, bool b_mult_scale = true) {
+        auto cuda_compute_capability_ =
+          std::get<se::CudaComputeCapability>(gpu_version_);
     // FP8 GEMM kernels are only available on Hopper and newer architectures.
     if (!cuda_compute_capability_.IsAtLeast(
             se::CudaComputeCapability::HOPPER)) {
@@ -1068,7 +1072,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
   }
 
  private:
-  se::CudaComputeCapability cuda_compute_capability_;
+  GpuVersion gpu_version_;
 
   StatusOr<absl::string_view> GetGemmCustomCallTarget(
       const HloInstruction *instr,
@@ -1243,6 +1247,10 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
   StatusOr<bool> GemmIsSupportedByCublasLt(
       const HloInstruction *instr,
       const GemmBackendConfig &gemm_backend_config) const {
+    
+    if (std::holds_alternative<se::RocmComputeCapability>(gpu_version_)){
+      return false;
+    }
     const HloInstruction *lhs = instr->operand(0);
     const HloInstruction *rhs = instr->operand(1);
     const Shape &output_shape = instr->shape();
@@ -1278,6 +1286,9 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       return true;
     }
 
+
+    auto cuda_compute_capability_ =
+      std::get<se::CudaComputeCapability>(gpu_version_);
     if (cuda_compute_capability_.IsAtLeast(se::CudaComputeCapability::AMPERE)) {
       // cuBlasLt has an implementation for complex data with compute type
       // 32F_FAST_32TF that uses tensor cores and that is free from the
@@ -1331,16 +1342,16 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
 
 StatusOr<bool> RunOnComputation(
     HloComputation *computation,
-    se::CudaComputeCapability cuda_compute_capability) {
-  GemmRewriterVisitor visitor(cuda_compute_capability);
+    GpuVersion gpu_version) {
+  GemmRewriterVisitor visitor(gpu_version);
   TF_RETURN_IF_ERROR(computation->Accept(&visitor));
   return visitor.changed();
 }
 
 }  // anonymous namespace
 
-GemmRewriter::GemmRewriter(se::CudaComputeCapability cuda_compute_capability)
-    : cuda_compute_capability_(cuda_compute_capability) {}
+GemmRewriter::GemmRewriter(GpuVersion gpu_version)
+    : gpu_version_(gpu_version) {}
 
 StatusOr<bool> GemmRewriter::Run(
     HloModule *module,
@@ -1353,7 +1364,7 @@ StatusOr<bool> GemmRewriter::Run(
       continue;
     }
     TF_ASSIGN_OR_RETURN(
-        bool result, RunOnComputation(computation, cuda_compute_capability_));
+        bool result, RunOnComputation(computation, gpu_version_));
     changed |= result;
   }
   return changed;

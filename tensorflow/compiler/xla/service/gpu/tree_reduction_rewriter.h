@@ -20,6 +20,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_module.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_interface.h"
+#include "tensorflow/compiler/xla/service/gpu/gpu_types.h"
 #include "tensorflow/compiler/xla/statusor.h"
 
 namespace xla {
@@ -75,13 +76,13 @@ namespace gpu {
 //
 class GpuTreeReductionRewriter : public HloModulePass {
  public:
-  explicit GpuTreeReductionRewriter(
-      se::CudaComputeCapability cuda_compute_capability)
-      : cuda_compute_capability_(cuda_compute_capability) {}
+  explicit GpuTreeReductionRewriter(GpuVersion gpu_version)
+      : gpu_version_(gpu_version) {}
 
+  /*
   explicit GpuTreeReductionRewriter(
       se::RocmComputeCapability rocm_compute_capability)
-      : rocm_compute_capability_(rocm_compute_capability) {}
+      : rocm_compute_capability_(rocm_compute_capability) {}*/
 
   ~GpuTreeReductionRewriter() override = default;
   absl::string_view name() const override {
@@ -94,8 +95,9 @@ class GpuTreeReductionRewriter : public HloModulePass {
       const absl::flat_hash_set<absl::string_view>& execution_threads) override;
 
  private:
-  se::CudaComputeCapability cuda_compute_capability_;
-  se::RocmComputeCapability rocm_compute_capability_;
+  //se::CudaComputeCapability cuda_compute_capability_;
+  //se::RocmComputeCapability rocm_compute_capability_;
+  GpuVersion gpu_version_;
 };
 
 }  // end namespace gpu
