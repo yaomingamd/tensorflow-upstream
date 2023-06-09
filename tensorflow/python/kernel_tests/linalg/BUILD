@@ -67,6 +67,7 @@ cuda_py_test(
     shard_count = 4,
     xla_tags = [
         "no_cuda_asan",  # times out
+        "no_rocm",  # times out
     ],
     deps = [
         "//tensorflow/python:array_ops",
@@ -139,6 +140,7 @@ cuda_py_test(
     tags = [
         "noasan",  # times out, b/63678675
         "optonly",  # times out
+        "no_rocm",  # times out
     ],
     deps = [
         "//tensorflow/python:array_ops",
@@ -221,6 +223,7 @@ cuda_py_test(
     tags = [
         "noasan",  # times out, b/63678675
         "optonly",  # times out
+        "no_rocm",  # times out
     ],
     deps = [
         "//tensorflow/python:array_ops",
@@ -244,6 +247,7 @@ cuda_py_test(
         "no_cuda11",  # TODO(b/197522782): reenable test after fixing.
         "noasan",  # times out, b/63678675
         "optonly",  # times out, b/79171797
+        "no_rocm",  # times out
     ],
     deps = [
         "//tensorflow/python:array_ops",
@@ -352,6 +356,7 @@ cuda_py_test(
     tags = [
         "noasan",  # times out, b/63678675
         "optonly",  # times out
+        "no_rocm",  # times out
     ],
     deps = [
         "//tensorflow/python:array_ops",
@@ -397,6 +402,7 @@ cuda_py_test(
     tags = [
         "noasan",  # times out
         "optonly",
+        "no_rocm",  # times out
     ],
     deps = [
         "//tensorflow/python:array_ops",
@@ -561,6 +567,7 @@ cuda_py_test(
     srcs = ["lu_op_test.py"],
     xla_tags = [
         "no_cuda_asan",  # times out
+        "no_rocm",  # times out
     ],
     deps = [
         "//tensorflow/python:array_ops",
@@ -772,6 +779,7 @@ cuda_py_test(
     ],
     xla_tags = [
         "no_cuda_asan",  # times out
+        "no_rocm",  # times out
     ],
     deps = [
         "//tensorflow/python:array_ops",
