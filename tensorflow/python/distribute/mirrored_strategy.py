@@ -496,20 +496,32 @@ class MirroredExtended(distribute_lib.StrategyExtendedV1):
                                           primary_var,
                                           **kwargs):
     """Return the initial value for variables on a replica."""
+    print('MS _get_variable_creator_initial_value')
     if replica_id == 0:
+      print('replica_id == 0')
       return kwargs["initial_value"]
     else:
+      print('replica_id != 0')
       assert primary_var is not None
       assert device is not None
       assert kwargs is not None
 
+      print('----------- 1')
+      print(primary_var)
+      print('----------- 2')
+      print(primary_var.value())
+      print('----------- 3')
       def initial_value_fn():
         if context.executing_eagerly() or ops.inside_function():
           init_value = primary_var.value()
+          print('MS initial_value_fn 1')
+          print(init_value)
           return array_ops.identity(init_value)
         else:
           with ops.device(device):
             init_value = primary_var.initial_value
+            print('MS initial_value_fn 2')
+            print(init_value)
             return array_ops.identity(init_value)
 
       return initial_value_fn
@@ -526,6 +538,7 @@ class MirroredExtended(distribute_lib.StrategyExtendedV1):
       devices = colocate_with._devices  # pylint: disable=protected-access
 
     def _real_mirrored_creator(**kwargs):  # pylint: disable=g-missing-docstring
+      print('_real_mirrored_creator')
       value_list = []
       for i, d in enumerate(devices):
         with ops.device(d):
@@ -547,6 +560,8 @@ class MirroredExtended(distribute_lib.StrategyExtendedV1):
             with record.stop_recording():
               v = next_creator(**kwargs)
           assert not isinstance(v, values.DistributedVariable)
+          print('_real_mirrored_creator 7')
+          print(v)
           value_list.append(v)
       return value_list
 

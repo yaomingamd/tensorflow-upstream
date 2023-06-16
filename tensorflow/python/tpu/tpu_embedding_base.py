@@ -36,6 +36,7 @@ class TPUEmbeddingBase(autotrackable.AutoTrackable):
       feature_config: Union[tpu_embedding_v2_utils.FeatureConfig, Iterable],  # pylint:disable=g-bare-generic
       optimizer: Optional[tpu_embedding_v2_utils._Optimizer] = None):  # pylint:disable=protected-access
     """Creates the TPUEmbeddingBase object."""
+    print ('__init__ TPUEmbedding')
     self._feature_config = feature_config
     self._output_shapes = []
     for feature in nest.flatten(feature_config):
@@ -82,13 +83,21 @@ class TPUEmbeddingBase(autotrackable.AutoTrackable):
                         trainable: bool) -> Dict[Text, tf_variables.Variable]:
     """Create all variables including table variables and slot variables."""
     variable_shape = (table.vocabulary_size, table.dim)
+    print ("_create_variables 1")
+    print(table.vocabulary_size)
+    print(table.dim)
 
     def getter(name, shape, dtype, initializer, trainable):
       del shape
       # _add_variable_with_custom_getter clears the shape sometimes, so we
       # take the global shape from outside the getter.
+      print ("_create_variables 0")
       initial_value = functools.partial(
           initializer, variable_shape, dtype=dtype)
+      print ("_create_variables 1")
+      print(name)
+      print(initial_value)
+      print(variable_shape)
       return tf_variables.Variable(
           name=name,
           initial_value=initial_value,
@@ -100,6 +109,9 @@ class TPUEmbeddingBase(autotrackable.AutoTrackable):
       # Use add_variable_with_custom_getter here so that we take advantage of
       # the checkpoint loading to allow restore before the variables get
       # created which avoids double initialization.
+      print('variable_creator')
+      print(name)
+      print(initializer)
       return self._add_variable_with_custom_getter(
           name=name,
           initializer=initializer,
@@ -110,15 +122,24 @@ class TPUEmbeddingBase(autotrackable.AutoTrackable):
 
     parameters = variable_creator(
         table.name, table.initializer, trainable=trainable)
-
+    print ("_create_variables 1")
     def slot_creator(name, initializer):
       return variable_creator(table.name + "/" + name, initializer, False)
 
+    print ("_create_variables 2")
+    print(parameters)
+    print(slot_creator)
     if table.optimizer is not None:
       slot_vars = table.optimizer._create_slots(parameters, slot_creator)  # pylint: disable=protected-access
     else:
       slot_vars = {}
+    print ("_create_variables 4")
+    print(slot_vars)
+    print ("_create_variables 4a")
+    print(parameters)
     slot_vars["parameters"] = parameters
+    print(slot_vars)
+    print ("_create_variables 5")
     return slot_vars
 
   def _create_variables_and_slots(self):

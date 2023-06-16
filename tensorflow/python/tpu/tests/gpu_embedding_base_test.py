@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Base Class for TPU Embedding tests."""
+"""Base Class for GPU Embedding tests."""
 
 import os
 
@@ -23,7 +23,7 @@ from tensorflow.python.eager import context
 
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.distribute import tpu_strategy
-from tensorflow.python.distribute.cluster_resolver import tpu_cluster_resolver
+from tensorflow.python.distribute import mirrored_strategy
 from tensorflow.python.eager import remote
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
@@ -34,31 +34,32 @@ from tensorflow.python.ops import init_ops_v2
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops.ragged import ragged_tensor
 from tensorflow.python.platform import test
-from tensorflow.python.tpu import tpu_embedding_for_serving
-from tensorflow.python.tpu import tpu_embedding_v2
-from tensorflow.python.tpu import tpu_embedding_v2_utils
 from tensorflow.python.tpu import tpu_strategy_util
 from tensorflow.python.util import nest
-from tensorflow.python.distribute.distribute_lib import get_strategy
+from tensorflow.python.tpu import tpu_embedding_v2_utils
+import tensorflow as tf
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('tpu', '', 'Name of TPU to connect to.')
+flags.DEFINE_string('gpu', '', 'Name of GPU to connect to.')
 flags.DEFINE_string('project', None, 'Name of GCP project with TPU.')
 flags.DEFINE_string('zone', None, 'Name of GCP zone with TPU.')
 flags.DEFINE_string('model_dir', os.environ.get('TEST_TMPDIR'),
                     'A temporary directory.')
 
 
-class TPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
+class GPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
 
   def skip_if_oss(self):
+    printf("skip_if_oss", FLAGS.project, FLAGS.zone)
+    """
     if FLAGS.project is not None or FLAGS.zone is not None:
       self.skipTest(
           'Skipping tests for oss as it is slow to run every test in cloud tpu.'
       )
+    """
 
   def setUp(self):
-    super(TPUEmbeddingBaseTest, self).setUp()
+    super(GPUEmbeddingBaseTest, self).setUp()
     self.embedding_values = np.array(list(range(32)), dtype=np.float64)
     self.initializer = init_ops_v2.Constant(self.embedding_values)
     # Embedding for video initialized to
@@ -151,26 +152,14 @@ class TPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
     self.feature_friends_row_lengths_high_dimensional = self.feature_friends_row_lengths * self.data_batch_size
 
   def _get_strategy(self):
-    """
-    self.resolver = tpu_cluster_resolver.TPUClusterResolver(
-        tpu=FLAGS.tpu, zone=FLAGS.zone, project=FLAGS.project)
-    if hasattr(self.resolver, '_cloud_tpu_client'):
-      self.resolver._cloud_tpu_client.configure_tpu_version(
-          version='nightly', restart_type='always')
-    remote.connect_to_cluster(self.resolver)
-    tpu_strategy_util.initialize_tpu_system(self.resolver)
-    """
-    #return tpu_strategy.TPUStrategy(self.resolver)
-    return get_strategy()
+    return mirrored_strategy.MirroredStrategy(["GPU:0", "GPU:1"])
 
   def _create_mid_level(self, optimizer=None):
-    # Create `TPUEmbedding` object.
+    # Create `GPUEmbedding` object.
     if optimizer is None:
       optimizer = tpu_embedding_v2_utils.SGD(learning_rate=0.1)
 
-    #return tpu_embedding_v2.TPUEmbedding(
-    #    feature_config=self.feature_config, optimizer=optimizer)
-    return tpu_embedding_for_serving.TPUEmbeddingForServing(
+    return tpu_embedding_v2.GPUEmbedding(
         feature_config=self.feature_config, optimizer=optimizer)
 
   def _create_strategy_and_mid_level(self, optimizer_name):
@@ -228,12 +217,12 @@ class TPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
   def _create_sparse_dataset(self, strategy, include_weights=False, weight=0.5):
     # Create dataset for enqueue operation
     sparse_features = self._create_sparse_data(include_weights, weight)
-    print('_create_sparse_dataset 1')
     print(context.executing_eagerly())
+    print('_create_sparse_dataset 1')
     print(sparse_features)
     dataset = dataset_ops.DatasetV2.from_tensors(sparse_features)
     print('_create_sparse_dataset 2')
-    print(dataset)
+    print(sparse_features)
 
     # Data is batched to self.data_batch_size, rebatch to global batch size.
     return dataset.unbatch().repeat().batch(
@@ -387,6 +376,7 @@ class TPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
     print('activation_watched_gold0 1')
     print(activation_watched_gold0)
 
+
     # Second row of `activation_friends_gold0` is the mean of the following.
     # row 0: 0 1
     # row 1: 2 3
@@ -410,10 +400,7 @@ class TPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
 
     print('activation_watched_gold 2')
     print(activation_watched_gold)
-    print('activation_watched_gold 2a')
-    print(activation_favorited_gold)
-    print('activation_watched_gold 2b')
-    print(activation_friends_gold)
+
 
 
     if is_high_dimensional:
@@ -431,6 +418,8 @@ class TPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
         activation_favorited_gold = activation_favorited_gold0
         activation_friends_gold = activation_friends_gold0
       else:
+        print('activation_watched_gold 2a')
+        print(num_replicas, self.batch_size, num_replicas // self.batch_size)
         activation_watched_gold = np.concatenate(
             [activation_watched_gold] * (num_replicas // self.batch_size))
         activation_favorited_gold = np.concatenate(
@@ -438,8 +427,10 @@ class TPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
         activation_friends_gold = np.concatenate(
             [activation_friends_gold] * (num_replicas // self.batch_size))
 
+
     print('activation_watched_gold 3')
     print(activation_watched_gold)
+
 
     loss_gold = [loss_gold0] * num_replicas
 
@@ -455,7 +446,6 @@ class TPUEmbeddingBaseTest(parameterized.TestCase, test.TestCase):
     print("Test 4")
     self.assertAllClose(loss_gold, loss)
     print("Test 5")
-
 
     embedding_table_video_before = np.copy(
         np.reshape(self.embedding_values, [8, 4]))

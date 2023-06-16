@@ -1502,6 +1502,7 @@ class PartitionedVariable:
       ValueError: If `variable_list` is empty, or the `Variable` shape
         information does not match `shape`, or `partitions` has invalid values.
     """
+    print('PartitionedVariable')
     if not isinstance(variable_list, (list, tuple)):
       raise TypeError("variable_list is not a list or tuple: %s" %
                       variable_list)

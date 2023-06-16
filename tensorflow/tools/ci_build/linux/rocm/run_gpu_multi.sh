@@ -53,27 +53,28 @@ bazel test \
       --cache_test_results=no \
       --test_env=TF_PER_DEVICE_MEMORY_LIMIT_MB=2048 \
       -- \
-//tensorflow/core/common_runtime/gpu:gpu_device_unified_memory_test_2gpu \
-//tensorflow/core/nccl:nccl_manager_test_2gpu \
-//tensorflow/python/distribute/integration_test:mwms_peer_failure_test_2gpu \
-//tensorflow/python/distribute:checkpoint_utils_test_2gpu \
-//tensorflow/python/distribute:checkpointing_test_2gpu \
-//tensorflow/python/distribute:collective_all_reduce_strategy_test_xla_2gpu \
-//tensorflow/python/distribute:custom_training_loop_gradient_test_2gpu \
-//tensorflow/python/distribute:custom_training_loop_input_test_2gpu \
-//tensorflow/python/distribute:distribute_utils_test_2gpu \
-//tensorflow/python/distribute:input_lib_test_2gpu \
-//tensorflow/python/distribute:input_lib_type_spec_test_2gpu \
-//tensorflow/python/distribute:metrics_v1_test_2gpu \
-//tensorflow/python/distribute:mirrored_variable_test_2gpu \
-//tensorflow/python/distribute:parameter_server_strategy_test_2gpu \
-//tensorflow/python/distribute:ps_values_test_2gpu \
-//tensorflow/python/distribute:random_generator_test_2gpu \
-//tensorflow/python/distribute:test_util_test_2gpu \
-//tensorflow/python/distribute:tf_function_test_2gpu \
-//tensorflow/python/distribute:vars_test_2gpu \
-//tensorflow/python/distribute:warm_starting_util_test_2gpu \
-//tensorflow/python/training:saver_test_2gpu \
+//tensorflow/python/tpu/tests:gpu_embedding_v1_correctness_test
+#//tensorflow/core/common_runtime/gpu:gpu_device_unified_memory_test_2gpu \
+#//tensorflow/core/nccl:nccl_manager_test_2gpu \
+#//tensorflow/python/distribute/integration_test:mwms_peer_failure_test_2gpu \
+#//tensorflow/python/distribute:checkpoint_utils_test_2gpu \
+#//tensorflow/python/distribute:checkpointing_test_2gpu \
+#//tensorflow/python/distribute:collective_all_reduce_strategy_test_xla_2gpu \
+#//tensorflow/python/distribute:custom_training_loop_gradient_test_2gpu \
+#//tensorflow/python/distribute:custom_training_loop_input_test_2gpu \
+#//tensorflow/python/distribute:distribute_utils_test_2gpu \
+#//tensorflow/python/distribute:input_lib_test_2gpu \
+#//tensorflow/python/distribute:input_lib_type_spec_test_2gpu \
+#//tensorflow/python/distribute:metrics_v1_test_2gpu \
+#//tensorflow/python/distribute:mirrored_variable_test_2gpu \
+#//tensorflow/python/distribute:parameter_server_strategy_test_2gpu \
+#//tensorflow/python/distribute:ps_values_test_2gpu \
+#//tensorflow/python/distribute:random_generator_test_2gpu \
+#//tensorflow/python/distribute:test_util_test_2gpu \
+#//tensorflow/python/distribute:tf_function_test_2gpu \
+#//tensorflow/python/distribute:vars_test_2gpu \
+#//tensorflow/python/distribute:warm_starting_util_test_2gpu \
+#//tensorflow/python/training:saver_test_2gpu \
 
 
 

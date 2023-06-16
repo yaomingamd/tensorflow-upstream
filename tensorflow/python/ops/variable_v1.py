@@ -258,7 +258,7 @@ class VariableV1(variables.Variable):
         shape and `validate_shape` is `True`.
       RuntimeError: If eager execution is enabled.
     """
-
+  print("Variable VariableV1")
   SaveSliceInfo = variables.Variable.SaveSliceInfo
 
   def initialized_value(self):
@@ -294,12 +294,15 @@ class VariableV1(variables.Variable):
       **kwargs,
     ):
     """VariableV1 class getter. Useful to force the signature."""
+    print("Var init v1")
     if cls is not VariableV1:
       return None
     previous_getter = lambda **kwargs: default_variable_creator(None, **kwargs)
     for _, getter in ops.get_default_graph()._variable_creator_stack:  # pylint: disable=protected-access
       previous_getter = variables._make_getter(getter, previous_getter)  # pylint: disable=protected-access
 
+
+    print("Var init v1 2")
     # Reset `aggregation` that is explicitly set as `None` to the enum NONE.
     if aggregation is None:
       aggregation = variables.VariableAggregation.NONE
@@ -321,5 +324,5 @@ class VariableV1(variables.Variable):
         collections=collections,
         use_resource=use_resource,
     )
-
+print("Var init v1 3")
 variable_scope.set_variable_v1(VariableV1)

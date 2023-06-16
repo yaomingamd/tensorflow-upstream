@@ -286,6 +286,12 @@ def cpu_embedding_lookup(
     flat_weights = nest.flatten(weights)
   flat_features = nest.flatten_with_joined_string_paths(feature_config)
 
+  print('TPU Embedding 4c')
+  print(flat_features);
+  print('TPU Embedding 4d')
+  print(flat_weights);
+  print('TPU Embedding 4e')
+
   outputs = []
   for inp, weight, (path, feature) in zip(flat_inputs, flat_weights,
                                           flat_features):
@@ -318,7 +324,11 @@ def cpu_embedding_lookup(
     else:
       raise ValueError("Input {} is type {}. Tensor, SparseTensor or "
                        "RaggedTensor expected.".format(path, type(inp)))
-  return nest.pack_sequence_as(feature_config, outputs)
+  res = nest.pack_sequence_as(feature_config, outputs)
+  print('TPU Embedding 4y')
+  print (res)
+  print('TPU Embedding 4z')
+  return res
 
 
 def _embedding_lookup_for_sparse_tensor(

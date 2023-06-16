@@ -465,6 +465,7 @@ class Trackable(object):
     Raises:
       ValueError: If the variable name is not unique.
     """
+    print('_add_variable_with_custom_getter base.py')
     self._maybe_initialize_trackable()
     with ops.init_scope():
       if context.executing_eagerly():
@@ -491,17 +492,20 @@ class Trackable(object):
         dtype=dtype,
         initializer=initializer,
         **kwargs_for_getter)
-
+    print('_add_variable_with_custom_getter base.py 1')
     # If we set an initializer and the variable processed it, tracking will not
     # assign again. It will add this variable to our dependencies, and if there
     # is a non-trivial restoration queued, it will handle that. This also
     # handles slot variables.
     if not overwrite or isinstance(new_variable, Trackable):
+      print('_add_variable_with_custom_getter base.py 1a')
       return self._track_trackable(new_variable, name=name, overwrite=overwrite)
     else:
       # TODO(allenl): Some variable types are not yet supported. Remove this
       # fallback once all get_variable() return types are Trackable.
+      print('_add_variable_with_custom_getter base.py 1b')
       return new_variable
+    print('_add_variable_with_custom_getter base.py 2')
 
   def _preload_simple_restoration(self, name):
     """Return a dependency's value for restore-on-create.
@@ -526,6 +530,7 @@ class Trackable(object):
     if not deferred_dependencies_list:
       # Nothing to do; we don't have a restore for this dependency queued up.
       return
+    print('_add_variable_with_custom_getter base.py 3')
     for checkpoint_position in deferred_dependencies_list:
       if not checkpoint_position.is_simple_variable():
         # If _any_ pending restoration is too complicated to fit in an
@@ -533,6 +538,7 @@ class Trackable(object):
         # multiple Tensors to restore), bail and let the general tracking code
         # handle it.
         return None
+    print('_add_variable_with_custom_getter base.py 4')
     checkpoint_position = max(
         deferred_dependencies_list,
         key=lambda restore: restore.checkpoint.restore_uid)
@@ -572,6 +578,8 @@ class Trackable(object):
           "Trackable._track_trackable() can only be used to track objects of "
           f"type Trackable. Got type {type(trackable)}.")
     if not getattr(self, "_manual_tracking", True):
+      print('_maybe_initialize_trackable 1')
+      print (trackable)
       return trackable
     new_reference = TrackableReference(name=name, ref=trackable)
     current_object = self._lookup_dependency(name)
@@ -592,6 +600,9 @@ class Trackable(object):
       self._self_unconditional_checkpoint_dependencies.append(new_reference)
       self._handle_deferred_dependencies(name=name, trackable=trackable)
     self._self_unconditional_dependency_names[name] = trackable
+
+    print('_maybe_initialize_trackable 2')
+    print (trackable)
     return trackable
 
   def _handle_deferred_dependencies(self, name, trackable):

@@ -18,6 +18,7 @@ from typing import Any, Dict, Iterable, Optional, Text, Union
 
 from tensorflow.python.distribute import distribute_lib
 from tensorflow.python.distribute import tpu_strategy
+from tensorflow.python.distribute import mirrored_strategy
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
@@ -107,7 +108,13 @@ class GPUEmbeddingV0(tpu_embedding_v1.TPUEmbeddingV0):
       self,
       feature_config: Union[tpu_embedding_v2_utils.FeatureConfig, Iterable],  # pylint:disable=g-bare-generic
       optimizer: Optional[tpu_embedding_v2_utils._Optimizer]):  # pylint:disable=protected-access
+    print ('__init__ GPUEmbedding')
     super(tpu_embedding_v1.TPUEmbeddingV0, self).__init__(feature_config, optimizer)
     self._strategy = distribute_lib.get_strategy()
     self._built = False
-
+    if not isinstance(self._strategy,
+                      (mirrored_strategy.MirroredStrategy)):
+      raise RuntimeError(
+          "GPUEmbeddingV0 should be created under MirroredStrategy but found {}."
+          .format(self._strategy))
+    self._built = False

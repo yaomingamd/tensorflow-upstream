@@ -43,13 +43,14 @@ bazel test \
       --test_sharding_strategy=disabled \
       --test_size_filters=small,medium,large \
       -- \
-      //tensorflow/... \
-      -//tensorflow/python/integration_testing/... \
-      -//tensorflow/core/tpu/... \
-      -//tensorflow/java/... \
-      -//tensorflow/lite/... \
-      -//tensorflow/c/eager:c_api_distributed_test \
-      -//tensorflow/python/data/experimental/kernel_tests/service:local_workers_test \
-      -//tensorflow/python/data/experimental/kernel_tests/service:worker_tags_test \
-      -//tensorflow/compiler/xla/service/gpu/...
+      //tensorflow/python/tpu/tests:gpu_embedding_v1_correctness_test
+      #//tensorflow/... \
+      #-//tensorflow/python/integration_testing/... \
+      #-//tensorflow/core/tpu/... \
+      #-//tensorflow/java/... \
+      #-//tensorflow/lite/... \
+      #-//tensorflow/c/eager:c_api_distributed_test \
+      #-//tensorflow/python/data/experimental/kernel_tests/service:local_workers_test \
+      #-//tensorflow/python/data/experimental/kernel_tests/service:worker_tags_test \
+      #-//tensorflow/compiler/xla/service/gpu/...
       

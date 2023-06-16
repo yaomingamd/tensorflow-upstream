@@ -32,7 +32,8 @@ from tensorflow.python.tpu import tpu_embedding_v2_utils
 from tensorflow.python.tpu import tpu_replication
 from tensorflow.python.util import nest
 from tensorflow.python.util.tf_export import tf_export
-
+from tensorflow.python.eager import context
+import pprint
 
 @tf_export("tpu.experimental.embedding.TPUEmbeddingV0")
 class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
@@ -130,6 +131,7 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
       self,
       feature_config: Union[tpu_embedding_v2_utils.FeatureConfig, Iterable],  # pylint:disable=g-bare-generic
       optimizer: Optional[tpu_embedding_v2_utils._Optimizer]):  # pylint:disable=protected-access
+    print('TPU Embedding __init__')
     super(TPUEmbeddingV0, self).__init__(feature_config, optimizer)
     self._strategy = distribute_lib.get_strategy()
     if not isinstance(self._strategy,
@@ -143,6 +145,7 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
   def embedding_tables(
       self) -> Dict[tpu_embedding_v2_utils.TableConfig, tf_variables.Variable]:
     """Returns a dict of embedding tables, keyed by `TableConfig`."""
+    print('TPU Embedding 0')
     self._maybe_build()
     # Only return the tables and not the slot variables.
     return {
@@ -161,13 +164,22 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
       A dict of dicts. The outer dict is keyed by the table names and the inner
       dicts are keyed by 'parameters' and the slot variable names.
     """
+    print("_create_variables_and_slots")
     variables = {}
     for table in self._table_config:
       # created TPUDistributedVariable.
+      print("--------")
+      print(context.executing_eagerly())
+      print(table)
+      print(table.name)
+      print(table.initializer)
       variables[table.name] = self._create_variables(table, trainable=True)
+      print("_create_variables_and_slots e")
+      print(variables)
     return variables
 
   def _maybe_build(self):
+    print('TPU Embedding 1')
     if not self._built:
       # This can be called while tracing a function, so we wrap the
       # initialization code with init_scope so it runs eagerly, this means that
@@ -194,6 +206,8 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
     Returns:
       A Tensor.
     """
+    print('TPU Embedding 2')
+    print(embeddings)
     if combiner is None:
       combiner = "mean"
     if combiner == "sum":
@@ -225,6 +239,7 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
     Returns:
       A Tensor with second last axis padded or truncated.
     """
+    print('TPU Embedding 3')
     original_sequence_length = embeddings.shape[1]
     if original_sequence_length > sequence_length:
       embeddings = array_ops.slice(
@@ -255,6 +270,11 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
     Returns:
       A nested structure of Tensors with the same structure as inputs.
     """
+    print('TPU Embedding 4')
+    print(features)
+    print('TPU Embedding 4a')
+    print(weights)
+    print('TPU Embedding 4b')
     if not self._built:
       self.build()
     nest.assert_same_structure(features, self._feature_config)
@@ -266,11 +286,25 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
       flat_weights = nest.flatten(weights)
     flat_features = nest.flatten_with_joined_string_paths(self._feature_config)
 
+    print('TPU Embedding 4c')
+    print(flat_features)
+    print('TPU Embedding 4d')
+    print(flat_weights)
+    print('TPU Embedding 4e')
+    print(self.embedding_tables)
+
     outputs = []
     for inp, weight, (path, feature) in zip(flat_inputs, flat_weights,
                                             flat_features):
+      print('TPU Embedding 4f0')
+      #print(feature.table)
+      print('TPU Embedding 4f0a')
+      #print(self.embedding_tables)
       table = self.embedding_tables[feature.table]
-
+      print('TPU Embedding 4f1')
+      print(context.executing_eagerly())
+      print(table)
+      print('TPU Embedding 4f2')
       if weight is not None:
         if isinstance(inp, ops.Tensor):
           raise ValueError(
@@ -324,6 +358,7 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
     # indices and values can change for different batch which can cause
     # the program to re-compile.
     def sparse_to_dense_computation(inp, weight):
+      print('TPU Embedding 5')
       if weight is None:
         weight = sparse_tensor.SparseTensor(
             inp.indices,
@@ -333,7 +368,7 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
       inp = sparse_ops.sparse_tensor_to_dense(inp)
       weight = sparse_ops.sparse_tensor_to_dense(weight)
       return inp, weight
-
+    print('TPU Embedding 6')
     inp, weight = tpu_replication.outside_compilation(
         sparse_to_dense_computation, inp=inp, weight=weight)
 
@@ -368,6 +403,7 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
       ValueError: if input ragged tensor is not rank 2 or output shape set in
       the feature config doesn't match with the first dim size of the input.
     """
+    print('TPU Embedding 7')
     if inp.shape.rank != 2:
       raise ValueError(
           "Only rank 2 ragged tensor is supported, but got rank {}".format(
@@ -378,6 +414,7 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
     # splits and values can change for different batch which can cause
     # the program to re-compile.
     def ragged_to_dense_outside_compilation(inp, weight, batch_size, feature):
+      print('TPU Embedding 8')
       if weight is None:
         weight = ragged_tensor.RaggedTensor.from_row_splits(
             array_ops.ones_like(inp.values, dtype=dtypes.float32),
@@ -413,7 +450,7 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
       else:
         inp, weight = inp.to_tensor(), weight.to_tensor()
       return inp, weight
-
+    print('TPU Embedding 9')
     inp, weight = tpu_replication.outside_compilation(
         ragged_to_dense_outside_compilation,
         inp=inp,
@@ -437,4 +474,5 @@ class TPUEmbeddingV0(tpu_embedding_base.TPUEmbeddingBase):
       if feature.max_sequence_length == 0:
         embeddings = self._apply_combiner_to_embeddings(embeddings, weight,
                                                         feature.table.combiner)
+    print('TPU Embedding 10')
     return embeddings

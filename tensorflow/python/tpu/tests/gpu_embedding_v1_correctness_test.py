@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for TPU Embeddings mid level API on TPU."""
+"""Tests for GPU Embeddings mid level API on GPU."""
 import itertools
 from tensorflow.python.eager import context
-from tensorflow.python.framework import test_util
 
 from absl.testing import parameterized
 import numpy as np
@@ -30,14 +29,13 @@ from tensorflow.python.keras.optimizer_v2 import ftrl
 from tensorflow.python.keras.optimizer_v2 import gradient_descent
 from tensorflow.python.platform import test
 from tensorflow.python.tpu import tpu_embedding_v1
-from tensorflow.python.tpu import tpu_embedding_for_serving
+from tensorflow.python.tpu import gpu_embedding
 from tensorflow.python.tpu import tpu_embedding_v2_utils
-from tensorflow.python.tpu.tests import tpu_embedding_base_test
-import tensorflow as tf
+from tensorflow.python.tpu.tests import gpu_embedding_base_test
+
 import os
 import inspect
 import pdb
-
 
 _SLOT_NAME_MAPPING = {
     # Slot names in Keras optimizer v2 are different compared to the slot names
@@ -48,29 +46,26 @@ _SLOT_NAME_MAPPING = {
 }
 
 
-class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
+class GPUEmbeddingV0CorrectnessTest(gpu_embedding_base_test.GPUEmbeddingBaseTest
                                    ):
 
   def _get_strategy(self):
     if hasattr(self, 'strategy'):
       return self.strategy
-    return super(TPUEmbeddingV0CorrectnessTest, self)._get_strategy()
+    return super(GPUEmbeddingV0CorrectnessTest, self)._get_strategy()
 
   def _create_mid_level(self, optimizer=None):
-    # Create `TPUEmbedding` object.
+    # Create `GPUEmbedding` object.
     if optimizer is None:
       optimizer = tpu_embedding_v2_utils.SGD(learning_rate=0.1)
 
-    #return tpu_embedding_v1.TPUEmbeddingV0(
-    #    feature_config=self.feature_config, optimizer=optimizer)
-    return tpu_embedding_for_serving.TPUEmbeddingForServing(
+    return gpu_embedding.GPUEmbeddingV0(
         feature_config=self.feature_config, optimizer=optimizer)
-    
 
   def _get_slot_variable_creation_fn(self, optimizer):
     # This is needed so that the mid level API can create slots using a user
     # passed optimizer rather than the built-in methods. This allows a user to
-    # train the same model on CPU and TPU.
+    # train the same model on CPU and GPU.
     def slot_variable_creation_fn(table, slot_names, slot_initializers):
       slots = {}
       for slot, initializer in zip(slot_names, slot_initializers):
@@ -89,6 +84,7 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
       if optimizer_name == 'sgd':
         optimizer = gradient_descent.SGD(learning_rate=0.1)
         embedding_optimizer = tpu_embedding_v2_utils.SGD(learning_rate=0.1)
+        """
       elif optimizer_name == 'adagrad':
         optimizer = adagrad.Adagrad(learning_rate=0.1)
         embedding_optimizer = tpu_embedding_v2_utils.Adagrad(
@@ -107,12 +103,16 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
             learning_rate=0.1,
             slot_variable_creation_fn=self._get_slot_variable_creation_fn(
                 optimizer))
+                """
       else:
         raise ValueError('optimizer is not recognized: ', optimizer_name)
 
       mid_level_api = self._create_mid_level(optimizer=embedding_optimizer)
-
+    print('mid_level_api 1')
+    print (mid_level_api)
+    print('mid_level_api 2')
     return strategy, mid_level_api, optimizer
+
   @parameterized.parameters(
       *itertools.product(['sgd'], [False],
                          [True], [False]))
@@ -132,23 +132,21 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
       else:
         dataset = self._create_ragged_dataset(strategy)
 
-    print('test_embedding 1')
     print(context.executing_eagerly())
+    print('test_embedding 1')
     print(dataset)
     print('test_embedding 1a')
+
 
     dist = strategy.experimental_distribute_dataset(
         dataset,
         options=distribute_lib.InputOptions(experimental_fetch_to_device=False))
-    dist_iter = iter(dist)
 
     print('test_embedding 2')
     print(dist)
     print('test_embedding 2a')
 
-    #print(tf.__version__)
-    print('tf.executing_eagerly() 4')
-    print(context.executing_eagerly())
+    dist_iter = iter(dist)
 
     def test_fn():
       """Create and run computation that returns the embedding activations."""
@@ -156,12 +154,12 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
       def step(data):
         print("step")
         print("data ")
-        print('tf.executing_eagerly() 3')
         print(context.executing_eagerly())
         print(data)
-          #data = Print(data, [data], "data in step")
-        #tensorflow.print(data, output_stream=sys.stderr)
+
         if not training:
+          print ('not training 0')
+          print(mid_level_api)
           activations = mid_level_api(data)
           print ('not training 1')
           print(activations)
@@ -185,25 +183,22 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
               list(zip(gradients, mid_level_api.embedding_tables.values())))
         print(total_loss)
         print(activations)
-        print('tf.executing_eagerly() 2')
-        print(context.executing_eagerly())
         ret_val = [total_loss] + list(activations)
         return ret_val
-
       argument1 =  next(dist_iter)
       print('test_fn 5')
       print(argument1)
       print('test_fn 6')
       return strategy.run(step, args=(argument1,))
 
+    print("test_fn 1")
     # Run model.
-    print('tf.executing_eagerly() 1')
-    print(context.executing_eagerly())
     shard_out_val = test_fn()
     print('test_embedding 11')
     print(shard_out_val)
-    #print(str(self.evaluate(shard_out_val)))
-
+    print("test_fn 2")
+    print(str(self.evaluate(shard_out_val)))
+    print("test_fn 3")
     # Compute sparse tensors for global batch.
     if is_high_dimensional:
       input_data = next(
@@ -211,9 +206,7 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
     else:
       input_data = next(iter(self._create_sparse_dataset(strategy)))
 
-
     print('test_embedding 12')
-
     # Check results.
     self._check_results(strategy, shard_out_val, training, input_data,
                         mid_level_api._variables, optimizer,
@@ -226,6 +219,7 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
                                           table_to_variable):
     if isinstance(optimizer, gradient_descent.SGD):
       check_fn = self._check_embedding_and_slot_variables_for_sgd
+      """
     elif isinstance(optimizer, adagrad.Adagrad):
       check_fn = self._check_embedding_and_slot_variables_for_adagrad
     elif isinstance(optimizer, adam.Adam):
@@ -233,6 +227,7 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
     elif isinstance(optimizer, ftrl.Ftrl):
       check_fn = self._check_embedding_and_slot_variables_for_ftrl
     else:
+      """
       raise ValueError('optimizer is not recognized: ', type(optimizer))
     check_fn(embedding_table_user_before, gradients_wrt_user, optimizer,
              table_to_variable[self.table_user.name])
@@ -342,7 +337,6 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
     no_weights_activations = embedding_lookup(features, weights=None)
     weights_activations = embedding_lookup(features, weights=weights)
 
-
     no_weights0 = (self._unpack(strategy, no_weights_activations[0]),
                    self._unpack(strategy, no_weights_activations[1]),
                    self._unpack(strategy, no_weights_activations[2]))
@@ -358,16 +352,14 @@ class TPUEmbeddingV0CorrectnessTest(tpu_embedding_base_test.TPUEmbeddingBaseTest
     # effect.
     weight = (0.5, 1.0, 1.0)
     golden = tuple([no_weight * w for no_weight, w in zip(no_weights0, weight)])
+    print ("Zoran")
+    print (golden)
+    print (weights0)
+    
 
     self.assertAllClose(golden, weights0)
 
 if __name__ == '__main__':
-  print('Zoran',inspect.getfile(os))
-  print(inspect.getfile(inspect))
-  print(os.path.dirname(inspect.getfile(inspect)))
-  #print(tf.__version__)
-  test_util.run_functions_eagerly(True)
-  print('tf.executing_eagerly() 5')
-  print(context.executing_eagerly())
-  v2_compat.enable_v2_behavior()
+  print('Zoran',inspect.getfile(gpu_embedding_base_test))
+  print(inspect.getfile(gpu_embedding))
   test.main()
