@@ -533,15 +533,16 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
         }
 
         BlasScratchAllocator scratch_allocator(context, max_scratch_size);
-        bool blas_launch_status =
-            stream
-                ->ThenBlasGemmBatchedWithScratch(
-                    blas_transpose_b, blas_transpose_a, n, m, k,
-                    static_cast<Coefficient>(1.0), b_ptrs,
-                    adj_y || trans_y ? k : n, a_ptrs, adj_x || trans_x ? m : k,
-                    static_cast<Coefficient>(0.0), c_ptrs, n, batch_size,
-                    &scratch_allocator)
-                .ok();
+        typename se::blas::BatchedGemmCall<Scalar>::DeviceMemorySlice 
+          a_view(a_ptrs), b_view(b_ptrs), c_view(c_ptrs);
+        se::blas::BatchedGemmCall<Scalar> call{
+                     blas_transpose_b, blas_transpose_a, n, m, k,
+                    static_cast<Coefficient>(1.0), &b_view,
+                    adj_y || trans_y ? k : n, &a_view, adj_x || trans_x ? m : k,
+                    static_cast<Coefficient>(0.0), &c_view, n, batch_size,
+        };
+        call.scratch_allocator = &scratch_allocator;
+        bool blas_launch_status = stream->ThenBlasGemmBatched(call).ok();
         if (!blas_launch_status) {
           context->SetStatus(errors::Internal(
               "Blas xGEMMBatched launch failed: a.shape=",
@@ -591,6 +592,12 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
         }
       }
 
+      se::blas::GemmCall call(blas_transpose_b, blas_transpose_a, n, m, k,
+                         *(b_ptrs[0]), adj_y || trans_y ? k : n, *(a_ptrs[0]),
+                         adj_x || trans_x ? m : k, c_ptrs[0], n);
+
+      VLOG(0) << "Gemm call: "<<m<<" "<<n<< " " << k << " batch_count " << batch_size << " strided " << use_strided_batched;
+
       // Blas does
       // C = A x B
       // where A, B and C are assumed to be in column major.
@@ -634,32 +641,25 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
           }
         }
 
-        OP_REQUIRES_OK(context,
-                       stream->ThenBlasGemm(
-                           blas_transpose_b, blas_transpose_a, n, m, k,
-                           *(b_ptrs[0]), adj_y || trans_y ? k : n, *(a_ptrs[0]),
-                           adj_x || trans_x ? m : k, c_ptrs[0], n,
-                           se::blas::kDefaultComputePrecision));
+        OP_REQUIRES_OK(context, stream->ThenBlasGemm(call));
       } else if (use_strided_batched) {
-        OP_REQUIRES_OK(
-            context, stream->ThenBlasGemmStridedBatched(
-                         blas_transpose_b, blas_transpose_a, n, m, k,
-                         static_cast<Coefficient>(1.0), *b_ptrs[0],
-                         adj_y || trans_y ? k : n, b_stride, *a_ptrs[0],
-                         adj_x || trans_x ? m : k, a_stride,
-                         static_cast<Coefficient>(0.0), c_ptrs[0], n, c_stride,
-                         batch_size, se::blas::kDefaultComputePrecision));
+        call.stride_a = b_stride;
+        call.stride_b = a_stride;
+        call.stride_c = c_stride;
+        call.batch_count = batch_size;
+        OP_REQUIRES_OK(context, stream->ThenBlasGemm(call));
       } else {
         BlasScratchAllocator scratch_allocator(context);
-        bool blas_launch_status =
-            stream
-                ->ThenBlasGemmBatchedWithScratch(
-                    blas_transpose_b, blas_transpose_a, n, m, k,
-                    static_cast<Coefficient>(1.0), b_ptrs,
-                    adj_y || trans_y ? k : n, a_ptrs, adj_x || trans_x ? m : k,
-                    static_cast<Coefficient>(0.0), c_ptrs, n, batch_size,
-                    &scratch_allocator)
-                .ok();
+        typename se::blas::BatchedGemmCall<Scalar>::DeviceMemorySlice 
+          a_view(a_ptrs), b_view(b_ptrs), c_view(c_ptrs);
+        se::blas::BatchedGemmCall<Scalar> call{
+            blas_transpose_b, blas_transpose_a, n, m, k,
+            static_cast<Coefficient>(1.0), &b_view,
+            adj_y || trans_y ? k : n, &a_view, adj_x || trans_x ? m : k,
+            static_cast<Coefficient>(0.0), &c_view, n, batch_size
+        };
+        call.scratch_allocator = &scratch_allocator;
+        bool blas_launch_status = stream->ThenBlasGemmBatched(call).ok();
         if (!blas_launch_status) {
           context->SetStatus(errors::Internal(
               "Blas xGEMMBatched launch failed : a.shape=",

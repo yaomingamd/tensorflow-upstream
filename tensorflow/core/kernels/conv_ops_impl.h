@@ -485,10 +485,9 @@ void LaunchConv2DOpImpl(OpKernelContext* ctx, bool use_cudnn,
                                 output->template flat<T>().size());
 
     auto no_transpose = se::blas::Transpose::kNoTranspose;
-    OP_REQUIRES_OK(
-        ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m, k, b_ptr, n,
-                                  a_ptr, k, &c_ptr, n,
-                                  se::blas::kDefaultComputePrecision));
+    se::blas::GemmCall call(no_transpose, no_transpose, n, m, k, b_ptr, n,
+                                  a_ptr, k, &c_ptr, n);
+    OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(call));
     return;
   } else if (patch_rows == in_rows && patch_cols == in_cols &&
              !is_grouped_convolution && row_dilation == 1 &&
@@ -508,10 +507,9 @@ void LaunchConv2DOpImpl(OpKernelContext* ctx, bool use_cudnn,
                                 output->template flat<T>().size());
 
     auto no_transpose = se::blas::Transpose::kNoTranspose;
-    OP_REQUIRES_OK(
-        ctx, stream->ThenBlasGemm(no_transpose, no_transpose, n, m, k, b_ptr, n,
-                                  a_ptr, k, &c_ptr, n,
-                                  se::blas::kDefaultComputePrecision));
+    se::blas::GemmCall call(no_transpose, no_transpose, n, m, k, b_ptr, n,
+                                  a_ptr, k, &c_ptr, n);
+    OP_REQUIRES_OK(ctx, stream->ThenBlasGemm(call));
     return;
   }
 

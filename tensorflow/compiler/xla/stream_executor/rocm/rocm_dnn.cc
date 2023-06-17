@@ -4009,11 +4009,12 @@ tsl::Status ROCmFusedMatmulRunner::gemm(Stream* stream,
       DeviceMemoryBase c_data) const {
     blas::Transpose ta = _trans_a ? blas::Transpose::kTranspose : blas::Transpose::kNoTranspose;
     blas::Transpose tb = _trans_b ? blas::Transpose::kTranspose : blas::Transpose::kNoTranspose;
-    return stream->ThenBlasGemm<T>(tb, ta, _n, _m, _k, 
-          (DeviceMemory<T>)b_data, _ldb,
-          (DeviceMemory<T>)a_data, _lda, 
-          (DeviceMemory<T>*)&c_data, _ldc,
-          blas::kDefaultComputePrecision);
+    blas::GemmCall call(tb, ta, _n, _m, _k, 
+          (const DeviceMemory<T> &)b_data, _ldb,
+          (const DeviceMemory<T> &)a_data, _lda, 
+          (DeviceMemory<T> *)&c_data, _ldc
+    );
+    return stream->ThenBlasGemm(call);
 }
 
 template <typename T>
@@ -4159,12 +4160,12 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
     const int64_t m = output_dimensions.NodesAcrossFeatureMaps();
     const int64_t n = input_dimensions.count();
     const int64_t k = input_dimensions.NodesAcrossFeatureMaps();
-    if (!stream
-             ->ThenBlasGemm(blas::Transpose::kNoTranspose,
-                            blas::Transpose::kNoTranspose, m, n, k, weights, m,
-                            input_data, k, output_data, m,
-                            blas::kDefaultComputePrecision)
-             .ok()) {
+
+    blas::GemmCall call(blas::Transpose::kNoTranspose,
+                        blas::Transpose::kNoTranspose, m, n, k, weights, m,
+                        input_data, k, output_data, m);
+
+    if (!stream->ThenBlasGemm(call).ok()) {
       return false;
     }
   } else {
@@ -4235,18 +4236,23 @@ bool MIOpenSupport::DoMatMul(Stream* stream,
           output_data->ElementCount() - output_offset);
     }
     const auto toPtrs = [](std::vector<DeviceMemory<float>>& v) {
-      std::vector<DeviceMemory<float>*> ptrs;
+      std::vector<DeviceMemory<float>* > ptrs;
       ptrs.reserve(v.size());
       for (auto& mem : v) {
         ptrs.push_back(&mem);
       }
       return ptrs;
     };
+    std::vector<DeviceMemory<float>*> a_ptrs = toPtrs(a), b_ptrs = toPtrs(b), c_ptrs = toPtrs(c);
 
-    stream->ThenBlasGemmBatched(blas::Transpose::kNoTranspose,
+    blas::BatchedGemmCall<float>::DeviceMemorySlice a_view(a_ptrs), b_view(b_ptrs), c_view(c_ptrs);
+
+    blas::BatchedGemmCall<float> call{blas::Transpose::kNoTranspose,
                                 blas::Transpose::kNoTranspose, m, n, k, alpha,
-                                toPtrs(a), lda, toPtrs(b), ldb, beta, toPtrs(c),
-                                ldc, batch_count);
+                                &a_view, lda, &b_view, ldb, beta, &c_view,
+                                ldc, batch_count};
+
+    stream->ThenBlasGemmBatched(call);
   }
 
   return stream->ok();
