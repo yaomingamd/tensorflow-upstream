@@ -937,15 +937,11 @@ class Stream {
           "StreamExecutor without BLAS support");
     }
 
-    void *alpha_ptr = &alpha;
-    void *beta_ptr = &beta;
-    float alpha_storage, beta_storage;
-    UpcastHalfToFloat<ConstantType>(&alpha_ptr, &beta_ptr, &alpha_storage,
-                                    &beta_storage);
-
-    return blas->DoBlasGemm(this, transa, transb, m, n, k,
-                            blas::ToDataType<InputType>::value, alpha_ptr, a,
-                            lda, b, ldb, beta_ptr, c, ldc, precision);
+    blas::GemmCall call(transa, transb, m, n, k,
+                         a, lda, b, ldb, c, ldc, 
+                         &alpha, &beta);
+    call.precision = precision;
+    return blas->DoBlasGemm(this, call);
   }
 
   // TODO(parkers): Update all callers to pass kDefaultComputePrecision.
@@ -996,18 +992,13 @@ class Stream {
           "StreamExecutor without BLAS support");
     }
 
-    void *alpha_ptr = &alpha;
-    void *beta_ptr = &beta;
-    float alpha_storage, beta_storage;
-    UpcastHalfToFloat<ConstantType>(&alpha_ptr, &beta_ptr, &alpha_storage,
-                                    &beta_storage);
-
-    tsl::Status st = blas->DoBlasGemmWithAlgorithm(
-        this, transa, transb, m, n, k, alpha_ptr, a,
-        blas::ToDataType<InputType>::value, lda, b,
-        blas::ToDataType<InputType>::value, ldb, beta_ptr, c,
-        blas::ToDataType<OutputType>::value, ldc, computation_type, algorithm,
-        precision, output_profile_result);
+    blas::GemmCall call(transa, transb, m, n, k,
+                         a, lda, b, ldb, c, ldc, 
+                         &alpha, &beta);
+    call.algorithm = algorithm;
+    call.precision = precision;
+    call.output_profile_result = output_profile_result;
+    tsl::Status st = blas->DoBlasGemm(this, call);
     if (output_profile_result) {
       // The error is recorded in the profile.
       return ::tsl::OkStatus();
@@ -1034,17 +1025,16 @@ class Stream {
           "Attempting to perform BLAS operation using "
           "StreamExecutor without BLAS support");
     }
-    void *alpha_ptr = &alpha;
-    void *beta_ptr = &beta;
-    float alpha_storage, beta_storage;
-    UpcastHalfToFloat<ConstantType>(&alpha_ptr, &beta_ptr, &alpha_storage,
-                                    &beta_storage);
-    tsl::Status st = blas->DoBlasGemmStridedBatchedWithAlgorithm(
-        this, transa, transb, m, n, k, alpha_ptr, a,
-        blas::ToDataType<InputType>::value, lda, stride_a, b,
-        blas::ToDataType<InputType>::value, ldb, stride_b, beta_ptr, c,
-        blas::ToDataType<OutputType>::value, ldc, stride_c, batch_count,
-        computation_type, algorithm, precision, output_profile_result);
+    blas::GemmCall call(transa, transb, m, n, k,
+                        a, lda, b, ldb,  c, ldc, &alpha, &beta);
+    call.stride_a = stride_a;
+    call.stride_b = stride_b;
+    call.stride_c = stride_c;
+    call.batch_count = batch_count;
+    call.algorithm = algorithm;
+    call.precision = precision;
+    call.output_profile_result = output_profile_result;
+    tsl::Status st = blas->DoBlasGemm(this, call);
     if (output_profile_result) {
       // The error is recorded in the profile.
       return ::tsl::OkStatus();
@@ -1055,82 +1045,41 @@ class Stream {
   template <typename T>
   using DeviceMemorySlice = absl::Span<DeviceMemory<T> *const>;
 
-  // See BlasSupport::DoBlasGemmBatched.
-  Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
-                              uint64_t m, uint64 n, uint64_t k, float alpha,
-                              DeviceMemorySlice<Eigen::half> a, int lda,
-                              DeviceMemorySlice<Eigen::half> b, int ldb,
-                              float beta, DeviceMemorySlice<Eigen::half> c,
-                              int ldc, int batch_count);
-  Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
-                              uint64_t m, uint64 n, uint64 k, float alpha,
-                              DeviceMemorySlice<float> a, int lda,
-                              DeviceMemorySlice<float> b, int ldb, float beta,
-                              DeviceMemorySlice<float> c, int ldc,
-                              int batch_count);
-  Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
-                              uint64_t m, uint64 n, uint64 k, double alpha,
-                              DeviceMemorySlice<double> a, int lda,
-                              DeviceMemorySlice<double> b, int ldb, double beta,
-                              DeviceMemorySlice<double> c, int ldc,
-                              int batch_count);
-  Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
-                              uint64_t m, uint64 n, uint64_t k,
-                              std::complex<float> alpha,
-                              DeviceMemorySlice<std::complex<float>> a, int lda,
-                              DeviceMemorySlice<std::complex<float>> b, int ldb,
-                              std::complex<float> beta,
-                              DeviceMemorySlice<std::complex<float>> c, int ldc,
-                              int batch_count);
-  Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
-                              uint64_t m, uint64 n, uint64_t k,
-                              std::complex<double> alpha,
-                              DeviceMemorySlice<std::complex<double>> a,
-                              int lda,
-                              DeviceMemorySlice<std::complex<double>> b,
-                              int ldb, std::complex<double> beta,
-                              DeviceMemorySlice<std::complex<double>> c,
-                              int ldc, int batch_count);
-  Stream &ThenBlasGemmBatchedWithScratch(
+  template <typename T, typename V>
+  Stream &ThenBlasGemmBatchedWithScratchImpl(
       blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
-      uint64_t k, float alpha, DeviceMemorySlice<Eigen::half> a, int lda,
-      DeviceMemorySlice<Eigen::half> b, int ldb, float beta,
-      DeviceMemorySlice<Eigen::half> c, int ldc, int batch_count,
+      uint64_t k, V alpha, DeviceMemorySlice<T> a, int lda,
+      DeviceMemorySlice<T> b, int ldb, V beta,
+      DeviceMemorySlice<T> c, int ldc, int batch_count,
       ScratchAllocator *scratch_allocator);
-  Stream &ThenBlasGemmBatchedWithScratch(
-      blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
-      uint64_t k, float alpha, DeviceMemorySlice<Eigen::bfloat16> a, int lda,
-      DeviceMemorySlice<Eigen::bfloat16> b, int ldb, float beta,
-      DeviceMemorySlice<Eigen::bfloat16> c, int ldc, int batch_count,
-      ScratchAllocator *scratch_allocator);
-  Stream &ThenBlasGemmBatchedWithScratch(blas::Transpose transa,
-                                         blas::Transpose transb, uint64_t m,
-                                         uint64 n, uint64_t k, float alpha,
-                                         DeviceMemorySlice<float> a, int lda,
-                                         DeviceMemorySlice<float> b, int ldb,
-                                         float beta, DeviceMemorySlice<float> c,
-                                         int ldc, int batch_count,
-                                         ScratchAllocator *scratch_allocator);
-  Stream &ThenBlasGemmBatchedWithScratch(
-      blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
-      uint64_t k, double alpha, DeviceMemorySlice<double> a, int lda,
-      DeviceMemorySlice<double> b, int ldb, double beta,
-      DeviceMemorySlice<double> c, int ldc, int batch_count,
-      ScratchAllocator *scratch_allocator);
-  Stream &ThenBlasGemmBatchedWithScratch(
-      blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
-      uint64_t k, std::complex<float> alpha,
-      DeviceMemorySlice<std::complex<float>> a, int lda,
-      DeviceMemorySlice<std::complex<float>> b, int ldb,
-      std::complex<float> beta, DeviceMemorySlice<std::complex<float>> c,
-      int ldc, int batch_count, ScratchAllocator *scratch_allocator);
-  Stream &ThenBlasGemmBatchedWithScratch(
-      blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
-      uint64_t k, std::complex<double> alpha,
-      DeviceMemorySlice<std::complex<double>> a, int lda,
-      DeviceMemorySlice<std::complex<double>> b, int ldb,
-      std::complex<double> beta, DeviceMemorySlice<std::complex<double>> c,
-      int ldc, int batch_count, ScratchAllocator *scratch_allocator);
+
+
+#define BLAS_GEMM_BATCHED_DECL(T) \
+  Stream &ThenBlasGemmBatched(blas::Transpose transa,                     \
+                                    blas::Transpose transb, uint64_t m,   \
+                                    uint64 n, uint64_t k,                 \
+                                    blas::GemmCallAlpha<T>::type alpha,   \
+                                    DeviceMemorySlice<T> a, int lda,      \
+                                    DeviceMemorySlice<T> b, int ldb,      \
+                                    blas::GemmCallAlpha<T>::type beta,    \
+                                    DeviceMemorySlice<T> c,               \
+                                    int ldc, int batch_count);            \
+                                                                          \
+  Stream &ThenBlasGemmBatchedWithScratch(                                 \
+    blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n, \
+    uint64_t k, blas::GemmCallAlpha<T>::type alpha,                       \
+    DeviceMemorySlice< T > a, int lda,                                    \
+    DeviceMemorySlice< T > b, int ldb,                                    \
+    blas::GemmCallAlpha< T >::type  beta,                                 \
+    DeviceMemorySlice< T > c, int ldc, int batch_count,                   \
+    ScratchAllocator *scratch_allocator);
+
+BLAS_GEMM_BATCHED_DECL(Eigen::bfloat16)
+BLAS_GEMM_BATCHED_DECL(Eigen::half)
+BLAS_GEMM_BATCHED_DECL(float)
+BLAS_GEMM_BATCHED_DECL(double)
+BLAS_GEMM_BATCHED_DECL(std::complex<float>)
+BLAS_GEMM_BATCHED_DECL(std::complex<double>)
 
   template <typename InputType, typename ConstantType>
   tsl::Status ThenBlasGemmStridedBatched(
@@ -1161,10 +1110,14 @@ class Stream {
     UpcastHalfToFloat<ConstantType>(&alpha_ptr, &beta_ptr, &alpha_storage,
                                     &beta_storage);
 
-    return blas->DoBlasGemmStridedBatched(
-        this, transa, transb, m, n, k, blas::ToDataType<InputType>::value,
-        alpha_ptr, a, lda, stride_a, b, ldb, stride_b, beta_ptr, c, ldc,
-        stride_c, batch_count, precision);
+    blas::GemmCall call(transa, transb, m, n, k,
+                         a, lda, b, ldb, c, ldc, &alpha, &beta);
+    call.stride_a = stride_a;
+    call.stride_b = stride_b;
+    call.stride_c = stride_c;
+    call.batch_count = batch_count;
+    call.precision = precision;
+    return blas->DoBlasGemm(this, call);
   }
 
   // See BlasSupport::DoBlasTrsm.
@@ -1679,6 +1632,8 @@ class Stream {
   friend class host::HostRng;   // for parent_.
   template <typename... Args>
   friend struct ThenBlasImpl;  // for implementing ThenBlasXXX.
+  template <typename T>
+  friend struct ThenBlasImplPacked;  // for implementing ThenBlasXXX.
   friend class ocl::CLBlas;    // for parent_.
 
   // Checks whether types match before a call to extended BLAS version.
@@ -1703,6 +1658,8 @@ class Stream {
 
     bool valid_computation_type = [computation_type] {
       switch (computation_type) {
+        case blas::ComputationType::kUndefined:
+          return true;
         case blas::ComputationType::kF16:
           return std::is_same_v<CType, Eigen::half>;
         case blas::ComputationType::kF32:

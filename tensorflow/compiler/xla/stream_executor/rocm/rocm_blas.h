@@ -147,6 +147,8 @@ class ROCMBlas : public blas::BlasSupport {
                               /*err_on_failure=*/false, args...);
   }
 
+  tsl::Status DoBlasGemmStridedBatched(Stream *stream, const blas::GemmCall& call);
+
   // A helper allocation function to convert raw pointers memory layout to
   // strided flavor
   template <typename T>
@@ -179,12 +181,7 @@ class ROCMBlas : public blas::BlasSupport {
   // reallocate the memory layout to be strided batched.
   template <typename T, typename FuncT>
   tsl::Status DoBlasGemmBatchedInternal(
-      FuncT rocblas_func, Stream *stream, blas::Transpose transa,
-      blas::Transpose transb, uint64_t m, uint64 n, uint64 k, T alpha,
-      DeviceMemorySlice<T> a_ptrs_to_wrappers, int lda,
-      DeviceMemorySlice<T> b_ptrs_to_wrappers, int ldb, T beta,
-      DeviceMemorySlice<T> c_ptrs_to_wrappers, int ldc, int batch_count,
-      ScratchAllocator *scratch_allocator);
+      FuncT rocblas_func, Stream *stream, const blas::BatchedGemmCall<T>& call);
 
   // mutex that guards the rocBLAS handle for this device.
   absl::Mutex mu_;
