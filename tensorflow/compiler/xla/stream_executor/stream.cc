@@ -1623,58 +1623,20 @@ Stream &Stream::ThenBlasTrsmBatched(
               diag, m, n, alpha, as, lda, bs, ldb, batch_count);
 }
 
-template <typename T, typename V>
-Stream &Stream::ThenBlasGemmBatchedWithScratchImpl(
-    blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,
-    uint64_t k, V alpha, DeviceMemorySlice<T> a, int lda,
-    DeviceMemorySlice<T> b, int ldb, V beta,
-    DeviceMemorySlice<T> c, int ldc, int batch_count,
-    ScratchAllocator *scratch_allocator) {
-  VLOG_CALL(PARAM(transa), PARAM(transb), PARAM(m), PARAM(n), PARAM(k),
-            PARAM(alpha), PARAM(a), PARAM(lda), PARAM(b), PARAM(ldb),
-            PARAM(beta), PARAM(c), PARAM(ldc), PARAM(batch_count));
-
+template <typename T>
+Stream& Stream::ThenBlasGemmBatched(blas::BatchedGemmCall<T> call)
+{
   ThenBlasImplPacked<blas::BatchedGemmCall<T> > impl;
-  blas::BatchedGemmCall<T> call{
-    transa, transb, m, n, k,
-    alpha, &a, lda, &b, ldb, beta, &c, ldc, batch_count};
-  call.scratch_allocator = scratch_allocator;
   return impl(this, &blas::BlasSupport::DoBlasGemmBatched, call);
 }
 
-#define BLAS_GEMM_BATCHED_IMPL(T) \
-Stream &Stream::ThenBlasGemmBatched(blas::Transpose transa,                     \
-                                    blas::Transpose transb, uint64_t m,         \
-                                    uint64 n, uint64_t k, \
-                                    blas::GemmCallAlpha<T>::type alpha,         \
-                                    DeviceMemorySlice<T> a, int lda,            \
-                                    DeviceMemorySlice<T> b, int ldb,            \
-                                    blas::GemmCallAlpha<T>::type beta, \
-                                    DeviceMemorySlice<T> c,                     \
-                                    int ldc, int batch_count) {                 \
-  return ThenBlasGemmBatchedWithScratch(transa, transb, m, n, k, alpha, a, lda, \
-                                        b, ldb, beta, c, ldc, batch_count,      \
-                                        /*scratch_allocator=*/nullptr);         \
-}                                                                               \
-                                                                                \
-Stream &Stream::ThenBlasGemmBatchedWithScratch(                                 \
-    blas::Transpose transa, blas::Transpose transb, uint64_t m, uint64 n,       \
-    uint64_t k, blas::GemmCallAlpha<T>::type alpha, DeviceMemorySlice< T > a,   \
-    int lda,                     \
-    DeviceMemorySlice< T > b, int ldb, blas::GemmCallAlpha<T>::type beta,       \
-    DeviceMemorySlice< T > c, int ldc, int batch_count,                         \
-    ScratchAllocator *scratch_allocator) {                                      \
-  return ThenBlasGemmBatchedWithScratchImpl(transa, transb,                     \
-    m, n, k, alpha, a, lda, b, ldb, beta, c, ldc, batch_count,                  \
-    scratch_allocator);                                                         \
-}
+template Stream& Stream::ThenBlasGemmBatched(blas::BatchedGemmCall<Eigen::bfloat16> call);
+template Stream& Stream::ThenBlasGemmBatched(blas::BatchedGemmCall<Eigen::half> call);
+template Stream& Stream::ThenBlasGemmBatched(blas::BatchedGemmCall<float> call);
+template Stream& Stream::ThenBlasGemmBatched(blas::BatchedGemmCall<double> call);
+template Stream& Stream::ThenBlasGemmBatched(blas::BatchedGemmCall<std::complex<float> > call);
+template Stream& Stream::ThenBlasGemmBatched(blas::BatchedGemmCall<std::complex<double> > call);
 
-BLAS_GEMM_BATCHED_IMPL(Eigen::bfloat16)
-BLAS_GEMM_BATCHED_IMPL(Eigen::half)
-BLAS_GEMM_BATCHED_IMPL(float)
-BLAS_GEMM_BATCHED_IMPL(double)
-BLAS_GEMM_BATCHED_IMPL(std::complex<float>)
-BLAS_GEMM_BATCHED_IMPL(std::complex<double>)
 
 Stream &Stream::ThenSetRngSeed(const uint8 *seed, uint64_t seed_bytes) {
   VLOG_CALL(PARAM(seed), PARAM(seed_bytes));

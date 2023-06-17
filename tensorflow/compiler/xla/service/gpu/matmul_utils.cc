@@ -558,20 +558,21 @@ Status DoGemmWithAlgorithm(int64_t batch_size, int64_t m, int64_t n, int64_t k,
       GetBlasComputationType(lhs_type, output_type, compute_precision));
   se::DeviceMemory<Output> output_data(output.data);
 
-  if (batch_size != 1) {
-    return stream->ThenBlasGemmStridedBatchedWithAlgorithm(
-        lhs.transpose, rhs.transpose, m, n, k, alpha, lhs.cast<Input>(),
-        lhs.leading_dim_stride, lhs.batch_stride, rhs.cast<Input>(),
-        rhs.leading_dim_stride, rhs.batch_stride, beta, &output_data,
-        output.leading_dim_stride, output.batch_stride, batch_size,
-        computation_type, algorithm, compute_precision, profile_result);
-  } else {
-    return stream->ThenBlasGemmWithAlgorithm(
-        lhs.transpose, rhs.transpose, m, n, k, alpha, lhs.cast<Input>(),
-        lhs.leading_dim_stride, rhs.cast<Input>(), rhs.leading_dim_stride, beta,
-        &output_data, output.leading_dim_stride, computation_type, algorithm,
-        compute_precision, profile_result);
-  }
+  se::blas::GemmCall call(lhs.transpose, rhs.transpose, m, n, k, 
+      lhs.cast<Input>(), lhs.leading_dim_stride, 
+      rhs.cast<Input>(), rhs.leading_dim_stride, 
+      &output_data, output.leading_dim_stride,
+      &alpha, &beta);
+
+  call.batch_count = batch_size;
+  call.stride_a = lhs.batch_stride;
+  call.stride_b = rhs.batch_stride;
+  call.stride_c = output.batch_stride;
+  call.type = computation_type;
+  call.precision = compute_precision;
+  call.output_profile_result = profile_result;
+  call.algorithm = algorithm;
+  return stream->ThenBlasGemm(call);
 }
 
 template <typename Input>
@@ -593,19 +594,19 @@ Status DoGemm(int64_t batch_size, int64_t m, int64_t n, int64_t k,
   }
 #endif
 
+  se::blas::GemmCall call(lhs.transpose, rhs.transpose, m, n, k, 
+      lhs.cast<Input>(), lhs.leading_dim_stride,
+      rhs.cast<Input>(), rhs.leading_dim_stride,
+      &output_data, output.leading_dim_stride,
+      &alpha, &beta);
+  call.precision  = compute_precision;
   if (batch_size != 1) {
-    return stream->ThenBlasGemmStridedBatched(
-        lhs.transpose, rhs.transpose, m, n, k, alpha, lhs.cast<Input>(),
-        lhs.leading_dim_stride, lhs.batch_stride, rhs.cast<Input>(),
-        rhs.leading_dim_stride, rhs.batch_stride, beta, &output_data,
-        output.leading_dim_stride, output.batch_stride, batch_size,
-        compute_precision);
+    call.stride_a = lhs.batch_stride;
+    call.stride_b = rhs.batch_stride;
+    call.stride_c = output.batch_stride;
+    call.batch_count = batch_size;
   }
-
-  return stream->ThenBlasGemm(
-      lhs.transpose, rhs.transpose, m, n, k, alpha, lhs.cast<Input>(),
-      lhs.leading_dim_stride, rhs.cast<Input>(), rhs.leading_dim_stride, beta,
-      &output_data, output.leading_dim_stride, compute_precision);
+  return stream->ThenBlasGemm(call);
 }
 
 }  // namespace
