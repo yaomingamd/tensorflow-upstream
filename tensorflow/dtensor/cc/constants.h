@@ -116,6 +116,10 @@ static constexpr char kSkipXlaCompilation[] = "_skip_xla_compilation";
 // to uniquely name functions.
 static constexpr char kCacheKey[] = "dtensor.cache_key";
 
+// An attribute on Const nodes to record which argument it was originally
+// from.
+static constexpr char kFromArgIndex[] = "dtensor.from_arg_index";
+
 // An attribute that determines whether a tensor is a sparse tensor. If this
 // attribute exists in a tensor, then this tensor is a sparse tensor.
 static constexpr char kSparseValue[] = "tf._sparse";
@@ -148,6 +152,11 @@ static constexpr char kIteratorOutputShapes[] = "output_shapes";
 
 // The number of list of regular tensors used to represent sparse tensors.
 static constexpr int kSparseTensorNum = 3;
+
+// Attribute which stores the environment variable value for all_reduce
+// optimization group size: DTENSOR_ALLREDUCE_COMBINE_OPTIMIZATION_GROUP_SIZE.
+static constexpr char kAllReduceNumOpsInGroup[] =
+    "dtensor.all_reduce_combiner.num_ops_in_group";
 
 }  // namespace dtensor
 }  // namespace tensorflow

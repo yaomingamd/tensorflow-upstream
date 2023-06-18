@@ -1,4 +1,5 @@
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
+load("//tensorflow/tsl/platform:build_config.bzl", "tf_proto_library")
 
 package_group(
     name = "friends",
@@ -44,6 +45,13 @@ cc_library(
     ],
 )
 
+tf_proto_library(
+    name = "xla_host_callback_proto",
+    srcs = ["xla_host_callback.proto"],
+    cc_api_version = 2,
+    protodeps = ["//tensorflow/compiler/xla:xla_data_proto"],
+)
+
 # TODO(hyeontaek): Move this target out of pjrt_ifrt.
 cc_library(
     name = "xla_executable_impl_test_lib",
@@ -79,6 +87,7 @@ cc_library(
         "pjrt_client.cc",
         "pjrt_compiler.cc",
         "pjrt_executable.cc",
+        "pjrt_host_callback.cc",
         "pjrt_tuple.cc",
     ],
     hdrs = [
@@ -86,6 +95,7 @@ cc_library(
         "pjrt_client.h",
         "pjrt_compiler.h",
         "pjrt_executable.h",
+        "pjrt_host_callback.h",
         "pjrt_tuple.h",
     ],
     deps = [
@@ -96,6 +106,7 @@ cc_library(
         "//tensorflow/compiler/xla:util",
         "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/client:xla_computation",
+        "//tensorflow/compiler/xla/pjrt:host_callback",
         "//tensorflow/compiler/xla/pjrt:pjrt_client",
         "//tensorflow/compiler/xla/pjrt:pjrt_executable",
         "//tensorflow/compiler/xla/pjrt:utils",
