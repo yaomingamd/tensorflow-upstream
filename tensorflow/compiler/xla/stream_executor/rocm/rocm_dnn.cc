@@ -2286,6 +2286,7 @@ bool MIOpenSupport::DoRnnForwardImpl(
     ScratchAllocator* reserve_space_allocator,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
+    output_profile_result = nullptr;
   // extract model parameters
   RnnModelDims model_dims;
   bool res = ExtractAndCheckRnnForward(
@@ -2433,6 +2434,7 @@ bool MIOpenSupport::DoRnnBackwardImpl(
     DeviceMemory<uint8>* reserve_space_data,
     ScratchAllocator* workspace_allocator,
     dnn::ProfileResult* output_profile_result) {
+    output_profile_result = nullptr;
   // extract model parameters
   RnnModelDims model_dims;
   bool res = ExtractAndCheckRnnForward(
@@ -3763,6 +3765,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
 
 bool MIOpenSupport::GetRnnAlgorithms(
     std::vector<dnn::AlgorithmDesc>* out_algorithms) {
+  return true;
   std::vector<dnn::AlgorithmDesc::Index> algo_types = {
       // clang-format off
     miopenRNNdefault,
