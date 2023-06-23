@@ -731,11 +731,9 @@ void LaunchConvBackpropInputOpImpl(
 
     auto transpose = se::blas::Transpose::kTranspose;
     auto no_transpose = se::blas::Transpose::kNoTranspose;
-
-    OP_REQUIRES_OK(
-        context,
-        stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr, k, a_ptr,
-                             k, &c_ptr, n, se::blas::kDefaultComputePrecision));
+    se::blas::GemmCall call(transpose, no_transpose, n, m, k, b_ptr, k, a_ptr,
+                             k, &c_ptr, n);
+    OP_REQUIRES_OK(context, stream->ThenBlasGemm(call));
     return;
   } else if (!is_grouped_convolution &&
              dims.filter_size(0) == dims.input_size(0) &&
@@ -757,10 +755,9 @@ void LaunchConvBackpropInputOpImpl(
     auto transpose = se::blas::Transpose::kTranspose;
     auto no_transpose = se::blas::Transpose::kNoTranspose;
 
-    OP_REQUIRES_OK(
-        context,
-        stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr, k, a_ptr,
-                             k, &c_ptr, n, se::blas::kDefaultComputePrecision));
+    se::blas::GemmCall call(transpose, no_transpose, n, m, k, b_ptr, k, a_ptr,
+                             k, &c_ptr, n);
+    OP_REQUIRES_OK(context, stream->ThenBlasGemm(call));
     return;
   }
 

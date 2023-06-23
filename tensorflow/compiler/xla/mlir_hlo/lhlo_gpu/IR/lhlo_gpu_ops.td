@@ -43,7 +43,8 @@ def I32Buffer : MemRefOf<[I32]>;
 class GpuConvolutionAttributes<dag extraAttribs> {
   dag attributes = !con(
     MHLO_ConvolutionAttributes.attributes,
-    (ins F64Attr:$result_scale),
+    (ins F64Attr:$result_scale,
+        OptionalAttr<I64Attr>:$f8_flags),
     extraAttribs,
     (ins ConvolutionBackendConfigAttr:$backend_config));
 }
@@ -154,6 +155,7 @@ def LHLOGPU_GEMMOp : LHLOGPU_Op<"gemm"> {
     F64Attr:$alpha_real,
     F64Attr:$alpha_imag,
     F64Attr:$beta,
+    OptionalAttr<I64Attr>:$f8_flags,
     OptionalAttr<I64Attr>:$algorithm);
 }
 

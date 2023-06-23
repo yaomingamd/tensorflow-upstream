@@ -730,11 +730,10 @@ void LaunchConvBackpropFilterOpImpl(
     auto c_ptr = AsDeviceMemory(filter_backprop->template flat<T>().data(),
                                 filter_backprop->template flat<T>().size());
 
-    OP_REQUIRES_OK(
-        context, stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
+    se::blas::GemmCall call(se::blas::Transpose::kNoTranspose,
                                       se::blas::Transpose::kTranspose, n, m, k,
-                                      a_ptr, n, b_ptr, m, &c_ptr, n,
-                                      se::blas::kDefaultComputePrecision));
+                                      a_ptr, n, b_ptr, m, &c_ptr, n);
+    OP_REQUIRES_OK(context, stream->ThenBlasGemm(call));
     return;
   } else if (!is_grouped_convolution &&
              dims.filter_size(0) == dims.input_size(0) &&
@@ -753,11 +752,10 @@ void LaunchConvBackpropFilterOpImpl(
     auto c_ptr = AsDeviceMemory(filter_backprop->template flat<T>().data(),
                                 filter_backprop->template flat<T>().size());
 
-    OP_REQUIRES_OK(
-        context, stream->ThenBlasGemm(se::blas::Transpose::kNoTranspose,
+    se::blas::GemmCall call(se::blas::Transpose::kNoTranspose,
                                       se::blas::Transpose::kTranspose, n, m, k,
-                                      b_ptr, n, a_ptr, m, &c_ptr, n,
-                                      se::blas::kDefaultComputePrecision));
+                                      b_ptr, n, a_ptr, m, &c_ptr, n);
+    OP_REQUIRES_OK(context, stream->ThenBlasGemm(call));
     return;
   }
 

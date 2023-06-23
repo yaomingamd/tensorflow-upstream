@@ -36,6 +36,7 @@ limitations under the License.
 #include "tensorflow/core/lib/gtl/inlined_vector.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/matmul_autotune.h"
 #include "tensorflow/core/util/matmul_bcast.h"
 #include "tensorflow/core/util/work_sharder.h"
@@ -242,7 +243,8 @@ template <typename Scalar>
 struct LaunchBatchMatMul<CPUDevice, Scalar> {
   static void Launch(OpKernelContext* context, const Tensor& in_x,
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
-                     bool trans_y, const MatMulBCast& bcast, Tensor* out) {
+                     bool trans_y, const MatMulBCast& bcast, Tensor* out, 
+                     int f8_flags) {
     typedef ParallelMatMulKernel<Scalar, Eigen::NumTraits<Scalar>::IsComplex>
         ParallelMatMulKernel;
     bool conjugate_result = false;
@@ -361,7 +363,8 @@ template <typename Scalar>
 struct LaunchBatchMatMul<GPUDevice, Scalar> {
   static void Launch(OpKernelContext* context, const Tensor& in_x,
                      const Tensor& in_y, bool adj_x, bool adj_y, bool trans_x,
-                     bool trans_y, const MatMulBCast& bcast, Tensor* out) {
+                     bool trans_y, const MatMulBCast& bcast, Tensor* out,
+                     int f8_flags) {
     se::blas::Transpose trans[] = {se::blas::Transpose::kNoTranspose,
                                    se::blas::Transpose::kTranspose,
                                    se::blas::Transpose::kConjugateTranspose};
@@ -533,15 +536,25 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
         }
 
         BlasScratchAllocator scratch_allocator(context, max_scratch_size);
-        bool blas_launch_status =
-            stream
-                ->ThenBlasGemmBatchedWithScratch(
+        typename se::blas::BatchedGemmCall<Scalar>::DeviceMemorySlice 
+          a_view(a_ptrs), b_view(b_ptrs), c_view(c_ptrs);
+        se::blas::BatchedGemmCall<Scalar> call{
                     blas_transpose_b, blas_transpose_a, n, m, k,
-                    static_cast<Coefficient>(1.0), b_ptrs,
-                    adj_y || trans_y ? k : n, a_ptrs, adj_x || trans_x ? m : k,
-                    static_cast<Coefficient>(0.0), c_ptrs, n, batch_size,
-                    &scratch_allocator)
-                .ok();
+                    static_cast<Coefficient>(1.0), &b_view,
+                    adj_y || trans_y ? k : n, &a_view, adj_x || trans_x ? m : k,
+                    static_cast<Coefficient>(0.0), &c_view, n, batch_size,
+        };
+        call.scratch_allocator = &scratch_allocator;
+        if(f8_flags & 4) {
+          if((f8_flags & 3)==0)
+            call.context = se::blas::CallContext::kForward;
+          // NOTE: flags reversed, because we are swapping a & b
+          else if((f8_flags & 3)==2)
+            call.context = se::blas::CallContext::kBackpropInput1;
+          else if((f8_flags & 3)==1)
+            call.context = se::blas::CallContext::kBackpropInput2;
+        }
+        bool blas_launch_status = stream->ThenBlasGemmBatched(call).ok();
         if (!blas_launch_status) {
           context->SetStatus(errors::Internal(
               "Blas xGEMMBatched launch failed: a.shape=",
@@ -591,6 +604,19 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
         }
       }
 
+      se::blas::GemmCall call(blas_transpose_b, blas_transpose_a, n, m, k,
+                         *(b_ptrs[0]), adj_y || trans_y ? k : n, *(a_ptrs[0]),
+                         adj_x || trans_x ? m : k, c_ptrs[0], n);
+      if(f8_flags & 4) {
+        if((f8_flags & 3)==0)
+          call.context = se::blas::CallContext::kForward;
+        // NOTE: flags reversed, because we are swapping a & b
+        else if((f8_flags & 3)==2)
+          call.context = se::blas::CallContext::kBackpropInput1;
+        else if((f8_flags & 3)==1)
+          call.context = se::blas::CallContext::kBackpropInput2;
+      }
+
       // Blas does
       // C = A x B
       // where A, B and C are assumed to be in column major.
@@ -633,33 +659,34 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
             return;
           }
         }
-
-        OP_REQUIRES_OK(context,
-                       stream->ThenBlasGemm(
-                           blas_transpose_b, blas_transpose_a, n, m, k,
-                           *(b_ptrs[0]), adj_y || trans_y ? k : n, *(a_ptrs[0]),
-                           adj_x || trans_x ? m : k, c_ptrs[0], n,
-                           se::blas::kDefaultComputePrecision));
+        OP_REQUIRES_OK(context, stream->ThenBlasGemm(call));
       } else if (use_strided_batched) {
-        OP_REQUIRES_OK(
-            context, stream->ThenBlasGemmStridedBatched(
-                         blas_transpose_b, blas_transpose_a, n, m, k,
-                         static_cast<Coefficient>(1.0), *b_ptrs[0],
-                         adj_y || trans_y ? k : n, b_stride, *a_ptrs[0],
-                         adj_x || trans_x ? m : k, a_stride,
-                         static_cast<Coefficient>(0.0), c_ptrs[0], n, c_stride,
-                         batch_size, se::blas::kDefaultComputePrecision));
+        call.stride_a = b_stride;
+        call.stride_b = a_stride;
+        call.stride_c = c_stride;
+        call.batch_count = batch_size;
+        OP_REQUIRES_OK(context, stream->ThenBlasGemm(call));
       } else {
         BlasScratchAllocator scratch_allocator(context);
-        bool blas_launch_status =
-            stream
-                ->ThenBlasGemmBatchedWithScratch(
-                    blas_transpose_b, blas_transpose_a, n, m, k,
-                    static_cast<Coefficient>(1.0), b_ptrs,
-                    adj_y || trans_y ? k : n, a_ptrs, adj_x || trans_x ? m : k,
-                    static_cast<Coefficient>(0.0), c_ptrs, n, batch_size,
-                    &scratch_allocator)
-                .ok();
+        typename se::blas::BatchedGemmCall<Scalar>::DeviceMemorySlice 
+          a_view(a_ptrs), b_view(b_ptrs), c_view(c_ptrs);
+        se::blas::BatchedGemmCall<Scalar> call{
+            blas_transpose_b, blas_transpose_a, n, m, k,
+            static_cast<Coefficient>(1.0), &b_view,
+            adj_y || trans_y ? k : n, &a_view, adj_x || trans_x ? m : k,
+            static_cast<Coefficient>(0.0), &c_view, n, batch_size
+        };
+        call.scratch_allocator = &scratch_allocator;
+        if(f8_flags & 4) {
+          if((f8_flags & 3)==0)
+            call.context = se::blas::CallContext::kForward;
+          // NOTE: flags reversed, because we are swapping a & b
+          else if((f8_flags & 3)==2)
+            call.context = se::blas::CallContext::kBackpropInput1;
+          else if((f8_flags & 3)==1)
+            call.context = se::blas::CallContext::kBackpropInput2;
+        }
+        bool blas_launch_status = stream->ThenBlasGemmBatched(call).ok();
         if (!blas_launch_status) {
           context->SetStatus(errors::Internal(
               "Blas xGEMMBatched launch failed : a.shape=",
@@ -694,6 +721,16 @@ class BaseBatchMatMulOp : public OpKernel {
       trans_x_ = false;
       trans_y_ = false;
     }
+    bool f8_matmul=true;
+    tsl::Status err = tensorflow::ReadBoolFromEnvVar("F8_MM", true, &f8_matmul);
+    if(f8_matmul) {
+      bool grad_a = false, grad_b = false;
+      OP_REQUIRES_OK(context, context->GetAttr("grad_a", &grad_a));
+      OP_REQUIRES_OK(context, context->GetAttr("grad_b", &grad_b));
+      f8_flags_ = (grad_a?1:0) + (grad_b?2:0) + 4;
+    }
+    else
+      f8_flags_ = 0;
   }
 
   ~BaseBatchMatMulOp() override {}
@@ -777,7 +814,7 @@ class BaseBatchMatMulOp : public OpKernel {
 
       LaunchBatchMatMul<Device, float>::Launch(
           ctx, in0_reshaped_float, in1_reshaped_float, adj_x_, adj_y_, trans_x_,
-          trans_y_, bcast, &out_reshaped_float);
+          trans_y_, bcast, &out_reshaped_float, f8_flags_);
       FloatToBFloat16(out_reshaped_float.flat<float>().data(),
                       out_reshaped.flat<bfloat16>().data(), out->NumElements());
     } else {
@@ -791,7 +828,8 @@ class BaseBatchMatMulOp : public OpKernel {
       }
       LaunchBatchMatMul<Device, Tout>::Launch(ctx, in0_reshaped, in1_reshaped,
                                               adj_x_, adj_y_, trans_x_,
-                                              trans_y_, bcast, &out_reshaped);
+                                              trans_y_, bcast, &out_reshaped,
+                                              f8_flags_);
     }
   }
 
@@ -805,7 +843,7 @@ class BaseBatchMatMulOp : public OpKernel {
   bool adj_y_ = false;
   bool trans_x_ = false;
   bool trans_y_ = false;
-
+  int f8_flags_ = 0;
   // Cast `t` from `SrcT` to `DstT`.
   template <typename SrcT, typename DstT>
   Tensor CastTensor(const Tensor& t) {

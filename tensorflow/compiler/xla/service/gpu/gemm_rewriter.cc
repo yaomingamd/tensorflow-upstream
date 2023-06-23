@@ -422,12 +422,23 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     TF_ASSIGN_OR_RETURN(
         absl::string_view gemm_custom_call_target,
         GetNonFp8GemmCustomCallTarget(*instr, gemm_backend_config));
+
+    int f8_flags = 0;
+    HloDotInstruction* dot = dynamic_cast<HloDotInstruction*>(instr);
+    const PrecisionConfig& cfg = dot->precision_config();
+    int prec_f8_flags = GetXlaPrecisionConfigF8Flags(&cfg);
+
     const Shape &output_shape = instr->shape();
     HloInstruction *gemm_call =
         instr->AddInstruction(HloInstruction::CreateCustomCall(
             output_shape,
             {instr->mutable_operand(0), instr->mutable_operand(1)},
             gemm_custom_call_target));
+
+    auto existing_config =
+        gemm_call->backend_config<GemmBackendConfig>().value();
+    gemm_backend_config.set_f8_gemm_backend_flags(existing_config.f8_gemm_backend_flags());
+
     TF_RETURN_IF_ERROR(gemm_call->set_backend_config(gemm_backend_config));
     TF_RETURN_IF_ERROR(ReplaceInstruction(instr, gemm_call));
     return OkStatus();

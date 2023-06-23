@@ -234,18 +234,18 @@ struct GemmCall {
 
   DataType dtype_in, dtype_out, dtype_ab;
 
-  //CallContext context = CallContext::kNone;
   int64_t stride_a = -1;
   int64_t stride_b = -1;
   int64_t stride_c = -1;
   int batch_count = 1;
+  CallContext context = CallContext::kNone;
   ComputationType type = ComputationType::kUndefined;
   ComputePrecision precision = kDefaultComputePrecision;
   ProfileResult *output_profile_result = 0;
   AlgorithmType algorithm = kDefaultGemmAlgo;
 
   GemmCall() {}
-  template <typename T, typename U, typename V>
+  template <typename T, typename U, typename V=T>
   GemmCall(blas::Transpose _transa,
           blas::Transpose _transb,
           uint64_t _m,
@@ -287,9 +287,9 @@ struct BatchedGemmCall
   DeviceMemorySlice *pc;
   int ldc;
   int batch_count;
-  int stride_a = -1;
-  int stride_b = -1;
-  int stride_c = -1;
+//  int stride_a = -1;
+//  int stride_b = -1;
+//  int stride_c = -1;
   CallContext context = CallContext::kNone;
   ScratchAllocator *scratch_allocator = nullptr;
   ComputationType type = ComputationType::kUndefined;

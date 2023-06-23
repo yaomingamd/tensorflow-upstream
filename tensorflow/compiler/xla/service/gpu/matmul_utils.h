@@ -150,6 +150,7 @@ Status RunGemm(const GemmConfig& config, se::DeviceMemoryBase lhs_buffer,
                se::DeviceMemoryBase rhs_buffer,
                se::DeviceMemoryBase output_buffer, se::Stream* stream,
                std::optional<se::blas::AlgorithmType> algorithm = std::nullopt,
+               int f8_flags = 0,
                se::blas::ProfileResult* profile_result = nullptr);
 
 namespace cublas_lt {
