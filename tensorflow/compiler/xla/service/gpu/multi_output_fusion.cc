@@ -15,11 +15,8 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/service/gpu/multi_output_fusion.h"
 
-#include <stdint.h>
-
 #include <algorithm>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "absl/algorithm/container.h"
@@ -28,10 +25,12 @@ limitations under the License.
 #include "tensorflow/compiler/xla/hlo/ir/hlo_instruction.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_opcode.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_reachability.h"
+#include "tensorflow/compiler/xla/service/gpu/gpu_device_info.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_fusible.h"
+#include "tensorflow/compiler/xla/service/gpu/gpu_hlo_cost_analysis.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_performance_model.h"
-#include "tensorflow/compiler/xla/service/gpu/ir_emission_utils.h"
 #include "tensorflow/compiler/xla/service/hlo_graph_dumper.h"
+#include "tensorflow/compiler/xla/service/instruction_fusion.h"
 #include "tensorflow/compiler/xla/shape_util.h"
 
 namespace xla {
@@ -94,7 +93,7 @@ HloInstruction* SelectPreferredFusionCandidate(
 std::vector<HloInstruction*> GetProducerConsumerMultiOutputFusionCandidates(
     const HloInstruction* producer, const HloReachabilityMap& reachability,
     FusionInfoCache* fusion_info_cache, GpuHloCostAnalysis* cost_analysis,
-    const GpuDeviceInfo& device_info) {
+    const GpuDeviceInfo& device_info, se::CudaComputeCapability cc) {
   std::vector<HloInstruction*> fusion_candidates;
   const HloComputation* computation = producer->parent();
   const HloModule* module = computation->parent();
@@ -174,7 +173,7 @@ std::vector<HloInstruction*> GetProducerConsumerMultiOutputFusionCandidates(
     }
 
     GpuPerformanceModel::RunTimes t = GpuPerformanceModel::EstimateRunTimes(
-        producer, cost_analysis, device_info, {consumer},
+        producer, cost_analysis, device_info, cc, {consumer},
         /*multi_output=*/true);
     if (t.time_fused > t.time_unfused) {
       dump_negative_explanation(FusionDecision{}
@@ -339,6 +338,9 @@ StatusOr<bool> GpuMultiOutputFusion::DoMultiOutputFusion() {
       VLOG(3) << producer->name() << " is a constant.";
       continue;
     }
+    if (producer->IsCustomFusion()) {
+      continue;
+    }
     // First, fuse the consumer ops of the current op, which are siblings.
     if (FuseSiblings(/*parent=*/producer, &fusion_info_cache, &cost_analysis)) {
       changed = true;
@@ -349,7 +351,7 @@ StatusOr<bool> GpuMultiOutputFusion::DoMultiOutputFusion() {
     // traversal, and hence, not get into the way of subsequent fusion attempts.
     const auto candidates = GetProducerConsumerMultiOutputFusionCandidates(
         producer, *reachability_, &fusion_info_cache, &cost_analysis,
-        device_info_);
+        device_info_, compute_capability_);
     auto* consumer_for_fusion = SelectPreferredFusionCandidate(candidates);
     if (consumer_for_fusion == nullptr) {
       continue;
