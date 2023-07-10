@@ -48,7 +48,7 @@ from setuptools.dist import Distribution
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
 _VERSION = '2.13.0'
-
+_RC_VERSION = ''
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
 # equivalents (tf_nightly_*). The package is controlled from the argument line
