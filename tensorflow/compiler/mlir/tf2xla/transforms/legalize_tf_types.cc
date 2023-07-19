@@ -20,25 +20,34 @@ limitations under the License.
 // TODO(b/180234029): The rewrite here should be part of the LegalizeTF pass
 // rather than its own pass.
 
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinTypes.h"  // from @llvm-project
-#include "mlir/IR/Operation.h"  // from @llvm-project
 #include "mlir/IR/PatternMatch.h"  // from @llvm-project
 #include "mlir/Pass/Pass.h"  // from @llvm-project
 #include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "mlir/Transforms/DialectConversion.h"  // from @llvm-project
-#include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_types.h"
+#include "tensorflow/core/lib/monitoring/counter.h"
 
 #define DEBUG_TYPE "xla-legalize-tf-types"
 
 namespace mlir {
 namespace mhlo {
 namespace {
+
+// TODO: b/290366702 - Temporarily added metrics for debugging.
+auto *mlir_tf_quant_op_count = tensorflow::monitoring::Counter<1>::New(
+    "/tensorflow/core/tf2xla/tf_quant_op_count" /*metric_name*/,
+    "Counts the number of ops that has qint types" /*metric description*/,
+    "op_name" /*metric label*/);
 
 bool IsIllegalElementType(Type type) {
   return type
@@ -70,46 +79,6 @@ Type ToLegalElementType(Type type) {
       .Default([&type](Type) { return type; });
 }
 
-// Check if the op is a non-quantization op that supports quantized types.
-// The list include ops at
-// tensorflow/compiler/mlir/quantization/tensorflow/ops/tf_op_quant_spec.cc
-// and ops marked as supporting qint at
-// tensorflow/compiler/mlir/tensorflow/ir/tf_generated_ops.td.
-bool IsSupportedOp(Operation *op) {
-  return llvm::isa<
-      // clang-format off
-      // go/keep-sorted start
-      TF::AllToAllOp,
-      TF::ArgMaxOp,
-      TF::ArgMinOp,
-      TF::AvgPoolOp,
-      TF::ConcatOp,
-      TF::ConcatV2Op,
-      TF::ExpandDimsOp,
-      TF::GatherV2Op,
-      TF::IdentityNOp,
-      TF::IdentityOp,
-      TF::MaxOp,
-      TF::MaxPoolOp,
-      TF::MaxPoolV2Op,
-      TF::MinOp,
-      TF::PadV2Op,
-      TF::RankOp,
-      TF::ReshapeOp,
-      TF::SelectOp,
-      TF::SelectV2Op,
-      TF::ShapeNOp,
-      TF::ShapeOp,
-      TF::SizeOp,
-      TF::SqueezeOp,
-      TF::TransposeOp,
-      func::FuncOp,
-      func::ReturnOp
-      // go/keep-sorted end
-      // clang-format on
-      >(op);
-}
-
 // TODO(b/180234863): What's below this line is generic so convert it to a
 // utility.
 
@@ -136,19 +105,11 @@ class TfTypeConverter : public TypeConverter {
 };
 
 // An Op is illegal iff it contains an illegalType.
-// TODO: b/288215766 - Move quantization related passes to MOT directories. Also
-// reconsider the correct way to handle conversions of quantized types without
-// quantization ops.
 class TfTypeConversionTarget : public ConversionTarget {
  public:
   explicit TfTypeConversionTarget(MLIRContext &ctx, TfTypeConverter &converter)
       : ConversionTarget(ctx), converter_(converter) {
     markUnknownOpDynamicallyLegal([this](Operation *op) {
-      // Restrict type conversion to a select set of non-quantization ops that
-      // may handle quantized types.
-      if (!IsSupportedOp(op)) {
-        return true;
-      }
       // The FuncOp type can contain types that the op's operand and result
       // types do not contain.
       if (auto func = dyn_cast<func::FuncOp>(op)) {
@@ -192,6 +153,11 @@ class TfTypePattern : public ConversionPattern {
     }
     rewriter.replaceOp(op, rewriter.create(state)->getResults());
 
+    // TODO: b/290366702 - Temporarily added metrics for debugging.
+    if (llvm::any_of(op->getResultTypes(), IsIllegalType)) {
+      mlir_tf_quant_op_count->GetCell(std::string(op->getName().getStringRef()))
+          ->IncrementBy(1);
+    }
     return success();
   }
 };
