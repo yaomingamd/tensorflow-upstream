@@ -95,14 +95,14 @@ pip3 install --upgrade gast
 pip3 install --upgrade termcolor
 
 # Keras
-pip3 install keras-nightly --no-deps
+pip3 install keras==2.13.1 --no-deps
 pip3 install --upgrade h5py==3.1.0
 
 # Estimator
-pip3 install tf-estimator-nightly --no-deps
+pip3 install tensorflow-estimator==2.13.0 --no-deps
 
 # Tensorboard
-pip3 install tb-nightly --no-deps
+pip3 install tensorboard==2.13.0 --no-deps
 
 # Argparse
 pip3 install --upgrade argparse
