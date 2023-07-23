@@ -48,13 +48,19 @@ else
 	rm -f $TF_PKG_LOC/tensorflow*.whl
 fi
 
-yes "" | ROCM_PATH=$ROCM_INSTALL_DIR TF_NEED_ROCM=1 PYTHON_BIN_PATH=/usr/bin/python3 ./configure
+if [[ -e ".tf_configure.bazelrc" ]] ; then
+    echo "Config file exists, skipping configuration"
+else
+    yes "" | ROCM_PATH=$ROCM_INSTALL_DIR TF_NEED_ROCM=1 PYTHON_BIN_PATH=/usr/bin/python3 ./configure
+fi
 # Explicitly define resource constraints on bazel to avoid overload on rocm-ci
 if [[ -n $restriction ]]; then
     RESOURCE_OPTION="--local_ram_resources=60000 --local_cpu_resources=35 --jobs=70"
 else
     RESOURCE_OPTION=""
 fi
+
+pip3 uninstall -y tensorflow-rocm
 
 if [[ -n $nightly ]]; then
 	bazel build $RESOURCE_OPTION --config=opt --config=rocm //tensorflow/tools/pip_package:build_pip_package --verbose_failures &&

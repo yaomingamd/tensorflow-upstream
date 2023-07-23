@@ -67,6 +67,7 @@ limitations under the License.
 #include "tensorflow/core/util/autotune_maps/conv_parameters.h"
 #include "tensorflow/core/util/proto/proto_utils.h"
 #include "tensorflow/core/util/use_cudnn.h"
+#include "tensorflow/tsl/util/env_var.h"
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 namespace tensorflow {
@@ -493,7 +494,18 @@ struct LaunchFusedMatMulOp<GPUDevice, T> {
 #if TF_HIPBLASLT
     auto cap = stream->GetRocmComputeCapability();
     // as of ROCm 5.5, hipblaslt only supports MI200.
-    if(cap.gcn_arch_name().substr(0,6) != "gfx90a")
+    auto substr = cap.gcn_arch_name().substr(0,6);
+    if(substr != "gfx90a" && substr != "gfx940"
+        && substr != "gfx941" && substr != "gfx942")
+      use_cudnn = true;
+
+    int64_t f8_env=0, f8_mm_env=0, hipblaslt = 1;
+    tsl::Status status = tsl::ReadInt64FromEnvVar("TF_ROCM_F8", 0, &f8_env);
+    status = tsl::ReadInt64FromEnvVar("F8_MM", 0, &f8_mm_env);
+    if(f8_env && f8_mm_env)
+      use_cudnn = true;
+    status = tsl::ReadInt64FromEnvVar("TF_ROCM_HIPBLASLT", 1, &hipblaslt);
+    if(!hipblaslt)
       use_cudnn = true;
 #endif
 

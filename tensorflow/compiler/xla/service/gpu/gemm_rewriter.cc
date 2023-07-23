@@ -48,6 +48,7 @@ limitations under the License.
 #include "tensorflow/tsl/platform/errors.h"
 #include "tensorflow/tsl/platform/statusor.h"
 #include "tensorflow/tsl/protobuf/dnn.pb.h"
+#include "tensorflow/tsl/util/env_var.h"
 
 namespace xla {
 namespace gpu {
@@ -422,13 +423,56 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     TF_ASSIGN_OR_RETURN(
         absl::string_view gemm_custom_call_target,
         GetNonFp8GemmCustomCallTarget(*instr, gemm_backend_config));
+
+//    int f8_flags = 0;
+    HloDotInstruction* dot = dynamic_cast<HloDotInstruction*>(instr);
+    const PrecisionConfig& cfg = dot->precision_config();
+//    int prec_f8_flags = GetXlaPrecisionConfigF8Flags(&cfg);
+
     const Shape &output_shape = instr->shape();
     HloInstruction *gemm_call =
         instr->AddInstruction(HloInstruction::CreateCustomCall(
             output_shape,
             {instr->mutable_operand(0), instr->mutable_operand(1)},
             gemm_custom_call_target));
+
+    auto existing_config =
+        gemm_call->backend_config<GemmBackendConfig>().value();
+/*
+    if(!(existing_config.f8_gemm_backend_flags() & 256)) {
+	printf("No f8_gemm_backend_flags in GemmRewriter\n");
+        fflush(stdout);
+	throw "No f8_gemm_backend_flags in GemmRewriter\n";
+    }
+*/
+//    gemm_backend_config.set_f8_gemm_backend_flags(prec_f8_flags);
+    //printf("GemmRewriterVisitor: create a CustomCall %p\n", gemm_call);
+    xla::PrecisionConfig* backend_cfg = existing_config.mutable_precision_config();
+    int f8_flags = GetXlaPrecisionConfigF8Flags(&cfg);
+    int backend_f8_flags = GetXlaPrecisionConfigF8Flags(backend_cfg);
+    //printf("Dot f8 flags: %d\n", f8_flags);
+    //printf("Backend config f8 flags: %d\n", backend_f8_flags);
+
+    if(!(backend_f8_flags & 256)) {
+      SetXlaPrecisionConfigF8Flags(*gemm_backend_config.mutable_precision_config(), f8_flags);
+      //printf("After setting:\n");
+      //PrintXlaPrecisionConfigF8Flags(gemm_backend_config.mutable_precision_config());
+    }
+
     TF_RETURN_IF_ERROR(gemm_call->set_backend_config(gemm_backend_config));
+    /*
+    {
+      const xla::PrecisionConfig& cfg = gemm_call->precision_config();
+      int flags2_1 = GetXlaPrecisionConfigF8Flags(&cfg); 
+
+      TF_ASSIGN_OR_RETURN(auto const config, gemm_call->backend_config<xla::gpu::GemmBackendConfig>());
+      const xla::PrecisionConfig& cfg2 = config.precision_config();
+      int flags2_2 = GetXlaPrecisionConfigF8Flags(&cfg2); 
+      //printf("Updated flags: %d %d\n", flags2_1, flags2_2);
+      //PrintXlaPrecisionConfigF8Flags(&cfg);
+      //PrintXlaPrecisionConfigF8Flags(&cfg2);
+    }
+    */
     TF_RETURN_IF_ERROR(ReplaceInstruction(instr, gemm_call));
     return OkStatus();
   }
@@ -497,6 +541,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     HloInstruction *bias, *existing_gemm;
     HloInstruction *optional_slice = nullptr;
     HloInstruction *optional_convert = nullptr;
+    static int fuse_count=0;
     // Attempt to elide broadcast and fuse addition of a vector bias into GEMM,
     // including when slicing is applied to the result.
     if (Match(instr,
@@ -510,7 +555,6 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       TF_ASSIGN_OR_RETURN(bool was_fused,
                           FuseVectorBiasAdd(instr, bias, existing_gemm,
                                             optional_slice, optional_convert));
-
       if (was_fused) {
         return OkStatus();
       }
@@ -1340,6 +1384,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
              .debug_options()
              .xla_gpu_enable_cublaslt()) {
       // cublasLt is not enabled.
+      //printf("kGemmCall: cublaslt not enabled\n");
       return absl::string_view(kGemmCallTarget);
     }
 
@@ -1350,6 +1395,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
         rhs->shape().element_type() == S8) {
       // TODO(b/241446501) The XLA usage of cublasLt does not yet handle
       // int8 matmuls. Fallback to legacy cublas.
+      //printf("kGemmCall: S8\n");
       return absl::string_view(kGemmCallTarget);
     }
 
@@ -1358,9 +1404,11 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     TF_ASSIGN_OR_RETURN(bool gemm_is_supported_by_cublas_lt,
                         GemmIsSupportedByCublasLt(instr, gemm_backend_config));
     if (gemm_is_supported_by_cublas_lt) {
+      //printf("kCublasLtMatmulCallTarget: supported by cublaslt\n");
       return absl::string_view(kCublasLtMatmulCallTarget);
     }
 
+    //printf("kGemmCall: not supported by cublaslt\n");
     // This case is not supported by cublasLt, fallback to legacy cublas.
     return absl::string_view(kGemmCallTarget);
   }
@@ -1547,14 +1595,88 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     TF_ASSIGN_OR_RETURN(bool output_is_column_major,
                         MatrixIsColumnMajor(instr, gemm_backend_config));
 #if TENSORFLOW_USE_ROCM
-    if (!output_is_column_major)
-      return false;
+//    if (!output_is_column_major)
+//      return false;
 
     auto rocm_compute_capability_ =
         std::get<se::RocmComputeCapability>(gpu_version_);
     // as of ROCm 5.5, hipblaslt only supports MI200.
-    if(rocm_compute_capability_.gcn_arch_name().substr(0,6) != "gfx90a")
+    auto substr = rocm_compute_capability_.gcn_arch_name().substr(0,6);
+    if(substr != "gfx90a" && substr != "gfx940"
+        && substr != "gfx941" && substr != "gfx942") {
+      return false;
+    }
+#endif
+
+
+#if TENSORFLOW_USE_ROCM
+    {
+      int64_t f8_env=0, f8_mm_env=0, hipblaslt = 1;
+      tsl::Status status = tsl::ReadInt64FromEnvVar("TF_ROCM_F8", 0, &f8_env);
+      status = tsl::ReadInt64FromEnvVar("F8_MM", 0, &f8_mm_env);
+      if(f8_env && f8_mm_env)
         return false;
+      status = tsl::ReadInt64FromEnvVar("TF_ROCM_HIPBLASLT", 1, &hipblaslt);
+      if(!hipblaslt)
+        return false;
+
+      const DotDimensionNumbers &dot_dims =
+          gemm_backend_config.dot_dimension_numbers();
+      std::vector<int64_t> lhs_ncd;
+      std::vector<int64_t> rhs_ncd;
+
+    int batch_count_rhs = (batch_dimensions.empty() ? 0 : 1);
+    // All batch dimensions get flattened into a single batch dimension.
+    for (auto batch_dimension : batch_dimensions) {
+      batch_count_rhs *= rhs->shape().dimensions(batch_dimension);
+    }
+
+    // hipblaslt seems to have performance issues with batched gemm, 
+    // and they generally don't benefit anyway because they don't have bias
+    if(batch_count>1 && batch_count_rhs>1)
+      return false;
+
+    TF_ASSIGN_OR_RETURN(bool a_is_col_major,
+                        MatrixIsColumnMajor(instr, gemm_backend_config, "a"));
+    TF_ASSIGN_OR_RETURN(bool b_is_col_major,
+                        MatrixIsColumnMajor(instr, gemm_backend_config, "b"));
+
+      TF_ASSIGN_OR_RETURN(
+          lhs_ncd,
+          GetNonContractingDims(lhs->shape(), dot_dims.lhs_batch_dimensions(),
+                                dot_dims.lhs_contracting_dimensions()));
+      TF_ASSIGN_OR_RETURN(
+          rhs_ncd,
+          GetNonContractingDims(rhs->shape(), dot_dims.rhs_batch_dimensions(),
+                                dot_dims.rhs_contracting_dimensions()));
+      const auto lhs_non_contracting_dimension_size = absl::c_accumulate(
+        lhs_ncd, 1, [&](int64_t size, int64_t dim) {
+          return size * lhs->shape().dimensions(dim);
+        });
+      const auto rhs_non_contracting_dimension_size = absl::c_accumulate(
+        rhs_ncd, 1, [&](int64_t size, int64_t dim) {
+          return size * rhs->shape().dimensions(dim);
+        });
+      
+      uint64_t contracting_size=1;
+      for(auto d: dot_dims.lhs_contracting_dimensions())
+        contracting_size *= lhs->shape().dimensions(d);
+/*
+      //if((int)a_is_col_major+(int)b_is_col_major+(int)output_is_column_major!=0)
+      //  return false;
+      if(batch_count > 1) {
+        printf("GemmIsSupportedByCublasLt: batch dim %d %d, contracting dim %d, non-contracting dims %d, %d, column_major %d %d %d\n",
+          batch_count, batch_count_rhs,
+          contracting_size, lhs_non_contracting_dimension_size, rhs_non_contracting_dimension_size,
+          (int)a_is_col_major, (int)b_is_col_major, (int)output_is_column_major);
+        //if((int)a_is_col_major+(int)b_is_col_major+(int)output_is_column_major!=0)
+        //  return false;
+      }
+*/
+      //if(lhs_non_contracting_dimension_size >= 4096 && rhs_non_contracting_dimension_size >= 4096)
+      //  return false;
+      //printf("Allowing\n");
+    }
 #endif
 
     // 2. cublasLt does not support rhs col dimension size > 4194240 for

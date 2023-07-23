@@ -65,6 +65,14 @@ __global__ void __xla_MakeBatchPointers(char* base, int stride, int n,
   ptrs_out[idx] = base + idx * stride;
 }
 
+__global__ void boundary() {
+}
+
+void rocm_mark_boundary(void* stream) {
+  hipLaunchKernelGGL(boundary, dim3(1, 1, 1), 256, 0, (hipStream_t)stream);
+}
+
+
 void rocm_MakeBatchPointers(void* stream, char* base, int stride, int n,
                             void** ptrs_out) {
   const int threads_per_block = 256;

@@ -83,6 +83,9 @@ class BlasLt {
 
     cublasLtMatrixLayout_t get() const { return handle_.get(); }
 
+    int num_rows_, num_cols_, batch_size_, batch_stride_;
+    blas::DataType type_;
+
    private:
     explicit MatrixLayout(cublasLtMatrixLayout_t handle)
         : handle_(handle, cublasLtMatrixLayoutDestroy) {}
@@ -122,6 +125,7 @@ class BlasLt {
 
     cublasLtMatmulDesc_t get() const { return handle_.get(); }
 
+    blas::Transpose trans_a_, trans_b_;
    private:
     explicit MatmulDesc(cublasLtMatmulDesc_t handle)
         : handle_(handle, cublasLtMatmulDescDestroy) {}

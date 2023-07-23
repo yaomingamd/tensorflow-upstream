@@ -369,6 +369,8 @@ namespace wrap {
   __macro(miopenDestroyCTCLossDescriptor)                            \
   __macro(miopenSetConvolutionAttribute)  // clang-format on
 #else
+// __macro(miopenSetTensorCastType)                                   
+
 // clang-format off
 #define MIOPEN_DNN_ROUTINE_EACH(__macro)                             \
   __macro(miopenBatchNormalizationBackward)                          \
@@ -3143,7 +3145,8 @@ class RocmConvRunner : public dnn::ConvRunner {
         input_desc_{input_descriptor, ToMIOpenDataType(input_type)},
         output_desc_{output_descriptor, ToMIOpenDataType(input_type)},
         filter_desc_{filter_descriptor, ToMIOpenDataType(input_type)},
-        conv_desc_{conv_descriptor, ToMIOpenDataType(input_type)} {}
+        conv_desc_{conv_descriptor, ToMIOpenDataType(input_type)},
+        dtype_(input_type) {}
 
   std::string ToString() const override {
     return dnn::AlgorithmDesc{algo_id_, false, workspace_size_}.ToString();
@@ -3183,6 +3186,31 @@ class RocmConvRunner : public dnn::ConvRunner {
                            "Failed to start timer");
       }
     }
+    int64_t f8_env = 0, f8_conv_env = 0;
+
+    if(dtype_ == dnn::DataType::kHalf) {
+        tsl::Status status = tsl::ReadInt64FromEnvVar("TF_ROCM_F8", 0, &f8_env);
+        status = tsl::ReadInt64FromEnvVar("F8_CONV", 0, &f8_conv_env);
+        //printf("DNN F8 flags: %d, %d\n", f8_env, f8_conv_env);
+        if(f8_env!=0 && f8_conv_env!=0) {
+          //wrap::miopenSetTensorCastType(filter_desc_.handle(), miopenFloat8);
+          //wrap::miopenSetTensorCastType(input_desc_.handle(), miopenFloat8);
+          //wrap::miopenSetTensorCastType(output_desc_.handle(), miopenFloat8);
+        } else {
+          //wrap::miopenSetTensorCastType(filter_desc_.handle(), miopenHalf);
+          //wrap::miopenSetTensorCastType(input_desc_.handle(), miopenHalf);
+        }
+    }
+/*    
+    const char* type = "<unk>";
+    if(dtype_ == dnn::DataType::kHalf)
+      type = "half";
+    if(dtype_ == dnn::DataType::kFloat)
+      type = "float";
+    if(dtype_ == dnn::DataType::kDouble)
+      type = "double";
+    printf("Convolution: type %s, f8 %d %d\n", type, f8_env, f8_conv_env);
+*/
 
     miopenStatus_t status = miopenStatusSuccess;
     switch (kind_) {
@@ -3277,6 +3305,7 @@ class RocmConvRunner : public dnn::ConvRunner {
   int64_t algo_id_;
   size_t workspace_size_;
   dnn::ConvolutionKind kind_;
+  dnn::DataType dtype_;
   bool use_immediate_mode_;
 
   ScopedTensorDescriptor input_desc_;
@@ -3412,6 +3441,22 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsImmediateMode(
                                 ToMIOpenDataType(element_type)};
   ScopedConvolutionDescriptor conv{convolution_descriptor,
                                    ToMIOpenDataType(element_type)};
+
+  if(kind == dnn::ConvolutionKind::FORWARD && element_type == dnn::DataType::kHalf) {
+      int64_t f8_env = 0, f8_conv_env = 0;
+      tsl::Status status = tsl::ReadInt64FromEnvVar("TF_ROCM_F8", 0, &f8_env);
+      status = tsl::ReadInt64FromEnvVar("F8_CONV", 0, &f8_conv_env);
+      //printf("DNN F8 flags: %d, %d\n", f8_env, f8_conv_env);
+      if(f8_env!=0 && f8_conv_env!=0) {
+        //wrap::miopenSetTensorCastType(filter.handle(), miopenFloat8);
+        //wrap::miopenSetTensorCastType(input_nd.handle(), miopenFloat8);
+        //wrap::miopenSetTensorCastType(output_nd.handle(), miopenFloat8);
+      } else {
+        //wrap::miopenSetTensorCastType(filter_desc_.handle(), miopenHalf);
+        //wrap::miopenSetTensorCastType(input_desc_.handle(), miopenHalf);
+      }
+  }
+
 
   // First determine the number of algorityhms available
   size_t maxSolutionCount = 0;
@@ -3702,6 +3747,23 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
 
   int returnedAlgorithmCount = 0;
   bool exhaustiveSearch = false;
+
+  int64_t f8_env = 0, f8_conv_env = 0;
+
+  if(element_type == dnn::DataType::kHalf) {
+      tsl::Status status = tsl::ReadInt64FromEnvVar("TF_ROCM_F8", 0, &f8_env);
+      status = tsl::ReadInt64FromEnvVar("F8_CONV", 0, &f8_conv_env);
+      //printf("DNN F8 flags: %d, %d\n", f8_env, f8_conv_env);
+      if(f8_env!=0 && f8_conv_env!=0) {
+        //wrap::miopenSetTensorCastType(filter.handle(), miopenFloat8);
+        //wrap::miopenSetTensorCastType(input_nd.handle(), miopenFloat8);
+        //wrap::miopenSetTensorCastType(output_nd.handle(), miopenFloat8);
+      } else {
+        //wrap::miopenSetTensorCastType(filter_desc_.handle(), miopenHalf);
+        //wrap::miopenSetTensorCastType(input_desc_.handle(), miopenHalf);
+      }
+  }
+
 
   switch (kind) {
     case dnn::ConvolutionKind::FORWARD: {

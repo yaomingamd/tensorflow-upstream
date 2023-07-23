@@ -142,16 +142,12 @@ REQUIRED_PACKAGES = [
     # current release version. These also usually have "alpha" or "dev" in their
     # version name.
     # These are all updated during the TF release process.
-    standard_or_nightly(
-        'tensorboard >= 2.13, < 2.14', 'tb-nightly ~= 2.14.0.a'
-    ),
-    standard_or_nightly(
-        'tensorflow_estimator >= 2.13.0rc0, < 2.14',
-        'tf-estimator-nightly ~= 2.14.0.dev',
-    ),
-    standard_or_nightly(
-        'keras >= 2.13.1rc0, < 2.14', 'keras-nightly ~= 2.14.0.dev'
-    ),
+    standard_or_nightly('tensorboard >= 2.13, < 2.14',
+                        'tb-nightly ~= 2.14.0.a'),
+    standard_or_nightly('tensorflow_estimator >= 2.13.0rc0, < 2.14',
+                        'tf-estimator-nightly == 2.13.0.dev2023032308'),
+    standard_or_nightly('keras >= 2.13.1rc0, < 2.14',
+                        'keras-nightly == 2.13.0.dev2023032307'),
 ]
 REQUIRED_PACKAGES = [p for p in REQUIRED_PACKAGES if p is not None]
 

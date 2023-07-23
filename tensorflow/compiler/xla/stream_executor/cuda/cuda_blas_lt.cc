@@ -160,6 +160,10 @@ tsl::Status BlasLt::Init() {
                                  num_cols, *leading_dim_stride));
   // Wrap cublas handle immediately, so it is cleaned up if an error occurs.
   BlasLt::MatrixLayout layout(cu_layout);
+  layout.num_rows_ = num_rows;
+  layout.num_cols_ = num_cols;  
+  layout.batch_size_ = batch_size;
+  layout.type_ = type;
 #if GOOGLE_CUDA
   TF_RETURN_IF_ERROR(
       SetAttr(cu_layout, CUBLASLT_MATRIX_LAYOUT_ORDER,
@@ -171,10 +175,12 @@ tsl::Status BlasLt::Init() {
 #endif
   TF_RETURN_IF_ERROR(SetAttr(cu_layout, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
                              static_cast<int32_t>(batch_size)));
+  //TF_RETURN_IF_ERROR(SetAttr(cu_layout, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, 1));
 
   if (!batch_stride) {
     batch_stride = (batch_size > 1) ? num_rows * num_cols : 0;
   }
+  layout.batch_stride_ = *batch_stride;
 
   TF_RETURN_IF_ERROR(SetAttr(
       cu_layout, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, *batch_stride));
@@ -202,6 +208,8 @@ cudaDataType_t BlasLt::MatrixLayout::type() const {
       &cu_desc, AsCublasComputeType(compute_type), AsCudaDataType(scale_type)));
   // Wrap cublas handle immediately, so it is cleaned up if an error occurs.
   BlasLt::MatmulDesc desc(cu_desc);
+  desc.trans_a_ = trans_a;
+  desc.trans_b_ = trans_b;
 #if GOOGLE_CUDA
   TF_RETURN_IF_ERROR(SetAttr(cu_desc, CUBLASLT_MATMUL_DESC_POINTER_MODE,
                              AsCublasLtPointerMode(pointer_mode)));
@@ -312,10 +320,13 @@ tsl::Status BlasLt::DoMatmul(Stream* stream, const BlasLt::MatmulPlan& plan,
                              DeviceMemoryBase c_scale, DeviceMemoryBase d_scale,
                              DeviceMemoryBase d_amax,
                              blas::ProfileResult* profile_result) {
+//  printf("BlasLt::DoMatmul\n");
   std::unique_ptr<gpu::GpuTimer, gpu::GpuTimerDeleter> timer;
-  if (profile_result != nullptr) {
+  //if (profile_result != nullptr) 
+  {
     timer.reset(new gpu::GpuTimer(parent_));
     TF_RET_CHECK(timer->Init());
+    auto hipError = hipStreamSynchronize(gpu::AsGpuStreamValue(stream));
     TF_RET_CHECK(timer->Start(gpu::AsGpuStream(stream)));
   }
 
@@ -415,17 +426,72 @@ tsl::Status BlasLt::DoMatmul(Stream* stream, const BlasLt::MatmulPlan& plan,
 #endif
     gpu::ScopedActivateExecutorContext sac{parent_};
 
-    SE_CUBLAS_RETURN_IF_ERROR(cublasLtMatmul(
-        blas_lt_.get(), plan.op_desc.get(), alpha, a.opaque(),
-        plan.a_desc.get(), b.opaque(), plan.b_desc.get(), beta, c.opaque(),
-        plan.c_desc.get(), d.opaque(), plan.d_desc.get(), &algorithm.algo,
-        workspace, algorithm.workspace_size, gpu::AsGpuStreamValue(stream)));
+    uint64_t batch=1;
+    if(plan.a_desc.batch_size_ > 1)
+      batch = plan.a_desc.batch_size_;
+    if(plan.b_desc.batch_size_ > 1)
+      batch = plan.b_desc.batch_size_;
+
+    if(true) {
+      SE_CUBLAS_RETURN_IF_ERROR(cublasLtMatmul(
+          blas_lt_.get(), plan.op_desc.get(), alpha, a.opaque(),
+          plan.a_desc.get(), b.opaque(), plan.b_desc.get(), beta, c.opaque(),
+          plan.c_desc.get(), d.opaque(), plan.d_desc.get(), &algorithm.algo,
+          workspace, algorithm.workspace_size, gpu::AsGpuStreamValue(stream)));
+    } else {
+      uint64_t M = (plan.op_desc.trans_a_ == blas::Transpose::kNoTranspose) ? plan.a_desc.num_rows_ : plan.a_desc.num_cols_;
+      uint64_t N = (plan.op_desc.trans_b_ == blas::Transpose::kNoTranspose) ? plan.b_desc.num_cols_ : plan.b_desc.num_rows_;
+      uint64_t K = plan.a_desc.num_rows_ * plan.a_desc.num_cols_ / M;
+      int sz = (plan.a_desc.type_ == blas::DataType::kFloat) ? 4 : 2;
+
+      for(int i=0; i<batch; i++) {
+        SE_CUBLAS_RETURN_IF_ERROR(cublasLtMatmul(
+            blas_lt_.get(), plan.op_desc.get(), alpha, a.opaque()+i*M*K*sz,
+            plan.a_desc.get(), b.opaque()+i*N*K*sz, plan.b_desc.get(), beta, c.opaque()+i*M*N*sz,
+            plan.c_desc.get(), d.opaque()+i*M*N*sz, plan.d_desc.get(), &algorithm.algo,
+            workspace, algorithm.workspace_size, gpu::AsGpuStreamValue(stream)));
+      }
+    }
   }
 
-  if (timer) {
+  if (timer) 
+  {
+    auto hipError = hipStreamSynchronize(gpu::AsGpuStreamValue(stream));
     TF_RET_CHECK(timer->Stop(gpu::AsGpuStream(stream)));
-    profile_result->set_is_valid(true);
-    profile_result->set_elapsed_time_in_ms(timer->GetElapsedMilliseconds());
+    double t = timer->GetElapsedMilliseconds();
+    uint64_t batch=1;
+    if(plan.a_desc.batch_size_ > 1)
+      batch = plan.a_desc.batch_size_;
+    if(plan.b_desc.batch_size_ > 1)
+      batch = plan.b_desc.batch_size_;
+
+    uint64_t M = (plan.op_desc.trans_a_ == blas::Transpose::kNoTranspose) ? plan.a_desc.num_rows_ : plan.a_desc.num_cols_;
+    uint64_t N = (plan.op_desc.trans_b_ == blas::Transpose::kNoTranspose) ? plan.b_desc.num_cols_ : plan.b_desc.num_rows_;
+    uint64_t K = plan.a_desc.num_rows_ * plan.a_desc.num_cols_ / M;
+    
+//    if(batch>1 || plan.op_desc.trans_a_!=blas::Transpose::kNoTranspose || plan.op_desc.trans_b_!=blas::Transpose::kNoTranspose)
+    if(batch==1 && M==10240 && N==1152 && K==1280)
+      printf("MatmulLt: M=%ld N=%ld K=%ld %s%s  %.3f TFlops, %.3f ms\n",
+        M, N, K,
+        (plan.op_desc.trans_a_ == blas::Transpose::kNoTranspose) ? "N" : "T",
+        (plan.op_desc.trans_b_ == blas::Transpose::kNoTranspose) ? "N" : "T",
+        M*N*K*2 / (t*1e9), t);
+
+      /*
+      printf("MatmulLt: (%d,%d,%d) @ (%d,%d,%d) %s %s (K=%d), bias %p, types %d %d -> %d, %.3f TFlops, %.3f ms\n",
+        plan.a_desc.batch_size_, plan.a_desc.num_rows_, plan.a_desc.num_cols_,
+        plan.b_desc.batch_size_, plan.b_desc.num_rows_, plan.b_desc.num_cols_,
+        (plan.op_desc.trans_a_ == blas::Transpose::kNoTranspose) ? "" : "ta",
+        (plan.op_desc.trans_b_ == blas::Transpose::kNoTranspose) ? "" : "tb",
+        K,
+        bias.opaque(),
+        int(plan.a_desc.type_), int(plan.b_desc.type_), int(plan.c_desc.type_), 
+        M*N*K*batch*2 / (t*1e9), t);
+      */
+    if(profile_result) {
+      profile_result->set_is_valid(true);
+      profile_result->set_elapsed_time_in_ms(t);
+    }
   }
   return tsl::OkStatus();
 }
