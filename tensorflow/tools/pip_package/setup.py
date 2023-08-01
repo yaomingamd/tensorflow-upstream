@@ -72,6 +72,7 @@ if '--collaborator_build' in sys.argv:
 def standard_or_nightly(standard, nightly):
   return nightly if 'tf_nightly' in project_name else standard
 
+<<<<<<< HEAD
 ## AMD ##
 # For tensorflow-rocm, add the rocm version we're building against as a
 # semver compatible buid metadata string (https://semver.org/#spec-item-10)
@@ -102,6 +103,8 @@ if project_name.endswith('_rocm'):
   _VERSION = _VERSION + "." + str(_rocm_version(_get_rocm_install_path()).replace('.', ''))
 
 
+=======
+>>>>>>> d8642b91a61... [ROCM] Move ROCm version string code to update_version.py script
 # All versions of TF need these packages. We indicate the widest possible range
 # of package releases possible to be as up-to-date as possible as well as to
 # accomodate as many pre-installed packages as possible.
