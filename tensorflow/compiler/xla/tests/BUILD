@@ -2019,14 +2019,14 @@ xla_test(
 )
 
 xla_test(
-    name = "data_parallel_collective_optimizer_execution_test",
-    srcs = ["data_parallel_collective_optimizer_execution_test.cc"],
+    name = "collective_pipeliner_execution_test",
+    srcs = ["collective_pipeliner_execution_test.cc"],
     deps = [
         ":hlo_test_base",
         ":xla_internal_test_main",
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
-        "//tensorflow/compiler/xla/service:data_parallel_collective_optimizer",
+        "//tensorflow/compiler/xla/service:collective_pipeliner",
         "//tensorflow/compiler/xla/service:hlo_dce",
         "//tensorflow/compiler/xla/service:hlo_parser",
         "//tensorflow/compiler/xla/service:hlo_pass_pipeline",
@@ -2294,7 +2294,7 @@ xla_cc_test(
         "//tensorflow/compiler/xla/service/cpu:cpu_compiler",
         "//tensorflow/compiler/xla/service/gpu:gpu_compiler",
         "//tensorflow/compiler/xla/stream_executor",
-        "//tensorflow/tsl/platform:test",
+        "//tensorflow/tsl/platform:env",
         "//tensorflow/tsl/platform:test_main",
     ]),
 )

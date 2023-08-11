@@ -15,7 +15,6 @@
 # limitations under the License.
 # ==============================================================================
 setup_file() {
-    cd $TFCI_GIT_DIR
     bazel version  # Start the bazel server
 }
 
@@ -156,7 +155,6 @@ _test_lib$
 //tensorflow/python:mixed_precision
 //tensorflow/python:tf_optimizer
 //tensorflow/python:compare_test_proto_py
-//tensorflow/python/framework:test_ops_2
 //tensorflow/python/framework:test_file_system.so
 //tensorflow/python/debug:grpc_tensorflow_server.par
 //tensorflow/python/feature_column:vocabulary_testdata

@@ -43,6 +43,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/cublas_padding_requirements.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_fused_conv_rewriter.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_fused_mha_rewriter.h"
+#include "tensorflow/compiler/xla/service/gpu/cudnn_fused_mha_transpose_fusion.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_pad_for_convolutions.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_simplify_padding.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_vectorize_convolutions.h"
@@ -58,18 +59,23 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/triangular_solve_rewriter.h"
 #include "tensorflow/compiler/xla/service/gpu/triton_autotuner.h"
 #include "tensorflow/compiler/xla/service/hlo_constant_folding.h"
+#include "tensorflow/compiler/xla/service/hlo_cse.h"
 #include "tensorflow/compiler/xla/service/hlo_dce.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_fix.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_pipeline.h"
 #include "tensorflow/compiler/xla/service/hlo_verifier.h"
+#include "tensorflow/compiler/xla/service/layout_normalization.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/llvm_util.h"
+#include "tensorflow/compiler/xla/service/reshape_decomposer.h"
 #include "tensorflow/compiler/xla/service/reshape_mover.h"
 #include "tensorflow/compiler/xla/service/tuple_simplifier.h"
 #include "tensorflow/compiler/xla/stream_executor/cuda/cuda_diagnostics.h"
 #include "tensorflow/compiler/xla/stream_executor/cuda/cuda_platform_id.h"
 #include "tensorflow/compiler/xla/stream_executor/device_description.h"
 #include "tensorflow/compiler/xla/stream_executor/gpu/asm_compiler.h"
+#include "tensorflow/compiler/xla/stream_executor/gpu/gpu_driver.h"
 #include "tensorflow/compiler/xla/util.h"
+#include "tensorflow/compiler/xla/xla.pb.h"
 #include "tensorflow/tsl/platform/path.h"
 #include "tensorflow/tsl/platform/status.h"
 #include "tensorflow/tsl/platform/statusor.h"
@@ -99,6 +105,11 @@ class ConvBfloat16Support : public FloatSupport {
 
   bool SupportsLowPrecisionOutput(const HloInstruction& hlo) const override {
     return (hlo.opcode() != HloOpcode::kConvolution) || is_conv_bf16_supported_;
+  }
+
+  bool SupportsMixedPrecisions(const HloInstruction& hlo) const override {
+    // Skip all HLOs other than convolutions.
+    return (hlo.opcode() != HloOpcode::kConvolution);
   }
 
  private:
@@ -183,7 +194,8 @@ Status NVPTXCompiler::OptimizeHloConvolutionCanonicalization(
 Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
     HloModule* hlo_module, se::StreamExecutor* stream_exec,
     const CompileOptions& options, const GpuTargetConfig& gpu_target_config,
-    const AutotuneResults* autotune_results) {
+    const AutotuneResults* autotune_results,
+    tsl::thread::ThreadPool* thread_pool) {
   HloPassPipeline pre_pipeline("nvptx post-layout_assignment part 1");
 
   // This needs to run before GemmRewriter, which is part of
@@ -194,6 +206,27 @@ Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
   if (hlo_module->config().debug_options().xla_gpu_enable_cudnn_fmha()) {
     HloPassPipeline mha_fusion_pipeline(
         "nvptx cudnn multi-headed attention fusion");
+    const DebugOptions& debug_options = hlo_module->config().debug_options();
+    // The LayoutAssignment pass may leave behind kCopy instructions which are
+    // duplicate or NOPs, so remove them with algebraic simplification and CSE.
+    AlgebraicSimplifierOptions alg_sim_options;
+    alg_sim_options.set_supports_non_canonical_dots(false);
+    alg_sim_options.set_is_layout_sensitive(true);
+    alg_sim_options.set_enable_conv_operand_swap(false);
+    // "slow" minmax means we propagate nan.
+    alg_sim_options.set_minmax_propagate_nan(
+        !hlo_module->config().debug_options().xla_gpu_enable_fast_min_max());
+    alg_sim_options.set_enable_unconditional_reduce_of_concat_replacement(
+        false);
+    if (debug_options.xla_gpu_normalize_layouts()) {
+      mha_fusion_pipeline.AddPass<ReshapeDecomposer>();
+      mha_fusion_pipeline.AddPass<LayoutNormalization>();
+    }
+    mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
+    mha_fusion_pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(
+        alg_sim_options);
+    mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
+
     // Rewrite Multi-Headed Attention modules to Fused MHA custom-calls.
     if (stream_exec) {
       mha_fusion_pipeline.AddPass<CudnnFusedMHARewriter>(
@@ -202,13 +235,10 @@ Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
       mha_fusion_pipeline.AddPass<CudnnFusedMHARewriter>(
           cuda_compute_capability, gpu_target_config.dnn_version_info);
     }
-    AlgebraicSimplifierOptions algebraic_simplifier_options({}, {});
-    algebraic_simplifier_options
-        .set_enable_unconditional_reduce_of_concat_replacement(false);
-    mha_fusion_pipeline.AddPass<AlgebraicSimplifier>(
-        algebraic_simplifier_options);
+    mha_fusion_pipeline.AddPass<AlgebraicSimplifier>(alg_sim_options);
+    mha_fusion_pipeline.AddPass<CudnnFusedMHATransposeFusion>();
     mha_fusion_pipeline.AddPass<HloDCE>();
-
+    mha_fusion_pipeline.AddPass<HloCSE>(/*is_layout_sensitive=*/true);
     TF_RETURN_IF_ERROR(mha_fusion_pipeline.Run(hlo_module).status());
   }
 
@@ -226,7 +256,8 @@ Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
   TF_RETURN_IF_ERROR(pre_pipeline.Run(hlo_module).status());
 
   TF_RETURN_IF_ERROR(GpuCompiler::OptimizeHloPostLayoutAssignment(
-      hlo_module, stream_exec, options, gpu_target_config, autotune_results));
+      hlo_module, stream_exec, options, gpu_target_config, autotune_results,
+      thread_pool));
 
   HloPassPipeline post_pipeline("nvptx post-layout_assignment part 2");
 
@@ -480,7 +511,8 @@ StatusOr<std::pair<std::string, std::vector<uint8_t>>>
 NVPTXCompiler::CompileTargetBinary(const HloModuleConfig& module_config,
                                    llvm::Module* llvm_module,
                                    GpuVersion gpu_version, bool relocatable,
-                                   const HloModule* debug_module) {
+                                   const HloModule* debug_module,
+                                   const CompileOptions& options) {
   std::unique_ptr<llvm::Module> loaded_module =
       MaybeLoadLLVMFromFile(debug_module, llvm_module);
   llvm::Module* selected_module = nullptr;
@@ -493,9 +525,13 @@ NVPTXCompiler::CompileTargetBinary(const HloModuleConfig& module_config,
   std::string ptx;
   if (!(debug_module &&
         MaybeLoadPtxFromFile(module_config, debug_module, &ptx))) {
-    XLA_SCOPED_LOGGING_TIMER(absl::StrCat(
-        "NVPTXCompiler::CompileTargetBinary - CompileToPtx for ",
-        (debug_module != nullptr ? debug_module->name() : "(unknown")));
+    // This may print multiple lines per HLO compilation because of the
+    // parallelized compilation of LLVM modules.
+    XLA_SCOPED_LOGGING_TIMER_IF(
+        absl::StrCat(
+            "NVPTXCompiler::CompileTargetBinary - CompileToPtx for ",
+            (debug_module != nullptr ? debug_module->name() : "(unknown")),
+        !options.is_autotuning_compilation);
     uint64_t start_usecs = tsl::Env::Default()->NowMicros();
     TF_ASSIGN_OR_RETURN(ptx,
                         nvptx::CompileToPtx(selected_module, gpu_version,
@@ -510,7 +546,7 @@ NVPTXCompiler::CompileTargetBinary(const HloModuleConfig& module_config,
   std::vector<uint8_t> cubin = CompileGpuAsmOrGetCachedResult(
       ptx, std::get<se::CudaComputeCapability>(gpu_version), module_config,
       (debug_module != nullptr ? debug_module->name() : "(unknown)"),
-      relocatable);
+      relocatable, options);
 
   return std::pair<std::string, std::vector<uint8_t>>(std::move(ptx),
                                                       std::move(cubin));
@@ -519,9 +555,13 @@ NVPTXCompiler::CompileTargetBinary(const HloModuleConfig& module_config,
 std::vector<uint8_t> NVPTXCompiler::CompileGpuAsmOrGetCachedResult(
     const std::string& ptx, se::CudaComputeCapability cc,
     const HloModuleConfig& hlo_module_config, absl::string_view module_name,
-    bool relocatable) {
-  XLA_SCOPED_LOGGING_TIMER(absl::StrCat(
-      "NVPTXCompiler::CompileGpuAsmOrGetCachedResult for ", module_name));
+    bool relocatable, const CompileOptions& options) {
+  // This may print multiple lines per HLO compilation because of the
+  // parallelized compilation of LLVM modules.
+  XLA_SCOPED_LOGGING_TIMER_IF(
+      absl::StrCat("NVPTXCompiler::CompileGpuAsmOrGetCachedResult for ",
+                   module_name),
+      !options.is_autotuning_compilation);
   tsl::profiler::TraceMe activity("PTX->CUBIN",
                                   tsl::profiler::TraceMeLevel::kInfo);
   bool inserted;
@@ -676,8 +716,10 @@ StatusOr<NVPTXCompiler::LinkingMethod> NVPTXCompiler::ChooseLinkingMethod(
     if (!se::gpu::GpuDriver::GetDriverVersion(&driver_version)) {
       return FailedPrecondition("Unable to get CUDA driver version");
     }
-    bool ok = driver_version >= ptxas_version;
-    if (!ok) {
+
+    if (driver_version >= ptxas_version) {
+      linking_method = LinkingMethod::kDriver;
+    } else {
       LOG_FIRST_N(WARNING, 1)
           << "The NVIDIA driver's CUDA version is "
           << absl::StrFormat("%d.%d", driver_version / 1000,
@@ -691,7 +733,6 @@ StatusOr<NVPTXCompiler::LinkingMethod> NVPTXCompiler::ChooseLinkingMethod(
              "You should update your NVIDIA driver or use the NVIDIA-provided "
              "CUDA forward compatibility packages.";
     }
-    linking_method = LinkingMethod::kDriver;
   }
   {
     absl::MutexLock lock(&mutex_);

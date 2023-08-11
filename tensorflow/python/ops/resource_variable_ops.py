@@ -659,7 +659,7 @@ class BaseResourceVariable(variables.Variable, core.Tensor):
     return self._constraint
 
   @property
-  def op(self):
+  def op(self) -> ops.Operation:
     """The op for this variable."""
     return self.handle.op
 
@@ -2304,7 +2304,7 @@ class UninitializedVariable(BaseResourceVariable):
         trainable=trainable,
         synchronization=synchronization,
         aggregation=aggregation,
-        in_graph_mode=self._in_graph_mode)
+        in_graph_mode=self._in_graph_mode, **unused_kwargs)
 
 
 _pywrap_utils.RegisterType("ResourceVariable", ResourceVariable)
@@ -2448,7 +2448,7 @@ class _UnreadVariable(BaseResourceVariable):
       return super(_UnreadVariable, self).scatter_nd_min(indices, updates, name)
 
   @property
-  def op(self):
+  def op(self) -> ops.Operation:
     """The op for this variable."""
     return self._parent_op
 

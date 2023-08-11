@@ -22,10 +22,12 @@ limitations under the License.
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_map.h"
+#include "tensorflow/compiler/xla/autotune_results.pb.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_compiler.h"
 #include "tensorflow/compiler/xla/statusor.h"
 #include "tensorflow/compiler/xla/stream_executor/device_description.h"
 #include "tensorflow/compiler/xla/xla.pb.h"
+#include "tensorflow/tsl/platform/threadpool.h"
 
 namespace xla {
 namespace gpu {
@@ -45,7 +47,8 @@ class NVPTXCompiler : public GpuCompiler {
   Status OptimizeHloPostLayoutAssignment(
       HloModule* hlo_module, se::StreamExecutor* stream_exec,
       const CompileOptions& options, const GpuTargetConfig& gpu_target_config,
-      const AutotuneResults* autotune_results) override;
+      const AutotuneResults* autotune_results,
+      tsl::thread::ThreadPool* thread_pool) override;
 
   bool EnableCollectiveScheduleLinearizerForSpmd(
       HloModule* hlo_module, se::StreamExecutor* stream_exec) override;
@@ -72,8 +75,8 @@ class NVPTXCompiler : public GpuCompiler {
 
   StatusOr<std::pair<std::string, std::vector<uint8_t>>> CompileTargetBinary(
       const HloModuleConfig& module_config, llvm::Module* llvm_module,
-      GpuVersion gpu_version, bool relocatable,
-      const HloModule* debug_module) override;
+      GpuVersion gpu_version, bool relocatable, const HloModule* debug_module,
+      const CompileOptions& options) override;
 
  private:
   StatusOr<bool> CanUseLinkModules(
@@ -102,7 +105,7 @@ class NVPTXCompiler : public GpuCompiler {
   std::vector<uint8_t> CompileGpuAsmOrGetCachedResult(
       const std::string& ptx, se::CudaComputeCapability cc,
       const HloModuleConfig& hlo_module_config, absl::string_view module_name,
-      bool relocatable);
+      bool relocatable, const CompileOptions& options);
 
   // The compilation_cache_ map is a cache from {ptx string, cc_major, cc_minor}
   // -> cubin so we don't recompile the same ptx twice.  This is important for

@@ -353,6 +353,10 @@ class HloComputation {
       HloInstruction&) const;
   std::vector<HloInstruction*> MakeInstructionPostOrder(
       const ChannelDependencies& channel_dependencies) const;
+  // Same as MakeInstructionPostOrder but with special tie-breaking behavior.
+  // Specifically, when ties (in ordering) between instructions occur, Reshapes
+  // will be sorted before other operations.
+  std::vector<HloInstruction*> MakeInstructionPostOrderWithReshapeFirst() const;
 
   // Calls `func` with each instruction in the computation in post-order.
   void ForEachInstructionPostOrder(
@@ -781,13 +785,6 @@ class HloComputation {
 
   Status RemoveInstructionImpl(HloInstruction* instruction,
                                bool ignore_safety_check);
-
-  // Finds the next instruction in the 'instructions_' list after 'current'.
-  // 'current' must either be nullptr or an instruction that is part of this
-  // computation. If it is nullptr, next_instruction returns the first
-  // instruction of the computation. Returns nullptr if there is no next
-  // instruction.
-  HloInstruction* NextInstruction(HloInstruction* current);
 
   std::string name_;
   int64_t unique_id_;
