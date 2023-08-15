@@ -107,6 +107,7 @@ class MultiDeviceIterator : public ResourceBase {
 
   Status Init(std::unique_ptr<IteratorBase> iterator, int64_t max_buffer_size,
               int64_t* incarnation_id, DatasetBase* dataset) {
+    VLOG(2) << "### Init";
     if (iterator) {
       TF_RETURN_IF_ERROR(
           VerifyTypesMatch(output_types_, iterator->output_dtypes()));
@@ -123,6 +124,7 @@ class MultiDeviceIterator : public ResourceBase {
 
     ++incarnation_id_;
     *incarnation_id = incarnation_id_;
+    VLOG(2) << "### Incarnation id: " << incarnation_id_;
 
     multi_device_buffer_ = std::make_unique<MultiDeviceBuffer>(
         devices_.size(), max_buffer_size, incarnation_id_, std::move(iterator),
@@ -677,6 +679,7 @@ class MultiDeviceIteratorInitOp : public OpKernel {
                                        &incarnation_id, dataset));
     Tensor tensor_incarnation_id(DT_INT64, TensorShape({}));
     tensor_incarnation_id.scalar<int64_t>()() = incarnation_id;
+    VLOG(2) << "##Compute: set_output incarnation_id: " << tensor_incarnation_id;
     OP_REQUIRES_OK(ctx,
                    ctx->set_output("incarnation_id", tensor_incarnation_id));
   }
@@ -702,6 +705,7 @@ class MultiDeviceIteratorGetNextFromShardOp : public AsyncOpKernel {
     OP_REQUIRES_OK_ASYNC(
         ctx, ctx->input("incarnation_id", &tensor_incarnation_id), done);
     int64_t incarnation_id = tensor_incarnation_id->scalar<int64_t>()();
+    VLOG(2) << "## ComputeAsync: incarnation_id: " << incarnation_id;
 
     MultiDeviceIterator* iterator;
     OP_REQUIRES_OK_ASYNC(
@@ -729,6 +733,7 @@ class MultiDeviceIteratorGetNextFromShardOp : public AsyncOpKernel {
               },
               std::placeholders::_1);
 
+	  VLOG(2) << "## do GetNextFromShard. incarnation_id: " << incarnation_id;
           Status s = iterator->GetNextFromShard(ctx, shard_num, incarnation_id,
                                                 std::move(callback));
           if (!s.ok()) {
