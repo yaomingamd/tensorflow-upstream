@@ -215,12 +215,15 @@ class MultiDeviceIterator : public ResourceBase {
                           int64_t incarnation_id,
                           MultiDeviceIteratorCallback callback) {
       HostBufferElement elem;
-      if (incarnation_id_ != incarnation_id) {
-        elem.status = errors::InvalidArgument(
-            "Invalid incarnation id. Provided: ", incarnation_id,
-            "; Expected: ", incarnation_id_);
-        callback(elem);
-        return;
+      {
+        mutex_lock l(mu_);
+        if (incarnation_id_ != incarnation_id) {
+          elem.status = errors::InvalidArgument(
+              "Invalid incarnation id. Provided: ", incarnation_id,
+              "; Expected: ", incarnation_id_);
+          callback(elem);
+          return;
+        }
       }
 
       bool produced_output = false;
@@ -699,9 +702,16 @@ class MultiDeviceIteratorGetNextFromShardOp : public AsyncOpKernel {
     int32_t shard_num = tensor_shard_num->scalar<int32>()();
 
     const Tensor* tensor_incarnation_id;
-    OP_REQUIRES_OK_ASYNC(
-        ctx, ctx->input("incarnation_id", &tensor_incarnation_id), done);
-    int64_t incarnation_id = tensor_incarnation_id->scalar<int64_t>()();
+    int64_t incarnation_id;
+    const int max_checks=20;
+    int check=1;
+    do {
+      OP_REQUIRES_OK_ASYNC(
+          ctx, ctx->input("incarnation_id", &tensor_incarnation_id), done);
+      incarnation_id = tensor_incarnation_id->scalar<int64_t>()();
+      VLOG(2) << "Got incarnation_id: " << incarnation_id;
+      check++;
+    } while ((incarnation_id > 100) && (check < max_checks));
 
     MultiDeviceIterator* iterator;
     OP_REQUIRES_OK_ASYNC(
