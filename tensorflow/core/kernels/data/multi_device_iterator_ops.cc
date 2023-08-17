@@ -711,7 +711,10 @@ class MultiDeviceIteratorGetNextFromShardOp : public AsyncOpKernel {
       incarnation_id = tensor_incarnation_id->scalar<int64_t>()();
       VLOG(2) << "Got incarnation_id: " << incarnation_id;
       check++;
-    } while ((incarnation_id > 100) && (check < max_checks));
+      //check again if we got garbage
+    } while (((incarnation_id > 100) || (incarnation_id < 0)) && (check < max_checks));
+    if ((incarnation_id > 100) || (incarnation_id < 0))
+	    incarnation_id=1;
 
     MultiDeviceIterator* iterator;
     OP_REQUIRES_OK_ASYNC(
