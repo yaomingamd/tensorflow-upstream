@@ -1169,6 +1169,7 @@ class ScopedActivationDescriptor {
 
         case dnn::ActivationMode::kElu:
           miopen_activation_mode_ = miopenActivationELU;
+          alpha_ = 1.0;
           break;
 
         case dnn::ActivationMode::kLeakyRelu:
@@ -5164,6 +5165,17 @@ public:
                          DeviceMemoryBase output_data) const {
       auto miopen = miopen_->GetHandle(parent_, stream);
 
+      std::optional<GpuTimer> timer;
+      if (profile_result) {
+        auto timer_or_status = GpuTimer::Create(AsGpuStream(stream));
+        if (!timer_or_status.ok()) {
+          LOG(ERROR) << "Failed to create timer";
+          return tsl::Status(absl::StatusCode::kInternal,
+                             "Failed to start timer");
+        }
+        timer.emplace(std::move(*timer_or_status));
+      }
+
       auto status = wrap::miopenConvolutionForwardImmediate(
         miopen.handle(), filter_.handle(), filter_data.opaque(),
         input_nd_.handle(), input_data.opaque(), conv_.handle(),
@@ -5203,6 +5215,19 @@ public:
               stream_executor::gpu::ToString(status));
         }
       }
+
+      if (profile_result) {
+        tsl::StatusOr<absl::Duration> elapsed = timer->GetElapsedDuration();
+        if (!elapsed.ok()) {
+          LOG(ERROR) << "Failed to get elapsed duration";
+          return tsl::Status(absl::StatusCode::kInternal, "Timer failure");
+        }
+        profile_result->set_elapsed_time_in_ms(
+            absl::ToDoubleMilliseconds(*elapsed));
+        profile_result->set_algorithm(MakeAlgorithmDesc());
+        profile_result->set_scratch_size(scratch_memory.size());
+      }
+
       return ::tsl::OkStatus();
   }
 
@@ -5408,8 +5433,7 @@ tsl::Status MIOpenSupport::GetFusedConvolveRunners(
     const NumericOptions& numeric_options,
     std::vector<std::unique_ptr<const dnn::FusedConvRunner>>* out_exec_plans) {
 
-  VLOG(0) << "MIOpenSupport::GetFusedConvolveRunners";
-
+  VLOG(2) << "MIOpenSupport::GetFusedConvolveRunners";
   VLOG(2) << "filter_descriptor " << filter_descriptor.ndims();
   if (filter_descriptor.ndims() > 2)
     return tsl::errors::Unimplemented("MIOpen does not correctly fuse conv3d");
