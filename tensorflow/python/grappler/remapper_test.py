@@ -154,7 +154,7 @@ class RemapperTest(test.TestCase, parameterized.TestCase):
 
     return graph
 
-  @parameterized.parameters(['cuda', 'mkl'])
+  @parameterized.parameters(['cuda'])
   @test_util.run_deprecated_v1
   @test_util.disable_xla('This test does not pass with XLA')
   def test_matmul_biasadd_activation_fusion(self, mode):

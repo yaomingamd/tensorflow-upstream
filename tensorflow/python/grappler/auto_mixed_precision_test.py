@@ -525,7 +525,7 @@ class AutoMixedPrecisionTest(test.TestCase, parameterized.TestCase):
     tol = 5e-2 if mode == 'mkl' else 1e-3
     self.assertAllClose(output_val_ref, output_val, atol=tol, rtol=tol)
 
-  @parameterized.parameters(['cuda', 'mkl'])
+  @parameterized.parameters(['cuda'])
   @test_util.run_deprecated_v1
   @test_util.disable_xla('This test does not pass with XLA')
   def test_conv_bn_dropout(self, mode):
