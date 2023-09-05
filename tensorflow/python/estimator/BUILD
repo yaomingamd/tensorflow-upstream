@@ -19,6 +19,7 @@ py_library(
         ":dnn",
         ":dnn_linear_combined",
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":export",
         ":exporter",
         ":inputs",
@@ -37,6 +38,7 @@ py_library(
     srcs = ["exporter.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":gc",
         ":metric_keys",
         ":util",
@@ -49,6 +51,7 @@ py_library(
     srcs = ["gc.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         "//tensorflow:tensorflow_py_no_contrib",
     ],
 )
@@ -58,6 +61,7 @@ py_library(
     srcs = ["model_fn.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":export_output",
         "//tensorflow:tensorflow_py_no_contrib",
         "@six_archive//:six",
@@ -70,6 +74,7 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":exporter",
         ":run_config",
         "//tensorflow:tensorflow_py_no_contrib",
@@ -82,6 +87,7 @@ py_library(
     srcs = ["run_config.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         "//tensorflow:tensorflow_py_no_contrib",
         "@six_archive//:six",
     ],
@@ -93,6 +99,7 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":head",
         ":model_fn",
         ":optimizers",
@@ -107,6 +114,7 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":head",
         ":model_fn",
         ":optimizers",
@@ -122,6 +130,7 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":head",
         ":metric_keys",
         ":model_fn",
@@ -141,6 +150,7 @@ py_library(
     deps = [
         ":dnn",
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":head",
         ":linear",
         ":model_fn",
@@ -157,6 +167,7 @@ py_library(
     ],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         "//tensorflow:tensorflow_py_no_contrib",
     ],
 )
@@ -168,6 +179,7 @@ py_library(
     ],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":export_export",
         ":model_fn",
         ":run_config",
@@ -185,6 +197,7 @@ py_library(
     ],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         "//tensorflow:tensorflow_py_no_contrib",
         "@six_archive//:six",
     ],
@@ -195,6 +208,7 @@ py_library(
     srcs = ["export/export_output.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         "//tensorflow:tensorflow_py_no_contrib",
         "@six_archive//:six",
     ],
@@ -207,6 +221,7 @@ py_library(
     ],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":export_export",
         ":export_output",
         "//tensorflow:tensorflow_py_no_contrib",
@@ -220,6 +235,7 @@ py_library(
     ],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":util",
         "//tensorflow:tensorflow_py_no_contrib",
         "@six_archive//:six",
@@ -231,6 +247,7 @@ py_library(
     srcs = ["canned/head.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":export_output",
         ":metric_keys",
         ":model_fn",
@@ -245,6 +262,7 @@ py_library(
     srcs = ["inputs/inputs.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":numpy_io",
         ":pandas_io",
         "//tensorflow:tensorflow_py_no_contrib",
@@ -257,6 +275,7 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":head",
         ":optimizers",
         "//tensorflow:tensorflow_py_no_contrib",
@@ -271,6 +290,7 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":export_export",
         ":linear",
         ":metric_keys",
@@ -287,6 +307,7 @@ py_library(
     srcs = ["canned/metric_keys.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":model_fn",
     ],
 )
@@ -296,6 +317,7 @@ py_library(
     srcs = ["inputs/numpy_io.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":inputs_queues",
     ],
 )
@@ -305,6 +327,7 @@ py_library(
     srcs = ["canned/optimizers.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         "//tensorflow:tensorflow_py_no_contrib",
         "@six_archive//:six",
     ],
@@ -315,6 +338,7 @@ py_library(
     srcs = ["inputs/pandas_io.py"],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         ":inputs_queues",
     ],
 )
@@ -323,6 +347,9 @@ py_library(
     name = "prediction_keys",
     srcs = ["canned/prediction_keys.py"],
     srcs_version = "PY3",
+    deps = [
+        ":expect_tensorflow_estimator_installed",
+    ],
 )
 
 py_library(
@@ -333,6 +360,7 @@ py_library(
     ],
     srcs_version = "PY3",
     deps = [
+        ":expect_tensorflow_estimator_installed",
         "//tensorflow:tensorflow_py_no_contrib",
         "@six_archive//:six",
     ],
@@ -344,9 +372,15 @@ py_library(
     srcs_version = "PY3",
     deps = [
         ":estimator",
+        ":expect_tensorflow_estimator_installed",
         ":export_export",
         ":model_fn",
         ":run_config",
         "//tensorflow:tensorflow_py_no_contrib",
     ],
+)
+
+alias(
+    name = "expect_tensorflow_estimator_installed",
+    actual = "@pypi_tf_estimator_nightly//:pkg",
 )
