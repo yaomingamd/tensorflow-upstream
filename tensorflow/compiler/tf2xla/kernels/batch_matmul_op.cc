@@ -52,7 +52,7 @@ class BatchMatMulOp : public XlaOpKernel {
             : xla::PrecisionConfig::HIGHEST;
     auto result = xla::BatchDot(MaybeConjugate(ctx->Input(0), adj_x_), adj_x_,
                                 MaybeConjugate(ctx->Input(1), adj_y_), adj_y_,
-                                precision, preferred_element_type_, grad_x_, grad_y_);
+                                precision, grad_x_, grad_y_, preferred_element_type_);
     ctx->SetOutput(0, result);
   }
 

@@ -728,7 +728,7 @@ struct LaunchBatchMatMul<GPUDevice, Scalar> {
                     static_cast<Coefficient>(1.0), b_ptrs,
                     adj_y || trans_y ? k : n, a_ptrs, adj_x || trans_x ? m : k,
                     static_cast<Coefficient>(0.0), c_ptrs, n, batch_size,
-                    GetNumericOptions(), &scratch_allocator)
+                    GetNumericOptions(), &scratch_allocator, call_context)
                 .ok();
         if (!blas_launch_status) {
           context->SetStatus(errors::Internal(

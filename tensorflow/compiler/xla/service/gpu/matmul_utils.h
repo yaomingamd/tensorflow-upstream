@@ -161,7 +161,7 @@ struct GemmConfig {
         op.getBias() == nullptr ? nullptr : &bias_shape, GetShape(op.getD()),
         op.getAlphaReal().convertToDouble(),
         op.getAlphaImag().convertToDouble(), op.getBeta().convertToDouble(),
-        op.getAlgorithm(), compute_precision);
+        op.getAlgorithm(), compute_precision, false, false);
   }
 
   MatrixLayout lhs_layout;

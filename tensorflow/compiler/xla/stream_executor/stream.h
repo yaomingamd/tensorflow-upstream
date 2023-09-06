@@ -984,8 +984,8 @@ class Stream {
                            uint64_t m, uint64 n, uint64 k, ConstantType alpha,
                            const DeviceMemory<InputType> &a, int lda,
                            const DeviceMemory<InputType> &b, int ldb,
-                           ConstantType beta, DeviceMemory<InputType> *c,
-                           int ldc, blas::ComputePrecision precision,
+                           ConstantType beta, DeviceMemory<OutputType> *c,
+                           int ldc, const NumericOptions &numeric_options,
                            blas::CallContext context) {
     static_assert(
         detail::is_any_of<InputType, int8_t, Eigen::half, Eigen::bfloat16,

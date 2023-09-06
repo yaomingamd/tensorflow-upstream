@@ -591,13 +591,13 @@ xla::XlaOp Einsum(xla::XlaOp x, absl::Span<const int64_t> x_config,
 
 XlaOp BatchDot(XlaOp x, XlaOp y, PrecisionConfig::Precision precision,
                std::optional<PrimitiveType> preferred_element_type) {
-  return BatchDot(x, false, y, false, precision, preferred_element_type);
+  return BatchDot(x, false, y, false, precision, false, false, preferred_element_type);
 }
 
 XlaOp BatchDot(XlaOp x, bool transpose_x, XlaOp y, bool transpose_y,
                PrecisionConfig::Precision precision,
-               std::optional<PrimitiveType> preferred_element_type,
-               bool grad_x, bool grad_y) {
+               bool grad_x, bool grad_y,
+               std::optional<PrimitiveType> preferred_element_type) {
   XlaBuilder* builder = x.builder();
   return builder->ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
     std::string string("...mk,...kn->...mn");

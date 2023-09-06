@@ -4049,7 +4049,8 @@ tsl::Status ROCmFusedMatmulRunner::gemm(Stream* stream, DeviceMemoryBase a_data,
   return stream->ThenBlasGemm<T, T>(
       tb, ta, _n, _m, _k, static_cast<DeviceMemory<T>>(b_data), _ldb,
       static_cast<DeviceMemory<T>>(a_data), _lda,
-      static_cast<DeviceMemory<T>*>(&c_data), _ldc, NumericOptions{});
+      static_cast<DeviceMemory<T>*>(&c_data), _ldc, NumericOptions{},
+      blas::CallContext::kNone);
 }
 
 template <typename T>

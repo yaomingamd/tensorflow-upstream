@@ -97,8 +97,8 @@ xla::XlaOp BatchDot(
 xla::XlaOp BatchDot(
     xla::XlaOp x, bool transpose_x, xla::XlaOp y, bool transpose_y,
     xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
-    std::optional<PrimitiveType> preferred_element_type = std::nullopt,
-    bool grad_x = false, bool grad_y = false);
+    bool grad_x = false, bool grad_y = false,
+    std::optional<PrimitiveType> preferred_element_type = std::nullopt);
 
 // Parse an einsum string into dimension numbers:
 //   "ab,cb->ac"

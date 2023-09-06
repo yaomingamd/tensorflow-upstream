@@ -337,14 +337,14 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(StringPiece /*type_string*/,
         dims,
         /*feature_group_count=*/attrs.depthwise ? in_depth
                                                 : feature_group_count,
-        /*batch_group_count=*/1, precision_config, padding_type);
+        /*batch_group_count=*/1, &precision_config, padding_type);
   } else {
     conv_forward = xla::ConvGeneralDilated(
         conv_input, filter, window_strides, padding, lhs_dilation, rhs_dilation,
         dims,
         /*feature_group_count=*/attrs.depthwise ? in_depth
                                                 : feature_group_count,
-        /*batch_group_count=*/1, precision_config);
+        /*batch_group_count=*/1, &precision_config);
   }
 
   // TODO : CHECK_EQ(HloOpcode::kConvolution, conv_forward->opcode());
