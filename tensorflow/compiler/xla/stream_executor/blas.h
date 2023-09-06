@@ -638,7 +638,7 @@ class BlasSupport {
       DeviceMemorySlice<std::complex<float>> b, int ldb,                       \
       std::complex<float> beta, DeviceMemorySlice<std::complex<float>> c,      \
       int ldc, int batch_count, const NumericOptions &numeric_options,         \
-      ScratchAllocator *scratch_allocator, blas::CallContext context) override;  \  
+      ScratchAllocator *scratch_allocator, blas::CallContext context) override;  \
   bool DoBlasGemmBatched(                                                      \
       Stream *stream, blas::Transpose transa, blas::Transpose transb,          \
       uint64_t m, uint64 n, uint64 k, std::complex<double> alpha,              \

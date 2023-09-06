@@ -973,9 +973,10 @@ class Stream {
                            uint64_t m, uint64 n, uint64 k,
                            const DeviceMemory<InputType> &a, int lda,
                            const DeviceMemory<InputType> &b, int ldb,
-                           DeviceMemory<OutputType> *c, int ldc) {
+                           DeviceMemory<OutputType> *c, int ldc,
+                           blas::CallContext context) {
     return ThenBlasGemm(transa, transb, m, n, k, a, lda, b, ldb, c, ldc,
-                        NumericOptions{}, blas::CallContext context);
+                        NumericOptions{}, context);
   }
 
   template <typename InputType, typename OutputType, typename ConstantType>
