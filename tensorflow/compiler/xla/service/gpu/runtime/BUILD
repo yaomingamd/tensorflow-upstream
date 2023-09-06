@@ -227,7 +227,7 @@ cuda_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "topk_kernel_test",
     srcs = if_cuda_is_configured(["topk_kernel_test.cc"]),
     linkstatic = 1,
@@ -247,7 +247,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "topk_test",
     srcs = if_cuda_is_configured(["topk_test.cc"]),
     tags = tf_cuda_tests_tags(),

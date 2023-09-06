@@ -2,6 +2,7 @@
 
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_binary", "xla_cc_test")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -165,7 +166,7 @@ build_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "auto_sharding_test",
     srcs = ["auto_sharding_test.cc"],
     deps = [
@@ -180,7 +181,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "auto_sharding_solver_test",
     srcs = ["auto_sharding_solver_test.cc"],
     deps = [

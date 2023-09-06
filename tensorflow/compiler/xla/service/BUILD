@@ -433,7 +433,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "constant_value_test",
     srcs = ["constant_value_test.cc"],
     deps = [
@@ -470,7 +470,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "value_range_test",
     srcs = ["value_range_test.cc"],
     deps = [
@@ -483,7 +483,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "convert_async_collectives_to_sync_test",
     srcs = ["convert_async_collectives_to_sync_test.cc"],
     deps = [
@@ -526,7 +526,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "collective_pipeliner_test",
     srcs = ["collective_pipeliner_test.cc"],
     deps = [
@@ -1202,7 +1202,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "latency_hiding_scheduler_preparation_test",
     srcs = ["latency_hiding_scheduler_preparation_test.cc"],
     deps = [
@@ -1232,7 +1232,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "profile_guided_latency_estimator_test",
     srcs = ["profile_guided_latency_estimator_test.cc"],
     deps = [
@@ -3259,7 +3259,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "dot_dimension_merger_test",
     srcs = ["dot_dimension_merger_test.cc"],
     deps = [
@@ -6249,7 +6249,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "collective_transformation_reorderer_test",
     srcs = ["collective_transformation_reorderer_test.cc"],
     deps = [
