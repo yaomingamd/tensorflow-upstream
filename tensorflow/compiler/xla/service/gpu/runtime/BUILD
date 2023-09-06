@@ -1,4 +1,5 @@
 load("//tensorflow/tsl/platform/default:cuda_build_defs.bzl", "if_cuda_is_configured")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
 load("@local_config_cuda//cuda:build_defs.bzl", "cuda_library")
 load(
