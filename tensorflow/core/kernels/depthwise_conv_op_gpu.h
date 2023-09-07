@@ -797,7 +797,7 @@ void LaunchDepthwiseConvOp<GpuDevice, T>::operator()(OpKernelContext* ctx,
 // A GPU kernel to compute the depthwise convolution backprop w.r.t. input.
 template <typename T, int kKnownFilterWidth, int kKnownFilterHeight,
           int kKnownDepthMultiplier>
-__global__ void __launch_bounds__(640, 2)
+__global__ void __launch_bounds__(1024, 2)
     DepthwiseConv2dBackpropInputGPUKernelNHWC(const DepthwiseArgs args,
                                               const T* out_backprop,
                                               const T* filter, T* in_backprop,
@@ -867,7 +867,7 @@ __global__ void __launch_bounds__(640, 2)
 
 template <typename T, int kKnownFilterWidth, int kKnownFilterHeight,
           int kKnownDepthMultiplier>
-__global__ void __launch_bounds__(640, 2)
+__global__ void __launch_bounds__(1024, 2)
     DepthwiseConv2dBackpropInputGPUKernelNCHW(const DepthwiseArgs args,
                                               const T* out_backprop,
                                               const T* filter, T* in_backprop,
@@ -1018,7 +1018,7 @@ void LaunchDepthwiseConvBackpropInputOp<GpuDevice, T>::operator()(
 // is non-trivial as the partial sums are added directly to the output
 template <typename T, int kKnownFilterWidth, int kKnownFilterHeight,
           int kKnownDepthMultiplier>
-__global__ void __launch_bounds__(640, 2)
+__global__ void __launch_bounds__(1024, 2)
     DepthwiseConv2dBackpropFilterGPUKernelNHWC(const DepthwiseArgs args,
                                                const T* out_backprop,
                                                const T* input,
@@ -1303,7 +1303,7 @@ __launch_bounds__(1024, 2) void DepthwiseConv2dBackpropFilterGPUKernelNHWCSmall(
 // A GPU kernel to compute the depthwise convolution backprop w.r.t. filter.
 template <typename T, int kKnownFilterWidth, int kKnownFilterHeight,
           int kKnownDepthMultiplier>
-__global__ void __launch_bounds__(640, 2)
+__global__ void __launch_bounds__(1024, 2)
     DepthwiseConv2dBackpropFilterGPUKernelNCHW(const DepthwiseArgs args,
                                                const T* out_backprop,
                                                const T* input,
