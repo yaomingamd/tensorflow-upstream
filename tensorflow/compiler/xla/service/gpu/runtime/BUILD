@@ -1,4 +1,5 @@
 load("//tensorflow/tsl/platform/default:cuda_build_defs.bzl", "if_cuda_is_configured")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
 load("@local_config_cuda//cuda:build_defs.bzl", "cuda_library")
 load(
@@ -233,7 +234,7 @@ cuda_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "topk_kernel_test",
     srcs = if_cuda_is_configured(["topk_kernel_test.cc"]),
     linkstatic = 1,
@@ -253,7 +254,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "topk_test",
     srcs = if_cuda_is_configured(["topk_test.cc"]),
     tags = tf_cuda_tests_tags(),

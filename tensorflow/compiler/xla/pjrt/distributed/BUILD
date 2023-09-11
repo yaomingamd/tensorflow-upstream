@@ -2,6 +2,7 @@ load("//tensorflow/tsl/platform:rules_cc.bzl", "cc_library")
 load("//tensorflow/tsl/platform:build_config.bzl", "tf_proto_library")
 load("//tensorflow/tsl:tsl.default.bzl", "tsl_grpc_cc_dependencies")
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 
 licenses(["notice"])
 

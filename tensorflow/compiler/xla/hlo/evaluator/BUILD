@@ -3,6 +3,7 @@
 
 load("//tensorflow/tsl/platform:rules_cc.bzl", "cc_library")
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
@@ -81,7 +82,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_evaluator_test",
     srcs = ["hlo_evaluator_test.cc"],
     deps = [

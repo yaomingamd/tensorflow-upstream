@@ -25,6 +25,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
+#include "rocm/rocm_config.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/compiler/xla/stream_executor/device_memory.h"
 #include "tensorflow/compiler/xla/stream_executor/gpu/gpu_activation.h"
@@ -420,7 +421,8 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                                  const void *alpha, const DeviceMemoryBase &a,
                                  int lda, const DeviceMemoryBase &b, int ldb,
                                  const void *beta, DeviceMemoryBase *c, int ldc,
-                                 const NumericOptions &numeric_options) {
+                                 const NumericOptions &numeric_options,
+                                 blas::CallContext call_context) {
   blas_log("DoBlasGemm");
   VLOG(1) << absl::StreamFormat(
       "doing rocBLAS GEMM: at=%d bt=%d m=%u n=%u "
@@ -458,6 +460,17 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
       tsl::StatusOr<bool> maybe_hasXDLOPS = GpuDriver::GetMFMASupport();
       if (maybe_hasXDLOPS.ok() && maybe_hasXDLOPS.value()) {
         VLOG(1) << "Using rocblas_gemm_ex";
+
+        bool is_backprop =
+            (call_context == blas::CallContext::kBackpropInput1) ||
+            (call_context == blas::CallContext::kBackpropInput2);
+
+	uint32_t flags = rocblas_gemm_flags_none;
+#if TF_ROCM_VERSION >= 50000
+	if (is_backprop) {
+	  flags = rocblas_gemm_flags_fp16_alt_impl;
+	}
+#endif
         return DoBlasInternalStatus(
             wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
             ROCMBlasTranspose(transa), ROCMBlasTranspose(transb),
@@ -465,7 +478,7 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
             rocblas_datatype_f16_r, lda, b.opaque(), rocblas_datatype_f16_r,
             ldb, beta, c->opaque(), rocblas_datatype_f16_r, ldc, c->opaque(),
             rocblas_datatype_f16_r, ldc, rocblas_datatype_f32_r,
-            rocblas_gemm_algo_standard, 0, 0);
+            rocblas_gemm_algo_standard, 0, flags);
       } else {
         VLOG(1) << "Using rocblas_hgemm";
         const Eigen::half alpha_half(*static_cast<const float *>(alpha));
@@ -544,7 +557,8 @@ tsl::Status ROCMBlas::DoBlasGemmWithAlgorithm(
     blas::DataType type_b, int ldb, const void *beta, DeviceMemoryBase *c,
     blas::DataType type_c, int ldc, blas::ComputationType computation_type,
     blas::AlgorithmType algorithm, const NumericOptions &numeric_options,
-    blas::ProfileResult *output_profile_result) {
+    blas::ProfileResult *output_profile_result,
+    blas::CallContext context) {
   // ROCM TODO: properly implement the interface
   return tsl::errors::Internal("DoBlasGemmWithAlgorithm ",
                                "is not implemented on ROCm yet");
@@ -558,7 +572,8 @@ tsl::Status ROCMBlas::DoBlasGemmStridedBatchedWithAlgorithm(
     DeviceMemoryBase *c, blas::DataType type_c, int ldc, int64_t stride_c,
     int batch_count, blas::ComputationType computation_type,
     blas::AlgorithmType algorithm, const NumericOptions &numeric_options,
-    blas::ProfileResult *output_profile_result) {
+    blas::ProfileResult *output_profile_result,
+    blas::CallContext context) {
   // ROCM TODO: properly implement the interface
   return tsl::errors::Internal("DoBlasGemmStridedBatchedWithAlgorithm ",
                                "is not implemented on ROCm yet");
@@ -863,7 +878,8 @@ bool ROCMBlas::DoBlasGemmBatched(Stream *stream, blas::Transpose transa,
                                  float beta, DeviceMemorySlice<Eigen::half> c,
                                  int ldc, int batch_count,
                                  const NumericOptions &numeric_options,
-                                 ScratchAllocator *scratch_allocator) {
+                                 ScratchAllocator *scratch_allocator,
+                                 blas::CallContext context) {
   blas_log("DoBlasGemmBatched");
   const Eigen::half alpha_half(alpha);
   const Eigen::half beta_half(beta);
@@ -886,7 +902,8 @@ bool ROCMBlas::DoBlasGemmBatched(
     DeviceMemorySlice<Eigen::bfloat16> b_array, int ldb, float beta,
     DeviceMemorySlice<Eigen::bfloat16> c_array, int ldc, int batch_count,
     const NumericOptions &numeric_options,
-    ScratchAllocator *scratch_allocator) {
+    ScratchAllocator *scratch_allocator,
+    blas::CallContext context) {
   blas_log("DoBlasGemmBatched");
   const Eigen::bfloat16 alpha_bf16(alpha);
   const Eigen::bfloat16 beta_bf16(beta);
@@ -909,7 +926,8 @@ bool ROCMBlas::DoBlasGemmBatched(Stream *stream, blas::Transpose transa,
                                  float beta, DeviceMemorySlice<float> c_array,
                                  int ldc, int batch_count,
                                  const NumericOptions &numeric_options,
-                                 ScratchAllocator *scratch_allocator) {
+                                 ScratchAllocator *scratch_allocator,
+                                 blas::CallContext context) {
   blas_log("DoBlasGemmBatched");
   tsl::Status status = DoBlasGemmBatchedInternal(
       wrap::rocblas_sgemm_strided_batched, stream, transa, transb, m, n, k,
@@ -929,7 +947,8 @@ bool ROCMBlas::DoBlasGemmBatched(Stream *stream, blas::Transpose transa,
                                  double beta, DeviceMemorySlice<double> c_array,
                                  int ldc, int batch_count,
                                  const NumericOptions &numeric_options,
-                                 ScratchAllocator *scratch_allocator) {
+                                 ScratchAllocator *scratch_allocator,
+                                 blas::CallContext context) {
   blas_log("DoBlasGemmBatched");
   tsl::Status status = DoBlasGemmBatchedInternal(
       wrap::rocblas_dgemm_strided_batched, stream, transa, transb, m, n, k,
@@ -948,7 +967,8 @@ bool ROCMBlas::DoBlasGemmBatched(
     DeviceMemorySlice<std::complex<float>> b_array, int ldb,
     std::complex<float> beta, DeviceMemorySlice<std::complex<float>> c_array,
     int ldc, int batch_count, const NumericOptions &numeric_options,
-    ScratchAllocator *scratch_allocator) {
+    ScratchAllocator *scratch_allocator,
+    blas::CallContext context) {
   blas_log("DoBlasGemmBatched");
   tsl::Status status = DoBlasGemmBatchedInternal(
       wrap::rocblas_cgemm_strided_batched, stream, transa, transb, m, n, k,
@@ -968,7 +988,7 @@ bool ROCMBlas::DoBlasGemmBatched(
     DeviceMemorySlice<std::complex<double>> b_array, int ldb,
     std::complex<double> beta, DeviceMemorySlice<std::complex<double>> c_array,
     int ldc, int batch_count, const NumericOptions &numeric_options,
-    ScratchAllocator *scratch_allocator) {
+    ScratchAllocator *scratch_allocator, blas::CallContext context) {
   blas_log("DoBlasGemmBatched");
   tsl::Status status = DoBlasGemmBatchedInternal(
       wrap::rocblas_zgemm_strided_batched, stream, transa, transb, m, n, k,
@@ -1098,7 +1118,8 @@ tsl::Status ROCMBlas::DoBlasGemmStridedBatched(
     const DeviceMemoryBase &a, int lda, int64_t stride_a,
     const DeviceMemoryBase &b, int ldb, int64_t stride_b, const void *beta,
     DeviceMemoryBase *c, int ldc, int64_t stride_c, int batch_count,
-    const NumericOptions &numeric_options) {
+    const NumericOptions &numeric_options,
+    blas::CallContext context) {
   VLOG(1) << absl::StreamFormat(
       "doing rocBLAS SGEMM Strided Batched<float>: at=%d bt=%d m=%u n=%u "
       "k=%llu alpha=%p a=%p lda=%d b=%p ldb=%d beta=%p "

@@ -5,6 +5,7 @@ load(
     "//tensorflow/tsl/platform/default:cuda_build_defs.bzl",
     "if_cuda_is_configured",
 )
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load(
     "//tensorflow/compiler/xla:xla.bzl",
     "xla_cc_test",
@@ -616,7 +617,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "outfeed_receiver_test_cpu",
     size = "small",
     srcs = ["outfeed_receiver_test.cc"],
