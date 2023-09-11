@@ -16,18 +16,30 @@ limitations under the License.
 #include "tensorflow/compiler/xla/stream_executor/tpu/tpu_executor.h"
 
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <utility>
 
 #include "absl/cleanup/cleanup.h"
 #include "absl/functional/any_invocable.h"
+#include "absl/types/span.h"
 #include "tensorflow/compiler/xla/status.h"
+#include "tensorflow/compiler/xla/stream_executor/allocator_stats.h"
+#include "tensorflow/compiler/xla/stream_executor/device_description.h"
+#include "tensorflow/compiler/xla/stream_executor/device_memory.h"
+#include "tensorflow/compiler/xla/stream_executor/device_options.h"
+#include "tensorflow/compiler/xla/stream_executor/event.h"
+#include "tensorflow/compiler/xla/stream_executor/stream_executor_internal.h"
+#include "tensorflow/compiler/xla/stream_executor/tpu/c_api_conversions.h"
+#include "tensorflow/compiler/xla/stream_executor/tpu/c_api_decl.h"
 #include "tensorflow/compiler/xla/stream_executor/tpu/status_helper.h"
-#include "tensorflow/compiler/xla/stream_executor/tpu/tpu_api.h"
 #include "tensorflow/compiler/xla/stream_executor/tpu/tpu_event.h"
+#include "tensorflow/compiler/xla/stream_executor/tpu/tpu_executor_api.h"
 #include "tensorflow/compiler/xla/stream_executor/tpu/tpu_stream.h"
+#include "tensorflow/compiler/xla/stream_executor/tpu/tpu_topology.h"
 #include "tensorflow/tsl/c/tsl_status.h"
-
-using stream_executor::DeviceMemoryBase;
+#include "tensorflow/tsl/platform/errors.h"
+#include "tensorflow/tsl/platform/logging.h"  // IWYU pragma: keep
 
 namespace stream_executor {
 namespace tpu {
@@ -49,14 +61,6 @@ Status TpuExecutor::Init(int device_ordinal,
   return status.status();
 }
 
-int TpuExecutor::PlatformDeviceCount() {
-  return ExecutorApiFn()->TpuExecutor_PlatformDeviceCountFn(executor_);
-}
-
-void TpuExecutor::SyncAndForgetFailedStreams() {
-  ExecutorApiFn()->TpuExecutor_SyncAndForgetFailedStreamsFn(executor_);
-}
-
 bool TpuExecutor::SynchronizeAllActivity() {
   return ExecutorApiFn()->TpuExecutor_SynchronizeAllActivityFn(executor_);
 }
@@ -65,13 +69,6 @@ Status TpuExecutor::BlockHostUntilDone(Stream* stream) {
   StatusHelper status;
   ExecutorApiFn()->TpuExecutor_BlockHostUntilDoneFn(
       executor_, get_stream(stream->implementation()), status.c_status);
-  return status.status();
-}
-
-Status TpuExecutor::BlockUntilDoneOrFailed() {
-  StatusHelper status;
-  ExecutorApiFn()->TpuExecutor_BlockUntilDoneOrFailedFn(executor_,
-                                                        status.c_status);
   return status.status();
 }
 
@@ -216,20 +213,6 @@ TpuExecutor::GetAllocatorStats() {
     return stats;
   }
   return {};
-}
-
-Status TpuExecutor::WaitForInfeedReady(int32_t infeed_queue_index) {
-  StatusHelper status;
-  ExecutorApiFn()->TpuExecutor_WaitForInfeedReadyFn(
-      executor_, infeed_queue_index, status.c_status);
-  return status.status();
-}
-
-Status TpuExecutor::WaitForOutfeedReady(int32_t outfeed_queue_index) {
-  StatusHelper status;
-  ExecutorApiFn()->TpuExecutor_WaitForOutfeedReadyFn(
-      executor_, outfeed_queue_index, status.c_status);
-  return status.status();
 }
 
 void TpuExecutor::DequeueOutfeed(int32_t outfeed_queue_index,

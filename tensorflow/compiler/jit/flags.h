@@ -96,6 +96,13 @@ struct MarkForCompilationPassFlags {
   // specified file system directory path.
   std::string tf_xla_persistent_cache_directory;
 
+  // If non-empty, the persistent cache will only be used for the specified
+  // devices (comma separated). Each device type should be able to be converted
+  // to `DeviceType`.
+  std::string tf_xla_persistent_cache_device_types;
+
+  bool tf_xla_persistent_cache_read_only;
+
   // If true, entries loaded into the XLA compile cache will not have their
   // signatures checked strictly. This should generally not be disabled except
   // for debugging. Defaults to false.
@@ -262,7 +269,9 @@ struct MlirCommonFlags {
 
   bool tf_mlir_enable_merge_control_flow_pass;
   bool tf_mlir_enable_convert_control_to_data_outputs_pass;
+  bool tf_mlir_enable_strict_clusters;
   bool tf_mlir_enable_generic_outside_compilation;
+  bool tf_mlir_enable_tpu_variable_runtime_reformatting_pass;
 };
 
 // Flags for the JitRt pipeline -- see tf_jitrt_pipeline.h for details.

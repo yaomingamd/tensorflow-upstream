@@ -31,12 +31,25 @@
 #               (affects 'source $TFCI')
 set -euxo pipefail -o history -o allexport
 
+# Set TFCI_GIT_DIR, the root directory for all commands, to two directories
+# above the location of this file (setup.sh). We could also use "git rev-parse
+# --show-toplevel", but that wouldn't work for non-git repos (like if someone
+# downloaded TF as a zip archive).
+export TFCI_GIT_DIR=$(cd $(dirname "$0"); realpath ../../)
+cd "$TFCI_GIT_DIR"
+
 # "TFCI" may optionally be set to the name of an env-type file with TFCI
 # variables in it, OR may be left empty if the user has already exported the
 # relevant variables in their environment. Because of 'set -o allexport' above
 # (which is equivalent to "set -a"), every variable in the file is exported
 # for other files to use.
 if [[ -n "${TFCI:-}" ]]; then
+  # Sourcing this twice, the first time with "-u" unset, means that variable
+  # order does not matter. i.e. "TFCI_BAR=$TFCI_FOO; TFCI_FOO=true" will work.
+  # TFCI_FOO is only valid the second time through.
+  set +u
+  source "$TFCI"
+  set -u
   source "$TFCI"
 else
   echo '==TFCI==: The $TFCI variable is not set. This is fine as long as you'
@@ -44,26 +57,11 @@ else
   echo 'If you have not, you will see a lot of undefined variable errors.'
 fi
 
-# Make a "build" directory for outputting all build artifacts (TF's .gitignore
-# ignores the "build" directory), and ensure all further commands are executed
-# inside of the $TFCI_GIT_DIR as well.
-cd "$TFCI_GIT_DIR"
-mkdir -p build
-
-# Setup tfrun, a helper function for executing steps that can either be run
-# locally or run under Docker. docker.sh, below, redefines it as "docker exec".
-# Important: "tfrun foo | bar" is "( tfrun foo ) | bar", not tfrun (foo | bar).
-# Therefore, "tfrun" commands cannot include pipes -- which is probably for the
-# better. If a pipe is necessary for something, it is probably complex. Write a
-# well-documented script under utilities/ to encapsulate the functionality
-# instead.
-tfrun() { "$@"; }
-
 # For Google-internal jobs, run copybara, which will overwrite the source tree.
 # Never useful for outside users. Requires that the Kokoro job define a gfile
 # resource pointing to copybara.sh, which is then loaded into the GFILE_DIR.
 # See: cs/official/copybara.sh
-if [[ "$TFCI_COPYBARA_ENABLE" == 1 ]]; then
+if [[ "$TFCI_COPYBARA_ENABLE" == 1 && "${TFCI_COPYBARA_COMPLETE:-}" != 1 ]]; then
   if [[ -e "$KOKORO_GFILE_DIR/copybara.sh" ]]; then
     source "$KOKORO_GFILE_DIR/copybara.sh"
   else
@@ -76,6 +74,24 @@ if [[ "$TFCI_COPYBARA_ENABLE" == 1 ]]; then
   fi
 fi
 
+
+# Create and expand to the full path of TFCI_OUTPUT_DIR
+export TFCI_OUTPUT_DIR=$(realpath "$TFCI_OUTPUT_DIR")
+mkdir -p "$TFCI_OUTPUT_DIR"
+
+# In addition to dumping all script output to the terminal, place it into
+# $TFCI_OUTPUT_DIR/script.log
+exec > >(tee "$TFCI_OUTPUT_DIR/script.log") 2>&1
+
+# Setup tfrun, a helper function for executing steps that can either be run
+# locally or run under Docker. docker.sh, below, redefines it as "docker exec".
+# Important: "tfrun foo | bar" is "( tfrun foo ) | bar", not tfrun (foo | bar).
+# Therefore, "tfrun" commands cannot include pipes -- which is probably for the
+# better. If a pipe is necessary for something, it is probably complex. Write a
+# well-documented script under utilities/ to encapsulate the functionality
+# instead.
+tfrun() { "$@"; }
+
 # Run all "tfrun" commands under Docker. See docker.sh for details
 if [[ "$TFCI_DOCKER_ENABLE" == 1 ]]; then
   source ./ci/official/utilities/docker.sh
@@ -83,15 +99,15 @@ fi
 
 # Generate an overview page describing the build
 if [[ "$TFCI_INDEX_HTML_ENABLE" == 1 ]]; then
-  ./ci/official/utilities/generate_index_html.sh build/index.html
+  ./ci/official/utilities/generate_index_html.sh "$TFCI_OUTPUT_DIR/index.html"
 fi
 
-# If enabled, gather test logs into a format that the CI system Kokoro can
-# parse into a list of individual targets.
-if [[ "$TFCI_CAPTURE_LOGS_ENABLE" == 1 ]]; then
-  capture_test_logs() {
-    # Uses tfrun to avoid permissions issues with the generated log files
-    tfrun ./ci/official/utilities/capture_test_logs.sh "$TFCI_GIT_DIR" "$TFCI_GIT_DIR/build/logs"
-  }
-  trap capture_test_logs EXIT 
-fi
+# Single handler for all cleanup actions, triggered on an EXIT trap.
+# TODO(angerson) Making this use different scripts may be overkill.
+cleanup() {
+  if [[ "$TFCI_DOCKER_ENABLE" == 1 ]]; then
+    ./ci/official/utilities/cleanup_docker.sh
+  fi
+  ./ci/official/utilities/cleanup_summary.sh
+}
+trap cleanup EXIT

@@ -23,7 +23,9 @@ limitations under the License.
 #include <vector>
 
 #include "absl/hash/hash.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "pybind11/attr.h"  // from @pybind11
@@ -42,6 +44,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/hlo/ir/hlo_module_group.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_sharding.h"
 #include "tensorflow/compiler/xla/layout_util.h"
+#include "tensorflow/compiler/xla/python/exceptions.h"
 #include "tensorflow/compiler/xla/python/py_client.h"
 #include "tensorflow/compiler/xla/python/status_casters.h"
 #include "tensorflow/compiler/xla/python/types.h"
@@ -56,7 +59,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/hlo_parser.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_interface.h"
 #include "tensorflow/compiler/xla/service/name_uniquer.h"
-#include "tensorflow/compiler/xla/service/platform_util.h"
 #include "tensorflow/compiler/xla/service/tuple_simplifier.h"
 #include "tensorflow/compiler/xla/shape.h"
 #include "tensorflow/compiler/xla/shape_util.h"
@@ -228,21 +230,16 @@ StatusOr<HloSharding> IotaTileHelper(
         "`dims`(%lld).",
         subgroup_types.size(), dims.size());
   }
-  auto make_assignment = [&] {
-    if (reshape_dims.empty() && transpose_perm.empty()) {
-      Array<int64_t> assignment(dims);
-      assignment.FillIota(0);
-      return assignment;
-    }
-    Array<int64_t> assignment(reshape_dims);
-    assignment.FillIota(0);
-    assignment.TransposeDimensions(transpose_perm);
-    assignment.Reshape(dims);
-    return assignment;
-  };
+  if (reshape_dims.empty()) {
+    return subgroup_types.empty()
+               ? HloSharding::IotaTile(dims)
+               : HloSharding::Subgroup(TileAssignment(dims), subgroup_types);
+  }
   return subgroup_types.empty()
-             ? HloSharding::Tile(make_assignment())
-             : HloSharding::Subgroup(make_assignment(), subgroup_types);
+             ? HloSharding::IotaTile(dims, reshape_dims, transpose_perm)
+             : HloSharding::Subgroup(
+                   TileAssignment(dims, reshape_dims, transpose_perm),
+                   subgroup_types);
 }
 
 // Registers a 'fn_capsule' as a CPU custom call target.
@@ -253,10 +250,7 @@ Status PyRegisterCustomCallTarget(const std::string& fn_name,
                                   py::capsule capsule,
                                   const std::string& platform) {
   static const char* const kName = "xla._CUSTOM_CALL_TARGET";
-  // TODO(phawkins): remove old name after fixing users.
-  static const char* const kOldCpuName = "xla._CPU_CUSTOM_CALL_TARGET";
-  if (absl::string_view(capsule.name()) != kName &&
-      absl::string_view(capsule.name()) != kOldCpuName) {
+  if (absl::string_view(capsule.name()) != kName) {
     return InvalidArgument(
         "Argument to RegisterCustomCallTargetRegistry was not a "
         "xla._CUSTOM_CALL_TARGET capsule.");
@@ -723,8 +717,15 @@ void BuildXlaCompilerSubmodule(py::module& m) {
       }))
       .def(py::pickle(
           [](const CompileOptions& self) -> py::tuple {
-            return py::make_tuple(
-                py::bytes(ValueOrThrow(self.ToProto()).SerializeAsString()));
+            auto proto = ValueOrThrow(self.ToProto());
+            std::string result;
+            if (!tsl::SerializeToStringDeterministic(proto, &result)) {
+              // throw converted by PyBind to a Python RuntimeError.
+              throw XlaRuntimeError(
+                  absl::StrCat("CompileOptions.py_pickle: ",
+                               "SerializeToStringDeterministic failed"));
+            }
+            return py::make_tuple(py::bytes(result));
           },
           [](py::tuple t) {
             CompileOptionsProto result;
@@ -733,7 +734,15 @@ void BuildXlaCompilerSubmodule(py::module& m) {
           }))
       .def("SerializeAsString",
            [](const CompileOptions& self) -> py::bytes {
-             return py::bytes(ValueOrThrow(self.ToProto()).SerializeAsString());
+             auto proto = ValueOrThrow(self.ToProto());
+             std::string result;
+             if (!tsl::SerializeToStringDeterministic(proto, &result)) {
+               // throw converted by PyBind to a Python RuntimeError.
+               throw XlaRuntimeError(
+                   absl::StrCat("CompileOptions.SerializeAsString: ",
+                                "SerializeToStringDeterministic failed"));
+             }
+             return py::bytes(result);
            })
       .def_static("ParseFromString",
                   [](py::bytes s) {
@@ -862,7 +871,60 @@ void BuildXlaCompilerSubmodule(py::module& m) {
           })
       .def_property("xla_test_all_input_layouts",
                     &DebugOptions::xla_test_all_input_layouts,
-                    &DebugOptions::set_xla_test_all_input_layouts);
+                    &DebugOptions::set_xla_test_all_input_layouts)
+      .def_property("xla_force_host_platform_device_count",
+                    &DebugOptions::xla_force_host_platform_device_count,
+                    &DebugOptions::set_xla_force_host_platform_device_count)
+      .def_property("xla_dump_to", &DebugOptions::xla_dump_to,
+                    [](DebugOptions* self, std::string value) {
+                      self->set_xla_dump_to(value);
+                    })
+      .def_property("xla_dump_hlo_module_re",
+                    &DebugOptions::xla_dump_hlo_module_re,
+                    [](DebugOptions* self, std::string value) {
+                      self->set_xla_dump_hlo_module_re(value);
+                    })
+      .def_property("xla_dump_hlo_pass_re", &DebugOptions::xla_dump_hlo_pass_re,
+                    [](DebugOptions* self, std::string value) {
+                      self->set_xla_dump_hlo_pass_re(value);
+                    })
+      .def_property("xla_dump_hlo_as_text", &DebugOptions::xla_dump_hlo_as_text,
+                    &DebugOptions::set_xla_dump_hlo_as_text)
+      .def_property("xla_dump_hlo_as_proto",
+                    &DebugOptions::xla_dump_hlo_as_proto,
+                    &DebugOptions::set_xla_dump_hlo_as_proto)
+      .def_property("xla_dump_hlo_as_dot", &DebugOptions::xla_dump_hlo_as_dot,
+                    &DebugOptions::set_xla_dump_hlo_as_dot)
+      .def_property("xla_dump_hlo_as_url", &DebugOptions::xla_dump_hlo_as_url,
+                    &DebugOptions::set_xla_dump_hlo_as_url)
+      .def_property("xla_dump_hlo_as_html", &DebugOptions::xla_dump_hlo_as_html,
+                    &DebugOptions::set_xla_dump_hlo_as_html)
+      .def_property("xla_dump_fusion_visualization",
+                    &DebugOptions::xla_dump_fusion_visualization,
+                    &DebugOptions::set_xla_dump_fusion_visualization)
+      .def_property("xla_dump_hlo_snapshots",
+                    &DebugOptions::xla_dump_hlo_snapshots,
+                    &DebugOptions::set_xla_dump_hlo_snapshots)
+      .def_property("xla_dump_max_hlo_modules",
+                    &DebugOptions::xla_dump_max_hlo_modules,
+                    &DebugOptions::set_xla_dump_max_hlo_modules)
+      .def_property("xla_dump_module_metadata",
+                    &DebugOptions::xla_dump_module_metadata,
+                    &DebugOptions::set_xla_dump_module_metadata)
+      .def_property("xla_dump_compress_protos",
+                    &DebugOptions::xla_dump_compress_protos,
+                    &DebugOptions::set_xla_dump_compress_protos)
+      .def_property("xla_dump_hlo_as_long_text",
+                    &DebugOptions::xla_dump_hlo_as_long_text,
+                    &DebugOptions::set_xla_dump_hlo_as_long_text)
+      .def_property("xla_dump_disable_metadata",
+                    &DebugOptions::xla_dump_disable_metadata,
+                    &DebugOptions::set_xla_dump_disable_metadata)
+      .def_property("xla_dump_hlo_pipeline_re",
+                    &DebugOptions::xla_dump_hlo_pipeline_re,
+                    [](DebugOptions* self, std::string value) {
+                      self->set_xla_dump_hlo_pipeline_re(value);
+                    });
 
   py::class_<ExecutableBuildOptions>(m, "ExecutableBuildOptions")
       .def(py::init<>())
@@ -927,11 +989,21 @@ void BuildXlaCompilerSubmodule(py::module& m) {
       .value("TUPLE", OpSharding::TUPLE)
       .value("OTHER", OpSharding::OTHER);
 
+  py::enum_<OpSharding::ShardGroupType> op_sharding_shard_group_type(
+      m, "OpSharding_ShardGroupType");
+  op_sharding_shard_group_type.value("AS", OpSharding::AS)
+      .value("LIKE", OpSharding::LIKE);
+
   py::class_<OpSharding> op_sharding(m, "OpSharding");
   op_sharding
       .def_property_readonly_static(
           "Type",
           [op_sharding_type](const py::object&) { return op_sharding_type; })
+      .def_property_readonly_static(
+          "ShardGroupType",
+          [op_sharding_shard_group_type](const py::object&) {
+            return op_sharding_shard_group_type;
+          })
       .def(py::init<>())
       .def(py::pickle(
           [](const OpSharding& self) {
@@ -946,6 +1018,12 @@ void BuildXlaCompilerSubmodule(py::module& m) {
       .def_property("replicate_on_last_tile_dim",
                     &xla::OpSharding::replicate_on_last_tile_dim,
                     &xla::OpSharding::set_replicate_on_last_tile_dim)
+      .def_property("is_shard_group", &xla::OpSharding::is_shard_group,
+                    &xla::OpSharding::set_is_shard_group)
+      .def_property("shard_group_id", &xla::OpSharding::shard_group_id,
+                    &xla::OpSharding::set_shard_group_id)
+      .def_property("shard_group_type", &xla::OpSharding::shard_group_type,
+                    &xla::OpSharding::set_shard_group_type)
       .def("__repr__", &xla::OpSharding::DebugString)
       .def("ParseFromString",
            [](OpSharding& sharding, const std::string& s) {

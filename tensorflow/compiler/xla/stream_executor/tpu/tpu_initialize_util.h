@@ -17,10 +17,10 @@ limitations under the License.
 #define TENSORFLOW_COMPILER_XLA_STREAM_EXECUTOR_TPU_TPU_INITIALIZE_UTIL_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "tensorflow/tsl/platform/status.h"
-#include "tensorflow/tsl/platform/statusor.h"
+#include "absl/status/status.h"
 
 namespace tensorflow {
 namespace tpu {
@@ -28,7 +28,8 @@ namespace tpu {
 // This will acquire a system-wide lock on behalf of the whole process. Follow
 // up calls to this function will return true if the lock has been acquired and
 // false if we failed to acquire the lock.
-tsl::Status TryAcquireTpuLock();  // TENSORFLOW_STATUS_OK
+absl::Status TryAcquireTpuLock();  // TENSORFLOW_STATUS_OK
+
 // Returns arguments (e.g. flags) set in the LIBTPU_INIT_ARGS environment
 // variable. The first return value is the arguments, the second return value is
 // pointers to the arguments suitable for passing into the C API.

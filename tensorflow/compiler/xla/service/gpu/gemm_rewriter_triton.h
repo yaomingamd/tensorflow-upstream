@@ -15,7 +15,6 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_XLA_SERVICE_GPU_GEMM_REWRITER_TRITON_H_
 #define TENSORFLOW_COMPILER_XLA_SERVICE_GPU_GEMM_REWRITER_TRITON_H_
 
-#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -30,6 +29,9 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/gpu_types.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_interface.h"
 #include "tensorflow/compiler/xla/service/instruction_fusion.h"
+#include "tensorflow/compiler/xla/status.h"
+#include "tensorflow/compiler/xla/statusor.h"
+#include "tensorflow/compiler/xla/xla_data.pb.h"
 
 namespace xla {
 namespace gpu {
@@ -71,27 +73,22 @@ class TensorIterationSpec {
     // Logical subfragments when this iteration is composed
     // of several HLO dimensions. Product of subfragments equals `count`.
     std::vector<int64_t> subfragments;
+
+    std::string ToString() const;
   };
   // Description of complex iteration over a sequence of several strides.
   // Describes a logically contiguous dimension of a tensor physically
   // separated into multiple fragments by other dimensions.
   using DimIterationSpec = std::vector<IterationSpecFragment>;
 
-  // At most: contracting, non-contracting, split-K, another batch.
-  static constexpr int kMaxDimsPerTensor = 4;
-  using StorageType = std::array<DimIterationSpec, kMaxDimsPerTensor>;
-
-  const DimIterationSpec& operator[](int dimension) const {
+  using StorageType = absl::flat_hash_map<int, DimIterationSpec>;
+  const DimIterationSpec& operator[](const int dimension) const {
+    return dim_iteration_specs_.at(dimension);
+  }
+  DimIterationSpec& operator[](const int dimension) {
     return dim_iteration_specs_[dimension];
   }
-
-  DimIterationSpec& operator[](int dimension) {
-    return dim_iteration_specs_[dimension];
-  }
-
-  // Compares physical layouts of tensors ignoring subfragments of dimensions.
-  bool operator==(const TensorIterationSpec& other) const;
-
+  const StorageType& Storage() const { return dim_iteration_specs_; }
   StorageType::iterator begin() { return dim_iteration_specs_.begin(); }
   StorageType::iterator end() { return dim_iteration_specs_.end(); }
   StorageType::const_iterator cbegin() const {
@@ -101,28 +98,35 @@ class TensorIterationSpec {
     return dim_iteration_specs_.cend();
   }
 
+  // Compares physical layouts of tensors ignoring subfragments of dimensions.
+  bool operator==(const TensorIterationSpec& other) const;
+
+  std::string ToString() const;
+
  private:
   StorageType dim_iteration_specs_;
 };
 
-// Analysis of iteration of HLO shapes within a fusion around dot().
-class DotFusionAnalysis {
-  DotFusionAnalysis() {}
-
-  Status ExecuteImpl(const HloComputation* computation, int64_t split_k = 1);
+// Analysis of tensor iteration orders within tiled fusions.
+class TritonFusionAnalysis {
+  Status ExecuteForDotFusion(const HloInstruction& dot, int split_k);
 
  public:
-  // Execute the analysis of a dot fusion computation.
-  // `computation` is a computation of a dot fusion to analyze.
+  // Execute the analysis of a fusion computation.
   // `split_k` indicates whether this operation was converted to the split-K
   // form and tells the analysis how to interpret the batch dimensions.
-  static StatusOr<DotFusionAnalysis> Execute(const HloComputation* computation,
-                                             int64_t split_k = 1);
+  static StatusOr<TritonFusionAnalysis> Execute(
+      const HloComputation& computation, int split_k = 1);
 
   // A scope is an HLO graph that can be tiled efficiently using same or
   // compatible tile shapes on all operations. GEMM fusion has 3 scopes
   // defined by left operand, right operand and output.
   enum class Scope { LHS = 0, RHS = 1, OUTPUT = 2 };
+
+  using IterationSpecByInstructionMap =
+      ConstHloInstructionMap<TensorIterationSpec>;
+  using IterationSpecByInstructionByScopeMap =
+      std::map<Scope, IterationSpecByInstructionMap>;
 
   // Every parameter requires a separate piece of shared memory for asynchronous
   // loads. Multiple parameters are approximately equivalent to multiple
@@ -134,18 +138,16 @@ class DotFusionAnalysis {
                                                         const HloInstruction*,
                                                         int dimension) const;
   // Parameter HLO instructions used in a scope of `dot`.
-  const absl::flat_hash_set<const HloInstruction*>& ScopeParameters(
-      const Scope scope) const {
+  const ConstHloInstructionSet& ScopeParameters(const Scope scope) const {
     return parameters_.at(scope);
   }
 
+  std::string ToString() const;
+
  private:
-  absl::flat_hash_map<
-      Scope, absl::flat_hash_map<const HloInstruction*, TensorIterationSpec>>
-      iter_specs_;
+  IterationSpecByInstructionByScopeMap iter_specs_;
   // HLO computation parameters per scope.
-  absl::flat_hash_map<Scope, absl::flat_hash_set<const HloInstruction*>>
-      parameters_;
+  std::map<Scope, ConstHloInstructionSet> parameters_;
 };
 
 // Rewrite compatible dot() calls into custom calls with fused computations

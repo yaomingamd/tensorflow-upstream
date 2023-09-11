@@ -16,17 +16,43 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_XLA_PJRT_PJRT_C_API_CLIENT_H_
 #define TENSORFLOW_COMPILER_XLA_PJRT_PJRT_C_API_CLIENT_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "absl/strings/string_view.h"
+#include "absl/synchronization/mutex.h"
+#include "absl/types/span.h"
+#include "mlir/IR/BuiltinOps.h"  // from @llvm-project
+#include "tensorflow/compiler/xla/client/xla_computation.h"
+#include "tensorflow/compiler/xla/hlo/ir/hlo_module.h"
+#include "tensorflow/compiler/xla/layout.h"
+#include "tensorflow/compiler/xla/literal.h"
 #include "tensorflow/compiler/xla/pjrt/c/pjrt_c_api.h"
 #include "tensorflow/compiler/xla/pjrt/c/pjrt_c_api_helpers.h"
 #include "tensorflow/compiler/xla/pjrt/pjrt_client.h"
+#include "tensorflow/compiler/xla/pjrt/pjrt_common.h"
 #include "tensorflow/compiler/xla/pjrt/pjrt_compiler.h"
+#include "tensorflow/compiler/xla/pjrt/pjrt_device_description.h"
+#include "tensorflow/compiler/xla/pjrt/pjrt_executable.h"
+#include "tensorflow/compiler/xla/pjrt/pjrt_future.h"
+#include "tensorflow/compiler/xla/service/computation_placer.h"
+#include "tensorflow/compiler/xla/service/hlo_cost_analysis.h"
+#include "tensorflow/compiler/xla/shape.h"
+#include "tensorflow/compiler/xla/status.h"
+#include "tensorflow/compiler/xla/statusor.h"
+#include "tensorflow/compiler/xla/util.h"
+#include "tensorflow/compiler/xla/xla_data.pb.h"
+#include "tensorflow/tsl/framework/allocator.h"
 
 namespace xla {
 
@@ -63,14 +89,12 @@ class PjRtCApiDeviceDescription : public PjRtDeviceDescription {
 
 class PjRtCApiMemorySpace : public PjRtMemorySpace {
  public:
-  explicit PjRtCApiMemorySpace(PjRtCApiClient* client, PJRT_Memory* c_memory)
+  explicit PjRtCApiMemorySpace(PJRT_Memory* c_memory, PjRtCApiClient* client)
       : client_(client), c_memory_(c_memory) {}
 
   PjRtClient* client() const override;
 
-  absl::Span<PjRtDevice* const> devices() const override {
-    LOG(FATAL) << "PJRT C API does not support PjRtMemorySpace::devices";
-  }
+  absl::Span<PjRtDevice* const> devices() const override { return devices_; }
 
   int id() const override;
 
@@ -82,9 +106,14 @@ class PjRtCApiMemorySpace : public PjRtMemorySpace {
 
   const PJRT_Api* pjrt_c_api() const;
 
+  PJRT_Memory* c_memory() const { return c_memory_; }
+
  private:
+  friend class PjRtCApiClient;
+
   PjRtCApiClient* client_;
   PJRT_Memory* c_memory_;
+  std::vector<PjRtDevice*> devices_;
 };
 
 class PjRtCApiDevice : public PjRtDevice {
@@ -106,7 +135,7 @@ class PjRtCApiDevice : public PjRtDevice {
   }
 
   absl::Span<PjRtMemorySpace* const> memory_spaces() const override {
-    return memory_space_pointers_;
+    return memory_spaces_;
   }
 
   StatusOr<PjRtMemorySpace*> default_memory_space() const override;
@@ -125,20 +154,14 @@ class PjRtCApiDevice : public PjRtDevice {
 
   StatusOr<tsl::AllocatorStats> GetAllocatorStats() const override;
 
-  PjRtCApiMemorySpace* GetCppMemory(PJRT_Memory* c_memory) const {
-    auto it = c_to_cpp_memory_map_.find(c_memory);
-    CHECK(it != c_to_cpp_memory_map_.end());
-    return it->second;
-  }
-
  private:
+  friend class PjRtCApiClient;
+
   PjRtCApiClient* client_ = nullptr;
   // `device_` is owned by the `PJRT_Client` wrapped by `client_`
   PJRT_Device* device_;
   PjRtCApiDeviceDescription description_;
-  std::vector<PjRtCApiMemorySpace> memory_spaces_;
-  std::vector<PjRtMemorySpace*> memory_space_pointers_;
-  absl::flat_hash_map<PJRT_Memory*, PjRtCApiMemorySpace*> c_to_cpp_memory_map_;
+  std::vector<PjRtMemorySpace*> memory_spaces_;
 };
 
 class PjRtCApiClient : public PjRtClient {
@@ -224,6 +247,13 @@ class PjRtCApiClient : public PjRtClient {
       std::function<void()> on_done_with_host_buffer, PjRtDevice* device,
       const Layout* device_layout) override;
 
+  StatusOr<std::unique_ptr<PjRtBuffer>> BufferFromHostBuffer(
+      const void* data, PrimitiveType type, absl::Span<int64_t const> dims,
+      std::optional<absl::Span<int64_t const>> byte_strides,
+      HostBufferSemantics host_buffer_semantics,
+      std::function<void()> on_done_with_host_buffer,
+      PjRtMemorySpace* memory_space, const Layout* device_layout) override;
+
   StatusOr<std::unique_ptr<PjRtBuffer>> BufferFromHostLiteral(
       const LiteralSlice& literal, PjRtDevice* device) override {
     return Unimplemented("PJRT C API does not support BufferFromHostLiteral");
@@ -231,7 +261,8 @@ class PjRtCApiClient : public PjRtClient {
 
   StatusOr<std::unique_ptr<PjRtBuffer>> CreateViewOfDeviceBuffer(
       void* device_ptr, const Shape& shape, PjRtDevice* device,
-      std::function<void()> on_delete_callback) override {
+      std::function<void()> on_delete_callback,
+      std::optional<std::intptr_t> stream) override {
     return Unimplemented(
         "PJRT C API does not support CreateViewOfDeviceBuffer");
   }
@@ -284,13 +315,27 @@ class PjRtCApiClient : public PjRtClient {
     return it->second;
   }
 
+  PjRtCApiMemorySpace* GetCppMemory(PJRT_Memory* c_memory) const {
+    auto it = c_to_cpp_memory_map_.find(c_memory);
+    CHECK(it != c_to_cpp_memory_map_.end());
+    return it->second;
+  }
+
   PjRtHostMemoryForDeviceManager* GetPjRtHostMemoryForDeviceManager()
       const override {
     return nullptr;
   }
 
  private:
-  void InitDevices();
+  void InitDevicesAndMemorySpaces();
+
+  StatusOr<std::unique_ptr<PjRtBuffer>> BufferFromHostBufferInternalImpl(
+      const void* data, PrimitiveType type, absl::Span<int64_t const> dims,
+      std::optional<absl::Span<int64_t const>> byte_strides,
+      HostBufferSemantics host_buffer_semantics,
+      std::function<void()> on_done_with_host_buffer,
+      std::variant<PjRtDevice*, PjRtMemorySpace*> device_or_memory,
+      const Layout* device_layout);
 
   const PJRT_Api* c_api_;
   std::unique_ptr<PJRT_Client, ::pjrt::PJRT_ClientDeleter> c_client_;
@@ -299,6 +344,11 @@ class PjRtCApiClient : public PjRtClient {
   std::vector<PjRtDevice*> devices_;
   std::vector<PjRtDevice*> addressable_devices_;
   absl::flat_hash_map<PJRT_Device*, PjRtCApiDevice*> c_to_cpp_device_map_;
+  std::vector<std::unique_ptr<PjRtCApiMemorySpace>> owned_memory_spaces_;
+  // TODO(yueshengys): Add a `memory_spaces_` member when global memories are
+  // supported.
+  std::vector<PjRtMemorySpace*> addressable_memory_spaces_;
+  absl::flat_hash_map<PJRT_Memory*, PjRtCApiMemorySpace*> c_to_cpp_memory_map_;
 
   const std::string platform_version_;
 };
@@ -316,7 +366,9 @@ class PjRtCApiBuffer : public PjRtBuffer {
   // PJRT C API doesn't support tuple buffers.
   bool IsTuple() const override { return false; }
 
-  const Shape& on_device_shape() const override;
+  const Shape& on_device_shape() const override {
+    LOG(FATAL) << "PjRtBuffer::on_device_shape() not implemented in PJRT C API";
+  }
 
   bool has_dynamic_dimensions() const override;
 
@@ -328,17 +380,19 @@ class PjRtCApiBuffer : public PjRtBuffer {
 
   StatusOr<std::vector<int64_t>> logical_dimensions() override;
 
-  StatusOr<Shape> logical_on_device_shape() override;
+  StatusOr<Shape> logical_on_device_shape() override {
+    LOG(FATAL) << "PjRtBuffer::on_logical_device_shape() not implemented in "
+                  "PJRT C API";
+  }
+
+  PjRtMemorySpace* memory_space() const override;
 
   PjRtDevice* device() const override;
 
   PjRtClient* client() const override { return client_; }
 
   StatusOr<std::unique_ptr<ExternalReference>> AcquireExternalReference()
-      override {
-    return Unimplemented(
-        "PJRT C API does not support AcquireExternalReference");
-  }
+      override;
 
   PjRtFuture<Status> ToLiteral(MutableLiteralBase* literal) override;
 
@@ -385,9 +439,6 @@ class PjRtCApiBuffer : public PjRtBuffer {
   const PJRT_Api* pjrt_c_api() const { return client_->pjrt_c_api(); }
 
  private:
-  // TODO(b/238999986): Refactor or Remove.
-  void set_shape();
-
   // Gets the raw pointer to `readiness_event_`. If `readiness_event_` has not
   // yet been initialized, this function does so before returning the pointer.
   PJRT_Event* GetReadyEvent();
@@ -399,7 +450,6 @@ class PjRtCApiBuffer : public PjRtBuffer {
 
   PjRtCApiClient* client_;
   std::unique_ptr<PJRT_Buffer, ::pjrt::PJRT_BufferDeleter> buffer_;
-  std::optional<xla::Shape> shape_;
   std::unique_ptr<PJRT_Event, ::pjrt::PJRT_EventDeleter> readiness_event_;
   // This is a shared_ptr to keep the underlying future alive even if
   // `readiness_promise` is destroyed before `readiness_event`, and the callback
@@ -409,6 +459,20 @@ class PjRtCApiBuffer : public PjRtBuffer {
   mutable std::optional<xla::Layout> layout_;
   // Used to synchronize concurrent setting of cached values.
   mutable absl::Mutex mu_;
+};
+
+class PjRtCApiExternalReference : public PjRtBuffer::ExternalReference {
+ public:
+  PjRtCApiExternalReference(PjRtCApiClient* client, PjRtCApiBuffer* buffer,
+                            void* data_ptr)
+      : client_(client), buffer_(buffer) {
+    data_ptr_ = data_ptr;
+  }
+  ~PjRtCApiExternalReference() override;
+
+ private:
+  PjRtCApiClient* client_;
+  PjRtCApiBuffer* buffer_;
 };
 
 class PjRtCApiExecutable : public PjRtExecutable {
@@ -428,9 +492,7 @@ class PjRtCApiExecutable : public PjRtExecutable {
       const override;
 
   StatusOr<std::vector<std::vector<absl::string_view>>> GetOutputMemoryKinds()
-      const override {
-    return Unimplemented("PJRT C API does not support GetOutputMemoryKinds");
-  }
+      const override;
 
   const PJRT_Api* pjrt_c_api() const { return c_api_; }
   PJRT_Executable* c_executable() const { return executable_.get(); }
@@ -605,12 +667,25 @@ class PjRtCApiTopologyDescription : public PjRtTopologyDescription {
   std::vector<std::unique_ptr<const PjRtDeviceDescription>> DeviceDescriptions()
       const override;
 
+  absl::StatusOr<std::string> Serialize() const override;
+
+  // Returns vendor specific attributes about the topology.
+  const absl::flat_hash_map<std::string, PjRtDeviceAttribute>& Attributes()
+      const override {
+    return attributes_;
+  }
+
  private:
   std::unique_ptr<PjRtCApiCompiler> compiler_;
   const PJRT_Api* c_api_;
   std::unique_ptr<PJRT_TopologyDescription,
                   ::pjrt::PJRT_TopologyDescriptionDeleter>
       c_topology_;
+  // Device specific attributes with corresponding values.
+  absl::flat_hash_map<std::string, xla::PjRtDeviceAttribute> attributes_;
+
+  // Initializes device specific attributes.
+  void InitAttributes();
 };
 
 class CApiCopyToDeviceStream : public CopyToDeviceStream {

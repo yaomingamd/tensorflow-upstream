@@ -48,6 +48,7 @@ package(
 #         "@llvm-project//mlir:Support",
 #         "@llvm-project//mlir:TensorDialect",
 #         "@llvm-project//mlir:Transforms",
+#         "//tensorflow/compiler/xla/mlir/backends/gpu2/conversion:convert_case_op",
 #         "//tensorflow/compiler/xla/mlir/backends/gpu2/conversion:convert_compiled_ops",
 #         "//tensorflow/compiler/xla/mlir/backends/gpu2/conversion:convert_library_ops",
 #         "//tensorflow/compiler/xla/mlir/backends/gpu2/conversion:convert_memref_ops",
@@ -56,7 +57,7 @@ package(
 #         "//tensorflow/compiler/xla/mlir/backends/gpu2/conversion:xla_gpu_api",
 #         "//tensorflow/compiler/xla/mlir/backends/gpu2/ir:xla_gpu",
 #         "//tensorflow/compiler/xla/mlir_hlo:lhlo",
-#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects:IREEInputDialect"]),
+#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects/google_internal:IREEInputDialect"]),
 # )
 #
 # copybara:uncomment_end_and_comment_begin

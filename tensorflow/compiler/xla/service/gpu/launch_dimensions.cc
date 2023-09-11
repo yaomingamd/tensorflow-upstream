@@ -16,9 +16,16 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/launch_dimensions.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <ostream>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "tensorflow/compiler/xla/service/gpu/gpu_device_info.h"
+#include "tensorflow/compiler/xla/shape.h"
 #include "tensorflow/compiler/xla/shape_util.h"
+#include "tensorflow/compiler/xla/statusor.h"
+#include "tensorflow/compiler/xla/util.h"
 
 namespace xla {
 namespace gpu {
@@ -74,58 +81,28 @@ int64_t ThreadsPerBlockRowVectorized(const Shape& shape,
   return -1;
 }
 
-StatusOr<LaunchDimensions> CalculateLaunchDimensionsImplExperimental(
-    const Shape& shape, const GpuDeviceInfo& gpu_device_info,
-    LaunchDimensionsConfig dim_config) {
-  int64_t num_elements = ShapeUtil::ElementsIn(shape);
-  if (num_elements <= 1) {
-    return LaunchDimensions();
-  }
-  CHECK_EQ(num_elements % dim_config.unroll_factor, 0);
-  num_elements = num_elements / dim_config.unroll_factor;
-  int64_t threads_per_block_x = [&]() {
+namespace {
+
+struct BlockSizes {
+  int64_t threads_per_block_x;
+  int64_t threads_per_block_y;
+  int64_t block_count;
+};
+
+BlockSizes GetBlockSizes(LaunchDimensionsConfig dim_config,
+                         const GpuDeviceInfo& gpu_device_info,
+                         const Shape& shape, int64_t num_elements) {
+  if (!dim_config.row_vectorized && !dim_config.few_waves) {
+    BlockSizes result;
     const int kWarpSchedulers = 4;
-    int64_t block_size = std::min<int64_t>(
+    result.threads_per_block_x = std::min<int64_t>(
         gpu_device_info.threads_per_warp * kWarpSchedulers, num_elements);
-    VLOG(2) << "Block size: " << block_size;
-    return block_size;
-  }();
-
-  int64_t block_count = CeilOfRatio(num_elements, threads_per_block_x);
-
-  if (gpu_device_info.block_dim_limit_x > 0 &&
-      block_count >= gpu_device_info.block_dim_limit_x) {
-    return tsl::errors::Unimplemented("Kernel launch needs more blocks (",
-                                      block_count,
-                                      ") than allowed by hardware (",
-                                      gpu_device_info.block_dim_limit_x, ").");
+    result.threads_per_block_y = 1;
+    result.block_count = CeilOfRatio(
+        num_elements, result.threads_per_block_x * result.threads_per_block_y);
+    return result;
   }
 
-  return LaunchDimensions({block_count, 1, 1}, {threads_per_block_x, 1, 1});
-}
-
-StatusOr<LaunchDimensions> CalculateLaunchDimensionsImpl(
-    const Shape& shape, const GpuDeviceInfo& gpu_device_info,
-    LaunchDimensionsConfig dim_config) {
-  int64_t num_elements = ShapeUtil::ElementsIn(shape);
-  if (num_elements <= 1) {
-    return LaunchDimensions();
-  }
-
-  CHECK_EQ(num_elements % dim_config.unroll_factor, 0);
-  num_elements = num_elements / dim_config.unroll_factor;
-
-  // Since we don't do any inter-warp communication, we're free to choose any
-  // block size we want, subject to hardware constraints.  We choose the largest
-  // block size allowed, as empirically, this is a performance win on almost
-  // (but not all) benchmarks.
-  //
-  // My guess is that using a larger block size encourages ptxas to decrease
-  // per-thread register usage, thus allowing for higher occupancy, but I
-  // haven't verified this.
-  //
-  // TODO(jlebar): Investigate this further, and tune this heuristic so we can
-  // run faster on the few benchmarks where smaller block size helps.
   int64_t threads_per_block_row_vectorized =
       ThreadsPerBlockRowVectorized(shape, gpu_device_info, dim_config);
   // If row vectorized, threads_per_block_x is the vectorized size.
@@ -134,88 +111,89 @@ StatusOr<LaunchDimensions> CalculateLaunchDimensionsImpl(
   // intermediate values. Reduce the number of threads per block to
   // increase the number of registers available to ptxas.  Make sure
   // we still have a multiple of 32.
-  int64_t threads_per_block_x = [&]() {
-    int64_t max_threads_per_block_x =
-        threads_per_block_row_vectorized > 0
-            ? threads_per_block_row_vectorized
-            : RoundUpTo(ThreadsPerBlockLimit(gpu_device_info) /
-                            dim_config.unroll_factor,
-                        int64_t{32});
-    if (num_elements < max_threads_per_block_x) {
-      return num_elements;
-    }
-    return max_threads_per_block_x;
-  }();
+  BlockSizes result;
+  int64_t max_threads_per_block_x =
+      threads_per_block_row_vectorized > 0
+          ? threads_per_block_row_vectorized
+          : RoundUpTo(ThreadsPerBlockLimit(gpu_device_info) /
+                          dim_config.unroll_factor,
+                      int64_t{32});
+  result.threads_per_block_x = std::min(num_elements, max_threads_per_block_x);
   // threads_per_block_y > 1 when we row vectorize and have small row size.
-  int64_t threads_per_block_y =
+  result.threads_per_block_y =
       threads_per_block_row_vectorized > 0 &&
               threads_per_block_row_vectorized < 128 && num_elements > 128
           ? CeilOfRatio(static_cast<int64_t>(128),
                         threads_per_block_row_vectorized)
           : 1;
-  VLOG(2) << "Set # of threads per block to (.x=" << threads_per_block_x
-          << ", .y=" << threads_per_block_y << ")";
+  VLOG(2) << "Set # of threads per block to (.x=" << result.threads_per_block_x
+          << ", .y=" << result.threads_per_block_y << ")";
 
-  int64_t block_count =
-      CeilOfRatio(num_elements, threads_per_block_x * threads_per_block_y);
-  if (dim_config.few_waves && !dim_config.row_vectorized) {
-    int64_t capped_threads_per_block_x =
-        std::min<int64_t>(threads_per_block_x, 128);
-    int64_t capped_block_count =
-        gpu_device_info.core_count *
-        (gpu_device_info.threads_per_core_limit /
-         (capped_threads_per_block_x * threads_per_block_y));
-    if (capped_block_count < block_count) {
-      threads_per_block_x = capped_threads_per_block_x;
-      block_count = capped_block_count;
-      VLOG(2) << "Update the # of blocks to " << block_count
-              << " and the # of threads per blocks to " << threads_per_block_x
-              << " as the few waves mode is enabled.";
-    }
-  } else if (dim_config.few_waves && dim_config.row_vectorized) {
-    int64_t min_block_count = gpu_device_info.core_count *
-                              (gpu_device_info.threads_per_core_limit /
-                               (threads_per_block_x * threads_per_block_y));
-    int64_t capped_block_count = block_count;
-    // This multiple of 32 was tuned to not cause regression on multiple
-    // benchmarks.  It isn't a value that is optimal for all
-    // kernels. Maybe looking at the arithmetic intensity of the
-    // kernels can specialize the multiple per kernel.
-    while (capped_block_count > (32 * min_block_count)) {
-      capped_block_count /= 2;
-    }
-    // Do not increase the number of blocks. This can happens for
-    // small num_elements.
-    if (capped_block_count < block_count) {
-      VLOG(2) << "Update # of blocks to block_count as few_waves is enabled.";
-      block_count = capped_block_count;
+  result.block_count = CeilOfRatio(
+      num_elements, result.threads_per_block_x * result.threads_per_block_y);
+  if (dim_config.few_waves) {
+    if (dim_config.row_vectorized) {
+      // This multiple of 32 was tuned to not cause regression on multiple
+      // benchmarks. It isn't a value that is optimal for all kernels. Maybe
+      // looking at the arithmetic intensity of the kernels can specialize the
+      // multiple per kernel.
+      int64_t max_block_count =
+          32 * gpu_device_info.core_count *
+          (gpu_device_info.threads_per_core_limit /
+           (result.threads_per_block_x * result.threads_per_block_y));
+      int64_t capped_block_count = result.block_count;
+      while (capped_block_count > max_block_count) {
+        capped_block_count /= 2;
+      }
+      if (capped_block_count < result.block_count) {
+        result.block_count = capped_block_count;
+        VLOG(2) << "Update # of blocks to " << result.block_count
+                << " as few_waves is enabled.";
+      }
+    } else {
+      int64_t capped_threads_per_block_x =
+          std::min<int64_t>(result.threads_per_block_x, 128);
+      int64_t capped_block_count =
+          gpu_device_info.core_count *
+          (gpu_device_info.threads_per_core_limit /
+           (capped_threads_per_block_x * result.threads_per_block_y));
+      if (capped_block_count < result.block_count) {
+        result.threads_per_block_x = capped_threads_per_block_x;
+        result.block_count = capped_block_count;
+        VLOG(2) << "Update the # of blocks to " << result.block_count
+                << " and the # of threads per blocks to "
+                << result.threads_per_block_x
+                << " as the few_waves mode is enabled.";
+      }
     }
   }
+  return result;
+}
+
+}  // namespace
+
+StatusOr<LaunchDimensions> CalculateLaunchDimensions(
+    const Shape& shape, const GpuDeviceInfo& gpu_device_info,
+    LaunchDimensionsConfig dim_config) {
+  int64_t num_elements = ShapeUtil::ElementsIn(shape);
+  if (num_elements <= 1) {
+    return LaunchDimensions();
+  }
+  CHECK_EQ(num_elements % dim_config.unroll_factor, 0);
+  num_elements = num_elements / dim_config.unroll_factor;
+  BlockSizes sizes =
+      GetBlockSizes(dim_config, gpu_device_info, shape, num_elements);
   if (gpu_device_info.block_dim_limit_x > 0 &&
-      block_count >= gpu_device_info.block_dim_limit_x) {
+      sizes.block_count >= gpu_device_info.block_dim_limit_x) {
     return tsl::errors::Unimplemented("Kernel launch needs more blocks (",
-                                      block_count,
+                                      sizes.block_count,
                                       ") than allowed by hardware (",
                                       gpu_device_info.block_dim_limit_x, ").");
   }
 
-  VLOG(2) << absl::StrFormat(
-      "Initialized the block count to %d, the block size .x=%d and .y=%d"
-      " for %d elements in the tensor.",
-      block_count, threads_per_block_x, threads_per_block_y, num_elements);
-  return LaunchDimensions({block_count, 1, 1},
-                          {threads_per_block_x, threads_per_block_y, 1});
-}
-
-StatusOr<LaunchDimensions> CalculateLaunchDimensions(
-    const Shape& shape, const GpuDeviceInfo& gpu_device_info,
-    bool use_experimental_block_size, LaunchDimensionsConfig dim_config) {
-  if (use_experimental_block_size) {
-    VLOG(2) << "Experimental block size is enabled";
-    return CalculateLaunchDimensionsImplExperimental(shape, gpu_device_info,
-                                                     dim_config);
-  }
-  return CalculateLaunchDimensionsImpl(shape, gpu_device_info, dim_config);
+  return LaunchDimensions(
+      {sizes.block_count, 1, 1},
+      {sizes.threads_per_block_x, sizes.threads_per_block_y, 1});
 }
 
 }  // namespace gpu

@@ -1,3 +1,4 @@
+# Placeholder: load py_proto_library
 load("//tensorflow/core/platform:build_config.bzl", "tf_proto_library")
 load("//tensorflow:tensorflow.bzl", "if_google", "tf_cc_shared_object", "tf_cc_test")
 load("//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
@@ -12,10 +13,12 @@ package_group(
     name = "friends",
     packages = [
         # copybara:uncomment "//learning/brain/experimental/tfrt/native_lowering/...",
-        # copybara:uncomment "//learning/brain/tfrt/support/...",
+        # copybara:uncomment "//learning/brain/tfrt/...",
+        # copybara:uncomment "//learning/serving/servables/tfrt/...",
         # copybara:uncomment "//smartass/brain/inference/...",
         "//tensorflow/core/tfrt/...",
         "//tensorflow/core/tfrt/graph_executor/python/...",
+        # copybara:uncomment "//tensorflow_serving/servables/tensorflow/...",
         # copybara:uncomment "//tensorflow_serving/servables/tensorflow/google/...",
     ],
 )
@@ -33,6 +36,7 @@ cc_library(
         "//tensorflow/core/protobuf:for_core_protos_cc",
         "//tensorflow/core/tfrt/runtime:work_queue_interface",
         "//tensorflow/core/tfrt/utils:bridge_graph_analysis",
+        "@com_google_absl//absl/log",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:optional",
     ],

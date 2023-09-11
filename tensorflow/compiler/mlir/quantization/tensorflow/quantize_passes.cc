@@ -16,32 +16,13 @@ limitations under the License.
 
 #include <optional>
 
-#include "mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
+#include "absl/strings/string_view.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
-#include "mlir/Dialect/Quant/QuantOps.h"  // from @llvm-project
-#include "mlir/Dialect/SCF/IR/SCF.h"  // from @llvm-project
-#include "mlir/Dialect/Shape/IR/Shape.h"  // from @llvm-project
-#include "mlir/IR/BuiltinOps.h"  // from @llvm-project
-#include "mlir/IR/MLIRContext.h"  // from @llvm-project
-#include "mlir/IR/OwningOpRef.h"  // from @llvm-project
-#include "mlir/Pass/Pass.h"  // from @llvm-project
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
-#include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/compiler/mlir/quantization/tensorflow/passes/passes.h"
-#include "tensorflow/compiler/mlir/quantization/tensorflow/passes/utils.h"
-#include "tensorflow/compiler/mlir/tensorflow/ir/tf_dialect.h"
-#include "tensorflow/compiler/mlir/tensorflow/ir/tf_saved_model.h"
+#include "tensorflow/compiler/mlir/quantization/tensorflow/quantization_options.pb.h"
 #include "tensorflow/compiler/mlir/tensorflow/transforms/passes.h"
-#include "tensorflow/compiler/mlir/tensorflow/transforms/tf_saved_model_freeze_variables.h"
-#include "tensorflow/compiler/mlir/tensorflow/transforms/tf_saved_model_passes.h"
-#include "tensorflow/compiler/mlir/tensorflow/translate/export_graphdef.h"
-#include "tensorflow/compiler/mlir/tensorflow/translate/mlir_import_options.h"
-#include "tensorflow/compiler/mlir/tensorflow/translate/mlir_roundtrip_flags.h"
-#include "tensorflow/compiler/mlir/tensorflow/translate/tf_mlir_translate.h"
-#include "tensorflow/compiler/mlir/tensorflow/utils/error_util.h"
-#include "tensorflow/core/framework/graph.pb.h"
-#include "tensorflow/core/platform/statusor.h"
 
 namespace tensorflow {
 namespace quantization {
@@ -65,6 +46,8 @@ void AddQuantizeQatPasses(
         mlir::TF::CreateUnrollBatchMatMulPassPass());
   }
   pm.addPass(mlir::TF::CreateTFShapeInferencePass());
+  pm.addNestedPass<mlir::func::FuncOp>(
+      mlir::quant::CreateConvertTfXlaOpToTfOpPass());
   pm.addNestedPass<mlir::func::FuncOp>(
       mlir::quant::CreatePrepareLiftingPass(quantization_options.op_set()));
 
@@ -109,6 +92,8 @@ void AddQuantizePtqDynamicRangePasses(
     AddConvertTpuToCpuModelPasses(pm);
   }
   pm.addNestedPass<mlir::func::FuncOp>(
+      mlir::quant::CreateConvertTfXlaOpToTfOpPass());
+  pm.addNestedPass<mlir::func::FuncOp>(
       mlir::quant::CreatePrepareLiftingPass(quantization_options.op_set()));
   pm.addPass(mlir::quant::CreateLiftQuantizableSpotsAsFunctionsDRQPass(
       quantization_options.quantization_method().experimental_method(),
@@ -152,12 +137,21 @@ void AddQuantizePtqPreCalibrationPasses(
     AddConvertTpuToCpuModelPasses(pm);
   }
   pm.addNestedPass<mlir::func::FuncOp>(
+      mlir::quant::CreateConvertTfXlaOpToTfOpPass());
+  pm.addNestedPass<mlir::func::FuncOp>(
       mlir::quant::CreatePrepareLiftingPass(quantization_options.op_set()));
   pm.addPass(mlir::quant::CreateLiftQuantizableSpotsAsFunctionsPass(
       quantization_options.op_set(),
       quantization_options.enable_two_input_tensors()));
+  // TODO: b/295140328 - Add debugger support for weight only
+  if (quantization_options.has_debugger_options()) {
+    pm.addPass(mlir::quant::CreateAddDumpTensorOpPass(
+        quantization_options.debugger_options().debugger_type(),
+        quantization_options.debugger_options().log_dir_path()));
+  }
   pm.addNestedPass<mlir::func::FuncOp>(
-      mlir::quant::CreateInsertCustomAggregationOpsPass());
+      mlir::quant::CreateInsertCustomAggregationOpsPass(
+          quantization_options.calibration_options()));
   pm.addPass(mlir::quant::CreateIssueIDsOfCustomAggregationOpsPass());
 }
 

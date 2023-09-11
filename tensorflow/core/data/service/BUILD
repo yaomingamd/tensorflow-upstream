@@ -33,6 +33,7 @@ tf_proto_library(
     srcs = ["common.proto"],
     cc_api_version = 2,
     create_java_proto = False,
+    create_kotlin_proto = False,
     protodeps = tf_additional_all_protos(),
     visibility = [
         ":data_transfer_visibility",
@@ -46,6 +47,7 @@ tf_proto_library(
     has_services = 1,
     cc_api_version = 2,
     create_java_proto = False,
+    create_kotlin_proto = False,
     protodeps = tf_additional_all_protos() + [
         ":common_proto",
     ],
@@ -57,6 +59,7 @@ tf_proto_library(
     has_services = 1,
     cc_api_version = 2,
     create_java_proto = False,
+    create_kotlin_proto = False,
     protodeps = tf_additional_all_protos() + [
         ":common_proto",
     ],
@@ -71,6 +74,7 @@ tf_proto_library(
     srcs = ["export.proto"],
     cc_api_version = 2,
     create_java_proto = False,
+    create_kotlin_proto = False,
     protodeps = tf_additional_all_protos() + [
         ":common_proto",
     ],
@@ -617,6 +621,7 @@ tf_proto_library(
     srcs = ["journal.proto"],
     cc_api_version = 2,
     create_java_proto = False,
+    create_kotlin_proto = False,
     protodeps = [
         ":common_proto",
         "//tensorflow/core:protos_all",
@@ -692,8 +697,6 @@ cc_library(
         ":worker_client",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
-        "//tensorflow/core:tensorflow",
-        "//tensorflow/core/data:utils",
         "//tensorflow/core/profiler/rpc:profiler_service_impl",
     ] + tf_grpc_cc_dependencies(),
     alwayslink = 1,

@@ -41,6 +41,7 @@ limitations under the License.
 #include "mlir/IR/BuiltinAttributeInterfaces.h"  // from @llvm-project
 #include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
+#include "mlir/IR/BuiltinTypeInterfaces.h"  // from @llvm-project
 #include "mlir/IR/BuiltinTypes.h"  // from @llvm-project
 #include "mlir/IR/ImplicitLocOpBuilder.h"  // from @llvm-project
 #include "mlir/IR/Location.h"  // from @llvm-project
@@ -51,6 +52,7 @@ limitations under the License.
 #include "mlir/IR/Region.h"  // from @llvm-project
 #include "mlir/IR/SymbolTable.h"  // from @llvm-project
 #include "mlir/IR/Value.h"  // from @llvm-project
+#include "mlir/IR/ValueRange.h"  // from @llvm-project
 #include "mlir/Pass/Pass.h"  // from @llvm-project
 #include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
@@ -918,7 +920,7 @@ class ConvertNonTrivialConvOp
     if (dnums.getKernelInputFeatureDimension() != num_spatial_dims + 1 ||
         dnums.getKernelOutputFeatureDimension() != num_spatial_dims)
       return rewriter.notifyMatchFailure(conv_op,
-                                         "requires kernel format [b, 0, 1, f]");
+                                         "requires kernel format [0, 1, o, i]");
     auto kernel_spatial_dimensions = dnums.getKernelSpatialDimensions();
     for (auto p : llvm::enumerate(kernel_spatial_dimensions)) {
       if (p.value() != p.index())
@@ -1613,18 +1615,18 @@ class DotDimensionsInfo {
  public:
   DotDimensionsInfo(ShapedType type, ArrayRef<int64_t> batch_dimensions,
                     ArrayRef<int64_t> contracting_dimensions) {
-    const int rank = type.getRank();
-    for (const int dim : batch_dimensions) {
+    const int64_t rank = type.getRank();
+    for (const int64_t dim : batch_dimensions) {
       batch_dimensions_.axes.push_back(dim);
       batch_dimensions_.sizes.push_back(type.getDimSize(dim));
     }
 
-    for (const int dim : contracting_dimensions) {
+    for (const int64_t dim : contracting_dimensions) {
       contracting_dimensions_.axes.push_back(dim);
       contracting_dimensions_.sizes.push_back(type.getDimSize(dim));
     }
 
-    for (int dim = 0; dim < rank; ++dim) {
+    for (int64_t dim = 0; dim < rank; ++dim) {
       if (llvm::count(contracting_dimensions_.axes, dim) > 0 ||
           llvm::count(batch_dimensions_.axes, dim) > 0) {
         continue;
@@ -1644,14 +1646,20 @@ class DotDimensionsInfo {
 
   // Returns the total dimension size after flattening all contracting
   // dimensions.
-  int FlattenedContractingDimensionSize() const {
+  int64_t FlattenedContractingDimensionSize() const {
+    if (ShapedType::isDynamicShape(contracting_dimensions_.sizes)) {
+      return ShapedType::kDynamic;
+    }
     return std::accumulate(contracting_dimensions_.sizes.begin(),
                            contracting_dimensions_.sizes.end(), 1,
                            std::multiplies<int64_t>());
   }
 
   // Returns the total dimension size after flattening all out dimensions.
-  int FlattenedOutDimensionSize() const {
+  int64_t FlattenedOutDimensionSize() const {
+    if (ShapedType::isDynamicShape(out_dimensions_.sizes)) {
+      return ShapedType::kDynamic;
+    }
     return std::accumulate(out_dimensions_.sizes.begin(),
                            out_dimensions_.sizes.end(), 1,
                            std::multiplies<int64_t>());
@@ -1665,6 +1673,95 @@ class DotDimensionsInfo {
   DimensionVector out_dimensions_;
 };
 
+// Calculates the flattened shapes for dynamic shaped operands in
+// mhlo.dot_general:
+//   1. flattened_out_dim = UnsortedSegmentProdOp(operand_shape, out_axes)
+//   2. flattened_contracting_dim = UnsortedSegmentProdOp(operand_shape,
+//   contracting_axes)
+//   3. batch_dimensions = Gather(operand_shape, batch_axes)
+//   4. flattened_shape = Concat(batch_dimensions, flattened_out_dim,
+//   flattened_contracting_dim)
+// The flattened shape for LHS
+// is like [batch_dimensions, flattened_out_dimension,
+// flattened_contracting_dimension] and [batch_dimensions,
+// flattened_contracting_dimension, flattened_out_dimension] for RHS.
+Value BuildDotOperandFlattenedShapeOp(Value operand,
+                                      DotDimensionsInfo dot_dimensions_info,
+                                      ImplicitLocOpBuilder& builder,
+                                      bool is_lhs) {
+  auto operand_type = operand.getType().cast<ShapedType>();
+  BoolAttr true_attr = builder.getBoolAttr(true);
+  auto operand_shape = builder.create<TF::ShapeOp>(operand, true_attr);
+  const int64_t operand_rank = operand_type.getRank();
+  // Compute flattened out dimension and contracting dimension using
+  // TF::UnsortedSegmentProdOp.
+  llvm::SmallVector<int32_t, 4> flattened_out_segids =
+      llvm::SmallVector<int32_t, 4>(operand_rank, static_cast<int32_t>(-1));
+  for (int64_t i : dot_dimensions_info.out_dimensions().AxesArray()) {
+    flattened_out_segids[i] = 0;
+  }
+  llvm::SmallVector<int32_t, 4> flattened_contracting_segids =
+      llvm::SmallVector<int32_t, 4>(operand_rank, static_cast<int32_t>(-1));
+  for (int64_t i : dot_dimensions_info.contracting_dimensions().AxesArray()) {
+    flattened_contracting_segids[i] = 0;
+  }
+  auto seg_prod_result_type =
+      RankedTensorType::get(static_cast<int32_t>(1), builder.getI32Type());
+  auto out_segids_cst = builder.create<TF::ConstOp>(
+      builder.getI32TensorAttr(flattened_out_segids));
+  auto contracting_segids_cst = builder.create<TF::ConstOp>(
+      builder.getI32TensorAttr(flattened_contracting_segids));
+  auto num_segids_tensor =
+      builder.create<TF::ConstOp>(builder.getI32IntegerAttr(1));
+  auto flattened_out_dims = builder.create<TF::UnsortedSegmentProdOp>(
+      seg_prod_result_type, operand_shape, out_segids_cst, num_segids_tensor);
+  auto flattened_contracting_dims = builder.create<TF::UnsortedSegmentProdOp>(
+      seg_prod_result_type, operand_shape, contracting_segids_cst,
+      num_segids_tensor);
+  llvm::SmallVector<Value, 3> flattend_shape_values;
+  // Gather the batch dimensions.
+  if (!dot_dimensions_info.batch_dimensions().AxesArray().empty()) {
+    if (ShapedType::isDynamicShape(
+            dot_dimensions_info.batch_dimensions().SizesArray())) {
+      auto batch_axes_tensor =
+          builder.create<TF::ConstOp>(builder.getI64TensorAttr(
+              dot_dimensions_info.batch_dimensions().AxesArray()));
+      auto batch_dims = builder.create<TF::GatherOp>(
+          RankedTensorType::get(
+              {static_cast<int>(
+                  dot_dimensions_info.batch_dimensions().AxesArray().size())},
+              builder.getIntegerType(32)),
+          operand_shape, batch_axes_tensor, true_attr);
+      flattend_shape_values.push_back(batch_dims);
+    } else {
+      llvm::SmallVector<int32_t> batch_i32_vec;
+      for (int64_t element :
+           dot_dimensions_info.batch_dimensions().SizesArray()) {
+        batch_i32_vec.push_back(static_cast<int32_t>(element));
+      }
+      auto batch_dims =
+          builder.create<TF::ConstOp>(builder.getI32TensorAttr(batch_i32_vec));
+      flattend_shape_values.push_back(batch_dims);
+    }
+  }
+  flattend_shape_values.push_back(
+      (is_lhs ? flattened_out_dims : flattened_contracting_dims));
+  flattend_shape_values.push_back(
+      (is_lhs ? flattened_contracting_dims : flattened_out_dims));
+
+  auto concat_result_type = RankedTensorType::get(
+      {static_cast<int32_t>(
+           dot_dimensions_info.batch_dimensions().AxesArray().size()) +
+       2},
+      builder.getIntegerType(32));
+  // Concatenate the batch dimensions, flattened out dimension and flattened
+  // contracting dimension.
+  return builder.create<TF::ConcatOp>(
+      concat_result_type,
+      builder.create<TF::ConstOp>(builder.getI32IntegerAttr(0)),
+      flattend_shape_values);
+}
+
 Value ConvertDot(PatternRewriter& rewriter, Value lhs, Value rhs,
                  DotDimensionNumbersAttr dot_dimension_numbers,
                  ShapedType result_type, mlir::Location loc) {
@@ -1672,6 +1769,7 @@ Value ConvertDot(PatternRewriter& rewriter, Value lhs, Value rhs,
   auto rhs_type = rhs.getType().cast<ShapedType>();
   const int lhs_rank = lhs_type.getRank();
   const int rhs_rank = rhs_type.getRank();
+  ImplicitLocOpBuilder builder(loc, rewriter);
 
   // Collects lhs and rhs dimensions information.
   DotDimensionsInfo lhs_dot_dimensions_info(
@@ -1724,10 +1822,20 @@ Value ConvertDot(PatternRewriter& rewriter, Value lhs, Value rhs,
           lhs_dot_dimensions_info.FlattenedOutDimensionSize()},
       llvm::ArrayRef<int64_t>{
           lhs_dot_dimensions_info.FlattenedContractingDimensionSize()});
-  auto lhs_flattend = rewriter.create<mhlo::ReshapeOp>(
-      loc,
-      RankedTensorType::get(lhs_flattened_shape, lhs_type.getElementType()),
-      lhs_transposed.getResult());
+  Value lhs_flattend;
+  if (lhs_type.hasStaticShape()) {
+    lhs_flattend = rewriter.create<mhlo::ReshapeOp>(
+        loc,
+        RankedTensorType::get(lhs_flattened_shape, lhs_type.getElementType()),
+        lhs_transposed.getResult());
+  } else {
+    auto lhs_flattend_shape_op = BuildDotOperandFlattenedShapeOp(
+        lhs, lhs_dot_dimensions_info, builder, /*is_lhs=*/true);
+    lhs_flattend = rewriter.create<mhlo::DynamicReshapeOp>(
+        loc,
+        RankedTensorType::get(lhs_flattened_shape, lhs_type.getElementType()),
+        lhs_transposed, lhs_flattend_shape_op);
+  }
 
   // Reshapes rhs to flatten out_dimensions and contracting_dimensions.
   llvm::SmallVector<int64_t, 4> rhs_flattened_shape = Concat<int64_t>(
@@ -1736,10 +1844,20 @@ Value ConvertDot(PatternRewriter& rewriter, Value lhs, Value rhs,
           rhs_dot_dimensions_info.FlattenedContractingDimensionSize()},
       llvm::ArrayRef<int64_t>{
           rhs_dot_dimensions_info.FlattenedOutDimensionSize()});
-  auto rhs_flattend = rewriter.create<mhlo::ReshapeOp>(
-      loc,
-      RankedTensorType::get(rhs_flattened_shape, rhs_type.getElementType()),
-      rhs_transposed.getResult());
+  Value rhs_flattend;
+  if (rhs_type.hasStaticShape()) {
+    rhs_flattend = rewriter.create<mhlo::ReshapeOp>(
+        loc,
+        RankedTensorType::get(rhs_flattened_shape, rhs_type.getElementType()),
+        rhs_transposed.getResult());
+  } else {
+    auto rhs_flattend_shape_op = BuildDotOperandFlattenedShapeOp(
+        rhs, rhs_dot_dimensions_info, builder, /*is_lhs=*/false);
+    rhs_flattend = rewriter.create<mhlo::DynamicReshapeOp>(
+        loc,
+        RankedTensorType::get(rhs_flattened_shape, rhs_type.getElementType()),
+        rhs_transposed, rhs_flattend_shape_op);
+  }
 
   // Creates matmul op of `lhs_flattend` and `rhs_flattend`.
   llvm::SmallVector<int64_t, 4> matmul_shape =
@@ -1750,9 +1868,52 @@ Value ConvertDot(PatternRewriter& rewriter, Value lhs, Value rhs,
                           rhs_dot_dimensions_info.FlattenedOutDimensionSize()});
   auto matmul = rewriter.create<TF::BatchMatMulV3Op>(
       loc, RankedTensorType::get(matmul_shape, result_type.getElementType()),
-      lhs_flattend.getResult(), rhs_flattend.getResult());
-  auto reshaped =
-      rewriter.create<mhlo::ReshapeOp>(loc, result_type, matmul.getResult());
+      lhs_flattend, rhs_flattend);
+
+  if (result_type.hasStaticShape()) {
+    auto reshaped =
+        rewriter.create<mhlo::ReshapeOp>(loc, result_type, matmul.getResult());
+    return reshaped.getResult();
+  }
+
+  // Reshape for dynamic shaped operands. The result shape is
+  // [lhs_batch_dimensions, lhs_out_dimensions, rhs_out_dimensions].
+  BoolAttr true_attr = rewriter.getBoolAttr(true);
+  auto lhs_shape = rewriter.create<TF::ShapeOp>(loc, lhs, true_attr);
+  auto rhs_shape = rewriter.create<TF::ShapeOp>(loc, rhs, true_attr);
+  llvm::SmallVector<int64_t, 4> lhs_batch_and_out =
+      Concat<int64_t>(lhs_dot_dimensions_info.batch_dimensions().AxesArray(),
+                      lhs_dot_dimensions_info.out_dimensions().AxesArray());
+  auto lhs_batch_and_out_cst = rewriter.create<TF::ConstOp>(
+      loc, rewriter.getI64TensorAttr(lhs_batch_and_out));
+  auto lhs_batch_and_out_dims = rewriter.create<TF::GatherOp>(
+      loc,
+      RankedTensorType::get({static_cast<int>(lhs_batch_and_out.size())},
+                            rewriter.getIntegerType(32)),
+      lhs_shape, lhs_batch_and_out_cst, true_attr);
+  auto rhs_out_cst = rewriter.create<TF::ConstOp>(
+      loc, rewriter.getI64TensorAttr(
+               rhs_dot_dimensions_info.out_dimensions().AxesArray()));
+  auto rhs_out_dims = rewriter.create<TF::GatherOp>(
+      loc,
+      RankedTensorType::get(
+          {static_cast<int32_t>(
+              rhs_dot_dimensions_info.out_dimensions().AxesArray().size())},
+          rewriter.getIntegerType(32)),
+      rhs_shape, rhs_out_cst, true_attr);
+  auto result_shape_type = RankedTensorType::get(
+      {static_cast<int32_t>(
+          lhs_dot_dimensions_info.batch_dimensions().AxesArray().size() +
+          lhs_dot_dimensions_info.out_dimensions().AxesArray().size() +
+          rhs_dot_dimensions_info.out_dimensions().AxesArray().size())},
+      rewriter.getIntegerType(32));
+  auto result_shape = rewriter.create<TF::ConcatOp>(
+      loc, result_shape_type,
+      rewriter.create<TF::ConstOp>(loc, rewriter.getI32IntegerAttr(0)),
+      ValueRange{lhs_batch_and_out_dims, rhs_out_dims});
+
+  auto reshaped = rewriter.create<mhlo::DynamicReshapeOp>(
+      loc, result_type, matmul.getResult(), result_shape);
   return reshaped.getResult();
 }
 
@@ -1919,6 +2080,31 @@ class ConvertReduceOpToTfOp : public OpConversionPattern<mhlo::ReduceOp> {
     if (!reduce_op.getInputs()[0].getType().isa<RankedTensorType>())
       return failure();
     if (!reduce_op.getType(0).isa<RankedTensorType>()) return failure();
+    return success();
+  }
+};
+
+class ConvertReduceOpToTfProd
+    : public ConvertReduceOpToTfOp<mhlo::MulOp, TF::ProdOp, TF::MulOp> {
+ public:
+  using ConvertReduceOpToTfOp::ConvertReduceOpToTfOp;
+
+  LogicalResult MatchInitValue(Value init_value) const override {
+    auto type = init_value.getType().cast<ShapedType>().getElementType();
+    if (type.isa<FloatType>()) {
+      float const_value;
+      if (failed(GetConstantSplatValue<float>(init_value, const_value)) ||
+          const_value != 1.0)
+        return failure();
+    } else if (type.isa<IntegerType>() && type.isSignlessInteger()) {
+      int32_t const_value;
+      if (failed(GetConstantSplatValue<int32_t>(init_value, const_value)) ||
+          const_value != 1)
+        return failure();
+    } else {
+      return failure();
+    }
+
     return success();
   }
 };
@@ -2284,17 +2470,17 @@ class ConvertIotaOpToTfRange : public OpConversionPattern<mhlo::IotaOp> {
   }
 };
 
-// A helper function for ConvertMaxPoolOp and ConvertAvgMaxPoolOp. Returns true
+// A helper function for ConvertMaxPoolOp and ConvertAvgPoolOp. Returns true
 // if the given ReduceWindowOp is a spatial pooling without dilation. If returns
 // true, also outputs the window strides and the TF padding mode ("VALID" or
 // "SAME").
 bool IsSpatialPoolingWithoutDilation(
     mhlo::ReduceWindowOp rw, llvm::SmallVectorImpl<int64_t>* window_strides,
-    std::string* padding_mode) {
+    std::string* padding_mode, std::string* data_format) {
   // tf.max_pool or tf.avg_pool need at least 3 dimensions (batch, spatial,
   // channel).
   const uint64_t rank = rw.getWindowDimensions().size();
-  if (rank <= 2) return false;
+  if (rank <= 3 || rank > 5) return false;
 
   if (rw.getWindowStrides().has_value()) {
     window_strides->insert(window_strides->end(),
@@ -2313,17 +2499,27 @@ bool IsSpatialPoolingWithoutDilation(
     padding.resize(2 * rank, 0);
   }
 
-  // Check that we don't do any reduction along the batch (first) and channel
-  // (last) dimensions.
-  const uint64_t batch_dim = 0;
-  const uint64_t channel_dim = rank - 1;
-  if (rw.getWindowDimensions().getValues<int64_t>()[batch_dim] != 1 ||
-      rw.getWindowDimensions().getValues<int64_t>()[channel_dim] != 1 ||
-      (*window_strides)[batch_dim] != 1 ||
-      (*window_strides)[channel_dim] != 1 || padding[2 * batch_dim] != 0 ||
-      padding[2 * batch_dim + 1] != 0 || padding[2 * channel_dim] != 0 ||
-      padding[2 * channel_dim + 1] != 0)
+  // Check that we don't do any reduction along the batch and channel
+  // dimensions.
+  auto verify_batch_channel_dims = [&rw, &window_strides, &padding](
+                                       uint64_t batch_dim,
+                                       uint64_t channel_dim) {
+    return rw.getWindowDimensions().getValues<int64_t>()[batch_dim] == 1 &&
+           rw.getWindowDimensions().getValues<int64_t>()[channel_dim] == 1 &&
+           (*window_strides)[batch_dim] == 1 &&
+           (*window_strides)[channel_dim] == 1 && padding[2 * batch_dim] == 0 &&
+           padding[2 * batch_dim + 1] == 0 && padding[2 * channel_dim] == 0 &&
+           padding[2 * channel_dim + 1] == 0;
+  };
+
+  bool is_pool2d = rank == 4;
+  if (verify_batch_channel_dims(0, rank - 1)) {
+    *data_format = is_pool2d ? "NHWC" : "NDHWC";
+  } else if (verify_batch_channel_dims(0, 1)) {
+    *data_format = is_pool2d ? "NCHW" : "NCDHW";
+  } else {
     return false;
+  }
 
   if (rw.getWindowDilations().has_value() &&
       !(rw.getWindowDilations()->isSplat() &&
@@ -2537,8 +2733,9 @@ class ConvertAvgPoolOp : public OpConversionPattern<mhlo::DivOp> {
     if (!isFloatZero(rw.getInitValues()[0])) return failure();
 
     llvm::SmallVector<int64_t, 5> window_strides;
-    std::string padding_mode;
-    if (!IsSpatialPoolingWithoutDilation(rw, &window_strides, &padding_mode)) {
+    std::string padding_mode, data_format;
+    if (!IsSpatialPoolingWithoutDilation(rw, &window_strides, &padding_mode,
+                                         &data_format)) {
       return rewriter.notifyMatchFailure(
           div_op, "not the root of spatial pooling without dilation");
     }
@@ -2562,7 +2759,7 @@ class ConvertAvgPoolOp : public OpConversionPattern<mhlo::DivOp> {
       return replaceWithAvgPool(
           div_op, rw.getInputs()[0],
           llvm::to_vector<4>(rw.getWindowDimensions().getValues<int64_t>()),
-          window_strides, "VALID", rewriter);
+          window_strides, "VALID", data_format, rewriter);
     }
 
     Value actual_divisor = recursivelyWalkUpDivisor(div_op.getRhs());
@@ -2593,7 +2790,7 @@ class ConvertAvgPoolOp : public OpConversionPattern<mhlo::DivOp> {
       return replaceWithAvgPool(
           div_op, rw.getInputs()[0],
           llvm::to_vector<4>(rw.getWindowDimensions().getValues<int64_t>()),
-          window_strides, padding_mode, rewriter);
+          window_strides, padding_mode, data_format, rewriter);
     }
 
     return failure();
@@ -2611,18 +2808,19 @@ class ConvertAvgPoolOp : public OpConversionPattern<mhlo::DivOp> {
                                    llvm::ArrayRef<int64_t> ksizes,
                                    llvm::ArrayRef<int64_t> kstrides,
                                    llvm::StringRef padding,
+                                   llvm::StringRef data_format,
                                    ConversionPatternRewriter& rewriter) const {
     if (ksizes.size() == 4) {
       rewriter.replaceOpWithNewOp<TF::AvgPoolOp>(
           op, op.getType(), input, rewriter.getI64ArrayAttr(ksizes),
           rewriter.getI64ArrayAttr(kstrides), rewriter.getStringAttr(padding),
-          rewriter.getStringAttr("NHWC"));
+          rewriter.getStringAttr(data_format));
       return success();
     } else if (ksizes.size() == 5) {
       rewriter.replaceOpWithNewOp<TF::AvgPool3DOp>(
           op, op.getType(), input, rewriter.getI64ArrayAttr(ksizes),
           rewriter.getI64ArrayAttr(kstrides), rewriter.getStringAttr(padding),
-          rewriter.getStringAttr("NDHWC"));
+          rewriter.getStringAttr(data_format));
       return success();
     }
     return failure();
@@ -2664,8 +2862,9 @@ class ConvertMaxPoolOp : public OpConversionPattern<mhlo::ReduceWindowOp> {
     }
 
     llvm::SmallVector<int64_t, 5> window_strides;
-    std::string padding_mode;
-    if (!IsSpatialPoolingWithoutDilation(rw, &window_strides, &padding_mode)) {
+    std::string padding_mode, data_format;
+    if (!IsSpatialPoolingWithoutDilation(rw, &window_strides, &padding_mode,
+                                         &data_format)) {
       return rewriter.notifyMatchFailure(
           rw, "not the root of spatial pooling without dilation");
     }
@@ -2673,7 +2872,7 @@ class ConvertMaxPoolOp : public OpConversionPattern<mhlo::ReduceWindowOp> {
     return replaceWithMaxPool(
         rw, rw.getInputs()[0],
         llvm::to_vector<4>(rw.getWindowDimensions().getValues<int64_t>()),
-        window_strides, padding_mode, rewriter);
+        window_strides, padding_mode, data_format, rewriter);
   }
 
  private:
@@ -2702,19 +2901,20 @@ class ConvertMaxPoolOp : public OpConversionPattern<mhlo::ReduceWindowOp> {
                                    llvm::ArrayRef<int64_t> ksizes,
                                    llvm::ArrayRef<int64_t> kstrides,
                                    llvm::StringRef padding,
+                                   llvm::StringRef data_format,
                                    ConversionPatternRewriter& rewriter) const {
     if (ksizes.size() == 4) {
       rewriter.replaceOpWithNewOp<TF::MaxPoolOp>(
           op, op.getType(0), input, rewriter.getI64ArrayAttr(ksizes),
           rewriter.getI64ArrayAttr(kstrides), rewriter.getStringAttr(padding),
           /*explicit_paddings=*/rewriter.getI64ArrayAttr({}),
-          rewriter.getStringAttr("NHWC"));
+          rewriter.getStringAttr(data_format));
       return success();
     } else if (ksizes.size() == 5) {
       rewriter.replaceOpWithNewOp<TF::MaxPool3DOp>(
           op, op.getType(0), input, rewriter.getI64ArrayAttr(ksizes),
           rewriter.getI64ArrayAttr(kstrides), rewriter.getStringAttr(padding),
-          rewriter.getStringAttr("NDHWC"));
+          rewriter.getStringAttr(data_format));
       return success();
     }
     return failure();
@@ -3713,6 +3913,36 @@ class ConvertCustomCallWithApproxTopK
   mlir::ModuleOp* module_op_;
 };
 
+// Removes the `mhlo.custom_call @shape_assertion` custom call which represents
+// an assertion that the first operand (`assert_what`) evaluates to `true`.
+// This is a temporary workaround for unblocking dynamic model conversion
+// because starting from version 7, in presence of shape polymorphism JAX will
+// emit stablehlo.custom_call @shape_assertion to verify at compile time that
+// the code is used with compatible actual shapes.
+// TFLite runtime kernels support shape checking and shape inference to some
+// extent, it is okay to remove the shape assertion in most scenarios. However
+// this is not always the case, JAX may trace the program differently based on
+// the shape polymorphism specification, for example, if the program contains
+// a conditional on "x.shape[0] % 2 == 0" that conditional would evaluate to
+// True with x specified as (2*b, ...) and False otherwise. We can revisit
+// this when need arises. See b/295316438 for details.
+class RemoveCustomCallWithShapeAssertion
+    : public OpConversionPattern<mhlo::CustomCallOp> {
+ public:
+  explicit RemoveCustomCallWithShapeAssertion(MLIRContext* context)
+      : OpConversionPattern<mhlo::CustomCallOp>(context, /*benefit=*/0) {}
+
+  LogicalResult matchAndRewrite(
+      mhlo::CustomCallOp op, OpAdaptor adaptor,
+      ConversionPatternRewriter& rewriter) const final {
+    if (op.getCallTargetName() != "shape_assertion") {
+      return mlir::failure();
+    }
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 // Converts a MHLO::GetDimensionSizeOp to TF ops.
 class ConvertGetDimensionSizeOp
     : public OpConversionPattern<mhlo::GetDimensionSizeOp> {
@@ -3909,6 +4139,8 @@ void LegalizeHloToTf::runOnOperation() {
   mlir::ModuleOp module = getOperation();
 
   RewritePatternSet patterns(&getContext());
+  // Conversion patterns for custom calls.
+  patterns.add<RemoveCustomCallWithShapeAssertion>(&context);
   patterns.add<ConvertCustomCallWithApproxTopK>(&context, &module);
   PopulateLegalizeHloToTfPatterns(&patterns, &context);
 
@@ -3927,19 +4159,19 @@ void LegalizeHloToTf::runOnOperation() {
 
 void PopulateLegalizeHloToTfPatterns(RewritePatternSet* patterns,
                                      MLIRContext* context) {
-  patterns
-      ->add<ConvertAvgPoolOp, Convert2DConvOp, Convert1DConvOp,
-            ConvertNonTrivialConvOp, ConvertDynamicSliceOp,
-            ConvertDynamicUpdateSliceOp, ConvertGatherOp, ConvertIfOp,
-            ConvertMaxPoolOp, ConvertPopulationCountOp, ConvertScatterAddOp,
-            ConvertScatterMaxOp, ConvertScatterMinOp, ConvertScatterSubOp,
-            ConvertScatterUpdateOp, ConvertSliceOp, ConvertReduceOpToTfArgmax,
-            ConvertReduceOpToTfArgmin, ConvertReduceOpToTfMax,
-            ConvertReduceOpToTfMin, ConvertReduceOpToTfAll,
-            ConvertReduceOpToTfAny, ConvertReduceOpToTfSum, ConvertSortToTfTopk,
-            ConvertIotaOpToTfRange, ConvertWhileOp, ConvertLoweredCumSumOp,
-            ConvertLoweredCumProdOp, ConvertGetDimensionSizeOp,
-            ConvertDynamicIotaOp, ConvertRealDynamicSliceOp>(context);
+  patterns->add<
+      ConvertAvgPoolOp, Convert2DConvOp, Convert1DConvOp,
+      ConvertNonTrivialConvOp, ConvertDynamicSliceOp,
+      ConvertDynamicUpdateSliceOp, ConvertGatherOp, ConvertIfOp,
+      ConvertMaxPoolOp, ConvertPopulationCountOp, ConvertScatterAddOp,
+      ConvertScatterMaxOp, ConvertScatterMinOp, ConvertScatterSubOp,
+      ConvertScatterUpdateOp, ConvertSliceOp, ConvertReduceOpToTfArgmax,
+      ConvertReduceOpToTfArgmin, ConvertReduceOpToTfMax, ConvertReduceOpToTfMin,
+      ConvertReduceOpToTfAll, ConvertReduceOpToTfProd, ConvertReduceOpToTfAny,
+      ConvertReduceOpToTfSum, ConvertSortToTfTopk, ConvertIotaOpToTfRange,
+      ConvertWhileOp, ConvertLoweredCumSumOp, ConvertLoweredCumProdOp,
+      ConvertGetDimensionSizeOp, ConvertDynamicIotaOp,
+      ConvertRealDynamicSliceOp>(context);
   populateWithGenerated(*patterns);
 }
 

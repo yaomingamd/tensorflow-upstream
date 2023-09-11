@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/autotune_results.pb.h"
 #include "tensorflow/compiler/xla/hlo/ir/hlo_module.h"
 #include "tensorflow/compiler/xla/service/executable.h"
+#include "tensorflow/compiler/xla/service/gpu/autotuner_util.h"
 #include "tensorflow/compiler/xla/service/gpu/executable.pb.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_device_info.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_executable.h"
@@ -102,7 +103,6 @@ struct GpuTargetConfig {
   se::GpuTargetConfigProto ToProto() const;
 
   GpuDeviceInfo gpu_device_info;
-  GpuVersion gpu_version;
   std::string platform_name;
   se::dnn::VersionInfo dnn_version_info;
   std::string device_description_str;
@@ -137,7 +137,6 @@ class GpuCompiler : public LLVMCompiler {
   GpuTargetConfig GetGpuTargetConfig(se::StreamExecutor* stream_exec) {
     GpuTargetConfig gpu_target_config;
     gpu_target_config.gpu_device_info = GetGpuDeviceInfo(stream_exec);
-    gpu_target_config.gpu_version = GetGpuVersion(stream_exec);
     gpu_target_config.platform_name = stream_exec->platform()->Name();
 
     return gpu_target_config;
@@ -186,35 +185,21 @@ class GpuCompiler : public LLVMCompiler {
       const AutotuneResults* autotune_results,
       tsl::thread::ThreadPool* thread_pool = nullptr);
 
-  // Linearize collective schedule under SPMD partitioning if online autotuning
-  // of convolutions is enabled.
-  virtual bool EnableCollectiveScheduleLinearizerForSpmd(
-      HloModule* hlo_module, se::StreamExecutor* stream_exec) {
-    return false;
-  }
-
   // CollectivesScheduleLinearizer enforces a total ordering between collectives
-  // to work around (1) divergence in initial HLOs across executables that are
-  // communicating with each other using HLO collectives, and (2) divergence in
-  // executables introduced due to auto tuning, specifically the use of extra
-  // scratch space for convolutions.
-  // We always apply this pass when not using SPMD (where initial HLO divergence
-  // may be possible). This function decided whether to apply this pass when
-  // using SPMD partitioning. When using SPMD, if convolutions are present in
+  // to work around divergence in executables introduced due to auto tuning,
+  // specifically the use of extra scratch space for convolutions. This
+  // function decided whether to apply this pass. If convolutions are present in
   // the code and we are using "online" autotuning (i.e., not AOT) we need to
   // use the pass, else we do not need to enable the pass.
-  virtual bool RequiresCollectiveScheduleLinearizer(const HloModule* module) {
+  virtual bool RequiresCollectiveScheduleLinearizer(
+      const HloModule* module, se::StreamExecutor* stream_exec) {
     return false;
   }
 
   // Add autotuning passes for convolution, gemm and triton.
   virtual Status AddAutotuningPasses(HloPassPipeline* pipeline,
                                      HloModule* hlo_module,
-                                     se::StreamExecutor* stream_exec,
-                                     const DebugOptions& debug_options,
-                                     const CompileOptions& options,
-                                     const GpuTargetConfig& gpu_target_config,
-                                     const AutotuneResults* autotune_results,
+                                     AutotuneConfig& autotune_config,
                                      tsl::thread::ThreadPool* thread_pool) {
     return OkStatus();
   }

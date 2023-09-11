@@ -26,6 +26,7 @@ limitations under the License.
 #include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/lite/quantization/quantization_config.h"
 #include "tensorflow/compiler/mlir/quantization/tensorflow/passes/utils.h"
+#include "tensorflow/compiler/mlir/quantization/tensorflow/quantization_options.pb.h"
 
 namespace mlir {
 namespace quant {
@@ -73,7 +74,8 @@ std::unique_ptr<OperationPass<ModuleOp>> CreateInsertQuantizedFunctionsPass(
 
 // Inserts custom aggregation operators for the calibration procedure.
 std::unique_ptr<OperationPass<func::FuncOp>>
-CreateInsertCustomAggregationOpsPass();
+CreateInsertCustomAggregationOpsPass(
+    const tensorflow::quantization::CalibrationOptions& calib_opts);
 
 // Replaces composite functions with quantized composite functions. After this
 // pass runs, functions in the given graph will be replaced with their quantized
@@ -201,6 +203,9 @@ std::unique_ptr<OperationPass<func::FuncOp>> CreateMarkFunctionsNoinlinePass(
 std::unique_ptr<OperationPass<ModuleOp>>
 CreateRemoveVariableInitializationByConstPass();
 
+// Creates a pass that converts Tensorflow Xla ops to non-Xla ops.
+std::unique_ptr<OperationPass<func::FuncOp>> CreateConvertTfXlaOpToTfOpPass();
+
 // Creates a pass that converts TPU models for CPU by removing TPU related ops
 // such as TPUPartitionedCall, TPUReplicatedOp, etc. The TF quantizer does not
 // work with models specifically designed for TPU, so this pass makes the input
@@ -223,6 +228,16 @@ std::unique_ptr<OperationPass<ModuleOp>> CreateLiftHashTableOpsAsArgsPass();
 // resource ops are considered duplicated if they have the same `shared_name`.
 std::unique_ptr<OperationPass<func::FuncOp>>
 CreateMergeDuplicateResourceOpsPass();
+
+// Apply quantization to weights based on the provided schemes.
+std::unique_ptr<OperationPass<ModuleOp>> CreateQuantizeWeightsPass(
+    const tensorflow::quantization::QuantizationOptions& quant_options);
+
+// Create a pass that inserts dump tensor to quantizable layer's output.
+std::unique_ptr<OperationPass<ModuleOp>> CreateAddDumpTensorOpPass(
+    tensorflow::quantization::DebuggerOptions::DebuggerType debugger_type,
+    std::string log_dir_path);
+
 }  // namespace quant
 }  // namespace mlir
 

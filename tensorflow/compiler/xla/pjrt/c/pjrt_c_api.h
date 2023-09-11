@@ -53,7 +53,7 @@ extern "C" {
 // Changes include:
 // * Adding a new field to the PJRT_Api or argument structs
 // * Renaming a method or argument (doesn't affect ABI)
-#define PJRT_API_MINOR 17
+#define PJRT_API_MINOR 28
 
 // The plugin should set the major_version and minor_version of
 // PJRT_Api.pjrt_api_version to be the `PJRT_API_MAJOR` and `PJRT_API_MINOR` in
@@ -278,6 +278,7 @@ typedef PJRT_Error* PJRT_Event_OnReady(PJRT_Event_OnReady_Args* args);
 
 typedef struct PJRT_Client PJRT_Client;
 typedef struct PJRT_Device PJRT_Device;
+typedef struct PJRT_Memory PJRT_Memory;
 typedef struct PJRT_DeviceDescription PJRT_DeviceDescription;
 typedef struct PJRT_Executable PJRT_Executable;
 typedef struct PJRT_LoadedExecutable PJRT_LoadedExecutable;
@@ -475,6 +476,22 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Client_LookupAddressableDevice_Args,
 // PJRT_DeviceDescription_LocalHardwareId.
 typedef PJRT_Error* PJRT_Client_LookupAddressableDevice(
     PJRT_Client_LookupAddressableDevice_Args* args);
+
+struct PJRT_Client_AddressableMemories_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_Client* client;
+  PJRT_Memory** addressable_memories;  // out
+  size_t num_addressable_memories;     // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_Client_AddressableMemories_Args,
+                          num_addressable_memories);
+
+// Returns a list of memories that are addressable from the client. Addressable
+// memories are those that the client can directly transfer data to and from.
+// All memories are addressable in a single-process environment.
+typedef PJRT_Error* PJRT_Client_AddressableMemories(
+    PJRT_Client_AddressableMemories_Args* args);
 
 struct PJRT_Program {
   size_t struct_size;
@@ -676,6 +693,10 @@ struct PJRT_Client_BufferFromHostBuffer_Args {
   // Device to copy host data to.
   PJRT_Device* device;
 
+  // If nullptr, host data will be copied to `device`, otherwise we copy data to
+  // `memory`.
+  PJRT_Memory* memory;
+
   // The caller is responsible to keep the data (tiled or strides) in the
   // device_layout alive during the call. If nullptr, the device layout is
   // assumed to be a dense layout with dimensions in major-to-minor order.
@@ -833,8 +854,6 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Device_LocalHardwareId_Args, local_hardware_id);
 typedef PJRT_Error* PJRT_Device_LocalHardwareId(
     PJRT_Device_LocalHardwareId_Args* args);
 
-typedef struct PJRT_Memory PJRT_Memory;
-
 struct PJRT_Device_AddressableMemories_Args {
   size_t struct_size;
   void* priv;
@@ -962,6 +981,19 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Memory_ToString_Args, to_string_size);
 
 // Debug string suitable for reading by end users, should be reasonably terse.
 typedef PJRT_Error* PJRT_Memory_ToString(PJRT_Memory_ToString_Args* args);
+
+struct PJRT_Memory_AddressableByDevices_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_Memory* memory;
+  PJRT_Device** devices;  // out
+  size_t num_devices;     // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_Memory_AddressableByDevices_Args, num_devices);
+
+// Returns the devices that can address this memory.
+typedef PJRT_Error* PJRT_Memory_AddressableByDevices(
+    PJRT_Memory_AddressableByDevices_Args* args);
 
 // ------------------------------- Executables ---------------------------------
 
@@ -1262,16 +1294,42 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Executable_GetCostAnalysis_Args, properties);
 typedef PJRT_Error* PJRT_Executable_GetCostAnalysis(
     PJRT_Executable_GetCostAnalysis_Args* args);
 
+struct PJRT_Executable_OutputMemoryKinds_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_Executable* executable;
+  size_t num_outputs;
+  // Has length `num_outputs`.
+  const char** memory_kinds;  // out
+  // Has length `num_outputs`.
+  const size_t* memory_kind_sizes;  // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_Executable_OutputMemoryKinds_Args,
+                          memory_kind_sizes);
+
+// Returns a list of memory kind strings for outputs.
+typedef PJRT_Error* PJRT_Executable_OutputMemoryKinds(
+    PJRT_Executable_OutputMemoryKinds_Args* args);
+
 typedef struct PJRT_SerializedExecutable PJRT_SerializedExecutable;
 
 struct PJRT_Executable_Serialize_Args {
   size_t struct_size;
   void* priv;
   const PJRT_Executable* executable;
-  PJRT_SerializedExecutable* serialized_executable;  // out
+
+  // Lives only as long as serialized_executable
+  const char* serialized_bytes;  // out
+  size_t serialized_bytes_size;  // out
+
+  PJRT_SerializedExecutable* serialized_executable;  // backs serialized_bytes.
+  // cleanup fn must be called to free the backing memory for serialized_bytes.
+  // Should only be called once on serialized_executable.
+  void (*serialized_executable_deleter)(
+      PJRT_SerializedExecutable* exec);  // out
 };
 PJRT_DEFINE_STRUCT_TRAITS(PJRT_Executable_Serialize_Args,
-                          serialized_executable);
+                          serialized_executable_deleter);
 
 // Returns a platform-specific serialization of `executable`. The serialization
 // is not guaranteed to be stable over time.
@@ -1295,34 +1353,22 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Executable_DeserializeAndLoad_Args,
 typedef PJRT_Error* PJRT_Executable_DeserializeAndLoad(
     PJRT_Executable_DeserializeAndLoad_Args* args);
 
-// -------------------------- Serialized Executables ---------------------------
-
-struct PJRT_SerializedExecutable_Destroy_Args {
+struct PJRT_LoadedExecutable_Fingerprint_Args {
   size_t struct_size;
   void* priv;
-  PJRT_SerializedExecutable* serialized_executable;
+  PJRT_LoadedExecutable* executable;
+  // Has the lifetime of `executable`
+  const char* executable_fingerprint;  // out
+  size_t executable_fingerprint_size;  // out
 };
-PJRT_DEFINE_STRUCT_TRAITS(PJRT_SerializedExecutable_Destroy_Args,
-                          serialized_executable);
-
-// Destroys a `PJRT_SerializedExecutable`.
-typedef PJRT_Error* PJRT_SerializedExecutable_Destroy(
-    PJRT_SerializedExecutable_Destroy_Args* args);
-
-// The string pointed to by `data` is owned by `serialized_executable` and has
-// the same object lifetime.
-struct PJRT_SerializedExecutable_Data_Args {
-  size_t struct_size;
-  void* priv;
-  PJRT_SerializedExecutable* serialized_executable;
-  const char* data;  // out
-  size_t data_size;  // out
-};
-PJRT_DEFINE_STRUCT_TRAITS(PJRT_SerializedExecutable_Data_Args, data_size);
-
-// Returns the data of a `PJRT_SerializedExecutable` and its length in bytes
-typedef PJRT_Error* PJRT_SerializedExecutable_Data(
-    PJRT_SerializedExecutable_Data_Args* args);
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_LoadedExecutable_Fingerprint_Args,
+                          executable_fingerprint_size);
+// A unique fingerprint for `executable`. Two executables that were produced by
+// compiling with identical inputs (same program, compile options, compiler
+// version, etc.) should have the same fingerprint. May not be implemented by
+// all platforms.
+typedef PJRT_Error* PJRT_LoadedExecutable_Fingerprint(
+    PJRT_LoadedExecutable_Fingerprint_Args* args);
 
 // ---------------------------------- Buffers ----------------------------------
 
@@ -1411,80 +1457,6 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_GetMemoryLayout_Args, layout);
 // Returns the memory layout of the data in this buffer.
 typedef PJRT_Error* PJRT_Buffer_GetMemoryLayout(
     PJRT_Buffer_GetMemoryLayout_Args* args);
-
-// Maximum number of array elements to inline into structs for performance.
-#define PJRT_C_API_MAX_INLINED 6
-
-typedef struct PJRT_IntList {
-  union {
-    int* heap;  // owned
-    int inlined[PJRT_C_API_MAX_INLINED];
-  };
-  int64_t size;
-} PJRT_IntList;
-
-typedef struct PJRT_Int64List {
-  union {
-    int64_t* heap;  // owned
-    int64_t inlined[PJRT_C_API_MAX_INLINED];
-  };
-  int64_t size;
-} PJRT_Int64List;
-
-typedef struct PJRT_BoolList {
-  union {
-    bool* heap;  // owned
-    bool inlined[PJRT_C_API_MAX_INLINED];
-  };
-  int64_t size;
-} PJRT_BoolList;
-
-typedef struct PJRT_XLA_Tile {
-  PJRT_Int64List dimensions;
-} PJRT_XLA_Tile;
-
-typedef struct PJRT_XLA_TileList {
-  union {
-    PJRT_XLA_Tile* heap;  // owned
-    PJRT_XLA_Tile inlined[PJRT_C_API_MAX_INLINED];
-  };
-  int64_t size;
-} PJRT_XLA_TileList;
-
-typedef struct PJRT_XLA_Layout {
-  PJRT_Int64List minor_to_major;
-  PJRT_IntList dim_level_types;
-  PJRT_IntList dim_unique;
-  PJRT_IntList dim_ordered;
-  PJRT_XLA_TileList tiles;
-  int index_primitive_type;
-  int pointer_primitive_type;
-  int64_t element_size_in_bits;
-  int64_t memory_space;
-  int64_t dynamic_shape_metadata_prefix_bytes;
-} PJRT_XLA_Layout;
-
-// This trimmed shape doesn't have any Tuple information. In case of Tuple,
-// assert is triggered from the C API  Client.
-// TODO(b/238999986): This is a temporary solution. Remove this later.
-struct PJRT_Buffer_OnDeviceTrimmedShape_Args {
-  size_t struct_size;
-  void* priv;
-  PJRT_Buffer* buffer;
-  int element_type;                  // out
-  PJRT_Int64List dimensions;         // out
-  PJRT_BoolList dynamic_dimensions;  // out
-  bool has_layout;
-  // Whether it calls logical_on_device_shape.
-  bool is_logical_on_device_shape;
-  PJRT_XLA_Layout layout;  // out
-};
-PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_OnDeviceTrimmedShape_Args, layout);
-
-// Return the trimmed shape from PjRtBuffer.
-// TODO(b/238999986): Replace this with decomposed shape methods.
-typedef PJRT_Error* PJRT_Buffer_OnDeviceTrimmedShape(
-    PJRT_Buffer_OnDeviceTrimmedShape_Args* args);
 
 struct PJRT_Buffer_ToHostBuffer_Args {
   size_t struct_size;
@@ -1587,6 +1559,17 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_Device_Args, device);
 // Returns this buffer's storage device.
 typedef PJRT_Error* PJRT_Buffer_Device(PJRT_Buffer_Device_Args* args);
 
+struct PJRT_Buffer_Memory_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_Buffer* buffer;
+  PJRT_Memory* memory;  // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_Memory_Args, memory);
+
+// Returns this buffer's storage memory.
+typedef PJRT_Error* PJRT_Buffer_Memory(PJRT_Buffer_Memory_Args* args);
+
 struct PJRT_Buffer_ReadyEvent_Args {
   size_t struct_size;
   void* priv;
@@ -1619,6 +1602,51 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_UnsafePointer_Args, buffer_pointer);
 // not guaranteed to be the physical/device address.
 typedef PJRT_Error* PJRT_Buffer_UnsafePointer(
     PJRT_Buffer_UnsafePointer_Args* args);
+
+struct PJRT_Buffer_IncreaseExternalReferenceCount_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_Buffer* buffer;
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_IncreaseExternalReferenceCount_Args,
+                          buffer);
+
+// Increments the reference count for the buffer. The reference count indicates
+// the raw buffer data is being shared with another framework (e.g. NumPy,
+// dlpack) and should not be deleted or moved by the PJRT implementation (e.g.
+// for memory compaction). TODO(b/295230663): document more API contract
+// details, e.g. does this block, can the buffer be modified in-place.
+typedef PJRT_Error* PJRT_Buffer_IncreaseExternalReferenceCount(
+    PJRT_Buffer_IncreaseExternalReferenceCount_Args* args);
+
+struct PJRT_Buffer_DecreaseExternalReferenceCount_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_Buffer* buffer;
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_DecreaseExternalReferenceCount_Args,
+                          buffer);
+
+// Decrements the reference count for the buffer. Returns an error if the
+// reference count is zero (i.e. PJRT_Buffer_IncreaseExternalReferenceCount is
+// not called beforehand).
+typedef PJRT_Error* PJRT_Buffer_DecreaseExternalReferenceCount(
+    PJRT_Buffer_DecreaseExternalReferenceCount_Args* args);
+
+struct PJRT_Buffer_OpaqueDeviceMemoryDataPointer_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_Buffer* buffer;
+  void* device_memory_ptr;  // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_Buffer_OpaqueDeviceMemoryDataPointer_Args,
+                          device_memory_ptr);
+
+// Returns the opaque device memory data pointer of the buffer. The returned
+// data pointer may become invalid at any point unless the external reference
+// count is greater than 0 via PJRT_Buffer_IncreaseExternalReferenceCount.
+typedef PJRT_Error* PJRT_Buffer_OpaqueDeviceMemoryDataPointer(
+    PJRT_Buffer_OpaqueDeviceMemoryDataPointer_Args* args);
 
 // ---------------------------- CopyToDeviceStream -----------------------------
 
@@ -1776,6 +1804,46 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_TopologyDescription_GetDeviceDescriptions_Args,
 typedef PJRT_Error* PJRT_TopologyDescription_GetDeviceDescriptions(
     PJRT_TopologyDescription_GetDeviceDescriptions_Args* args);
 
+typedef struct PJRT_SerializedTopology PJRT_SerializedTopology;
+
+struct PJRT_TopologyDescription_Serialize_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_TopologyDescription* topology;
+
+  // Lives only as long as serialized_topology.
+  const char* serialized_bytes;  // out
+  size_t serialized_bytes_size;  // out
+
+  PJRT_SerializedTopology* serialized_topology;  // out
+  // Must be called exactly once to free the backing memory for
+  // serialized_bytes.
+  void (*serialized_topology_deleter)(
+      PJRT_SerializedTopology* serialized_topology);  // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_TopologyDescription_Serialize_Args,
+                          serialized_topology_deleter);
+
+// Serializes the TopologyDescription to a string for use in cache keys.
+typedef PJRT_Error* PJRT_TopologyDescription_Serialize(
+    PJRT_TopologyDescription_Serialize_Args* args);
+
+struct PJRT_TopologyDescription_Attributes_Args {
+  size_t struct_size;
+  void* priv;
+  PJRT_TopologyDescription* topology;
+
+  // Only lives as long as topology.
+  PJRT_NamedValue* attributes;  // out
+  size_t num_attributes;        // out
+};
+PJRT_DEFINE_STRUCT_TRAITS(PJRT_TopologyDescription_Attributes_Args,
+                          num_attributes);
+
+// Returns platform-specific topology attributes.
+typedef PJRT_Error* PJRT_TopologyDescription_Attributes(
+    PJRT_TopologyDescription_Attributes_Args* args);
+
 struct PJRT_Compile_Args {
   size_t struct_size;
   void* priv;
@@ -1832,6 +1900,7 @@ typedef struct {
   _PJRT_API_STRUCT_FIELD(PJRT_Client_AddressableDevices);
   _PJRT_API_STRUCT_FIELD(PJRT_Client_LookupDevice);
   _PJRT_API_STRUCT_FIELD(PJRT_Client_LookupAddressableDevice);
+  _PJRT_API_STRUCT_FIELD(PJRT_Client_AddressableMemories);
   _PJRT_API_STRUCT_FIELD(PJRT_Client_Compile);
   _PJRT_API_STRUCT_FIELD(PJRT_Client_DefaultDeviceAssignment);
   _PJRT_API_STRUCT_FIELD(PJRT_Client_BufferFromHostBuffer);
@@ -1854,6 +1923,7 @@ typedef struct {
   _PJRT_API_STRUCT_FIELD(PJRT_Memory_Kind);
   _PJRT_API_STRUCT_FIELD(PJRT_Memory_DebugString);
   _PJRT_API_STRUCT_FIELD(PJRT_Memory_ToString);
+  _PJRT_API_STRUCT_FIELD(PJRT_Memory_AddressableByDevices);
 
   _PJRT_API_STRUCT_FIELD(PJRT_Executable_Destroy);
   _PJRT_API_STRUCT_FIELD(PJRT_Executable_Name);
@@ -1862,6 +1932,7 @@ typedef struct {
   _PJRT_API_STRUCT_FIELD(PJRT_Executable_NumOutputs);
   _PJRT_API_STRUCT_FIELD(PJRT_Executable_SizeOfGeneratedCodeInBytes);
   _PJRT_API_STRUCT_FIELD(PJRT_Executable_GetCostAnalysis);
+  _PJRT_API_STRUCT_FIELD(PJRT_Executable_OutputMemoryKinds);
   _PJRT_API_STRUCT_FIELD(PJRT_Executable_OptimizedProgram);
   _PJRT_API_STRUCT_FIELD(PJRT_Executable_Serialize);
 
@@ -1872,9 +1943,7 @@ typedef struct {
   _PJRT_API_STRUCT_FIELD(PJRT_LoadedExecutable_IsDeleted);
   _PJRT_API_STRUCT_FIELD(PJRT_LoadedExecutable_Execute);
   _PJRT_API_STRUCT_FIELD(PJRT_Executable_DeserializeAndLoad);
-
-  _PJRT_API_STRUCT_FIELD(PJRT_SerializedExecutable_Destroy);
-  _PJRT_API_STRUCT_FIELD(PJRT_SerializedExecutable_Data);
+  _PJRT_API_STRUCT_FIELD(PJRT_LoadedExecutable_Fingerprint);
 
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_Destroy);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_ElementType);
@@ -1882,9 +1951,9 @@ typedef struct {
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_UnpaddedDimensions);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_DynamicDimensionIndices);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_GetMemoryLayout);
-  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_OnDeviceTrimmedShape);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_OnDeviceSizeInBytes);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_Device);
+  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_Memory);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_Delete);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_IsDeleted);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_CopyToDevice);
@@ -1892,6 +1961,9 @@ typedef struct {
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_IsOnCpu);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_ReadyEvent);
   _PJRT_API_STRUCT_FIELD(PJRT_Buffer_UnsafePointer);
+  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_IncreaseExternalReferenceCount);
+  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_DecreaseExternalReferenceCount);
+  _PJRT_API_STRUCT_FIELD(PJRT_Buffer_OpaqueDeviceMemoryDataPointer);
 
   _PJRT_API_STRUCT_FIELD(PJRT_CopyToDeviceStream_Destroy);
   _PJRT_API_STRUCT_FIELD(PJRT_CopyToDeviceStream_AddChunk);
@@ -1904,6 +1976,8 @@ typedef struct {
   _PJRT_API_STRUCT_FIELD(PJRT_TopologyDescription_PlatformName);
   _PJRT_API_STRUCT_FIELD(PJRT_TopologyDescription_PlatformVersion);
   _PJRT_API_STRUCT_FIELD(PJRT_TopologyDescription_GetDeviceDescriptions);
+  _PJRT_API_STRUCT_FIELD(PJRT_TopologyDescription_Serialize);
+  _PJRT_API_STRUCT_FIELD(PJRT_TopologyDescription_Attributes);
 
   _PJRT_API_STRUCT_FIELD(PJRT_Compile);
 } PJRT_Api;

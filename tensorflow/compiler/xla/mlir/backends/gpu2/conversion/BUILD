@@ -33,7 +33,7 @@ package(
 #         "//tensorflow/compiler/xla/service/gpu:gpu_executable",
 #         "//tensorflow/compiler/xla/service/gpu:launch_dimensions",
 #         "//tensorflow/compiler/xla/service/gpu:thunk",
-#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects:IREEInputDialect"]),
+#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects/google_internal:IREEInputDialect"]),
 # )
 #
 # cc_library(
@@ -57,7 +57,7 @@ package(
 #         "//tensorflow/compiler/xla/mlir/backends/gpu2/ir:xla_gpu",
 #         "//tensorflow/compiler/xla/mlir_hlo:lhlo_gpu",
 #         "//tensorflow/compiler/xla/translate/mhlo_to_hlo:location_exporter",
-#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects:IREEInputDialect"]),
+#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects/google_internal:IREEInputDialect"]),
 # )
 #
 # cc_library(
@@ -69,13 +69,40 @@ package(
 #     compatible_with = [],
 #     deps = [
 #         ":de_bufferization",
+#         "@llvm-project//llvm:Support",
 #         "@llvm-project//mlir:ArithDialect",
 #         "@llvm-project//mlir:FuncDialect",
 #         "@llvm-project//mlir:IR",
 #         "@llvm-project//mlir:MemRefDialect",
+#         "@llvm-project//mlir:Support",
 #         "@llvm-project//mlir:TensorDialect",
 #         "@llvm-project//mlir:Transforms",
-#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects:IREEInputDialect"]),
+#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects/google_internal:IREEInputDialect"]),
+# )
+#
+# cc_library(
+#     name = "convert_case_op",
+#     srcs = if_gpu2(["convert_case_op.cc"]),
+#     hdrs = if_gpu2(["convert_case_op.h"]),
+#     # TODO(ezhulenev): Override cc_library()'s internal default value of ["//buildenv/target:gce"]
+#     # because IREE targets are not compatible with the `non_prod` constraint.
+#     compatible_with = [],
+#     deps = [
+#         ":de_bufferization",
+#         ":xla_gpu_api",
+#         "@llvm-project//llvm:Support",
+#         "@llvm-project//mlir:ArithDialect",
+#         "@llvm-project//mlir:BufferizationDialect",
+#         "@llvm-project//mlir:FuncDialect",
+#         "@llvm-project//mlir:IR",
+#         "@llvm-project//mlir:MemRefDialect",
+#         "@llvm-project//mlir:SCFDialect",
+#         "@llvm-project//mlir:Support",
+#         "@llvm-project//mlir:TensorDialect",
+#         "@llvm-project//mlir:Transforms",
+#         "//tensorflow/compiler/xla/mlir/backends/gpu2/ir:xla_gpu",
+#         "//tensorflow/compiler/xla/mlir_hlo:lhlo",
+#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects/google_internal:IREEInputDialect"]),
 # )
 #
 # cc_library(
@@ -95,21 +122,28 @@ package(
 #         "@llvm-project//mlir:IR",
 #         "@llvm-project//mlir:MemRefDialect",
 #         "@llvm-project//mlir:SCFDialect",
+#         "@llvm-project//mlir:Support",
 #         "@llvm-project//mlir:TensorDialect",
 #         "@llvm-project//mlir:Transforms",
 #         "//tensorflow/compiler/xla/mlir/backends/gpu2/ir:xla_gpu",
 #         "//tensorflow/compiler/xla/mlir_hlo:lhlo",
-#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects:IREEInputDialect"]),
+#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects/google_internal:IREEInputDialect"]),
 # )
 #
 # cc_library(
 #     name = "de_bufferization",
-#     hdrs = ["de_bufferization.h"],
+#     srcs = if_gpu2(["de_bufferization.cc"]),
+#     hdrs = if_gpu2(["de_bufferization.h"]),
 #     deps = [
 #         "@llvm-project//llvm:Support",
+#         "@llvm-project//mlir:BufferizationDialect",
+#         "@llvm-project//mlir:FuncDialect",
 #         "@llvm-project//mlir:IR",
 #         "@llvm-project//mlir:MemRefDialect",
-#     ],
+#         "@llvm-project//mlir:Support",
+#         "@llvm-project//mlir:Transforms",
+#         "//tensorflow/compiler/xla/mlir_hlo:lhlo",
+#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects/google_internal:IREEInputDialect"]),
 # )
 #
 # cc_library(
@@ -122,8 +156,9 @@ package(
 #         "@llvm-project//mlir:FuncDialect",
 #         "@llvm-project//mlir:IR",
 #         "@llvm-project//mlir:MemRefDialect",
+#         "@llvm-project//mlir:Support",
 #         "//tensorflow/compiler/xla/mlir/backends/gpu2/ir:xla_gpu",
-#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects:IREEInputDialect"]),
+#     ] + if_gpu2(["//third_party/iree/llvm-external-projects/iree-dialects/google_internal:IREEInputDialect"]),
 # )
 #
 # copybara:uncomment_end

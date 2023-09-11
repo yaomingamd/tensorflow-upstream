@@ -132,8 +132,22 @@ Status GetOrCreatePjRtDeviceCompilerAndProfiler(
         pjrt_device_compiler,
     DeviceCompilationProfiler** profiler);
 
+// Same as the above function but takes the resource manager `rm` instead of an
+// OpKernelContext.
+Status GetOrCreatePjRtDeviceCompilerAndProfiler(
+    const XlaPlatformInfo& platform_info, ResourceMgr* rm,
+    FunctionLibraryRuntime* flr,
+    DeviceCompiler<xla::PjRtLoadedExecutable, xla::PjRtClient>**
+        pjrt_device_compiler,
+    DeviceCompilationProfiler** profiler);
+
 // Returns information about the platform from kernel context.
 XlaPlatformInfo XlaPlatformInfoFromDevice(DeviceBase* device);
+
+// Obtains persistent cache directory for executables that target a given device
+// based off xla flags. If you shouldn't use persistent caching, returns "".
+std::string GetPersistentCacheDirectory(
+    const DeviceType& compilation_device_type);
 
 // Returns allocator from platform info if non-null, or populate and return a
 // pointer to the allocator adapter with allocator from context.

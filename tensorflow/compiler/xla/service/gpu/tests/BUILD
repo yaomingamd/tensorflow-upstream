@@ -98,7 +98,8 @@ xla_cc_test(
         "//tensorflow/compiler/xla:util",
         "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
-        "//tensorflow/compiler/xla/hlo/utils:hlo_matchers",
+        "//tensorflow/compiler/xla/service:pattern_matcher",
+        "//tensorflow/compiler/xla/service:pattern_matcher_gmock",
         "//tensorflow/compiler/xla/service/gpu:gpu_reduce_scatter_creator",
         "//tensorflow/compiler/xla/tests:hlo_test_base",
         "//tensorflow/compiler/xla/tests:xla_internal_test_main",
@@ -123,6 +124,7 @@ xla_cc_test(
 xla_cc_test(
     name = "gemm_rewrite_test",
     srcs = if_cuda_is_configured(["gemm_rewrite_test.cc"]),
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
     tags = tf_cuda_tests_tags() + [
         "no_rocm",
     ],
@@ -141,7 +143,10 @@ xla_cc_test(
         "//tensorflow/tsl/lib/core:status_test_util",
         "//tensorflow/tsl/platform:test_main",
         "@com_google_absl//absl/strings",
-    ],
+        "@com_google_googletest//:gtest",
+    ] + if_cuda_is_configured([
+        "@local_config_cuda//cuda:cuda_headers",
+    ]),
 )
 
 xla_cc_test(
@@ -588,7 +593,7 @@ xla_cc_test(
 xla_cc_test(
     name = "gpu_unrolling_test",
     srcs = ["gpu_unrolling_test.cc"],
-    tags = tf_cuda_tests_tags() + ["no_rocm"],
+    tags = tf_cuda_tests_tags(),
     deps = [
         ":gpu_codegen_test",
         "//tensorflow/compiler/xla/service:hlo_module_config",
@@ -726,6 +731,7 @@ xla_cc_binary(
         "//tensorflow/compiler/xla/stream_executor:dnn",
         "//tensorflow/compiler/xla/stream_executor:stream_executor_impl",
         "//tensorflow/compiler/xla/stream_executor/host:host_platform",
+        "//tensorflow/compiler/xla/tests:test_utils",
         "//tensorflow/compiler/xla/tools:hlo_module_loader",
         "//tensorflow/tsl/platform:logging",
         "//tensorflow/tsl/platform:platform_port",

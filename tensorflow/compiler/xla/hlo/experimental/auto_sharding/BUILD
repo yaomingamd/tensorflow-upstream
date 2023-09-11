@@ -1,6 +1,6 @@
 # Automatic sharding annotation
 
-load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_binary", "xla_cc_test")
+load("//tensorflow/compiler/xla:xla.bzl", "auto_sharding_deps", "xla_cc_binary", "xla_cc_test")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 
 package(
@@ -12,6 +12,7 @@ package_group(
     name = "friends",
     packages = [
         "//platforms/...",
+        "//tensorflow/compiler/xla/hlo/experimental/auto_sharding/...",
         "//tensorflow/compiler/xla/service/gpu/...",
     ],
 )
@@ -27,10 +28,12 @@ cc_library(
     ],
     deps = [
         ":auto_sharding_cost_graph",
+        ":auto_sharding_option",
         ":auto_sharding_solver",
         ":auto_sharding_solver_option",
         ":auto_sharding_strategy",
         ":auto_sharding_util",
+        ":auto_sharding_wrapper",
         ":cluster_environment",
         ":matrix",
         ":metrics",
@@ -67,7 +70,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + auto_sharding_deps(),
 )
 
 cc_library(
@@ -77,10 +80,16 @@ cc_library(
     deps = [
         ":auto_sharding_strategy",
         "//tensorflow/compiler/xla:statusor",
+        "//tensorflow/compiler/xla:util",
         "//tensorflow/tsl/platform:hash",
         "//tensorflow/tsl/platform:types",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
         "@com_google_ortools//ortools/linear_solver",
         "@com_google_ortools//ortools/linear_solver:linear_solver_cc_proto",
     ],
@@ -90,10 +99,9 @@ cc_library(
     name = "auto_sharding_strategy",
     hdrs = ["auto_sharding_strategy.h"],
     deps = [
-        "//tensorflow/compiler/xla:statusor",
+        "//tensorflow/compiler/xla:shape_util",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
         "//tensorflow/compiler/xla/service:hlo_value",
-        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
     ],
@@ -106,6 +114,43 @@ cc_library(
         ":auto_sharding_strategy",
         ":matrix",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "auto_sharding_option",
+    hdrs = ["auto_sharding_option.h"],
+    deps = [
+        ":auto_sharding_util",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "auto_sharding_wrapper",
+    hdrs = ["auto_sharding_wrapper.h"],
+    deps = [
+        ":auto_sharding_cost_graph",
+        ":auto_sharding_solver",
+        ":auto_sharding_strategy",
+        "//tensorflow/compiler/xla/hlo/utils:hlo_live_range",
+    ],
+)
+
+cc_library(
+    name = "auto_sharding_impl",
+    srcs = ["auto_sharding_impl.cc"],
+    deps = [
+        ":auto_sharding_cost_graph",
+        ":auto_sharding_option",
+        ":auto_sharding_solver",
+        ":auto_sharding_strategy",
+        ":auto_sharding_wrapper",
+        "//tensorflow/compiler/xla/hlo/utils:hlo_live_range",
     ],
 )
 
@@ -124,8 +169,11 @@ cc_library(
     hdrs = ["cluster_environment.h"],
     deps = [
         ":auto_sharding_solver_option",
+        ":auto_sharding_strategy",
         ":auto_sharding_util",
         ":profiling_result",
+        "//tensorflow/compiler/xla/hlo/ir:hlo",
+        "//tensorflow/compiler/xla/service/spmd:spmd_partitioner",
     ],
 )
 
@@ -147,11 +195,18 @@ cc_library(
     deps = [
         ":auto_sharding_strategy",
         "//tensorflow/compiler/xla:array",
+        "//tensorflow/compiler/xla:shape_tree",
         "//tensorflow/compiler/xla:shape_util",
+        "//tensorflow/compiler/xla:statusor",
+        "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
         "//tensorflow/compiler/xla/hlo/utils:hlo_sharding_util",
+        "//tensorflow/tsl/platform:status",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:btree",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -193,6 +248,7 @@ xla_cc_test(
     srcs = ["auto_sharding_test.cc"],
     deps = [
         ":auto_sharding",
+        ":auto_sharding_option",
         ":auto_sharding_util",
         "//tensorflow/compiler/xla/hlo/ir:hlo",
         "//tensorflow/compiler/xla/hlo/utils:hlo_matchers",
@@ -200,6 +256,9 @@ xla_cc_test(
         "//tensorflow/compiler/xla/tests:hlo_test_base",
         "//tensorflow/compiler/xla/tests:xla_internal_test_main",
         "//tensorflow/tsl/lib/core:status_test_util",
+        "//tensorflow/tsl/platform:statusor",
+        "@com_google_absl//absl/log",
+        "@com_google_googletest//:gtest",
     ],
 )
 

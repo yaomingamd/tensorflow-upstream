@@ -74,6 +74,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/stream_executor/device_description.h"
 #include "tensorflow/compiler/xla/stream_executor/gpu/asm_compiler.h"
 #include "tensorflow/compiler/xla/stream_executor/gpu/gpu_driver.h"
+#include "tensorflow/compiler/xla/stream_executor/stream_executor.h"
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/compiler/xla/xla.pb.h"
 #include "tensorflow/tsl/platform/path.h"
@@ -200,8 +201,8 @@ Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
 
   // This needs to run before GemmRewriter, which is part of
   // OptimizeHloPostLayoutAssignment().
-  auto cuda_compute_capability =
-      std::get<se::CudaComputeCapability>(gpu_target_config.gpu_version);
+  auto cuda_compute_capability = std::get<se::CudaComputeCapability>(
+      gpu_target_config.gpu_device_info.compute_capability);
 
   if (hlo_module->config().debug_options().xla_gpu_enable_cudnn_fmha()) {
     HloPassPipeline mha_fusion_pipeline(
@@ -270,15 +271,13 @@ Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
   return OkStatus();
 }
 
-bool NVPTXCompiler::EnableCollectiveScheduleLinearizerForSpmd(
-    HloModule* hlo_module, se::StreamExecutor* stream_exec) {
-  return hlo_module->config().use_spmd_partitioning() &&
-         stream_exec != nullptr &&
-         GpuConvAlgorithmPicker::IsEnabled(hlo_module);
-}
-
+// Linearize collective schedule under if online autotuning of convolutions is
+// enabled.
 bool NVPTXCompiler::RequiresCollectiveScheduleLinearizer(
-    const HloModule* module) {
+    const HloModule* module, se::StreamExecutor* stream_exec) {
+  if (stream_exec == nullptr || !GpuConvAlgorithmPicker::IsEnabled(module)) {
+    return false;
+  }
   for (const HloComputation* comp : module->MakeNonfusionComputations()) {
     for (const HloInstruction* inst : comp->instructions()) {
       if (GpuConvAlgorithmPicker::IsCandidate(inst)) {
@@ -292,21 +291,7 @@ bool NVPTXCompiler::RequiresCollectiveScheduleLinearizer(
 
 Status NVPTXCompiler::AddAutotuningPasses(
     HloPassPipeline* pipeline, HloModule* hlo_module,
-    se::StreamExecutor* stream_exec, const DebugOptions& debug_options,
-    const CompileOptions& options, const GpuTargetConfig& gpu_target_config,
-    const AutotuneResults* autotune_results,
-    tsl::thread::ThreadPool* thread_pool) {
-  AutotuneConfig autotune_config =
-      stream_exec
-          ? AutotuneConfig{DeviceConfig{stream_exec, options.device_allocator},
-                           debug_options}
-          : AutotuneConfig{
-                DevicelessConfig{gpu_target_config.device_description_str},
-                debug_options};
-  if (autotune_config.IsDeviceless()) {
-    AutotunerUtil::ClearAutotuneResults();
-    TF_RETURN_IF_ERROR(AutotunerUtil::LoadAutotuneResults(*autotune_results));
-  }
+    AutotuneConfig& autotune_config, tsl::thread::ThreadPool* thread_pool) {
   if (GpuConvAlgorithmPicker::IsEnabled(hlo_module)) {
     pipeline->AddPass<GpuConvAlgorithmPicker>(autotune_config);
   }
