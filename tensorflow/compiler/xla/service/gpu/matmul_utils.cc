@@ -771,7 +771,6 @@ StatusOr<se::blas::DataType> AsBlasDataType(PrimitiveType dtype) {
 #if GOOGLE_CUDA || TF_HIPBLASLT
 
 namespace {
-
 StatusOr<se::gpu::BlasLt::MatrixLayout> AsBlasLtMatrixLayout(
     const MatrixLayout& layout) {
   TF_ASSIGN_OR_RETURN(se::blas::DataType dtype, AsBlasDataType(layout.dtype));
@@ -779,6 +778,7 @@ StatusOr<se::gpu::BlasLt::MatrixLayout> AsBlasLtMatrixLayout(
   auto order = (layout.order == MatrixLayout::Order::kColumnMajor)
                    ? se::gpu::BlasLt::MatrixLayout::Order::kColumnMajor
                    : se::gpu::BlasLt::MatrixLayout::Order::kRowMajor;
+
 
   return se::gpu::BlasLt::MatrixLayout::Create(
       dtype, layout.num_rows, layout.num_cols, order, layout.batch_size,
@@ -793,12 +793,25 @@ using cudaDataType_t = hipblasltDatatype_t;
 #define CUDA_R_64F HIPBLASLT_R_64F
 #define CUDA_C_32F HIPBLASLT_C_32F
 #define CUDA_C_64F HIPBLASLT_C_64F
+#define CUDA_R_8F_E4M3 HIPBLASLT_R_8F_E4M3
+#define CUDA_R_8F_E5M2 HIPBLASLT_R_8F_E5M2
 #endif
 
 template <cudaDataType_t CudaT>
 struct CudaToNativeT;
 
 #if CUDA_VERSION >= 11080
+template <>
+struct CudaToNativeT<CUDA_R_8F_E4M3> {
+  using type = tsl::float8_e4m3fn;
+};
+template <>
+struct CudaToNativeT<CUDA_R_8F_E5M2> {
+  using type = tsl::float8_e5m2;
+};
+#endif
+
+#if TF_HIPBLASLT
 template <>
 struct CudaToNativeT<CUDA_R_8F_E4M3> {
   using type = tsl::float8_e4m3fn;
@@ -863,11 +876,14 @@ StatusOr<se::gpu::BlasLt::Epilogue> AsBlasLtEpilogue(
 
 /*static*/ StatusOr<MatmulPlan> MatmulPlan::From(
     const GemmConfig& config, se::gpu::BlasLt::Epilogue epilogue) {
+  VLOG(1) << "In MatmuPlan::From";
   MatrixLayout lhs_layout = config.lhs_layout;
   MatrixLayout rhs_layout = config.rhs_layout;
   MatrixLayout output_layout = config.output_layout;
   MatrixLayout c_layout = config.c_layout;
 
+  VLOG(1) << "Before swapping operands, lhs_batch_size=" << lhs_layout.batch_size
+	  << " rhs_batch_size=" << rhs_layout.batch_size;
   // cublasLt matmul requires batch sizes to be equal. If only one operand has a
   // batch, the other will be broadcast (as its batch_stride == 0).
   size_t batch_size = std::max(lhs_layout.batch_size, rhs_layout.batch_size);
@@ -876,6 +892,34 @@ StatusOr<se::gpu::BlasLt::Epilogue> AsBlasLtEpilogue(
 
   bool must_swap_operands =
       MakeOutputColumnMajor(lhs_layout, rhs_layout, c_layout, output_layout);
+  VLOG(1) << "must_swap_operands = " << must_swap_operands;
+
+  if (primitive_util::IsF8Type(lhs_layout.dtype))
+	  VLOG(1) << "lhs is fp8";
+  if (primitive_util::IsF8Type(rhs_layout.dtype))
+	  VLOG(1) << "rhs is fp8";
+  VLOG(1) << "lhs_layout.order=" << (int)lhs_layout.order;
+  if (lhs_layout.order == MatrixLayout::Order::kColumnMajor) {
+	  VLOG(1) << "lhs is Column Major";
+  }
+  else {
+	  VLOG(1) << "lhs is Row Major";
+  }
+  VLOG(1) << "rhs_layout.order=" << (int)rhs_layout.order;
+  if (rhs_layout.order == MatrixLayout::Order::kColumnMajor) {
+	  VLOG(1) << "rhs is Column Major";
+  }
+  else {
+	  VLOG(1) << "rhs is Row Major";
+  }
+
+  VLOG(1) << "output_layout.order=" << (int)output_layout.order;
+  if (output_layout.order == MatrixLayout::Order::kColumnMajor) {
+	  VLOG(1) << "out is Column Major";
+  }
+  else {
+	  VLOG(1) << "out is Row Major";
+  }
 
   // Do not transopse either input. Note the cuBLASLt documentation somewhat
   // incorrectly claims "A must be transposed and B non-transposed" when A and B
@@ -884,8 +928,13 @@ StatusOr<se::gpu::BlasLt::Epilogue> AsBlasLtEpilogue(
   // *not* be transposed, and if B is row-major, B must be transposed. We never
   // transpose A or B, and expect the caller to ensure A is row-major and B is
   // column when A and B are FP8.
+#if TF_HIPBLASLT
+  se::blas::Transpose trans_a = se::blas::Transpose::kNoTranspose;
+  se::blas::Transpose trans_b = se::blas::Transpose::kNoTranspose;
+#else
   const se::blas::Transpose trans_a = se::blas::Transpose::kNoTranspose;
   const se::blas::Transpose trans_b = se::blas::Transpose::kNoTranspose;
+#endif
   if (primitive_util::IsF8Type(lhs_layout.dtype) &&
       lhs_layout.order == MatrixLayout::Order::kColumnMajor) {
     return InternalError("The F8 LHS must be column-major");
@@ -895,6 +944,33 @@ StatusOr<se::gpu::BlasLt::Epilogue> AsBlasLtEpilogue(
     return InternalError("The F8 RHS must be row-major");
   }
 
+#if TF_HIPBLASLT
+  VLOG(1) << "Changing Row Major to Column Major for hipBLASLt.";
+  if (lhs_layout.order == MatrixLayout::Order::kRowMajor) {
+    trans_a = se::blas::Transpose::kTranspose;
+    lhs_layout.Transpose();
+  }
+
+  if (rhs_layout.order == MatrixLayout::Order::kRowMajor) {
+    trans_b = se::blas::Transpose::kTranspose;
+    rhs_layout.Transpose();
+  }
+#endif
+
+  VLOG(1) << "lhs_layout.order=" << (int)lhs_layout.order;
+  if (lhs_layout.order == MatrixLayout::Order::kColumnMajor) {
+	  VLOG(1) << "lhs is Column Major";
+  }
+  else {
+	  VLOG(1) << "lhs is Row Major";
+  }
+  VLOG(1) << "rhs_layout.order=" << (int)rhs_layout.order;
+  if (rhs_layout.order == MatrixLayout::Order::kColumnMajor) {
+	  VLOG(1) << "rhs is Column Major";
+  }
+  else {
+	  VLOG(1) << "rhs is Row Major";
+  }
   TF_ASSIGN_OR_RETURN(se::blas::DataType output_dtype,
                       AsBlasDataType(output_layout.dtype));
   TF_ASSIGN_OR_RETURN(
@@ -908,12 +984,16 @@ StatusOr<se::gpu::BlasLt::Epilogue> AsBlasLtEpilogue(
           computation_type, GetScaleType(output_dtype, computation_type),
           trans_a, trans_b, epilogue));
 
+  VLOG(1) << "Creating layout desc for lhs.";
   TF_ASSIGN_OR_RETURN(se::gpu::BlasLt::MatrixLayout a_desc,
                       AsBlasLtMatrixLayout(lhs_layout));
+  VLOG(1) << "Creating layout desc for rhs.";
   TF_ASSIGN_OR_RETURN(se::gpu::BlasLt::MatrixLayout b_desc,
                       AsBlasLtMatrixLayout(rhs_layout));
+  VLOG(1) << "Creating layout desc for c.";
   TF_ASSIGN_OR_RETURN(se::gpu::BlasLt::MatrixLayout c_desc,
                       AsBlasLtMatrixLayout(c_layout));
+  VLOG(1) << "Creating layout desc for d.";
   TF_ASSIGN_OR_RETURN(se::gpu::BlasLt::MatrixLayout d_desc,
                       AsBlasLtMatrixLayout(output_layout));
 
@@ -1021,6 +1101,17 @@ Status MatmulPlan::ExecuteOnStream(
                CUDA_R_8F_E4M3)
   TYPED_MATMUL(float, CUDA_R_8F_E5M2, CUDA_R_8F_E4M3, CUDA_R_16F,
                CUDA_R_8F_E5M2)
+  TYPED_MATMUL(float, CUDA_R_8F_E5M2, CUDA_R_8F_E4M3, CUDA_R_16F, CUDA_R_16F)
+  TYPED_MATMUL(float, CUDA_R_8F_E5M2, CUDA_R_8F_E4M3, CUDA_R_32F, CUDA_R_32F)
+#endif
+
+#if TF_HIPBLASLT
+  TYPED_MATMUL(float, CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16F, CUDA_R_16F)
+  TYPED_MATMUL(float, CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_32F, CUDA_R_32F)
+
+  TYPED_MATMUL(float, CUDA_R_8F_E4M3, CUDA_R_8F_E5M2, CUDA_R_16F, CUDA_R_16F)
+  TYPED_MATMUL(float, CUDA_R_8F_E4M3, CUDA_R_8F_E5M2, CUDA_R_32F, CUDA_R_32F)
+
   TYPED_MATMUL(float, CUDA_R_8F_E5M2, CUDA_R_8F_E4M3, CUDA_R_16F, CUDA_R_16F)
   TYPED_MATMUL(float, CUDA_R_8F_E5M2, CUDA_R_8F_E4M3, CUDA_R_32F, CUDA_R_32F)
 #endif

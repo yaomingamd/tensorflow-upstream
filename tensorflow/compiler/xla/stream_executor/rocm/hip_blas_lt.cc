@@ -267,9 +267,22 @@ tsl::Status BlasLt::DoMatmul(Stream* stream, const BlasLt::MatmulPlan& plan,
                                  bias.opaque()));
     }
 
-    if ((a_scale != nullptr) || (b_scale != nullptr) || (c_scale != nullptr) ||
-        (d_scale != nullptr))
-      return tsl::errors::Internal("hipblaslt does not support scale");
+    if (a_scale != nullptr) {
+      TF_RETURN_IF_ERROR(SetAttr(plan.op_desc.get(),
+                                 HIPBLASLT_MATMUL_DESC_A_SCALE_POINTER,
+                                 a_scale.opaque()));
+    }
+    if (b_scale != nullptr) {
+      TF_RETURN_IF_ERROR(SetAttr(plan.op_desc.get(),
+                                 HIPBLASLT_MATMUL_DESC_B_SCALE_POINTER,
+                                 b_scale.opaque()));
+    }
+    if (c_scale != nullptr) {
+      LOG(WARNING) << "c_scale is not nullptr.";
+    }
+    if (d_scale != nullptr) {
+      LOG(WARNING) << "d_scale is not nullptr.";
+    }
 
     if (d_amax != nullptr)
       return tsl::errors::Internal("hipblaslt does not support amax");

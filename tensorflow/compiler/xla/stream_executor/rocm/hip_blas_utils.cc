@@ -33,8 +33,9 @@ tsl::Status ToStatus(hipblasStatus_t status, const char* prefix) {
 hipblasltDatatype_t AsHipblasDataType(blas::DataType type) {
   switch (type) {
     case blas::DataType::kF8E5M2:
+      return HIPBLASLT_R_8F_E5M2;
     case blas::DataType::kF8E4M3FN:
-      LOG(FATAL) << "hipblaslt does not support F8 yet";
+      return HIPBLASLT_R_8F_E4M3;
     case blas::DataType::kHalf:
       return HIPBLASLT_R_16F;
     case blas::DataType::kBF16:

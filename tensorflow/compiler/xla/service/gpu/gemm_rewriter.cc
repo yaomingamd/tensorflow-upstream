@@ -450,6 +450,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
       : gpu_version_(gpu_version) {}
 
   Status HandleDot(HloInstruction *instr) override {
+    VLOG(1) << "Handling Dot";
     if (!IsMatrixMultiplication(*instr)) {
       return OkStatus();
     }
@@ -470,6 +471,8 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     // First try to match the fp8 gemm pattern.
     TF_ASSIGN_OR_RETURN(bool supported_by_cublaslt,
                         GemmIsSupportedByCublasLt(*instr, gemm_backend_config));
+
+    VLOG(1) << "supported_by_cublaslt=" << supported_by_cublaslt;
     HloInstruction *a, *b, *a_scale = nullptr, *b_scale = nullptr;
     std::vector<HloInstruction *> a_unary_ops, b_unary_ops;
     bool a_mult_scale, b_mult_scale;
@@ -485,6 +488,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
                            const_cast<HloInstruction *>(instr), b, b_scale,
                            b_mult_scale, b_unary_ops);
                      })))) {
+      VLOG(1) << "is supported F8 pattern.";
       TF_ASSIGN_OR_RETURN(
           bool created_call,
           CreateF8CustomCall(instr, gemm_backend_config, a, b, a_scale, b_scale,
@@ -1012,7 +1016,227 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
         ReplaceInstruction(instr, slice ? slice : new_custom_call));
     return true;
 #else  // TENSORFLOW_USE_ROCM
+    auto rocm_compute_capability_ =
+          std::get<se::RocmComputeCapability>(gpu_version_);
+
+    // FP8 GEMM kernels are only available on MI300 and later
+    // architectures.
+    if (rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx940" &&
+	rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx941" &&
+	rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx942" ) {
+      VLOG(1)
+          << "FP8 Custom Calls require MI300 or later architectures.";
+      return false;
+    }
+#if TF_ROCM_VERSION < 50700
+    // FP8 GEMM kernels are only available with ROCM 5.7 and above
+    VLOG(1) << "FP8 Custom Calls require ROCM 5.7 or newer.";
     return false;
+#endif // TF_ROCM_VERSION < 50700 
+
+    PrimitiveType a_type = a->shape().element_type();
+    PrimitiveType b_type = b->shape().element_type();
+
+    // cuBLASLt FP8 GEMM kernels require one of the two operands to be in
+    // F8E4M3FN format.
+    if (a_type == F8E5M2 && b_type == F8E5M2) {
+      VLOG(1)
+          << "Failed to rewrite " << instr->ToShortString()
+          << " into FP8 Custom Call. The element type of one of the operands "
+             "must be F8E4M3FN.";
+      return false;
+    }
+    if ((a_type != F8E5M2 && a_type != F8E4M3FN) ||
+        (b_type != F8E5M2 && b_type != F8E4M3FN)) {
+      VLOG(1) << "Failed to rewrite " << instr->ToShortString()
+              << " into FP8 Custom Call. The input types must be F8E5M2 or "
+                 "F8E4M3FN, but got "
+              << PrimitiveType_Name(a_type) << " and "
+              << PrimitiveType_Name(b_type);
+      return false;
+    }
+
+    absl::Span<const int64_t> batch_dims =
+        gemm_backend_config.dot_dimension_numbers().rhs_batch_dimensions();
+
+    // cuBLASLt FP8 GEMM kernels require the scaling factors to be in F32
+    // format. Set the factors to one when no scaling factors were captured.
+    Literal one_literal = LiteralUtil::One(F32);
+    HloInstruction *one = instr->AddInstruction(
+        HloInstruction::CreateConstant(one_literal.Clone()));
+    std::array<bool, 2> mult_scale{a_mult_scale, b_mult_scale};
+    std::array<HloInstruction *, 2> scales{a_scale, b_scale}, inv_scales,
+        scales_f32;
+    for (int i = 0; i < scales.size(); ++i) {
+      if (scales[i]) {
+        if (!ShapeUtil::IsScalar(scales[i]->shape())) {
+          VLOG(1) << "Failed to rewrite " << instr->ToShortString()
+                  << " into FP8 Custom Call. The scaling factors must be "
+                     "scalars.";
+          return false;
+        }
+        if (!mult_scale[i]) {
+          inv_scales[i] = instr->AddInstruction(HloInstruction::CreateBinary(
+              scales[i]->shape(), HloOpcode::kDivide, one, scales[i]));
+        }
+        scales_f32[i] = mult_scale[i] ? scales[i] : inv_scales[i];
+        if (scales_f32[i]->shape().element_type() != F32) {
+          scales_f32[i] = instr->AddInstruction(HloInstruction::CreateConvert(
+              ShapeUtil::MakeScalarShape(F32), scales_f32[i]));
+        }
+      } else {
+        scales_f32[i] = one;
+      }
+    }
+
+    switch (instr->shape().element_type()) {
+      case F8E4M3FN:
+      case F8E5M2:
+      case BF16:
+      case F16:
+      case F32:
+        break;
+      default:
+        VLOG(1) << "Failed to rewrite " << instr->ToShortString()
+                << " into FP8 Custom Call. Output element type must be "
+                   "F8E4M3FN, F8E5M2, BF16, F16 or F32. Actual element type is "
+                << PrimitiveType_Name(instr->shape().element_type());
+        return false;
+    }
+
+    // Each operand must have exactly one contracting and one non-contracting
+    // dimension.
+    absl::Span<const int64_t> a_contracting_dims =
+        gemm_backend_config.dot_dimension_numbers()
+            .lhs_contracting_dimensions();
+    absl::Span<const int64_t> b_contracting_dims =
+        gemm_backend_config.dot_dimension_numbers()
+            .rhs_contracting_dimensions();
+    if (a_contracting_dims.size() != 1 || b_contracting_dims.size() != 1) {
+      VLOG(1) << "Failed to rewrite " << instr->ToShortString()
+              << " into FP8 Custom Call. A and B must have one contracting "
+                 "dimension.";
+      return false;
+    }
+    if ((a_unary_ops.empty() ? a : a_unary_ops.back())
+                    ->shape()
+                    .dimensions_size() -
+                batch_dims.size() !=
+            2 ||
+        (b_unary_ops.empty() ? b : b_unary_ops.back())
+                    ->shape()
+                    .dimensions_size() -
+                batch_dims.size() !=
+            2) {
+      VLOG(1) << "Failed to rewrite " << instr->ToShortString()
+              << "into FP8 Custom Call. A and B must have one non-contracting "
+                 "dimension.";
+      return false;
+    }
+
+    // Sequentially apply the collected unary, dynamic-slice and pad ops to the
+    // unconverted and unscaled operands.
+    auto shift_unary_ops =
+        [&instr](HloInstruction *&x,
+                 std::vector<HloInstruction *> &x_unary_ops) -> void {
+      for (HloInstruction *unary_op : x_unary_ops) {
+        std::vector<HloInstruction *> operands = {x};
+        // Insert the additional operands of dynamic-slice ops.
+        if (unary_op->opcode() == HloOpcode::kDynamicSlice) {
+          for (int i = 1; i < unary_op->operand_count(); ++i) {
+            operands.emplace_back(unary_op->mutable_operand(i));
+          }
+        }
+        // Convert the second operand of pad ops.
+        if (unary_op->opcode() == HloOpcode::kPad) {
+          HloInstruction *convert =
+              instr->AddInstruction(HloInstruction::CreateConvert(
+                  ShapeUtil::ChangeElementType(unary_op->operand(1)->shape(),
+                                               x->shape().element_type()),
+                  unary_op->mutable_operand(1)));
+          operands.emplace_back(convert);
+        }
+        x = instr->AddInstruction(unary_op->CloneWithNewOperands(
+            ShapeUtil::MakeShapeWithDenseLayout(
+                x->shape().element_type(), unary_op->shape().dimensions(),
+                unary_op->shape().layout().minor_to_major()),
+            operands));
+      }
+      return;
+    };
+    shift_unary_ops(a, a_unary_ops);
+    shift_unary_ops(b, b_unary_ops);
+
+    TF_ASSIGN_OR_RETURN(bool a_is_col_major,
+                        MatrixIsColumnMajor(*instr, gemm_backend_config, "a"));
+    TF_ASSIGN_OR_RETURN(bool b_is_col_major,
+                        MatrixIsColumnMajor(*instr, gemm_backend_config, "b"));
+
+    DotDimensionNumbers *dim_nums =
+        gemm_backend_config.mutable_dot_dimension_numbers();
+    int batch_dim_offset = batch_dims.size();
+
+    // cuBLASLt FP8 GEMM kernels currently require the first operand, i.e. A, to
+    // be row-major. If A is column-major, swap the contracting and
+    // non-contracting dimension and transpose the matrix to effectively make it
+    // column-major.
+    // TODO(philipphack): Remove once cuBLASLt supports A being column-major
+    if (a_is_col_major) {
+      CHECK(a_contracting_dims[0] == batch_dim_offset ||
+            a_contracting_dims[0] == batch_dim_offset + 1);
+      if (a_contracting_dims[0] == batch_dim_offset) {
+        dim_nums->set_lhs_contracting_dimensions(0, batch_dim_offset + 1);
+      } else {
+        dim_nums->set_lhs_contracting_dimensions(0, batch_dim_offset);
+      }
+      a = TransposeMatrix(a, a_contracting_dims[0], batch_dims);
+    }
+
+    // Similarly, cuBLASLt requires the second operand to be column-major, so
+    // make it column-major if it is currently row-major.
+    if (!b_is_col_major) {
+      CHECK(b_contracting_dims[0] == batch_dim_offset ||
+            b_contracting_dims[0] == batch_dim_offset + 1);
+      if (b_contracting_dims[0] == batch_dim_offset) {
+        dim_nums->set_rhs_contracting_dimensions(0, batch_dim_offset + 1);
+      } else {
+        dim_nums->set_rhs_contracting_dimensions(0, batch_dim_offset);
+      }
+      b = TransposeMatrix(b, b_contracting_dims[0], batch_dims);
+    }
+
+    a = PadOperandToMultipleOf16(batch_dims, a);
+    b = PadOperandToMultipleOf16(batch_dims, b);
+    Shape new_output_shape = PadShapeToMultipleOf16(instr->shape(), batch_dims);
+
+    std::vector<HloInstruction *> operands_list = {
+        a, b, scales_f32[0], scales_f32[1], one, one};
+
+    HloInstruction *new_custom_call =
+        instr->AddInstruction(HloInstruction::CreateCustomCall(
+            ShapeUtil::MakeShapeWithDenseLayout(
+                instr->shape().element_type(), new_output_shape.dimensions(),
+                instr->shape().layout().minor_to_major()),
+            operands_list, kCublasLtMatmulF8CallTarget));
+
+    TF_RETURN_IF_ERROR(
+        new_custom_call->set_backend_config(gemm_backend_config));
+    TF_RETURN_IF_ERROR(SetName(instr->GetModule(), new_custom_call));
+
+    // Slice the result of the GEMM if the operands were padded.
+    HloInstruction *slice = nullptr;
+    if (new_output_shape.dimensions() != instr->shape().dimensions()) {
+      std::vector<int64_t> start_indices(instr->shape().rank(), 0);
+      std::vector<int64_t> strides(instr->shape().rank(), 1);
+      slice = instr->AddInstruction(HloInstruction::CreateSlice(
+          instr->shape(), new_custom_call, start_indices,
+          instr->shape().dimensions(), strides));
+    }
+
+    TF_RETURN_IF_ERROR(
+        ReplaceInstruction(instr, slice ? slice : new_custom_call));
+    VLOG(1) << "Creating FP8 Custom Call.";
+    return true;
 #endif
   }
 
@@ -1694,7 +1918,29 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
              PrimitiveType::F8E4M3FN, DataType::kHalf},
             {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E5M2,
              PrimitiveType::F8E4M3FN, DataType::kFloat},
-#endif  // GOOGLE_CUDA
+#else  // TENSORFLOW_USE_ROCM 
+            // FP8 types:
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E4M3FN,
+             PrimitiveType::F8E4M3FN, DataType::kBF16},
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E4M3FN,
+             PrimitiveType::F8E4M3FN, DataType::kHalf},
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E4M3FN,
+             PrimitiveType::F8E4M3FN, DataType::kFloat},
+
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E4M3FN,
+             PrimitiveType::F8E5M2, DataType::kBF16},
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E4M3FN,
+             PrimitiveType::F8E5M2, DataType::kHalf},
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E4M3FN,
+             PrimitiveType::F8E5M2, DataType::kFloat},
+
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E5M2,
+             PrimitiveType::F8E4M3FN, DataType::kBF16},
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E5M2,
+             PrimitiveType::F8E4M3FN, DataType::kHalf},
+            {ComputationType::kF32, DataType::kFloat, PrimitiveType::F8E5M2,
+             PrimitiveType::F8E4M3FN, DataType::kFloat},
+#endif  
         // Other data types:
             {ComputationType::kF16, DataType::kHalf, PrimitiveType::F16,
              PrimitiveType::F16, DataType::kHalf},
@@ -1792,10 +2038,12 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     const HloInstruction *rhs = instr.operand(1);
     const Shape &output_shape = instr.shape();
 
+    VLOG(1) << "Checking if GEMM is supported by hipblasLt.";
     TF_ASSIGN_OR_RETURN(
         bool types_are_supported_by_cublas_lt,
         TypesAreSupportedByCublasLt(instr, gemm_backend_config));
     if (!types_are_supported_by_cublas_lt) {
+      VLOG(1) << "Types are not supported by hipblasLt.";
       return false;
     }
 
@@ -1813,20 +2061,27 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     }
     if (batch_count > kMaxBatchCount) {
       // This is not supported by cublasLt.
+      VLOG(1) << "batch_count=" << batch_count;
       return false;
     }
 
     TF_ASSIGN_OR_RETURN(bool output_is_column_major,
                         MatrixIsColumnMajor(instr, gemm_backend_config));
 
+    VLOG(1) << "output_is_column_major=" << output_is_column_major;
     if (std::holds_alternative<se::RocmComputeCapability>(gpu_version_)) {
-      if (!output_is_column_major) return false;
+      //if (!output_is_column_major) return false;
 
       auto rocm_compute_capability_ =
           std::get<se::RocmComputeCapability>(gpu_version_);
 
       // as of ROCm 5.5, hipblaslt only supports MI200.
-      if (rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx90a") {
+      if (rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx90a" &&
+	  rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx940" &&
+	  rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx941" &&
+	  rocm_compute_capability_.gcn_arch_name().substr(0, 6) != "gfx942" ) {
+        VLOG(1) << "HIP architecture:" << rocm_compute_capability_.gcn_arch_name();
+        VLOG(1) << "HIP architecture does not support hipblasLt";
         return false;
       }
     }
@@ -1879,6 +2134,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
           return size * lhs->shape().dimensions(dim);
         });
 
+    VLOG(1) << "lhs_non_contracting_dimension_size=" << lhs_non_contracting_dimension_size;
     // Check that the size of the non-contracting dimension is not too large.
     return lhs_non_contracting_dimension_size <= kMaxDimensionSize;
   }

@@ -921,9 +921,7 @@ Status IrEmitterUnnested::EmitCublasLtMatmulThunk(mlir::Operation* op) {
   AddThunkToThunkSequence(std::move(thunk));
   return OkStatus();
 }
-#endif  // GOOGLE_CUDA || TF_HIPBLASLT
 
-#if GOOGLE_CUDA
 Status IrEmitterUnnested::EmitCublasLtMatmulThunkF8(mlir::Operation* op) {
   auto matmul = mlir::dyn_cast<mlir::lmhlo_gpu::CublasLtMatmulF8Op>(op);
   TF_RET_CHECK(matmul != nullptr);
@@ -955,8 +953,13 @@ Status IrEmitterUnnested::EmitCublasLtMatmulThunkF8(mlir::Operation* op) {
   BufferAllocation::Slice aux;  // Not used.
 
   TF_ASSIGN_OR_RETURN(GemmConfig gemm_config, GemmConfig::For(matmul));
+#if GOOGLE_CUDA
   TF_ASSIGN_OR_RETURN(se::cuda::BlasLt::Epilogue epilogue,
                       cublas_lt::AsBlasLtEpilogue(matmul.getEpilogue()));
+#else
+  TF_ASSIGN_OR_RETURN(se::rocm::BlasLt::Epilogue epilogue,
+                      cublas_lt::AsBlasLtEpilogue(matmul.getEpilogue()));
+#endif
   auto thunk = std::make_unique<CublasLtMatmulThunk>(
       Thunk::ThunkInfo::WithProfileAnnotation(op), std::move(gemm_config),
       epilogue, matmul.getAlgorithm(), a, b, c, d, bias, aux, a_scale, b_scale,
@@ -965,7 +968,9 @@ Status IrEmitterUnnested::EmitCublasLtMatmulThunkF8(mlir::Operation* op) {
   AddThunkToThunkSequence(std::move(thunk));
   return OkStatus();
 }
+#endif  // GOOGLE_CUDA || TF_HIPBLASLT
 
+#if GOOGLE_CUDA
 Status IrEmitterUnnested::EmitConvolutionReorderThunk(mlir::Operation* op) {
   using mlir::dyn_cast;
   using mlir::lmhlo_gpu::CudnnConvReorderFilterAndBiasOp;
@@ -3046,11 +3051,11 @@ Status IrEmitterUnnested::EmitOp(
   if (mlir::isa<mlir::lmhlo_gpu::CublasLtMatmulOp>(op)) {
     return EmitCublasLtMatmulThunk(op);
   }
-#endif  // GOOGLE_CUDA || TF_HIPBLASLT
-#if GOOGLE_CUDA
   if (mlir::isa<mlir::lmhlo_gpu::CublasLtMatmulF8Op>(op)) {
     return EmitCublasLtMatmulThunkF8(op);
   }
+#endif  // GOOGLE_CUDA || TF_HIPBLASLT
+#if GOOGLE_CUDA
   if (mlir::isa<mlir::lmhlo_gpu::CudnnConvReorderFilterOp,
                 mlir::lmhlo_gpu::CudnnConvReorderFilterAndBiasOp>(op)) {
     return EmitConvolutionReorderThunk(op);
