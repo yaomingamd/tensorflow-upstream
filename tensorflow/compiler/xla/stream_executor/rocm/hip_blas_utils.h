@@ -23,6 +23,12 @@ limitations under the License.
 #include "tensorflow/tsl/platform/errors.h"
 #include "tensorflow/tsl/platform/status.h"
 
+#include "rocm/rocm_config.h"
+#if TF_ROCM_VERSION < 50700
+#define hipblasltDatatype_t hipblasDatatype_t
+#endif
+
+
 namespace stream_executor {
 namespace rocm {
 
