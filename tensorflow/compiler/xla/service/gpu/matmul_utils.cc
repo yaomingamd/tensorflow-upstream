@@ -46,6 +46,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/stream_executor/host_or_device_scalar.h"
 #include "tensorflow/tsl/platform/tensor_float_32_utils.h"
 #endif  // GOOGLE_CUDA
+#include "rocm/rocm_config.h"
 
 namespace xla {
 namespace gpu {
@@ -786,6 +787,15 @@ StatusOr<se::gpu::BlasLt::MatrixLayout> AsBlasLtMatrixLayout(
 }
 
 #if TF_HIPBLASLT
+#if TF_ROCM_VERSION < 50700
+using cudaDataType_t = hipblasDatatype_t;
+#define CUDA_R_16BF HIPBLAS_R_16B
+#define CUDA_R_16F HIPBLAS_R_16F
+#define CUDA_R_32F HIPBLAS_R_32F
+#define CUDA_R_64F HIPBLAS_R_64F
+#define CUDA_C_32F HIPBLAS_C_32F
+#define CUDA_C_64F HIPBLAS_C_64F
+#else
 using cudaDataType_t = hipblasltDatatype_t;
 #define CUDA_R_16BF HIPBLASLT_R_16B
 #define CUDA_R_16F HIPBLASLT_R_16F
@@ -793,6 +803,7 @@ using cudaDataType_t = hipblasltDatatype_t;
 #define CUDA_R_64F HIPBLASLT_R_64F
 #define CUDA_C_32F HIPBLASLT_C_32F
 #define CUDA_C_64F HIPBLASLT_C_64F
+#endif
 #endif
 
 template <cudaDataType_t CudaT>
