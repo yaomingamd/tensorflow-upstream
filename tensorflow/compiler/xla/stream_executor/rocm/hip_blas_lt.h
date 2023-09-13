@@ -18,6 +18,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/stream_executor/host_or_device_scalar.h"
 #include "tensorflow/tsl/platform/status.h"
 
+#include "rocm/rocm_config.h"
 #if TF_HIPBLASLT
 
 #if TF_ROCM_VERSION < 50700
@@ -32,7 +33,6 @@ limitations under the License.
 #define HIPBLASLT_C_64F HIPBLAS_R_64F
 #endif
 
-#include "rocm/rocm_config.h"
 #include "tensorflow/compiler/xla/status.h"
 #include "tensorflow/compiler/xla/stream_executor/rocm/hip_blas_utils.h"
 #include "tensorflow/compiler/xla/stream_executor/rocm/hipblaslt_wrapper.h"
