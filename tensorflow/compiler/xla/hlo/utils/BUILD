@@ -1,6 +1,7 @@
 # Description:
 #   Implementation of XLA’s HLO utilities used for higher-level transformations.
 
+load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 load("//tensorflow/tsl/platform:rules_cc.bzl", "cc_library")
 load(
     "//tensorflow/compiler/xla:xla.bzl",
@@ -45,7 +46,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_live_range_test",
     srcs = ["hlo_live_range_test.cc"],
     deps = [
@@ -75,7 +76,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_matchers_test",
     srcs = ["hlo_matchers_test.cc"],
     deps = [
@@ -113,7 +114,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_sharding_util_test",
     srcs = [
         "hlo_sharding_util_test.cc",

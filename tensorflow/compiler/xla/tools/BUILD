@@ -21,6 +21,7 @@ load(
     "xla_cc_test",
     "xla_py_proto_library",
 )
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load(
     "//tensorflow/tsl/platform:build_config.bzl",
     "tf_proto_library",
@@ -238,7 +239,7 @@ xla_cc_binary(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_extractor_test",
     srcs = ["hlo_extractor_test.cc"],
     deps = [
@@ -327,7 +328,7 @@ xla_cc_binary(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "interactive_graphviz_bin_test",
     srcs = ["interactive_graphviz_bin_test.cc"],
     data = [
@@ -363,7 +364,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_module_loader_test",
     srcs = ["hlo_module_loader_test.cc"],
     deps = [
@@ -463,7 +464,7 @@ xla_cc_binary(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "run_hlo_module_bin_test",
     srcs = ["run_hlo_module_bin_test.cc"],
     data = [
@@ -497,7 +498,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_control_flow_flattening_test",
     srcs = ["hlo_control_flow_flattening_test.cc"],
     deps = [

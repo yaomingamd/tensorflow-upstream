@@ -6,6 +6,7 @@ load(
     "//tensorflow/tsl/platform:build_config.bzl",
     "tf_proto_library",
 )
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load(
     "//tensorflow/tsl/platform:build_config_root.bzl",
     "if_static",
@@ -63,7 +64,7 @@ tf_proto_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "backend_configs_test",
     srcs = ["backend_configs_test.cc"],
     deps = [
@@ -140,7 +141,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "custom_call_test",
     srcs = if_gpu_is_configured(["custom_call_test.cc"]),
     local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
@@ -169,7 +170,7 @@ xla_cc_test(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_copy_insertion_test",
     srcs = if_gpu_is_configured(["gpu_copy_insertion_test.cc"]),
     tags = tf_cuda_tests_tags(),
@@ -225,7 +226,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "target_util_test",
     srcs = ["target_util_test.cc"],
     deps = [
@@ -258,7 +259,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_device_info_test",
     srcs = ["gpu_device_info_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -864,7 +865,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "non_atomically_upgradeable_rw_lock_test",
     srcs = ["non_atomically_upgradeable_rw_lock_test.cc"],
     deps = [
@@ -1041,7 +1042,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "ir_emission_utils_test",
     srcs = ["ir_emission_utils_test.cc"],
     deps = [
@@ -1253,7 +1254,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gemm_rewriter_triton_test",
     srcs = ["gemm_rewriter_triton_test.cc"],
     deps = [
@@ -1407,7 +1408,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gemm_algorithm_picker_test",
     srcs = ["gemm_algorithm_picker_test.cc"],
     tags = [
@@ -1475,7 +1476,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "matmul_utils_test",
     srcs = ["matmul_utils_test.cc"],
     deps = [
@@ -1506,7 +1507,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "dot_dimension_sorter_test",
     srcs = ["dot_dimension_sorter_test.cc"],
     tags = tf_cuda_tests_tags() + ["no_rocm"],
@@ -1529,7 +1530,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_async_collective_annotator_test",
     srcs = ["gpu_async_collective_annotator_test.cc"],
     deps = [
@@ -1554,7 +1555,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_convert_async_collectives_to_sync_test",
     srcs = ["gpu_convert_async_collectives_to_sync_test.cc"],
     deps = [
@@ -1607,7 +1608,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "conv_algorithm_picker_test",
     srcs = if_gpu_is_configured(["conv_algorithm_picker_test.cc"]),
     tags = [
@@ -1714,7 +1715,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "move_copy_to_users_test",
     srcs = ["move_copy_to_users_test.cc"],
     deps = [
@@ -1725,7 +1726,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_conv_rewriter_test",
     srcs = ["gpu_conv_rewriter_test.cc"],
     deps = [
@@ -1812,7 +1813,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "instruction_fusion_test",
     srcs = ["instruction_fusion_test.cc"],
     tags = [
@@ -1860,7 +1861,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "priority_fusion_test",
     srcs = ["priority_fusion_test.cc"],
     tags = ["no_pip"],
@@ -1902,7 +1903,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "multi_output_fusion_test",
     srcs = ["multi_output_fusion_test.cc"],
     tags = [
@@ -1920,7 +1921,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "softmax_rewriter_triton_test",
     srcs = ["softmax_rewriter_triton_test.cc"],
     deps = [
@@ -1945,7 +1946,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_sanitize_constant_names_test",
     srcs = ["gpu_sanitize_constant_names_test.cc"],
     deps = [
@@ -1978,7 +1979,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "fusion_merger_test",
     srcs = ["fusion_merger_test.cc"],
     tags = [
@@ -2014,7 +2015,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_conv_padding_legalization_test",
     srcs = ["gpu_conv_padding_legalization_test.cc"],
     deps = [
@@ -2045,7 +2046,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_support_utils_test",
     srcs = ["cudnn_support_utils_test.cc"],
     deps = [
@@ -2089,7 +2090,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_pad_for_convolutions_test",
     srcs = ["cudnn_pad_for_convolutions_test.cc"],
     deps = [
@@ -2123,7 +2124,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_vectorize_convolutions_test",
     srcs = ["cudnn_vectorize_convolutions_test.cc"],
     deps = [
@@ -2156,7 +2157,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_simplify_padding_test",
     srcs = ["cudnn_simplify_padding_test.cc"],
     deps = [
@@ -2207,7 +2208,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cublas_pad_for_gemms_test",
     srcs = ["cublas_pad_for_gemms_test.cc"],
     tags = [
@@ -2534,7 +2535,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_compiler_test",
     srcs = ["gpu_compiler_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -2554,7 +2555,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "auto_sharding_gpu_compiler_test",
     srcs = ["auto_sharding_gpu_compiler_test.cc"],
     tags = tf_cuda_tests_tags() + ["no_oss"],  # TODO(b/277355322): Make autosharding work in OSS
@@ -2661,7 +2662,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "nvptx_compiler_test",
     srcs = if_gpu_is_configured([
         "nvptx_compiler_test.cc",
@@ -2685,7 +2686,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_aot_compilation_test",
     srcs = if_cuda_is_configured([
         "gpu_aot_compilation_test.cc",
@@ -2778,7 +2779,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "all_reduce_blueconnect_test",
     srcs = ["all_reduce_blueconnect_test.cc"],
     deps = [
@@ -2861,7 +2862,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_layout_assignment_test",
     srcs = ["gpu_layout_assignment_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -2905,7 +2906,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_hlo_schedule_test",
     srcs = [
         "gpu_hlo_schedule_test.cc",
@@ -2924,7 +2925,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "while_transformer_test",
     srcs = ["while_transformer_test.cc"],
     tags = [
@@ -3007,7 +3008,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_hlo_cost_analysis_test",
     srcs = ["gpu_hlo_cost_analysis_test.cc"],
     deps = [
@@ -3062,7 +3063,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_performance_model_test",
     srcs = ["gpu_performance_model_test.cc"],
     deps = [
@@ -3115,7 +3116,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_op_profiler_run",
     timeout = "eternal",
     srcs = ["hlo_op_profiler_run.cc"],
@@ -3145,7 +3146,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_op_profiler_test",
     srcs = if_cuda_is_configured(["hlo_op_profiler_test.cc"]),
     tags = tf_cuda_tests_tags() + ["no_rocm",],
@@ -3177,7 +3178,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "buffer_comparator_test",
     srcs = if_cuda_is_configured(["buffer_comparator_test.cc"]),
     tags = tf_cuda_tests_tags(),
@@ -3207,7 +3208,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "gpu_fusible_test",
     srcs = ["gpu_fusible_test.cc"],
     tags = [
@@ -3246,7 +3247,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_fused_conv_rewriter_test",
     srcs = ["cudnn_fused_conv_rewriter_test.cc"],
     local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
@@ -3346,7 +3347,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "cudnn_fused_mha_rewriter_test",
     srcs = ["cudnn_fused_mha_rewriter_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -3394,7 +3395,7 @@ xla_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "conv_layout_normalization_test",
     srcs = ["conv_layout_normalization_test.cc"],
     tags = tf_cuda_tests_tags() + ["no_rocm"],
@@ -3433,7 +3434,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "variadic_op_splitter_test",
     srcs = ["variadic_op_splitter_test.cc"],
     tags = [
@@ -3478,7 +3479,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_algorithm_denylist_test",
     srcs = ["hlo_algorithm_denylist_test.cc"],
     data = ["data/hlo_algorithm_denylist.pbtxt"],
@@ -3507,7 +3508,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "alias_passthrough_params_test",
     srcs = ["alias_passthrough_params_test.cc"],
     tags = [
@@ -3540,7 +3541,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "horizontal_loop_fusion_test",
     srcs = ["horizontal_loop_fusion_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -3580,7 +3581,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "horizontal_input_fusion_test",
     srcs = ["horizontal_input_fusion_test.cc"],
     tags = tf_cuda_tests_tags(),
@@ -3638,7 +3639,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "reduction_splitter_test",
     srcs = ["reduction_splitter_test.cc"],
     deps = [
@@ -3953,7 +3954,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_fusion_stats_test",
     srcs = ["hlo_fusion_stats_test.cc"],
     tags = [
@@ -3981,7 +3982,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "scatter_slice_simplifier_test",
     srcs = ["scatter_slice_simplifier_test.cc"],
     deps = [
@@ -4055,7 +4056,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "topk_splitter_test",
     srcs = ["topk_splitter_test.cc"],
     deps = [
@@ -4122,7 +4123,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "copy_fusion_test",
     srcs = ["copy_fusion_test.cc"],
     deps = [
@@ -4134,7 +4135,7 @@ xla_cc_test(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "autotuner_util_test",
     srcs = if_cuda_is_configured(["autotuner_util_test.cc"]),
     deps = if_cuda_is_configured([
