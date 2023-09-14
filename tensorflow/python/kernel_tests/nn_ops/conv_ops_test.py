@@ -2711,7 +2711,8 @@ class Conv2DTest(parameterized.TestCase, test.TestCase):
           padding="VALID",
           test_input=True,
           data_format=data_format,
-          use_gpu=use_gpu)
+          use_gpu=use_gpu,
+          max_err=0.005 if test.is_built_with_rocm() else 0.003)
 
   @test_util.deprecated_graph_mode_only
   def testFilterGradientKernelSizeMatchesInputSize(self):

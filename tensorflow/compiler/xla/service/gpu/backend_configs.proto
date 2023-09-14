@@ -61,6 +61,7 @@ message CudnnConvBackendConfig {
   // Serialization of the graph described by the convolution and adjacent
   // pointwise ops.
   optional string serialized_graph = 9;
+  string call_context = 10;
 }
 
 // Backend config for the GEMM operation running through cuBLAS.
@@ -94,6 +95,12 @@ message GemmBackendConfig {
   }
 
   Epilogue epilogue = 13;
+
+  int64 lhs_stride = 14;
+  int64 rhs_stride = 15;
+
+  bool grad_x = 16;
+  bool grad_y = 17;
 }
 
 // Backend config for bitcast operation generated from MLIR MHLO dialect.
