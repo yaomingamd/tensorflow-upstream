@@ -47,7 +47,7 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.14.0-rc1'
+_VERSION = '2.14.0'
 
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
@@ -102,11 +102,7 @@ REQUIRED_PACKAGES = [
     'termcolor >= 1.1.0',
     'typing_extensions >= 3.6.6',
     'wrapt >= 1.11.0, < 1.15',
-    # This looks worse as a wrapped line. pylint:disable=line-too-long
-    (
-        'tensorflow-io-gcs-filesystem >= 0.23.1;platform_machine!="arm64" or'
-        ' platform_system!="Darwin"'
-    ),
+    'tensorflow-io-gcs-filesystem >= 0.23.1',
     # grpcio does not build correctly on big-endian machines due to lack of
     # BoringSSL support.
     # See https://github.com/tensorflow/tensorflow/issues/17882.
@@ -122,11 +118,11 @@ REQUIRED_PACKAGES = [
         'tensorboard >= 2.14, < 2.15', 'tb-nightly ~= 2.14.0.a'
     ),
     standard_or_nightly(
-        'tensorflow_estimator >= 2.14.0rc0, < 2.15',
+        'tensorflow_estimator >= 2.14.0, < 2.15',
         'tf-estimator-nightly ~= 2.15.0.dev',
     ),
     standard_or_nightly(
-        'keras >= 2.14.0rc0, < 2.15', 'keras-nightly ~= 2.15.0.dev'
+        'keras >= 2.14.0, < 2.15', 'keras-nightly ~= 2.15.0.dev'
     ),
 ]
 REQUIRED_PACKAGES = [p for p in REQUIRED_PACKAGES if p is not None]
