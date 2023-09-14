@@ -45,8 +45,9 @@ limitations under the License.
 #include "tensorflow/compiler/xla/stream_executor/cuda/cuda_blas_lt.h"
 #include "tensorflow/compiler/xla/stream_executor/host_or_device_scalar.h"
 #include "tensorflow/tsl/platform/tensor_float_32_utils.h"
-#endif  // GOOGLE_CUDA
+#elif TENSORFLOW_USE_ROCM
 #include "rocm/rocm_config.h"
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 namespace xla {
 namespace gpu {
