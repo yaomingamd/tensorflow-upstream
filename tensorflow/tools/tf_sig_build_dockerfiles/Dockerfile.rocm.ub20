@@ -65,8 +65,6 @@ RUN echo build --host_action_env=DOCKER_HOST_CACHEBUSTER=$(date +%s%N)$RANDOM >>
 
 ARG TF_TESTING_FL
 ENV TF_TESTING_FL=${TF_TESTING_FL}
-ARG DWLD_TF_SRC_CMD
-RUN if [ -n "${DWLD_TF_SRC_CMD}" ]; then eval "${DWLD_TF_SRC_CMD}"; fi
 ARG CLONE_TEST_REPO
 COPY ${CLONE_TEST_REPO} /${CLONE_TEST_REPO}
 RUN if [ -n "${CLONE_TEST_REPO}" ]; then bash /${CLONE_TEST_REPO}; fi
