@@ -247,6 +247,22 @@ StatusOr<AutotuneEntry<se::dnn::ConvOp>> AutotuneUnfusedConv(
 
   auto* stream = ctx->op_device_context()->stream();
 
+  se::dnn::CallContext call_context = se::dnn::CallContext::kNone;
+  switch (kind) {
+    case se::dnn::ConvolutionKind::FORWARD:
+      call_context = se::dnn::CallContext::kForward;
+      break;
+    case se::dnn::ConvolutionKind::BACKWARD_DATA:
+      call_context = se::dnn::CallContext::kBackpropData;
+      break;
+    case se::dnn::ConvolutionKind::BACKWARD_FILTER:
+      call_context = se::dnn::CallContext::kBackpropFilter;
+      break;
+    default:
+      return errors::InvalidArgument(
+          absl::StrFormat("Unknown ConvolutionKind %d", kind));
+  }
+
   if (!autotune_map->Find(conv_parameters, &autotune_entry)) {
     profiler::ScopedAnnotation annotation("cudnn_autotuning");
 
@@ -283,7 +299,7 @@ StatusOr<AutotuneEntry<se::dnn::ConvOp>> AutotuneUnfusedConv(
     TF_RETURN_IF_ERROR(stream->parent()->GetConvolveRunners(
         CudnnUseFrontend(), kind, element_type, element_type, stream,
         input_desc, input_ptr, filter_desc, filter_ptr, output_desc, output_ptr,
-        conv_desc, /*use_fallback=*/false, &rz_allocator, GetNumericOptions(),
+        conv_desc, call_context, /*use_fallback=*/false, &rz_allocator, GetNumericOptions(),
         &runners));
     auto launch_func =
         [&](se::ScratchAllocator* allocator_used,
@@ -328,7 +344,7 @@ StatusOr<AutotuneEntry<se::dnn::ConvOp>> AutotuneUnfusedConv(
       TF_RETURN_IF_ERROR(stream->parent()->GetConvolveRunners(
           CudnnUseFrontend(), kind, element_type, element_type, stream,
           input_desc, input_ptr, filter_desc, filter_ptr, output_desc,
-          output_ptr, conv_desc, /*use_fallback=*/true, &rz_allocator,
+          output_ptr, conv_desc, call_context, /*use_fallback=*/true, &rz_allocator,
           GetNumericOptions(), &fallback_runners));
 
       TF_ASSIGN_OR_RETURN(auto fallback_results,
@@ -353,7 +369,7 @@ StatusOr<AutotuneEntry<se::dnn::ConvOp>> AutotuneUnfusedConv(
     if (!stream->parent()->GetMIOpenConvolveAlgorithms(
             kind, se::dnn::ToDataType<T>::value, stream, input_desc, input_ptr,
             filter_desc, filter_ptr, output_desc, output_ptr, conv_desc,
-            &scratch_allocator, &algorithms)) {
+            &scratch_allocator, call_context, &algorithms)) {
       return errors::Unknown(
           "Failed to get convolution algorithm. This is probably "
           "because MIOpen failed to initialize, so try looking to "
@@ -379,7 +395,7 @@ StatusOr<AutotuneEntry<se::dnn::ConvOp>> AutotuneUnfusedConv(
             output_ptr, conv_desc, &scratch_allocator,
             se::dnn::AlgorithmConfig(profile_algorithm,
                                      miopen_algorithm.scratch_size()),
-            &profile_result);
+            call_context, &profile_result);
         if (miopen_launch_status.ok() && profile_result.is_valid()) {
           results.emplace_back();
           auto& result = results.back();

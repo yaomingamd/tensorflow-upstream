@@ -3,6 +3,7 @@ load("//tensorflow/tsl:tsl.bzl", "if_nccl")
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
 load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm")
 load("//tensorflow/compiler/xla:xla.bzl", "xla_cc_test")
+load("//tensorflow:tensorflow.bzl", "tf_cc_test","tf_cc_binary")
 load("//tensorflow/compiler/xla/stream_executor:build_defs.bzl", "if_gpu_is_configured")
 load("//tensorflow/tsl/platform/default:cuda_build_defs.bzl", "if_cuda_is_configured")
 load("//tensorflow/tsl/platform:build_config.bzl", "tf_proto_library")
@@ -86,7 +87,7 @@ cc_library(
     ]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "se_gpu_pjrt_client_test",
     srcs = if_gpu_is_configured(["se_gpu_pjrt_client_test.cc"]),
     local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
@@ -159,7 +160,7 @@ cc_library(
     ] + if_nccl(["@local_config_nccl//:nccl"]),
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "pjrt_client_test_se_gpu",
     srcs = ["pjrt_client_test_se_gpu.cc"],
     tags = [
