@@ -4,9 +4,15 @@ This document is to list the ROCm compatibility for the tensorflow-rocm release 
 
 <https://pypi.org/project/tensorflow-rocm/>
 
+## TF v2.12
+| ROCm version | tensorflow-rocm whl on pypi |
+| --- | --- |
+| ROCm5.6.0  | <https://pypi.org/project/tensorflow-rocm/2.12.0.560> |
+
 ## TF v2.11
 | ROCm version | tensorflow-rocm whl on pypi |
 | --- | --- |
+| ROCm5.5.0  | <https://pypi.org/project/tensorflow-rocm/2.11.1.550> |
 | ROCm5.4.0  | <https://pypi.org/project/tensorflow-rocm/2.11.0.540> |
 | ROCm5.3.0  | <https://pypi.org/project/tensorflow-rocm/2.11.0.530> |
 
