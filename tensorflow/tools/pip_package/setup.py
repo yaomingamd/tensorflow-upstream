@@ -47,8 +47,7 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.12.0'
-_RC_VERSION = ''
+_VERSION = '2.12.1'
 
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
@@ -73,39 +72,6 @@ if '--collaborator_build' in sys.argv:
 def standard_or_nightly(standard, nightly):
   return nightly if 'tf_nightly' in project_name else standard
 
-## AMD ##
-# For tensorflow-rocm, add the rocm version we're building against as a
-# semver compatible buid metadata string (https://semver.org/#spec-item-10)
-# This is not pip public version compatible (see: https://peps.python.org/pep-0440/),
-# so for pip we will convert the '+' to a "."
-def _get_default_rocm_path():
-  return "/opt/rocm"
-
-def _get_rocm_install_path():
-  """Determines and returns the ROCm installation path."""
-  rocm_install_path = _get_default_rocm_path()
-  if "ROCM_PATH" in os.environ:
-    rocm_install_path = os.environ["ROCM_PATH"]
-  return rocm_install_path
-
-def _rocm_version(rocm_install_path):
-  version_file = os.path.join(rocm_install_path, ".info/version-dev")
-  if not os.path.exists(version_file):
-    return ""
-  version_numbers = []
-  with open(version_file) as f:
-    version_string = f.read().strip()
-    version_numbers = version_string.split(".")
-  return str(version_numbers[0] + "." + version_numbers[1] + "." + version_numbers[2].split("-")[0])
-
-# Append the ROCM version to the version string
-if project_name.endswith('_rocm'):
-  _VERSION = _VERSION + "." + str(_rocm_version(_get_rocm_install_path()).replace('.', ''))
-
-# Apped the RC version
-_VERSION = _VERSION + _RC_VERSION
-
-
 # All versions of TF need these packages. We indicate the widest possible range
 # of package releases possible to be as up-to-date as possible as well as to
 # accomodate as many pre-installed packages as possible.
@@ -128,7 +94,7 @@ REQUIRED_PACKAGES = [
     'jax >= 0.3.15',
     'libclang >= 13.0.0',
     # TODO(b/263178356): numpy 1.24 breaks TF's tests
-    'numpy >= 1.22, <1.24',
+    'numpy >= 1.22, <= 1.24.3',
     'opt_einsum >= 2.3.2',
     'packaging',
     # TODO(b/182876485): Protobuf 3.20 results in linker errors on Windows
@@ -142,7 +108,7 @@ REQUIRED_PACKAGES = [
     'setuptools',
     'six >= 1.12.0',
     'termcolor >= 1.1.0',
-    'typing_extensions >= 3.6.6',
+    'typing_extensions>=3.6.6,<4.6.0',
     # TODO(b/266362323): wrapt==1.15.0rc0 incompatible with TF 2.12.0 RC0 (and
     # nightly, but works with TF 2.11)
     'wrapt >= 1.11.0, <1.15',
