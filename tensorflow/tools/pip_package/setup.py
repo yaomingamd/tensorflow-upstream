@@ -47,8 +47,7 @@ from setuptools.dist import Distribution
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '2.12.0'
-_RC_VERSION = ''
+_VERSION = '2.12.1'
 
 
 # We use the same setup.py for all tensorflow_* packages and for the nightly
@@ -95,7 +94,7 @@ REQUIRED_PACKAGES = [
     'jax >= 0.3.15',
     'libclang >= 13.0.0',
     # TODO(b/263178356): numpy 1.24 breaks TF's tests
-    'numpy >= 1.22, <1.24',
+    'numpy >= 1.22, <= 1.24.3',
     'opt_einsum >= 2.3.2',
     'packaging',
     # TODO(b/182876485): Protobuf 3.20 results in linker errors on Windows
@@ -109,7 +108,7 @@ REQUIRED_PACKAGES = [
     'setuptools',
     'six >= 1.12.0',
     'termcolor >= 1.1.0',
-    'typing_extensions >= 3.6.6',
+    'typing_extensions>=3.6.6,<4.6.0',
     # TODO(b/266362323): wrapt==1.15.0rc0 incompatible with TF 2.12.0 RC0 (and
     # nightly, but works with TF 2.11)
     'wrapt >= 1.11.0, <1.15',
