@@ -3609,7 +3609,15 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
                                    ToMIOpenDataType(element_type)};
   ScopedFilterDescriptor filter{filter_descriptor,
                                 ToMIOpenDataType(element_type)};
-  ScopedConvolutionDescriptor conv{convolution_descriptor,
+  auto filter_feature_map_count = filter_descriptor.input_feature_map_count();
+  auto convolution_group_count = convolution_descriptor.group_count();
+  auto input_feature_map_count = input_descriptor.feature_map_count();
+  auto conv_descriptor = const_cast<ConvolutionDescriptor&>(convolution_descriptor);
+  if (filter_feature_map_count * convolution_group_count != input_feature_map_count){
+    LOG(INFO) << "Invalid group count in ConvolutionDescriptor. Reset it based on input and filter.\n";
+    conv_descriptor.set_group_count(static_cast<int>(input_feature_map_count / filter_feature_map_count));
+  }
+  ScopedConvolutionDescriptor conv{conv_descriptor,
                                    ToMIOpenDataType(element_type)};
 
   // Determine the workspace memory size that will need by the call to Find
@@ -3692,7 +3700,7 @@ bool MIOpenSupport::GetMIOpenConvolveAlgorithmsFindMode(
 
   int returnedAlgorithmCount = 0;
   bool exhaustiveSearch = false;
-
+  
   switch (kind) {
     case dnn::ConvolutionKind::FORWARD: {
       auto status = wrap::miopenFindConvolutionForwardAlgorithm(
