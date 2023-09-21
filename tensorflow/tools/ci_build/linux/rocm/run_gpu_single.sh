@@ -44,6 +44,11 @@ export ROCM_PATH=$ROCM_INSTALL_DIR
 yes "" | $PYTHON_BIN_PATH configure.py
 
 # Run bazel test command. Double test timeouts to avoid flakes.
+#	  --test_env=TF_DUMP_GRAPH_PREFIX=/tmp/generated \
+#	  --test_env=TF_XLA_FLAGS="--tf_xla_clustering_debug --tf_xla_auto_jit=2" \
+#	  --test_env=XLA_FLAGS="--xla_dump_hlo_as_text --xla_dump_to=/tmp/generated" \
+#     --test_env=TF_CPP_MIN_LOG_LEVEL=0 \
+#     --test_env=TF_CPP_MAX_VLOG_LEVEL=3 \
 bazel test \
       --config=rocm \
       -k \
@@ -54,9 +59,14 @@ bazel test \
       --test_env=TF_TESTS_PER_GPU=$TF_TESTS_PER_GPU \
       --test_env=HSA_TOOLS_LIB=libroctracer64.so \
       --test_env=TF_PYTHON_VERSION=$PYTHON_VERSION \
+      --test_env=MIOPEN_LOG_LEVEL=7 \
+      --test_env=MIOPEN_ENABLE_LOGGING_CMD=1 \
+      --test_env=MIOPEN_ENABLE_LOGGING=1 \
+      --test_arg=Conv2DTest.testConv2DGroupConvFwd \
       --test_timeout 920,2400,7200,9600 \
+      --cache_test_results=no \
       --build_tests_only \
-      --test_output=errors \
+      --test_output=all \
       --test_sharding_strategy=disabled \
       --test_size_filters=small,medium,large \
       --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute \
