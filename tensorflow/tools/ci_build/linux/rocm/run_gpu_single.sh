@@ -62,7 +62,6 @@ bazel test \
       --test_env=MIOPEN_LOG_LEVEL=7 \
       --test_env=MIOPEN_ENABLE_LOGGING_CMD=1 \
       --test_env=MIOPEN_ENABLE_LOGGING=1 \
-      --test_arg=Conv2DTest.testConv2DGroupConvFwd \
       --test_timeout 920,2400,7200,9600 \
       --cache_test_results=no \
       --build_tests_only \
