@@ -1258,10 +1258,7 @@ static uint64 GetReservedMemory() {
       if (gcnArchName.substr(0,6)=="gfx908")
         reserve = 1048576*512;
       else if (gcnArchName.substr(0,6)=="gfx90a"
-         || gcnArchName.substr(0, 6) == "gfx940"
-         || gcnArchName.substr(0, 6) == "gfx941"
-         || gcnArchName.substr(0, 6) == "gfx942"
-         || gcnArchName.substr(0,6)=="gfx910")
+          || gcnArchName.substr(0,6)=="gfx910")
         reserve = 1048576*1024;
     }
   }
