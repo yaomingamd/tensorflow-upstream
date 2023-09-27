@@ -29,7 +29,8 @@ build --copt=-mavx --host_copt=-mavx
 build --profile=/tf/pkg/profile.json.gz
 
 # Use the NVCC toolchain to compile for manylinux2014
-build --crosstool_top="@sigbuild-r2.14_config_cuda//crosstool:toolchain"
+# TODO(rocm): Re-enable on clang switch
+#build --crosstool_top="@sigbuild-r2.14_config_cuda//crosstool:toolchain"
 
 # Test-related settings below this point.
 test --build_tests_only --keep_going --test_output=errors --verbose_failures=true
