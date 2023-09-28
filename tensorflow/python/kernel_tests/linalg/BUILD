@@ -260,6 +260,7 @@ cuda_py_strict_test(
     tags = [
         "no_cuda11",  # TODO(b/197522782): reenable test after fixing.
         "optonly",  # times out, b/79171797
+	"no_oss",  # JF: times out for CPU builds
     ],
     deps = [
         "//tensorflow/python/framework:config",
