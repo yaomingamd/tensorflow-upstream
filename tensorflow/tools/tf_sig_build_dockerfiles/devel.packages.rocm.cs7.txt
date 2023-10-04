@@ -65,3 +65,4 @@ hipcub-devel
 rccl-devel 
 hipsparse-devel 
 hipsolver-devel
+hiprand-devel
