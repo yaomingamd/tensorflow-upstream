@@ -16,7 +16,6 @@ hipcub-dev
 rccl-dev
 hipsparse-dev
 hipsolver-dev
-hiprand-dev
 
 # Other build-related tools
 apt-transport-https
