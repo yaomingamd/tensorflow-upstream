@@ -259,10 +259,6 @@ std::unique_ptr<OperationPass<ModuleOp>> CreateConstantOpDeviceAssignmentPass();
 
 // Populates the supplied passmanager with the passes required to export
 // to TensorFlow Graph.
-void AddGraphExportLoweringPassesV2(OpPassManager& pm);
-
-// Populates the supplied passmanager with the passes required to export
-// to TensorFlow Graph.
 // ***This is the legacy graph export pipeline, prefer
 // AddGraphExportLoweringPassesV2***.
 void AddGraphExportLoweringPasses(OpPassManager& pm);
@@ -626,10 +622,6 @@ std::unique_ptr<OperationPass<func::FuncOp>> CreateTPUColocateSplitsPass();
 // bridge.
 void CreateTPUBridgePipeline(OpPassManager& pm,
                              llvm::StringRef module_name = llvm::StringRef());
-
-// Populates the supplied passmanager with the passes required to run the
-// bridge in V1 mode.
-void CreateTPUBridgePipelineV1(OpPassManager& pm);
 
 // Creates a pass that replicates the tf._TPUCompileMlir op on each host that
 // needs the compiled program. It helps avoid transferring the compiled binary

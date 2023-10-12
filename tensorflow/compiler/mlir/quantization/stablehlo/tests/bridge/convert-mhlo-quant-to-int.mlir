@@ -96,11 +96,11 @@ func.func @uniform_quantize_and_dequantize_type_exensions(%arg0: tensor<?x?xf32,
 // -----
 
 // CHECK-LABEL: func @uniform_quantize_and_dequantize_sparse_tensor_encoding
-func.func @uniform_quantize_and_dequantize_sparse_tensor_encoding(%arg0: tensor<?xf32, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>) -> () {
-  // CHECK: %[[QUANTIZED:.*]] = mhlo.convert %[[VAL0:.*]] : (tensor<?xf32, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>) -> tensor<?xi8, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>
-  %0 = mhlo.uniform_quantize %arg0 : (tensor<?xf32, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>) -> tensor<?x!quant.uniform<i8:f32, 1.000000e+00:3>, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>
-  // CHECK: %[[DEQUANTIZED:.*]] = chlo.broadcast_multiply %[[VAL1:.*]], %[[CONST_SCALE:.*]] : (tensor<?xf32, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>, tensor<f32>) -> tensor<?xf32, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>
-  %1 = mhlo.uniform_dequantize %0 : (tensor<?x!quant.uniform<i8:f32, 1.000000e+00:3>, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>) -> tensor<?xf32, #sparse_tensor.encoding<{ lvlTypes = [ "compressed" ] }>>
+func.func @uniform_quantize_and_dequantize_sparse_tensor_encoding(%arg0: tensor<?xf32, #sparse_tensor.encoding<{ map = (d0) -> (d0 : compressed) }>>) -> () {
+  // CHECK: %[[QUANTIZED:.*]] = mhlo.convert %[[VAL0:.*]] : (tensor<?xf32, #sparse_tensor.encoding<{{{.*}}}>>) -> tensor<?xi8, #sparse_tensor.encoding<{{{.*}}}>>
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<?xf32, #sparse_tensor.encoding<{ map = (d0) -> (d0 : compressed) }>>) -> tensor<?x!quant.uniform<i8:f32, 1.000000e+00:3>, #sparse_tensor.encoding<{ map = (d0) -> (d0 : compressed) }>>
+  // CHECK: %[[DEQUANTIZED:.*]] = chlo.broadcast_multiply %[[VAL1:.*]], %[[CONST_SCALE:.*]] : (tensor<?xf32, #sparse_tensor.encoding<{{{.*}}}>>, tensor<f32>) -> tensor<?xf32, #sparse_tensor.encoding<{{{.*}}}>>
+  %1 = mhlo.uniform_dequantize %0 : (tensor<?x!quant.uniform<i8:f32, 1.000000e+00:3>, #sparse_tensor.encoding<{ map = (d0) -> (d0 : compressed) }>>) -> tensor<?xf32, #sparse_tensor.encoding<{ map = (d0) -> (d0 : compressed) }>>
   return
 }
 
@@ -303,47 +303,6 @@ func.func @uniform_quantize_requantize_merged_zp_zero_and_dequantize(%arg0: tens
 
 // -----
 
-// CHECK-LABEL: func @uniform_quantize_dot_dequantize_dynamic
-func.func @uniform_quantize_dot_dequantize_dynamic(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>) -> tensor<?x?xf32> {
-  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i8:f32, 2.000000e+00:3>>
-  %1 = mhlo.uniform_quantize %arg1 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
-
-  // CHECK: %[[VAL1:.*]] = mhlo.convert %[[VAL0:.*]] : (tensor<?x?xi8>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL3:.*]] = chlo.broadcast_subtract %[[VAL1]], %[[VAL2:.*]] : (tensor<?x?xf32>, tensor<f32>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL5:.*]] = mhlo.convert %[[VAL4:.*]] : (tensor<?x?xi8>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL7:.*]] = chlo.broadcast_subtract %[[VAL5]], %[[VAL6:.*]] : (tensor<?x?xf32>, tensor<f32>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL8:.*]] = "mhlo.dot"(%[[VAL3]], %[[VAL7]]) : (tensor<?x?xf32>, tensor<?x?xf32>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL10:.*]] = chlo.broadcast_multiply %[[VAL8]], %[[VAL9:.*]] : (tensor<?x?xf32>, tensor<f32>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL12:.*]] = chlo.broadcast_add %[[VAL10]], %[[VAL11:.*]] : (tensor<?x?xf32>, tensor<f32>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL13:.*]] = mhlo.floor %[[VAL12]] : tensor<?x?xf32>
-  // CHECK: %[[VAL15:.*]] = chlo.broadcast_add %[[VAL13]], %[[VAL14:.*]] : (tensor<?x?xf32>, tensor<f32>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL16:.*]] = mhlo.convert %[[VAL15]] : (tensor<?x?xf32>) -> tensor<?x?xi32>
-  // CHECK: %[[VAL19:.*]] = mhlo.clamp %[[VAL17:.*]], %[[VAL16]], %[[VAL18:.*]] : (tensor<i32>, tensor<?x?xi32>, tensor<i32>) -> tensor<?x?xi32>
-  // CHECK: %[[VAL20:.*]] = mhlo.convert %[[VAL19]] : (tensor<?x?xi32>) -> tensor<?x?xi8>
-  %2 = "mhlo.dot" (%0, %1) : (tensor<?x?x!quant.uniform<i8:f32, 2.000000e+00:3>>, tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
-  %3 = mhlo.uniform_dequantize %2 : (tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>) -> tensor<?x?xf32>
-  return %3 : tensor<?x?xf32>
-}
-
-// -----
-
-// CHECK-LABEL: func @uniform_quantize_dot_dynamic_int4
-func.func @uniform_quantize_dot_dynamic_int4(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>) {
-  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:3>>
-  %1 = mhlo.uniform_quantize %arg1 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:3>>
-
-  // CHECK: %[[VAL2:.*]] = "mhlo.dot"(%[[VAL0:.*]], %[[VAL1:.*]]) : (tensor<?x?xf32>, tensor<?x?xf32>) -> tensor<?x?xf32>
-  // CHECK: %[[VAL4:.*]] = mhlo.convert %[[VAL3:.*]] : (tensor<?x?xf32>) -> tensor<?x?xi32>
-  // CHECK-DAG: %[[VAL5:.*]] = mhlo.constant dense<-8> : tensor<i32>
-  // CHECK-DAG: %[[VAL6:.*]] = mhlo.constant dense<7> : tensor<i32>
-  // CHECK: %[[VAL7:.*]] = mhlo.clamp %[[VAL5]], %[[VAL4]], %[[VAL6]] : (tensor<i32>, tensor<?x?xi32>, tensor<i32>) -> tensor<?x?xi32>
-  // CHECK: %[[VAL8:.*]] = mhlo.convert %[[VAL7]] : (tensor<?x?xi32>) -> tensor<?x?xi4>
-  %2 = "mhlo.dot" (%0, %1): (tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:3>>, tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:3>>) -> tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:3>>
-  return
-}
-
-// -----
-
 // CHECK-LABEL: func @uniform_quantize_dot_dequantize
 func.func @uniform_quantize_dot_dequantize(%arg0: tensor<2x2xf32>, %arg1: tensor<2x2xf32>) -> tensor<2x2xf32> {
   %0 = mhlo.uniform_quantize %arg0 : (tensor<2x2xf32>) -> tensor<2x2x!quant.uniform<i8:f32, 2.000000e+00:3>>
@@ -375,6 +334,125 @@ func.func @uniform_quantize_dot_int4(%arg0: tensor<2x2xf32>, %arg1: tensor<2x2xf
 
 // -----
 
+// CHECK-LABEL: func @uniform_quantize_dot_dequantize_dynamic
+func.func @uniform_quantize_dot_dequantize_dynamic(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>) -> tensor<?x?xf32> {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i8:f32, 2.000000e+00:3>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:2>>
+
+  // CHECK: mhlo.dot_general
+  // CHECK-SAME: lhs_contracting_dimensions = [1]
+  // CHECK-SAME: rhs_contracting_dimensions = [0]
+  // CHECK-SAME: (tensor<?x?xi8>, tensor<?x?xi8>) -> tensor<?x?xi32>
+
+  // CHECK: mhlo.reduce
+  // CHECK-SAME: applies mhlo.add across dimensions = [1]
+  // CHECK-SAME: (tensor<?x?xi32>, tensor<i32>) -> tensor<?xi32>
+  // CHECK: "mhlo.get_dimension_size"
+  // CHECK-SAME: {dimension = 0 : i64} : (tensor<?x?xi8>) -> tensor<i32>
+  // CHECK: "mhlo.get_dimension_size"
+  // CHECK-SAME: {dimension = 1 : i64} : (tensor<?x?xi8>) -> tensor<i32>
+  // CHECK: %[[DYN_DIMS:.*]] = "mhlo.concatenate"
+  // CHECK-SAME: {dimension = 0 : i64}
+  // CHECK: mhlo.dynamic_broadcast_in_dim
+  // CHECK-SAME: %[[DYN_DIMS]])
+  // CHECK-SAME: broadcast_dimensions = dense<0>
+  // CHECK-SAME: (tensor<?xi32>, tensor<2xi64>) -> tensor<?x?xi32>
+
+  // CHECK: mhlo.reduce
+  // CHECK-SAME: applies mhlo.add across dimensions = [0]
+  // CHECK-SAME: (tensor<?x?xi32>, tensor<i32>) -> tensor<?xi32>
+  // CHECK: mhlo.dynamic_broadcast_in_dim
+  // CHECK-SAME: %[[DYN_DIMS]])
+  // CHECK-SAME: broadcast_dimensions = dense<1>
+  // CHECK-SAME: (tensor<?xi32>, tensor<2xi64>) -> tensor<?x?xi32>
+  %2 = "mhlo.dot" (%0, %1) : (tensor<?x?x!quant.uniform<i8:f32, 2.000000e+00:3>>, tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:2>>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
+  %3 = mhlo.uniform_dequantize %2 : (tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>) -> tensor<?x?xf32>
+  return %3 : tensor<?x?xf32>
+}
+
+// -----
+
+// CHECK-LABEL: func @uniform_quantize_dot_dequantize_dynamic_int4
+func.func @uniform_quantize_dot_dequantize_dynamic_int4(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>) -> tensor<?x?xf32> {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i4:f32, 2.000000e+00:3>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:2>>
+
+  // CHECK: mhlo.dot_general
+  // CHECK-SAME: lhs_contracting_dimensions = [1]
+  // CHECK-SAME: rhs_contracting_dimensions = [0]
+  // CHECK-SAME: (tensor<?x?xi4>, tensor<?x?xi4>) -> tensor<?x?xi32>
+  %2 = "mhlo.dot" (%0, %1) : (tensor<?x?x!quant.uniform<i4:f32, 2.000000e+00:3>>, tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:2>>) -> tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:3>>
+  %3 = mhlo.uniform_dequantize %2 : (tensor<?x?x!quant.uniform<i4:f32, 1.000000e+00:3>>) -> tensor<?x?xf32>
+  return %3 : tensor<?x?xf32>
+}
+
+// -----
+
+// CHECK-LABEL: func @uniform_quantize_dot_dequantize_dynamic_contracting_dim
+func.func @uniform_quantize_dot_dequantize_dynamic_contracting_dim(%arg0: tensor<2x?xf32>, %arg1: tensor<?x2xf32>) -> tensor<2x2xf32> {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<2x?xf32>) -> tensor<2x?x!quant.uniform<i8:f32, 2.000000e+00:3>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<?x2xf32>) -> tensor<?x2x!quant.uniform<i8:f32, 1.000000e+00:3>>
+
+  // CHECK: "mhlo.dot_general"
+  // CHECK-SAME: lhs_contracting_dimensions = [1]
+  // CHECK-SAME: rhs_contracting_dimensions = [0]
+  // CHECK-SAME: (tensor<2x?xi8>, tensor<?x2xi8>) -> tensor<2x2xi32>
+
+  // CHECK: mhlo.reduce
+  // CHECK-SAME: applies mhlo.add across dimensions = [1]
+  // CHECK-SAME: (tensor<2x?xi32>, tensor<i32>) -> tensor<2xi32>
+
+  // CHECK: mhlo.reduce
+  // CHECK-SAME: applies mhlo.add across dimensions = [0]
+  // CHECK-SAME: (tensor<?x2xi32>, tensor<i32>) -> tensor<2xi32>
+
+  // CHECK: %[[DYNAMIC_DIM_INIT:.*]] = mhlo.constant dense<1> : tensor<i32>
+  // CHECK: %[[DYNAMIC_DIM:.*]] = "mhlo.get_dimension_size"
+  // CHECK-SAME: {dimension = 0 : i64} : (tensor<?x2xi8>) -> tensor<i32>
+  // CHECK: %[[DYNAMIC_DIM_TOTAL:.*]] = mhlo.multiply
+  // CHECK-SAME: %[[DYNAMIC_DIM_INIT]], %[[DYNAMIC_DIM]]
+  // CHECK: %[[DIMS:.*]] = mhlo.constant dense<9> : tensor<i32>
+  // CHECK: %[[DIMS_1:.*]] = mhlo.multiply %[[DIMS]], %[[DYNAMIC_DIM_TOTAL]]
+  // CHECK: chlo.broadcast_subtract %[[ZP_OFFSET:.*]], %[[DIMS:.*]]
+  %2 = "mhlo.dot" (%0, %1) : (tensor<2x?x!quant.uniform<i8:f32, 2.000000e+00:3>>, tensor<?x2x!quant.uniform<i8:f32, 1.000000e+00:3>>) -> tensor<2x2x!quant.uniform<i8:f32, 1.000000e+00:3>>
+  %3 = mhlo.uniform_dequantize %2 : (tensor<2x2x!quant.uniform<i8:f32, 1.000000e+00:3>>) -> tensor<2x2xf32>
+  return %3 : tensor<2x2xf32>
+}
+
+// -----
+
+// CHECK-LABEL: func @uniform_quantize_dot_dequantize_dynamic_result_dim
+func.func @uniform_quantize_dot_dequantize_dynamic_result_dim(%arg0: tensor<?x2xf32>, %arg1: tensor<2x?xf32>) -> tensor<?x?xf32> {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x2xf32>) -> tensor<?x2x!quant.uniform<i8:f32, 2.000000e+00:3>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<2x?xf32>) -> tensor<2x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
+
+  // CHECK: "mhlo.dot_general"
+  // CHECK-SAME: lhs_contracting_dimensions = [1]
+  // CHECK-SAME: rhs_contracting_dimensions = [0]
+  // CHECK-SAME: (tensor<?x2xi8>, tensor<2x?xi8>) -> tensor<?x?xi32>
+
+  // CHECK: mhlo.reduce
+  // CHECK-SAME: applies mhlo.add across dimensions = [1]
+  // CHECK-SAME: (tensor<?x2xi32>, tensor<i32>) -> tensor<?xi32>
+  // CHECK: mhlo.dynamic_broadcast_in_dim
+  // CHECK-SAME: broadcast_dimensions = dense<0>
+  // CHECK-SAME: (tensor<?xi32>, tensor<2xi64>) -> tensor<?x?xi32>
+
+  // CHECK: mhlo.reduce
+  // CHECK-SAME: applies mhlo.add across dimensions = [0]
+  // CHECK-SAME: (tensor<2x?xi32>, tensor<i32>) -> tensor<?xi32>
+  // CHECK: mhlo.dynamic_broadcast_in_dim
+  // CHECK-SAME: broadcast_dimensions = dense<1>
+  // CHECK-SAME: (tensor<?xi32>, tensor<2xi64>) -> tensor<?x?xi32>
+
+
+  %2 = "mhlo.dot" (%0, %1) : (tensor<?x2x!quant.uniform<i8:f32, 2.000000e+00:3>>, tensor<2x?x!quant.uniform<i8:f32, 1.000000e+00:3>>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
+  %3 = mhlo.uniform_dequantize %2 : (tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>) -> tensor<?x?xf32>
+  return %3 : tensor<?x?xf32>
+}
+
+// -----
+
 // CHECK-LABEL: func @uniform_quantize_dot_general_dequantize
 func.func @uniform_quantize_dot_general_dequantize(
     %arg0: tensor<2x5x6xf32>, %arg1: tensor<6x8x2xf32>) -> tensor<2x5x8xf32> {
@@ -388,8 +466,6 @@ func.func @uniform_quantize_dot_general_dequantize(
   // CHECK-SAME: rhs_batching_dimensions = [2]
   // CHECK-SAME: lhs_contracting_dimensions = [2]
   // CHECK-SAME: rhs_contracting_dimensions = [0]
-
-  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.constant dense<0> : tensor<2x5x8xi32>
 
   // Zero point offset contribution from LHS tensor * RHS ZP.
 
@@ -407,7 +483,6 @@ func.func @uniform_quantize_dot_general_dequantize(
   // CHECK: %[[LHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"(%[[LHS_ZP_CONTRIB]])
   // CHECK-SAME: broadcast_dimensions = dense<[0, 1]>
   // CHECK-SAME: (tensor<2x5xi32>) -> tensor<2x5x8xi32>
-  // CHECK: %[[ZP_TOTAL_2:.*]] = mhlo.add %[[ZP_TOTAL_1]], %[[LHS_ZP_BCAST]]
 
   // Zero point offset contribution from RHS tensor * LHS ZP.
 
@@ -425,12 +500,12 @@ func.func @uniform_quantize_dot_general_dequantize(
   // CHECK: %[[RHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"(%[[RHS_ZP_CONTRIB]])
   // CHECK-SAME: broadcast_dimensions = dense<[2, 0]>
   // CHECK-SAME: (tensor<8x2xi32>) -> tensor<2x5x8xi32>
-  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.add %[[ZP_TOTAL_2]], %[[RHS_ZP_BCAST]]
+  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.add %[[LHS_ZP_BCAST]], %[[RHS_ZP_BCAST]]
 
   // Zero point offset contribution from LHS ZP * RHS ZP.
 
   // CHECK: %[[ZPS:.*]] = mhlo.constant dense<90> : tensor<i32>
-  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_subtract %[[ZP_TOTAL_3]], %[[ZPS]]
+  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_subtract %[[ZP_TOTAL_1]], %[[ZPS]]
   // CHECK-SAME: (tensor<2x5x8xi32>, tensor<i32>) -> tensor<2x5x8xi32>
 
   // Combine dot result with zero point offset and output final result.
@@ -443,17 +518,17 @@ func.func @uniform_quantize_dot_general_dequantize(
   // CHECK: %[[RES_INT:.*]] = mhlo.convert %[[RES_FP_1]]
   // CHECK-SAME: (tensor<2x5x8xf32>) -> tensor<2x5x8xi32>
 
-  // CHECK: %[[ZP_TOTAL_5:.*]] = mhlo.convert %[[ZP_TOTAL_4]]
+  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
   // CHECK-SAME: (tensor<2x5x8xi32>) -> tensor<2x5x8xf32>
-  // CHECK: %[[ZP_TOTAL_6:.*]] = chlo.broadcast_multiply
-  // CHECK-SAME: %[[ZP_TOTAL_5:.*]], %[[COMBINED_SCALE]]
-  // CHECK: %[[ZP_TOTAL_7:.*]] = mhlo.convert %[[ZP_TOTAL_6]]
+  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[ZP_TOTAL_3:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[ZP_TOTAL_5:.*]] = mhlo.convert %[[ZP_TOTAL_4]]
   // CHECK-SAME: (tensor<2x5x8xf32>) -> tensor<2x5x8xi32>
 
   // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<7> : tensor<i32>
-  // CHECK: %[[ZP_TOTAL_8:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_7]]
+  // CHECK: %[[ZP_TOTAL_6:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_5]]
   // CHECK-SAME: (tensor<i32>, tensor<2x5x8xi32>) -> tensor<2x5x8xi32>
-  // CHECK: mhlo.add %[[RES_INT]], %[[ZP_TOTAL_8]]
+  // CHECK: chlo.broadcast_add %[[RES_INT]], %[[ZP_TOTAL_6]]
 
   %2 = "mhlo.dot_general" (%0, %1) {
     dot_dimension_numbers = #mhlo.dot<
@@ -467,6 +542,87 @@ func.func @uniform_quantize_dot_general_dequantize(
     ) -> tensor<2x5x8x!quant.uniform<i8:f32, 4.000000e+00:7>>
   %3 = mhlo.uniform_dequantize %2 : (
     tensor<2x5x8x!quant.uniform<i8:f32, 4.000000e+00:7>>
+  ) -> tensor<2x5x8xf32>
+  return %3 : tensor<2x5x8xf32>
+}
+
+// -----
+
+// CHECK-LABEL: func @uniform_quantize_dot_general_dequantize_combined_scale_1
+func.func @uniform_quantize_dot_general_dequantize_combined_scale_1(
+    %arg0: tensor<2x5x6xf32>, %arg1: tensor<6x8x2xf32>) -> tensor<2x5x8xf32> {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<2x5x6xf32>)
+      -> tensor<2x5x6x!quant.uniform<i8:f32, 2.000000e+00:3>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<6x8x2xf32>)
+      -> tensor<6x8x2x!quant.uniform<i8:f32, 3.000000e+00:5>>
+
+  // CHECK: %[[DOT_RES:.*]] = "mhlo.dot_general"
+  // CHECK-SAME: lhs_batching_dimensions = [0]
+  // CHECK-SAME: rhs_batching_dimensions = [2]
+  // CHECK-SAME: lhs_contracting_dimensions = [2]
+  // CHECK-SAME: rhs_contracting_dimensions = [0]
+
+  // Zero point offset contribution from LHS tensor * RHS ZP.
+
+  // CHECK: %[[LHS_I32:.*]] = mhlo.convert %[[LHS:.*]] : (tensor<2x5x6xi8>)
+  // CHECK-SAME: -> tensor<2x5x6xi32>
+  // CHECK: %[[LHS_REDUCE_INIT:.*]] = mhlo.constant dense<0> : tensor<i32>
+  // CHECK: %[[LHS_REDUCE:.*]] = mhlo.reduce(%[[LHS_I32]] init: %[[LHS_REDUCE_INIT]])
+  // CHECK-SAME: applies mhlo.add across dimensions = [2]
+  // CHECK-SAME: (tensor<2x5x6xi32>, tensor<i32>)
+  // CHECK-SAME: -> tensor<2x5xi32>
+  // CHECK: %[[RHS_ZP:.*]] = mhlo.constant dense<5> : tensor<i32>
+  // CHECK: %[[LHS_ZP_CONTRIB:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[LHS_REDUCE]], %[[RHS_ZP]] :
+  // CHECK-SAME: (tensor<2x5xi32>, tensor<i32>) -> tensor<2x5xi32>
+  // CHECK: %[[LHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"(%[[LHS_ZP_CONTRIB]])
+  // CHECK-SAME: broadcast_dimensions = dense<[0, 1]>
+  // CHECK-SAME: (tensor<2x5xi32>) -> tensor<2x5x8xi32>
+
+  // Zero point offset contribution from RHS tensor * LHS ZP.
+
+  // CHECK: %[[RHS_I32:.*]] = mhlo.convert %[[RHS:.*]] : (tensor<6x8x2xi8>)
+  // CHECK-SAME: -> tensor<6x8x2xi32>
+  // CHECK: %[[RHS_REDUCE_INIT:.*]] = mhlo.constant dense<0> : tensor<i32>
+  // CHECK: %[[RHS_REDUCE:.*]] = mhlo.reduce(%[[RHS_I32]] init: %[[RHS_REDUCE_INIT]])
+  // CHECK-SAME: applies mhlo.add across dimensions = [0]
+  // CHECK-SAME: (tensor<6x8x2xi32>, tensor<i32>)
+  // CHECK-SAME: -> tensor<8x2xi32>
+  // CHECK: %[[RHS_ZP:.*]] = mhlo.constant dense<3> : tensor<i32>
+  // CHECK: %[[RHS_ZP_CONTRIB:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[RHS_REDUCE]], %[[RHS_ZP]] :
+  // CHECK-SAME: (tensor<8x2xi32>, tensor<i32>) -> tensor<8x2xi32>
+  // CHECK: %[[RHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"(%[[RHS_ZP_CONTRIB]])
+  // CHECK-SAME: broadcast_dimensions = dense<[2, 0]>
+  // CHECK-SAME: (tensor<8x2xi32>) -> tensor<2x5x8xi32>
+  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.add %[[LHS_ZP_BCAST]], %[[RHS_ZP_BCAST]]
+
+  // Zero point offset contribution from LHS ZP * RHS ZP.
+
+  // CHECK: %[[ZPS:.*]] = mhlo.constant dense<90> : tensor<i32>
+  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_subtract %[[ZP_TOTAL_1]], %[[ZPS]]
+  // CHECK-SAME: (tensor<2x5x8xi32>, tensor<i32>) -> tensor<2x5x8xi32>
+
+  // Combine dot result with zero point offset and output final result.
+  // Do not multiply by combined scale since it is 1.0 and thus no-op.
+
+  // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<7> : tensor<i32>
+  // CHECK: %[[ZP_TOTAL_3:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_2]]
+  // CHECK-SAME: (tensor<i32>, tensor<2x5x8xi32>) -> tensor<2x5x8xi32>
+  // CHECK: chlo.broadcast_add %[[DOT_RES]], %[[ZP_TOTAL_3]]
+
+  %2 = "mhlo.dot_general" (%0, %1) {
+    dot_dimension_numbers = #mhlo.dot<
+      lhs_batching_dimensions = [0],
+      rhs_batching_dimensions = [2],
+      lhs_contracting_dimensions = [2],
+      rhs_contracting_dimensions = [0]
+    >} : (
+      tensor<2x5x6x!quant.uniform<i8:f32, 2.000000e+00:3>>,
+      tensor<6x8x2x!quant.uniform<i8:f32, 3.000000e+00:5>>
+    ) -> tensor<2x5x8x!quant.uniform<i8:f32, 6.000000e+00:7>>
+  %3 = mhlo.uniform_dequantize %2 : (
+    tensor<2x5x8x!quant.uniform<i8:f32, 6.000000e+00:7>>
   ) -> tensor<2x5x8xf32>
   return %3 : tensor<2x5x8xf32>
 }
@@ -487,8 +643,6 @@ func.func @uniform_quantize_dot_general_dequantize_multiple_batching_dims(
   // CHECK-SAME: lhs_contracting_dimensions = [4, 3]
   // CHECK-SAME: rhs_contracting_dimensions = [0, 2]>}
 
-  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.constant dense<0> : tensor<2x3x5x8xi32>
-
   // Zero point offset contribution from LHS tensor * RHS ZP.
 
   // CHECK: %[[LHS_I32:.*]] = mhlo.convert %[[LHS:.*]] : (tensor<2x5x3x7x6xi8>)
@@ -505,7 +659,6 @@ func.func @uniform_quantize_dot_general_dequantize_multiple_batching_dims(
   // CHECK: %[[LHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"(%[[LHS_ZP_CONTRIB]])
   // CHECK-SAME: broadcast_dimensions = dense<[0, 2, 1]>
   // CHECK-SAME: (tensor<2x5x3xi32>) -> tensor<2x3x5x8xi32>
-  // CHECK: %[[ZP_TOTAL_2:.*]] = mhlo.add %[[ZP_TOTAL_1]], %[[LHS_ZP_BCAST]]
 
   // Zero point offset contribution from RHS tensor * LHS ZP.
 
@@ -523,12 +676,12 @@ func.func @uniform_quantize_dot_general_dequantize_multiple_batching_dims(
   // CHECK: %[[RHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"(%[[RHS_ZP_CONTRIB]])
   // CHECK-SAME: broadcast_dimensions = dense<[0, 3, 1]>
   // CHECK-SAME: (tensor<2x8x3xi32>) -> tensor<2x3x5x8xi32>
-  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.add %[[ZP_TOTAL_2]], %[[RHS_ZP_BCAST]]
+  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.add %[[LHS_ZP_BCAST]], %[[RHS_ZP_BCAST]]
 
   // Zero point offset contribution from LHS ZP * RHS ZP.
 
   // CHECK: %[[ZPS:.*]] = mhlo.constant dense<630> : tensor<i32>
-  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_subtract %[[ZP_TOTAL_3]], %[[ZPS]]
+  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_subtract %[[ZP_TOTAL_1]], %[[ZPS]]
   // CHECK-SAME: (tensor<2x3x5x8xi32>, tensor<i32>) -> tensor<2x3x5x8xi32>
 
   // Combine dot result with zero point offset and output final result.
@@ -541,18 +694,18 @@ func.func @uniform_quantize_dot_general_dequantize_multiple_batching_dims(
   // CHECK: %[[RES_INT:.*]] = mhlo.convert %[[RES_FP_1]]
   // CHECK-SAME: (tensor<2x3x5x8xf32>) -> tensor<2x3x5x8xi32>
 
-  // CHECK: %[[ZP_TOTAL_5:.*]] = mhlo.convert %[[ZP_TOTAL_4]]
+  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
   // CHECK-SAME: (tensor<2x3x5x8xi32>) -> tensor<2x3x5x8xf32>
-  // CHECK: %[[ZP_TOTAL_6:.*]] = chlo.broadcast_multiply
-  // CHECK-SAME: %[[ZP_TOTAL_5:.*]], %[[COMBINED_SCALE]]
-  // CHECK: %[[ZP_TOTAL_7:.*]] = mhlo.convert %[[ZP_TOTAL_6]]
+  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[ZP_TOTAL_3:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[ZP_TOTAL_5:.*]] = mhlo.convert %[[ZP_TOTAL_4]]
   // CHECK-SAME: (tensor<2x3x5x8xf32>) -> tensor<2x3x5x8xi32>
 
   // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<7> : tensor<i32>
-  // CHECK: %[[ZP_TOTAL_8:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_7]]
+  // CHECK: %[[ZP_TOTAL_6:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_5]]
   // CHECK-SAME: (tensor<i32>, tensor<2x3x5x8xi32>) -> tensor<2x3x5x8xi32>
-  // CHECK: mhlo.add %[[RES_INT]], %[[ZP_TOTAL_8]]
-  
+  // CHECK: chlo.broadcast_add %[[RES_INT]], %[[ZP_TOTAL_6]]
+
   %2 = "mhlo.dot_general" (%0, %1) {
     dot_dimension_numbers = #mhlo.dot<
       lhs_batching_dimensions = [0, 2],
@@ -585,8 +738,6 @@ func.func @uniform_quantize_dot_general_dequantize_rhs_zero_zp(
   // CHECK-SAME: lhs_contracting_dimensions = [2]
   // CHECK-SAME: rhs_contracting_dimensions = [0]
 
-  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.constant dense<0> : tensor<2x5x8xi32>
-
   // Zero point offset contribution from LHS tensor * RHS ZP is 0 and skipped.
 
   // Zero point offset contribution from RHS tensor * LHS ZP.
@@ -605,7 +756,6 @@ func.func @uniform_quantize_dot_general_dequantize_rhs_zero_zp(
   // CHECK: %[[RHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"(%[[RHS_ZP_CONTRIB]])
   // CHECK-SAME: broadcast_dimensions = dense<[2, 0]>
   // CHECK-SAME: (tensor<8x2xi32>) -> tensor<2x5x8xi32>
-  // CHECK: %[[ZP_TOTAL_2:.*]] = mhlo.add %[[ZP_TOTAL_1]], %[[RHS_ZP_BCAST]]
 
   // Zero point offset contribution from LHS ZP * RHS ZP is 0 and skipped.
 
@@ -619,17 +769,17 @@ func.func @uniform_quantize_dot_general_dequantize_rhs_zero_zp(
   // CHECK: %[[RES_INT:.*]] = mhlo.convert %[[RES_FP_1]]
   // CHECK-SAME: (tensor<2x5x8xf32>) -> tensor<2x5x8xi32>
 
-  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
+  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.convert %[[RHS_ZP_BCAST]]
   // CHECK-SAME: (tensor<2x5x8xi32>) -> tensor<2x5x8xf32>
-  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_multiply
-  // CHECK-SAME: %[[ZP_TOTAL_3:.*]], %[[COMBINED_SCALE]]
-  // CHECK: %[[ZP_TOTAL_5:.*]] = mhlo.convert %[[ZP_TOTAL_4]]
+  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[ZP_TOTAL_1:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
   // CHECK-SAME: (tensor<2x5x8xf32>) -> tensor<2x5x8xi32>
 
   // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<7> : tensor<i32>
-  // CHECK: %[[ZP_TOTAL_6:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_5]]
+  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_3]]
   // CHECK-SAME: (tensor<i32>, tensor<2x5x8xi32>) -> tensor<2x5x8xi32>
-  // CHECK: mhlo.add %[[RES_INT]], %[[ZP_TOTAL_6]]
+  // CHECK: chlo.broadcast_add %[[RES_INT]], %[[ZP_TOTAL_4]]
 
   %2 = "mhlo.dot_general" (%0, %1) {
     dot_dimension_numbers = #mhlo.dot<
@@ -665,8 +815,6 @@ func.func @uniform_quantize_dot_general_dequantize_zero_zp(
 
   // Both LHS/RHS have zero zp. No zp contribution.
 
-  // CHECK-DAG: %[[ZP_CONTRIB:.*]] = mhlo.constant dense<0> : tensor<2x5x8xi32>
-
   // CHECK-DAG: %[[COMBINED_SCALE:.*]] = mhlo.constant dense<1.500000e+00> : tensor<f32>
   // CHECK: %[[RES_FP:.*]] = mhlo.convert %[[DOT_RES]] :
   // CHECK-SAME: (tensor<2x5x8xi32>) -> tensor<2x5x8xf32>
@@ -675,17 +823,8 @@ func.func @uniform_quantize_dot_general_dequantize_zero_zp(
   // CHECK: %[[RES_INT:.*]] = mhlo.convert %[[RES_FP_1]]
   // CHECK-SAME: (tensor<2x5x8xf32>) -> tensor<2x5x8xi32>
 
-  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.convert %[[ZP_CONTRIB]]
-  // CHECK-SAME: (tensor<2x5x8xi32>) -> tensor<2x5x8xf32>
-  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_multiply
-  // CHECK-SAME: %[[ZP_TOTAL_1:.*]], %[[COMBINED_SCALE]]
-  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
-  // CHECK-SAME: (tensor<2x5x8xf32>) -> tensor<2x5x8xi32>
-
   // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<7> : tensor<i32>
-  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_3]]
-  // CHECK-SAME: (tensor<i32>, tensor<2x5x8xi32>) -> tensor<2x5x8xi32>
-  // CHECK: mhlo.add %[[RES_INT]], %[[ZP_TOTAL_4]]
+  // CHECK: chlo.broadcast_add %[[RES_INT]], %[[RES_ZP]]
 
   %2 = "mhlo.dot_general" (%0, %1) {
     dot_dimension_numbers = #mhlo.dot<
@@ -705,22 +844,175 @@ func.func @uniform_quantize_dot_general_dequantize_zero_zp(
 
 // -----
 
-// CHECK-LABEL: func @uniform_quantized_convolution
-func.func @uniform_quantized_convolution(%arg0: tensor<?x?x?x?xf32>, %arg1: tensor<?x?x?x?xf32>) {
-  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x?x?x?xf32>) -> tensor<?x?x?x?x!quant.uniform<i8:f32, 2.000000e+00:4>>
-  %1 = mhlo.uniform_quantize %arg1 : (tensor<?x?x?x?xf32>) -> tensor<?x?x?x?x!quant.uniform<i8:f32, 3.000000e+00:1>>
+// CHECK-LABEL: func @uniform_quantize_dot_general_dequantize_multiple_dynamic_dims
+func.func @uniform_quantize_dot_general_dequantize_multiple_dynamic_dims(
+    %arg0: tensor<?x?x3x?x6xf32>, %arg1: tensor<6x?x?x8x3xf32>) -> tensor<?x3x?x8xf32> {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x?x3x?x6xf32>)
+      -> tensor<?x?x3x?x6x!quant.uniform<i8:f32, 2.000000e+00:3>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<6x?x?x8x3xf32>)
+      -> tensor<6x?x?x8x3x!quant.uniform<i8:f32, 1.000000e+00:5>>
 
-  // CHECK: %[[VAL28:.*]] = mhlo.convert %[[VAL12:.*]] : (tensor<?x?x?x?xi8>) -> tensor<?x?x?x?xf32>
-  // CHECK: %[[LHS:.*]] = chlo.broadcast_subtract %[[VAL28]], %[[VAL26:.*]] : (tensor<?x?x?x?xf32>, tensor<f32>) -> tensor<?x?x?x?xf32>
-  // CHECK: %[[VAL30:.*]] = mhlo.convert %[[VAL25:.*]] : (tensor<?x?x?x?xi8>) -> tensor<?x?x?x?xf32>
-  // CHECK: %[[RHS:.*]] = chlo.broadcast_subtract %[[VAL30]], %[[VAL27:.*]] : (tensor<?x?x?x?xf32>, tensor<f32>) -> tensor<?x?x?x?xf32>
-  // CHECK: %[[VAL32:.*]] = mhlo.convolution(%[[LHS]], %[[RHS]])
-  // CHECK-SAME{LITERAL}: dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f]
-  // CHECK-SAME{LITERAL}: window = {stride = [1, 2], pad = [[0, 0], [0, 0]], lhs_dilate = [1, 1], rhs_dilate = [2, 2]}
-  // CHECK-SAME{LITERAL}: batch_group_count = 1 : i64, feature_group_count = 1 : i64
-  // CHECK-SAME: (tensor<?x?x?x?xf32>, tensor<?x?x?x?xf32>) -> tensor<?x?x?x?xf32>
-  // CHECK: %[[VAL43:.*]] = mhlo.clamp %[[VAL41:.*]], %[[VAL40:.*]], %[[VAL42:.*]] : (tensor<i32>, tensor<?x?x?x?xi32>, tensor<i32>) -> tensor<?x?x?x?xi32>
-  // CHECK: %[[VAL44:.*]] = mhlo.convert %[[VAL43]] : tensor<?x?x?x?xi32>
+  // CHECK: %[[DOT_RES:.*]] = "mhlo.dot_general"
+  // CHECK-SAME: lhs_batching_dimensions = [0, 2]
+  // CHECK-SAME: rhs_batching_dimensions = [1, 4]
+  // CHECK-SAME: lhs_contracting_dimensions = [4, 3]
+  // CHECK-SAME: rhs_contracting_dimensions = [0, 2]>}
+
+  // Zero point offset contribution from LHS tensor * RHS ZP.
+
+  // CHECK: %[[LHS_I32:.*]] = mhlo.convert %[[LHS:.*]] : (tensor<?x?x3x?x6xi8>)
+  // CHECK-SAME: -> tensor<?x?x3x?x6xi32>
+  // CHECK: %[[LHS_REDUCE_INIT:.*]] = mhlo.constant dense<0> : tensor<i32>
+  // CHECK: %[[LHS_REDUCE:.*]] = mhlo.reduce(%[[LHS_I32]] init: %[[LHS_REDUCE_INIT]])
+  // CHECK-SAME: applies mhlo.add across dimensions = [4, 3]
+  // CHECK-SAME: (tensor<?x?x3x?x6xi32>, tensor<i32>)
+  // CHECK-SAME: -> tensor<?x?x3xi32>
+  // CHECK: %[[RHS_ZP:.*]] = mhlo.constant dense<5> : tensor<i32>
+  // CHECK: %[[LHS_ZP_CONTRIB:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[LHS_REDUCE]], %[[RHS_ZP]] :
+  // CHECK-SAME: (tensor<?x?x3xi32>, tensor<i32>) -> tensor<?x?x3xi32>
+
+  // Calculate output dynamic dims.
+  // CHECK: %[[DIM_1_1:.*]] = "mhlo.get_dimension_size"(%[[LHS]])
+  // CHECK-SAME: {dimension = 0 : i64}
+  // CHECK: %[[DIM_1_2:.*]] = mhlo.convert %[[DIM_1_1]] : (tensor<i32>) -> tensor<i64>
+  // CHECK: %[[DIM_1:.*]] = mhlo.reshape %[[DIM_1_2]] : (tensor<i64>) -> tensor<1xi64>
+  // CHECK: %[[DIM_2:.*]] = mhlo.constant dense<3> : tensor<1xi64>
+  // CHECK: %[[DIM_3_1:.*]] = "mhlo.get_dimension_size"(%[[LHS]])
+  // CHECK-SAME: {dimension = 1 : i64}
+  // CHECK: %[[DIM_3_2:.*]] = mhlo.convert %[[DIM_3_1]] : (tensor<i32>) -> tensor<i64>
+  // CHECK: %[[DIM_3:.*]] = mhlo.reshape %[[DIM_3_2]] : (tensor<i64>) -> tensor<1xi64>
+  // CHECK: %[[DIM_4:.*]] = mhlo.constant dense<8> : tensor<1xi64>
+  // CHECK: %[[OUTPUT_DIMS:.*]] = "mhlo.concatenate"
+  // CHECK-SAME: %[[DIM_1]], %[[DIM_2]], %[[DIM_3]], %[[DIM_4]]
+
+  // CHECK: %[[LHS_ZP_BCAST:.*]] = "mhlo.dynamic_broadcast_in_dim"
+  // CHECK-SAME: (%[[LHS_ZP_CONTRIB]], %[[OUTPUT_DIMS]])
+  // CHECK-SAME: broadcast_dimensions = dense<[0, 2, 1]>
+  // CHECK-SAME: (tensor<?x?x3xi32>, tensor<4xi64>) -> tensor<?x3x?x8xi32>
+
+  // Zero point offset contribution from RHS tensor * LHS ZP.
+
+  // CHECK: %[[RHS_I32:.*]] = mhlo.convert %[[RHS:.*]] : (tensor<6x?x?x8x3xi8>)
+  // CHECK-SAME: -> tensor<6x?x?x8x3xi32>
+  // CHECK: %[[RHS_REDUCE_INIT:.*]] = mhlo.constant dense<0> : tensor<i32>
+  // CHECK: %[[RHS_REDUCE:.*]] = mhlo.reduce(%[[RHS_I32]] init: %[[RHS_REDUCE_INIT]])
+  // CHECK-SAME: applies mhlo.add across dimensions = [0, 2]
+  // CHECK-SAME: (tensor<6x?x?x8x3xi32>, tensor<i32>)
+  // CHECK-SAME: -> tensor<?x8x3xi32>
+  // CHECK: %[[RHS_ZP:.*]] = mhlo.constant dense<3> : tensor<i32>
+  // CHECK: %[[RHS_ZP_CONTRIB:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[RHS_REDUCE]], %[[RHS_ZP]] :
+  // CHECK-SAME: (tensor<?x8x3xi32>, tensor<i32>) -> tensor<?x8x3xi32>
+
+  // CHECK: %[[RHS_ZP_BCAST:.*]] = "mhlo.dynamic_broadcast_in_dim"
+  // CHECK-SAME: (%[[RHS_ZP_CONTRIB]], %[[OUTPUT_DIMS]])
+  // CHECK-SAME: broadcast_dimensions = dense<[0, 3, 1]>
+  // CHECK-SAME: (tensor<?x8x3xi32>, tensor<4xi64>) -> tensor<?x3x?x8xi32>
+  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.add %[[LHS_ZP_BCAST]], %[[RHS_ZP_BCAST]]
+
+  // Zero point offset contribution from LHS ZP * RHS ZP.
+
+  // CHECK: %[[ZPS_INIT:.*]] = mhlo.constant dense<1> : tensor<i32>
+  // CHECK: %[[DYN_DIM:.*]] = "mhlo.get_dimension_size"(%[[RHS]])
+  // CHECK: %[[ZPS_1:.*]] = mhlo.multiply %[[ZPS_INIT]], %[[DYN_DIM]]
+  // CHECK: %[[STATIC_DIM:.*]] = mhlo.constant dense<90> : tensor<i32>
+  // CHECK: %[[ZPS:.*]] = mhlo.multiply %[[STATIC_DIM]], %[[ZPS_1]]
+  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_subtract %[[ZP_TOTAL_1]], %[[ZPS]]
+  // CHECK-SAME: (tensor<?x3x?x8xi32>, tensor<i32>) -> tensor<?x3x?x8xi32>
+
+  // Combine dot result with zero point offset and output final result.
+
+  // CHECK: %[[COMBINED_SCALE:.*]] = mhlo.constant dense<5.000000e-01> : tensor<f32>
+  // CHECK: %[[RES_FP:.*]] = mhlo.convert %[[DOT_RES]]
+  // CHECK-SAME: (tensor<?x3x?x8xi32>) -> tensor<?x3x?x8xf32>
+  // CHECK: %[[RES_FP_1:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[RES_FP:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[RES_INT:.*]] = mhlo.convert %[[RES_FP_1]]
+  // CHECK-SAME: (tensor<?x3x?x8xf32>) -> tensor<?x3x?x8xi32>
+
+  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
+  // CHECK-SAME: (tensor<?x3x?x8xi32>) -> tensor<?x3x?x8xf32>
+  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[ZP_TOTAL_3:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[ZP_TOTAL_5:.*]] = mhlo.convert %[[ZP_TOTAL_4]]
+  // CHECK-SAME: (tensor<?x3x?x8xf32>) -> tensor<?x3x?x8xi32>
+
+  // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<7> : tensor<i32>
+  // CHECK: %[[ZP_TOTAL_6:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_5]]
+  // CHECK-SAME: (tensor<i32>, tensor<?x3x?x8xi32>) -> tensor<?x3x?x8xi32>
+  // CHECK: chlo.broadcast_add %[[RES_INT]], %[[ZP_TOTAL_6]]
+
+  %2 = "mhlo.dot_general" (%0, %1) {
+    dot_dimension_numbers = #mhlo.dot<
+      lhs_batching_dimensions = [0, 2],
+      rhs_batching_dimensions = [1, 4],
+      lhs_contracting_dimensions = [4, 3],
+      rhs_contracting_dimensions = [0, 2]
+    >} : (
+      tensor<?x?x3x?x6x!quant.uniform<i8:f32, 2.000000e+00:3>>,
+      tensor<6x?x?x8x3x!quant.uniform<i8:f32, 1.000000e+00:5>>
+    ) -> tensor<?x3x?x8x!quant.uniform<i8:f32, 4.000000e+00:7>>
+  %3 = mhlo.uniform_dequantize %2 : (
+    tensor<?x3x?x8x!quant.uniform<i8:f32, 4.000000e+00:7>>
+  ) -> tensor<?x3x?x8xf32>
+  return %3 : tensor<?x3x?x8xf32>
+}
+
+// -----
+
+// CHECK-LABEL: func @uniform_quantized_conv2d_dynamic
+func.func @uniform_quantized_conv2d_dynamic(%arg0: tensor<?x?x?x?xf32>, %arg1: tensor<?x?x?x?xf32>) {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x?x?x?xf32>) -> tensor<?x?x?x?x!quant.uniform<i8:f32, 2.000000e+00:4>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<?x?x?x?xf32>) -> tensor<?x?x?x?x!quant.uniform<i8:f32, 3.000000e+00:0>>
+
+  // CHECK-NOT: mhlo.pad
+
+  // CHECK: %[[CONV:.*]] = mhlo.convolution
+  // CHECK-SAME: (%[[LHS:.*]], %[[RHS:.{1,2}]])
+  // CHECK-SAME: dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f]
+  // CHECK-SAME: window = {stride = [1, 2], pad = {{\[}}[0, 0], [0, 0]],
+  // CHECK-SAME: lhs_dilate = [1, 1], rhs_dilate = [2, 2]}
+  // CHECK-SAME: {batch_group_count = 1 : i64, feature_group_count = 1 : i64}
+  // CHECK-SAME: (tensor<?x?x?x?xi8>, tensor<?x?x?x?xi8>) -> tensor<?x?x?x?xi32>
+
+  // Zero point offset contribution from LHS ZP * RHS.
+
+  // CHECK: %[[RHS_I32:.*]] = mhlo.convert %[[RHS]]
+  // CHECK-SAME: (tensor<?x?x?x?xi8>) -> tensor<?x?x?x?xi32>
+  // CHECK: %[[RHS_REDUCE:.*]] = mhlo.reduce(%[[RHS_I32]]
+  // CHECK-SAME: applies mhlo.add across dimensions = [0, 1, 2]
+  // CHECK-SAME: (tensor<?x?x?x?xi32>, tensor<i32>)
+  // CHECK-SAME: -> tensor<?xi32>
+  // CHECK: %[[LHS_ZP:.*]] = mhlo.constant dense<4> : tensor<i32>
+  // CHECK: %[[RHS_ZP_CONTRIB:.*]] = chlo.broadcast_multiply %[[RHS_REDUCE]], %[[LHS_ZP]]
+  // CHECK-SAME: (tensor<?xi32>, tensor<i32>) -> tensor<?xi32>
+  // CHECK: %[[RHS_ZP_BCAST:.*]] = "mhlo.dynamic_broadcast_in_dim"
+  // CHECK-SAME: %[[RHS_ZP_CONTRIB]]
+  // CHECK-SAME: {broadcast_dimensions = dense<3> : tensor<1xi64>}
+  // CHECK-SAME: (tensor<?xi32>, tensor<4xi64>) -> tensor<?x?x?x?xi32>
+
+  // Combine conv result with zero point offset and output final result.
+
+  // CHECK: %[[COMBINED_SCALE:.*]] = mhlo.constant dense<6.000000e+00> : tensor<f32>
+  // CHECK: %[[RES_FP:.*]] = mhlo.convert %[[CONV]]
+  // CHECK-SAME: (tensor<?x?x?x?xi32>) -> tensor<?x?x?x?xf32>
+  // CHECK: %[[RES_FP_1:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[RES_FP:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[RES_INT:.*]] = mhlo.convert %[[RES_FP_1]]
+  // CHECK-SAME: (tensor<?x?x?x?xf32>) -> tensor<?x?x?x?xi32>
+
+  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.convert %[[RHS_ZP_BCAST]]
+  // CHECK-SAME: (tensor<?x?x?x?xi32>) -> tensor<?x?x?x?xf32>
+  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[ZP_TOTAL_1:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
+  // CHECK-SAME: (tensor<?x?x?x?xf32>) -> tensor<?x?x?x?xi32>
+
+  // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<5> : tensor<i32>
+  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_3]]
+  // CHECK-SAME: (tensor<i32>, tensor<?x?x?x?xi32>) -> tensor<?x?x?x?xi32>
+  // CHECK: chlo.broadcast_add %[[RES_INT]], %[[ZP_TOTAL_4]]
   %2 = mhlo.convolution(%0, %1)
     dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f],
     window = {
@@ -731,28 +1023,65 @@ func.func @uniform_quantized_convolution(%arg0: tensor<?x?x?x?xf32>, %arg1: tens
     {
       batch_group_count = 1 : i64,
       feature_group_count = 1 : i64
-    } : (tensor<?x?x?x?x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<?x?x?x?x!quant.uniform<i8:f32, 3.000000e+00:1>>)
+    } : (tensor<?x?x?x?x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<?x?x?x?x!quant.uniform<i8:f32, 3.000000e+00:0>>)
     -> tensor<?x?x?x?x!quant.uniform<i32:f32, 1.000000e+00:5>>
   return
 }
 
 // -----
 
-// CHECK-LABEL: func @uniform_quantized_convolution_static_shape
-func.func @uniform_quantized_convolution_static_shape(%arg0: tensor<128x28x28x1xf32>, %arg1: tensor<3x3x1x128xf32>) {
-  // CHECK: %[[VAL28:.*]] = mhlo.convert %[[VAL12:.*]] : (tensor<128x28x28x1xi8>) -> tensor<128x28x28x1xf32>
-  // CHECK: %[[LHS:.*]] = chlo.broadcast_subtract %[[VAL28]], %[[VAL26:.*]] : (tensor<128x28x28x1xf32>, tensor<f32>) -> tensor<128x28x28x1xf32>
-  // CHECK: %[[VAL30:.*]] = mhlo.convert %[[VAL25:.*]] : (tensor<3x3x1x128xi8>) -> tensor<3x3x1x128xf32>
-  // CHECK: %[[RHS:.*]] = chlo.broadcast_subtract %[[VAL30]], %[[VAL27:.*]] : (tensor<3x3x1x128xf32>, tensor<f32>) -> tensor<3x3x1x128xf32>
-  // CHECK: %[[VAL32:.*]] = mhlo.convolution(%[[LHS]], %[[RHS]])
-  // CHECK-SAME{LITERAL}: dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f]
-  // CHECK-SAME{LITERAL}: window = {stride = [1, 1], pad = [[0, 0], [0, 0]], lhs_dilate = [1, 1], rhs_dilate = [1, 1]}
-  // CHECK-SAME{LITERAL}: batch_group_count = 1 : i64, feature_group_count = 1 : i64
-  // CHECK-SAME: (tensor<128x28x28x1xf32>, tensor<3x3x1x128xf32>) -> tensor<128x26x26x128xf32>
-  // CHECK: %[[VAL43:.*]] = mhlo.clamp %[[VAL41:.*]], %[[VAL40:.*]], %[[VAL42:.*]] : (tensor<i32>, tensor<128x26x26x128xi32>, tensor<i32>) -> tensor<128x26x26x128xi32>
-  // CHECK: %[[VAL44:.*]] = mhlo.convert %[[VAL43]] : tensor<128x26x26x128xi32>
+// CHECK-LABEL: func @uniform_quantized_conv2d_static
+func.func @uniform_quantized_conv2d_static(%arg0: tensor<128x28x28x1xf32>, %arg1: tensor<3x3x1x128xf32>) {
   %0 = mhlo.uniform_quantize %arg0 : (tensor<128x28x28x1xf32>) -> tensor<128x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>
-  %1 = mhlo.uniform_quantize %arg1 : (tensor<3x3x1x128xf32>) -> tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:1>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<3x3x1x128xf32>) -> tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>
+
+  // CHECK-NOT: mhlo.pad
+
+  // CHECK: %[[CONV:.*]] = mhlo.convolution
+  // CHECK-SAME: (%[[LHS:.*]], %[[RHS:.{1,2}]])
+  // CHECK-SAME: dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f]
+  // CHECK-SAME: window = {stride = [1, 1], pad = {{\[}}[0, 0], [0, 0]],
+  // CHECK-SAME: lhs_dilate = [1, 1], rhs_dilate = [1, 1]}
+  // CHECK-SAME: {batch_group_count = 1 : i64, feature_group_count = 1 : i64}
+  // CHECK-SAME: (tensor<128x28x28x1xi8>, tensor<3x3x1x128xi8>) -> tensor<128x26x26x128xi32>
+
+  // Zero point offset contribution from LHS ZP * RHS.
+
+  // CHECK: %[[RHS_I32:.*]] = mhlo.convert %[[RHS]]
+  // CHECK-SAME: (tensor<3x3x1x128xi8>) -> tensor<3x3x1x128xi32>
+  // CHECK: %[[RHS_REDUCE:.*]] = mhlo.reduce(%[[RHS_I32]]
+  // CHECK-SAME: applies mhlo.add across dimensions = [0, 1, 2]
+  // CHECK-SAME: (tensor<3x3x1x128xi32>, tensor<i32>)
+  // CHECK-SAME: -> tensor<128xi32>
+  // CHECK: %[[LHS_ZP:.*]] = mhlo.constant dense<4> : tensor<i32>
+  // CHECK: %[[RHS_ZP_CONTRIB:.*]] = chlo.broadcast_multiply %[[RHS_REDUCE]], %[[LHS_ZP]]
+  // CHECK-SAME: (tensor<128xi32>, tensor<i32>) -> tensor<128xi32>
+  // CHECK: %[[RHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"
+  // CHECK-SAME: %[[RHS_ZP_CONTRIB]]
+  // CHECK-SAME: {broadcast_dimensions = dense<3> : tensor<1xi64>}
+  // CHECK-SAME: (tensor<128xi32>) -> tensor<128x26x26x128xi32>
+
+  // Combine conv result with zero point offset and output final result.
+
+  // CHECK: %[[COMBINED_SCALE:.*]] = mhlo.constant dense<6.000000e+00> : tensor<f32>
+  // CHECK: %[[RES_FP:.*]] = mhlo.convert %[[CONV]]
+  // CHECK-SAME: (tensor<128x26x26x128xi32>) -> tensor<128x26x26x128xf32>
+  // CHECK: %[[RES_FP_1:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[RES_FP:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[RES_INT:.*]] = mhlo.convert %[[RES_FP_1]]
+  // CHECK-SAME: (tensor<128x26x26x128xf32>) -> tensor<128x26x26x128xi32>
+
+  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.convert %[[RHS_ZP_BCAST]]
+  // CHECK-SAME: (tensor<128x26x26x128xi32>) -> tensor<128x26x26x128xf32>
+  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[ZP_TOTAL_1:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
+  // CHECK-SAME: (tensor<128x26x26x128xf32>) -> tensor<128x26x26x128xi32>
+
+  // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<5> : tensor<i32>
+  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_3]]
+  // CHECK-SAME: (tensor<i32>, tensor<128x26x26x128xi32>) -> tensor<128x26x26x128xi32>
+  // CHECK: chlo.broadcast_add %[[RES_INT]], %[[ZP_TOTAL_4]]
   %2 = mhlo.convolution(%0, %1)
     dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f],
     window = {
@@ -763,8 +1092,211 @@ func.func @uniform_quantized_convolution_static_shape(%arg0: tensor<128x28x28x1x
     {
       batch_group_count = 1 : i64,
       feature_group_count = 1 : i64
-    } : (tensor<128x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:1>>)
+    } : (tensor<128x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>)
     -> tensor<128x26x26x128x!quant.uniform<i32:f32, 1.000000e+00:5>>
+  return
+}
+
+// -----
+
+// CHECK-LABEL: func @uniform_quantized_conv2d_static_padding
+func.func @uniform_quantized_conv2d_static_padding(%arg0: tensor<128x28x28x1xf32>, %arg1: tensor<3x3x1x128xf32>) {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<128x28x28x1xf32>) -> tensor<128x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<3x3x1x128xf32>) -> tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>
+
+  // Explicitly pad LHS with ZP.
+
+  // CHECK: %[[LHS_ZP_i8:.*]] = mhlo.constant dense<4> : tensor<i8>
+  // CHECK: %[[LHS_PAD:.*]] = "mhlo.pad"(%[[LHS:.*]], %[[LHS_ZP_i8]])
+  // CHECK-SAME: edge_padding_high = dense<[0, 2, 4, 0]>
+  // CHECK-SAME: edge_padding_low = dense<[0, 1, 3, 0]>
+  // CHECK-SAME: interior_padding = dense<0>
+  // CHECK-SAME: (tensor<128x28x28x1xi8>, tensor<i8>) -> tensor<128x31x35x1xi8>
+
+  // Convolution with padding removed.
+
+  // CHECK: %[[CONV:.*]] = mhlo.convolution
+  // CHECK-SAME: (%[[LHS_PAD]], %[[RHS:.{1,2}]])
+  // CHECK-SAME: dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f]
+  // CHECK-SAME: window = {stride = [1, 1], pad = {{\[}}[0, 0], [0, 0]],
+  // CHECK-SAME: lhs_dilate = [1, 1], rhs_dilate = [1, 1]}
+  // CHECK-SAME: {batch_group_count = 1 : i64, feature_group_count = 1 : i64}
+  // CHECK-SAME: (tensor<128x31x35x1xi8>, tensor<3x3x1x128xi8>) -> tensor<128x29x33x128xi32>
+
+  // Zero point offset contribution from LHS ZP * RHS.
+
+  // CHECK: %[[RHS_I32:.*]] = mhlo.convert %[[RHS]]
+  // CHECK-SAME: (tensor<3x3x1x128xi8>) -> tensor<3x3x1x128xi32>
+  // CHECK: %[[RHS_REDUCE:.*]] = mhlo.reduce(%[[RHS_I32]]
+  // CHECK-SAME: applies mhlo.add across dimensions = [0, 1, 2]
+  // CHECK-SAME: (tensor<3x3x1x128xi32>, tensor<i32>)
+  // CHECK-SAME: -> tensor<128xi32>
+  // CHECK: %[[LHS_ZP:.*]] = mhlo.constant dense<4> : tensor<i32>
+  // CHECK: %[[RHS_ZP_CONTRIB:.*]] = chlo.broadcast_multiply %[[RHS_REDUCE]], %[[LHS_ZP]]
+  // CHECK-SAME: (tensor<128xi32>, tensor<i32>) -> tensor<128xi32>
+  // CHECK: %[[RHS_ZP_BCAST:.*]] = "mhlo.broadcast_in_dim"
+  // CHECK-SAME: %[[RHS_ZP_CONTRIB]]
+  // CHECK-SAME: {broadcast_dimensions = dense<3> : tensor<1xi64>}
+  // CHECK-SAME: (tensor<128xi32>) -> tensor<128x29x33x128xi32>
+
+  // Combine conv result with zero point offset and output final result.
+
+  // CHECK: %[[COMBINED_SCALE:.*]] = mhlo.constant dense<6.000000e+00> : tensor<f32>
+  // CHECK: %[[RES_FP:.*]] = mhlo.convert %[[CONV]]
+  // CHECK-SAME: (tensor<128x29x33x128xi32>) -> tensor<128x29x33x128xf32>
+  // CHECK: %[[RES_FP_1:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[RES_FP:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[RES_INT:.*]] = mhlo.convert %[[RES_FP_1]]
+  // CHECK-SAME: (tensor<128x29x33x128xf32>) -> tensor<128x29x33x128xi32>
+
+  // CHECK: %[[ZP_TOTAL_1:.*]] = mhlo.convert %[[RHS_ZP_BCAST]]
+  // CHECK-SAME: (tensor<128x29x33x128xi32>) -> tensor<128x29x33x128xf32>
+  // CHECK: %[[ZP_TOTAL_2:.*]] = chlo.broadcast_multiply
+  // CHECK-SAME: %[[ZP_TOTAL_1:.*]], %[[COMBINED_SCALE]]
+  // CHECK: %[[ZP_TOTAL_3:.*]] = mhlo.convert %[[ZP_TOTAL_2]]
+  // CHECK-SAME: (tensor<128x29x33x128xf32>) -> tensor<128x29x33x128xi32>
+
+  // CHECK: %[[RES_ZP:.*]] = mhlo.constant dense<5> : tensor<i32>
+  // CHECK: %[[ZP_TOTAL_4:.*]] = chlo.broadcast_subtract %[[RES_ZP]], %[[ZP_TOTAL_3]]
+  // CHECK-SAME: (tensor<i32>, tensor<128x29x33x128xi32>) -> tensor<128x29x33x128xi32>
+  // CHECK: chlo.broadcast_add %[[RES_INT]], %[[ZP_TOTAL_4]]
+  %2 = mhlo.convolution(%0, %1)
+    dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f],
+    window = {
+      stride = [1, 1], pad = [[1, 2], [3, 4]],
+      lhs_dilate = [1, 1],
+      rhs_dilate = [1, 1]
+    }
+    {
+      batch_group_count = 1 : i64,
+      feature_group_count = 1 : i64
+    } : (tensor<128x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>)
+    -> tensor<128x29x33x128x!quant.uniform<i32:f32, 1.000000e+00:5>>
+  return
+}
+
+// -----
+
+// CHECK-LABEL: func @uniform_quantized_conv3d_static
+func.func @uniform_quantized_conv3d_static(%arg0: tensor<128x28x28x28x1xf32>, %arg1: tensor<3x3x3x1x128xf32>) {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<128x28x28x28x1xf32>) -> tensor<128x28x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<3x3x3x1x128xf32>) -> tensor<3x3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>
+
+  // CHECK-NOT: mhlo.pad
+
+  // CHECK: mhlo.convolution
+  // CHECK-SAME: dim_numbers = [b, 0, 1, 2, f]x[0, 1, 2, i, o]->[b, 0, 1, 2, f]
+  // CHECK-SAME: window = {stride = [1, 1, 1], pad = {{\[}}[0, 0], [0, 0], [0, 0]],
+  // CHECK-SAME: lhs_dilate = [1, 1, 1], rhs_dilate = [1, 1, 1]}
+  // CHECK-SAME: {batch_group_count = 1 : i64, feature_group_count = 1 : i64}
+  // CHECK-SAME: (tensor<128x28x28x28x1xi8>, tensor<3x3x3x1x128xi8>) -> tensor<128x26x26x26x128xi32>
+
+  // CHECK: mhlo.reduce
+  // CHECK-SAME: applies mhlo.add across dimensions = [0, 1, 2, 3]
+  %2 = mhlo.convolution(%0, %1)
+    dim_numbers = [b, 0, 1, 2, f]x[0, 1, 2, i, o]->[b, 0, 1, 2, f],
+    window = {
+      stride = [1, 1, 1], pad = [[0, 0], [0, 0], [0, 0]],
+      lhs_dilate = [1, 1, 1],
+      rhs_dilate = [1, 1, 1]
+    }
+    {
+      batch_group_count = 1 : i64,
+      feature_group_count = 1 : i64
+    } : (tensor<128x28x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<3x3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>)
+    -> tensor<128x26x26x26x128x!quant.uniform<i32:f32, 1.000000e+00:5>>
+  return
+}
+
+// -----
+
+func.func @uniform_quantized_conv3d_rhs_zp_not_zero(%arg0: tensor<128x28x28x28x1xf32>, %arg1: tensor<3x3x3x1x128xf32>) {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<128x28x28x28x1xf32>) -> tensor<128x28x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<3x3x3x1x128xf32>) -> tensor<3x3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:-2>>
+
+  // expected-error@+2 {{RHS UQ type must have zero zp}}
+  // expected-error@+1 {{failed to legalize operation 'mhlo.convolution' that was explicitly marked illegal}}
+  %2 = mhlo.convolution(%0, %1)
+    dim_numbers = [b, 0, 1, 2, f]x[0, 1, 2, i, o]->[b, 0, 1, 2, f],
+    window = {
+      stride = [1, 1, 1], pad = [[0, 0], [0, 0], [0, 0]],
+      lhs_dilate = [1, 1, 1],
+      rhs_dilate = [1, 1, 1]
+    }
+    {
+      batch_group_count = 1 : i64,
+      feature_group_count = 1 : i64
+    } : (tensor<128x28x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<3x3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:-2>>)
+    -> tensor<128x26x26x26x128x!quant.uniform<i32:f32, 1.000000e+00:5>>
+  return
+}
+
+// -----
+
+func.func @uniform_quantized_conv3d_rhs_invalid_dilate(%arg0: tensor<128x28x28x28x1xf32>, %arg1: tensor<3x3x3x1x128xf32>) {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<128x28x28x28x1xf32>) -> tensor<128x28x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<3x3x3x1x128xf32>) -> tensor<3x3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>
+
+  // expected-error@+2 {{lhs_dilation must be 1}}
+  // expected-error@+1 {{failed to legalize operation 'mhlo.convolution' that was explicitly marked illegal}}
+  %2 = mhlo.convolution(%0, %1)
+    dim_numbers = [b, 0, 1, 2, f]x[0, 1, 2, i, o]->[b, 0, 1, 2, f],
+    window = {
+      stride = [1, 1, 1], pad = [[0, 0], [0, 0], [0, 0]],
+      lhs_dilate = [2, 2, 2],
+      rhs_dilate = [1, 1, 1]
+    }
+    {
+      batch_group_count = 1 : i64,
+      feature_group_count = 1 : i64
+    } : (tensor<128x28x28x28x1x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<3x3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>)
+    -> tensor<128x53x53x53x128x!quant.uniform<i32:f32, 1.000000e+00:5>>
+  return
+}
+
+// -----
+
+func.func @uniform_quantized_conv3d_non_nhwc(%arg0: tensor<128x1x28x28x28xf32>, %arg1: tensor<3x3x3x1x128xf32>) {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<128x1x28x28x28xf32>) -> tensor<128x1x28x28x28x!quant.uniform<i8:f32, 2.000000e+00:4>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<3x3x3x1x128xf32>) -> tensor<3x3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>
+
+  // expected-error@+2 {{Convolution data format must be NHWC}}
+  // expected-error@+1 {{failed to legalize operation 'mhlo.convolution' that was explicitly marked illegal}}
+  %2 = mhlo.convolution(%0, %1)
+    dim_numbers = [b, f, 0, 1, 2]x[0, 1, 2, i, o]->[b, f, 0, 1, 2],
+    window = {
+      stride = [1, 1, 1], pad = [[0, 0], [0, 0], [0, 0]],
+      lhs_dilate = [1, 1, 1],
+      rhs_dilate = [1, 1, 1]
+    }
+    {
+      batch_group_count = 1 : i64,
+      feature_group_count = 1 : i64
+    } : (tensor<128x1x28x28x28x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<3x3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>)
+    -> tensor<128x128x26x26x26x!quant.uniform<i32:f32, 1.000000e+00:5>>
+  return
+}
+
+// -----
+
+func.func @uniform_quantized_conv2d_non_nhwc(%arg0: tensor<128x1x28x28xf32>, %arg1: tensor<3x3x1x128xf32>) {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<128x1x28x28xf32>) -> tensor<128x1x28x28x!quant.uniform<i8:f32, 2.000000e+00:4>>
+  %1 = mhlo.uniform_quantize %arg1 : (tensor<3x3x1x128xf32>) -> tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>
+
+  // expected-error@+2 {{Convolution data format must be NHWC}}
+  // expected-error@+1 {{failed to legalize operation 'mhlo.convolution' that was explicitly marked illegal}}
+  %2 = mhlo.convolution(%0, %1)
+    dim_numbers = [b, f, 0, 1]x[0, 1, i, o]->[b, f, 0, 1],
+    window = {
+      stride = [1, 1], pad = [[0, 0], [0, 0]],
+      lhs_dilate = [1, 1],
+      rhs_dilate = [1, 1]
+    }
+    {
+      batch_group_count = 1 : i64,
+      feature_group_count = 1 : i64
+    } : (tensor<128x1x28x28x!quant.uniform<i8:f32, 2.000000e+00:4>>, tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>)
+    -> tensor<128x128x26x26x!quant.uniform<i32:f32, 1.000000e+00:5>>
   return
 }
 
@@ -788,9 +1320,63 @@ func.func @uniform_quantize_dot_hybrid(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?
 
 func.func @uniform_quantize_dot_hybrid_result_type_not_float(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>) {
   %0 = mhlo.uniform_quantize %arg1 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
-  // expected-error@+2 {{Unsupported result element type for mhlo.dot}}
+  // expected-error@+2 {{Invalid input/output type for Dot/Convolution op}}
   // expected-error@+1 {{failed to legalize operation 'mhlo.dot' that was explicitly marked illegal}}
   %1 = "mhlo.dot" (%arg0, %0): (tensor<?x?xf32>, tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
+  return
+}
+
+// -----
+
+func.func @uniform_quantize_dot_hybrid_lhs_type_not_float(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>) {
+  %0 = mhlo.uniform_quantize %arg0 : (tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
+  // expected-error@+2 {{Invalid input/output type for Dot/Convolution op}}
+  // expected-error@+1 {{failed to legalize operation 'mhlo.dot' that was explicitly marked illegal}}
+  %1 = "mhlo.dot" (%0, %arg0): (tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>, tensor<?x?xf32>) -> tensor<?x?x!quant.uniform<i8:f32, 1.000000e+00:3>>
+  return
+}
+
+// -----
+
+func.func @uniform_quantized_conv2d_hybrid_result_not_float(%arg0: tensor<128x28x28x1xf32>, %arg1: tensor<3x3x1x128xf32>) {
+  %0 = mhlo.uniform_quantize %arg1 : (tensor<3x3x1x128xf32>) -> tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>
+
+  // expected-error@+2 {{Invalid input/output type for Dot/Convolution op}}
+  // expected-error@+1 {{failed to legalize operation 'mhlo.convolution' that was explicitly marked illegal}}
+  %1 = mhlo.convolution(%arg0, %0)
+    dim_numbers = [b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f],
+    window = {
+      stride = [1, 1], pad = [[0, 0], [0, 0]],
+      lhs_dilate = [1, 1],
+      rhs_dilate = [1, 1]
+    }
+    {
+      batch_group_count = 1 : i64,
+      feature_group_count = 1 : i64
+    } : (tensor<128x28x28x1xf32>, tensor<3x3x1x128x!quant.uniform<i8:f32, 3.000000e+00:0>>)
+    -> tensor<128x26x26x128x!quant.uniform<i32:f32, 1.000000e+00:5>>
+  return
+}
+
+// -----
+
+func.func @uniform_quantize_dot_general_hybrid_result_not_float(
+    %arg0: tensor<2x5x6xf32>, %arg1: tensor<6x8x2xf32>) {
+  %0 = mhlo.uniform_quantize %arg1 : (tensor<6x8x2xf32>)
+      -> tensor<6x8x2x!quant.uniform<i8:f32, 1.000000e+00:5>>
+
+  // expected-error@+2 {{Invalid input/output type for Dot/Convolution op}}
+  // expected-error@+1 {{failed to legalize operation 'mhlo.dot_general' that was explicitly marked illegal}}
+  %1 = "mhlo.dot_general" (%arg0, %0) {
+    dot_dimension_numbers = #mhlo.dot<
+      lhs_batching_dimensions = [0],
+      rhs_batching_dimensions = [2],
+      lhs_contracting_dimensions = [2],
+      rhs_contracting_dimensions = [0]
+    >} : (
+      tensor<2x5x6xf32>,
+      tensor<6x8x2x!quant.uniform<i8:f32, 1.000000e+00:5>>
+    ) -> tensor<2x5x8x!quant.uniform<i8:f32, 4.000000e+00:7>>
   return
 }
 

@@ -1,8 +1,8 @@
-load("@local_tsl//tsl/platform:rules_cc.bzl", "cc_library")
 load(
     "@local_tsl//tsl/platform:build_config_root.bzl",
     "if_static",
 )
+load("@local_tsl//tsl/platform:rules_cc.bzl", "cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -97,7 +97,6 @@ cc_library(
         "//xla/service:shaped_buffer",
         "//xla/service:transfer_manager",
         "//xla/stream_executor",
-        "//xla/stream_executor:event",
         "@local_tsl//tsl/platform:statusor",
     ],
 )
@@ -144,8 +143,6 @@ cc_library(
         ":executor",
         ":platform_id",
         "//xla/stream_executor",
-        "//xla/stream_executor:executor_cache",
-        "//xla/stream_executor:stream_executor_pimpl",
         "//xla/stream_executor/platform",
         "@com_google_absl//absl/strings:str_format",
         "@local_tsl//tsl/platform:status",
@@ -163,6 +160,7 @@ cc_library(
         "//xla:status_macros",
         "//xla:xla_data_proto_cc",
         "//xla/stream_executor",
+        "//xla/stream_executor:stream_executor_internal",
         "//xla/stream_executor/host:host_stream",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/types:span",
