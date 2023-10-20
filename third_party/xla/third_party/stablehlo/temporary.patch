@@ -26,7 +26,7 @@ diff --ruN a/stablehlo/BUILD.bazel b/stablehlo/BUILD.bazel
      name = "interpreter_ops",
      srcs = [
          "stablehlo/reference/InterpreterOps.cpp",
-@@ -763,6 +781,7 @@
+@@ -780,6 +798,7 @@
      deps = [
          ":base",
          ":chlo_ops",

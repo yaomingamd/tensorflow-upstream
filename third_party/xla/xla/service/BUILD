@@ -695,10 +695,12 @@ xla_cc_test(
         "//xla:protobuf_util",
         "//xla:xla_data_proto_cc",
         "//xla/hlo/ir:hlo",
+        "//xla/hlo/transforms:hlo_constant_splitter",
         "//xla/hlo/utils:hlo_matchers",
         "//xla/tests:hlo_test_base",
         "//xla/tests:xla_internal_test_main",
         "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -1238,6 +1240,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
@@ -1264,17 +1267,20 @@ cc_library(
     hdrs = ["p2p_schedule_preparation.h"],
     visibility = ["//visibility:public"],
     deps = [
+        ":collective_ops_utils",
         ":hlo_pass",
         "//xla:status",
         "//xla:statusor",
         "//xla:util",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/ir:hlo_reachability",
+        "//xla/hlo/utils:hlo_query",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
         "@local_tsl//tsl/platform:errors",
+        "@local_tsl//tsl/platform:statusor",
     ],
 )
 
@@ -2779,15 +2785,17 @@ cc_library(
         ":hlo_pass",
         "//xla:array2d",
         "//xla:shape_util",
+        "//xla:status",
         "//xla:status_macros",
         "//xla:statusor",
         "//xla:xla_data_proto_cc",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/utils:hlo_query",
         "//xla/hlo/utils:hlo_sharding_util",
-        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
         "@local_tsl//tsl/platform:errors",
     ],
 )
@@ -2895,6 +2903,7 @@ cc_library(
         "//xla/hlo/utils:hlo_query",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/types:span",
         "@local_tsl//tsl/platform:errors",
     ],
 )
@@ -3329,10 +3338,13 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":call_inliner",
+        ":hlo_creation_utils",
         ":hlo_dce",
         ":hlo_pass",
         ":pattern_matcher",
         ":while_loop_analysis",
+        "//xla:comparison_util",
+        "//xla:literal_util",
         "//xla:shape_util",
         "//xla:statusor",
         "//xla:union_find",
@@ -3342,6 +3354,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
+        "@local_tsl//tsl/platform:errors",
         "@local_tsl//tsl/platform:statusor",
     ],
 )
@@ -3356,6 +3369,7 @@ xla_cc_test(
         ":hlo_parser",
         ":tuple_simplifier",
         ":while_loop_simplifier",
+        "//xla:literal_util",
         "//xla:shape_util",
         "//xla:test",
         "//xla/hlo/ir:hlo",
@@ -3992,15 +4006,44 @@ cc_library(
         ":transfer_manager",
         "//xla:literal",
         "//xla:shape_util",
+        "//xla:status",
         "//xla:status_macros",
         "//xla:types",
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/stream_executor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
         "@local_tsl//tsl/platform:errors",
         "@local_tsl//tsl/platform:logging",
     ],
     alwayslink = True,  # Contains per-platform transfer manager registration
+)
+
+xla_cc_test(
+    name = "generic_transfer_manager_test",
+    srcs = ["generic_transfer_manager_test.cc"],
+    deps = [
+        ":generic_transfer_manager",
+        ":shaped_buffer",
+        ":transfer_manager",
+        "//xla:literal",
+        "//xla:literal_util",
+        "//xla:shape_tree",
+        "//xla:shape_util",
+        "//xla:types",
+        "//xla/stream_executor",
+        "//xla/stream_executor/host:host_platform",
+        "//xla/stream_executor/host:host_platform_id",
+        "//xla/tests:literal_test_util",
+        "//xla/tests:xla_internal_test_main",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "@local_tsl//tsl/lib/core:status_test_util",
+        "@local_tsl//tsl/platform:statusor",
+        "@local_tsl//tsl/platform:test",
+    ],
 )
 
 cc_library(
@@ -6053,11 +6096,18 @@ cc_library(
     deps = [
         ":computation_layout",
         ":hlo_lexer",
+        ":hlo_module_config",
+        ":hlo_proto_cc",
+        ":name_uniquer",
         ":shape_inference",
+        "//xla:comparison_util",
         "//xla:literal",
         "//xla:literal_util",
+        "//xla:shape_layout",
         "//xla:shape_util",
+        "//xla:status",
         "//xla:statusor",
+        "//xla:types",
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/hlo/ir:hlo",
@@ -6070,8 +6120,10 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
+        "@eigen_archive//:eigen3",
         "@local_tsl//tsl/lib/gtl:map_util",
-        "@local_tsl//tsl/platform:float8",
+        "@local_tsl//tsl/platform:errors",
+        "@local_tsl//tsl/platform:logging",
     ],
 )
 
@@ -7277,5 +7329,18 @@ cc_library(
     deps = [
         "//xla/hlo/ir:hlo",
         "//xla/stream_executor:device_description_proto_cc",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "gpu_compilation_environment",
+    srcs = ["gpu_compilation_environment.cc"],
+    hdrs = ["gpu_compilation_environment.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":compilation_environments",
+        "//xla:xla_proto_cc",
+        "@local_tsl//tsl/platform:protobuf",
     ],
 )

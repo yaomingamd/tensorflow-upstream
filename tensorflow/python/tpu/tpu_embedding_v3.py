@@ -23,7 +23,6 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 from absl import logging
 
 from tensorflow.core.framework import attr_value_pb2
-from tensorflow.core.tpu.kernels import gen_global_iter_id_op
 from tensorflow.python.checkpoint import saveable_compat
 from tensorflow.python.distribute import device_util
 from tensorflow.python.distribute import distribute_lib
@@ -58,6 +57,7 @@ from tensorflow.python.training.saving import saveable_object
 from tensorflow.python.util import compat
 from tensorflow.python.util import nest
 from tensorflow.python.util import tf_inspect
+from tensorflow.python.util.tf_export import tf_export
 
 _PIPELINE_ATTRIBUTE = "_embedding_pipelining"
 _PIPELINE_MODE_FORWARD = "forward"
@@ -246,6 +246,7 @@ PartitionedCsrFormatTensor = collections.namedtuple(
 
 
 # TODO(b/233952762): Add tests of this version of the mid-level API.
+@tf_export("tpu.experimental.embedding.TPUEmbeddingV2")
 class TPUEmbeddingV2(tpu_embedding_base.TPUEmbeddingBase):
   """The TPUEmbedding mid level API running on TPU with sparse core accelerator."""
 
@@ -936,9 +937,9 @@ class TPUEmbeddingV2(tpu_embedding_base.TPUEmbeddingBase):
 
   @staticmethod
   def _convert_input_feature_to_coo(
-      input_feature: tensor.Tensor
-      | sparse_tensor.SparseTensor
-      | ragged_tensor.RaggedTensor,
+      input_feature: Union[
+          tensor.Tensor, sparse_tensor.SparseTensor, ragged_tensor.RaggedTensor
+      ],
       weight: Optional[tensor.Tensor],
       feature_config: tpu_embedding_v2_utils.FeatureConfig,
       row_offset: int,
@@ -1256,9 +1257,7 @@ class TPUEmbeddingV2(tpu_embedding_base.TPUEmbeddingBase):
         input=per_replica_table_splits,
         group_size=num_replicas_in_sync,
         group_key=0,
-        instance_key=math_ops.cast(
-            gen_global_iter_id_op.global_iter_id(), dtypes.int32
-        ),
+        instance_key=math_ops.cast(xla_ops.global_iter_id(), dtypes.int32),
         ordering_token=[],
     )
 
@@ -1511,9 +1510,9 @@ class TPUEmbeddingV2(tpu_embedding_base.TPUEmbeddingBase):
 
     partitioned_tensors = self.enqueue(features, weights)
 
-    result = self.dequeue(partitioned_tensors)
-
     context.Exit()
+
+    result = self.dequeue(partitioned_tensors)
 
     return result
 
@@ -1565,9 +1564,7 @@ class TPUEmbeddingV2(tpu_embedding_base.TPUEmbeddingBase):
             input=is_minibatching_needed_per_replica,
             group_size=num_replicas_in_sync,
             group_key=0,
-            instance_key=math_ops.cast(
-                gen_global_iter_id_op.global_iter_id(), dtypes.int32
-            ),
+            instance_key=math_ops.cast(xla_ops.global_iter_id(), dtypes.int32),
             ordering_token=[],
         )
     )
@@ -1602,9 +1599,9 @@ class TPUEmbeddingV2(tpu_embedding_base.TPUEmbeddingBase):
   # TODO(pineapplejuice233): Do not use it as they are experimental.
   @staticmethod
   def _experimental_convert_input_feature_to_list_of_coo_tensors(
-      input_feature: tensor.Tensor
-      | sparse_tensor.SparseTensor
-      | ragged_tensor.RaggedTensor,
+      input_feature: Union[
+          tensor.Tensor, sparse_tensor.SparseTensor, ragged_tensor.RaggedTensor
+      ],
       weight: Optional[tensor.Tensor],
       feature_config: tpu_embedding_v2_utils.FeatureConfig,
       row_offset: int,
@@ -1908,9 +1905,7 @@ class TPUEmbeddingV2(tpu_embedding_base.TPUEmbeddingBase):
         input=per_replica_table_splits,
         group_size=num_replicas_in_sync,
         group_key=1,
-        instance_key=math_ops.cast(
-            gen_global_iter_id_op.global_iter_id(), dtypes.int32
-        ),
+        instance_key=math_ops.cast(xla_ops.global_iter_id(), dtypes.int32),
         ordering_token=[],
     )
 

@@ -27,6 +27,7 @@ limitations under the License.
 #include "mlir/Pass/PassRegistry.h"  // from @llvm-project
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_dialect.h"
+#include "tensorflow/compiler/mlir/tensorflow/transforms/host_runtime/lower_cluster_to_runtime_ops.h"
 #include "tensorflow/compiler/mlir/tensorflow/transforms/passes.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/data_dumper_logger_config.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/dump_mlir_util.h"
@@ -34,6 +35,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/tf2xla/api/v1/tf_dialect_to_executor.h"
 #include "tensorflow/compiler/mlir/tf2xla/internal/clustering_bridge_passes.h"
 #include "tensorflow/compiler/mlir/tf2xla/internal/inference/inference_passes.h"
+#include "tensorflow/compiler/mlir/tf2xla/internal/logging_hooks.h"
 #include "tensorflow/core/framework/metrics.h"
 #include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/platform/stacktrace.h"
@@ -57,24 +59,6 @@ namespace {
 // enable logging.
 constexpr char kBridgeComponent[] = "TFXLABridge";
 
-// Add logger to bridge passmanager.
-// Enable timing statistics per pass for the bridge passmanager.
-void EnableDetailedLogging(PassManager *pm,
-                           llvm::StringRef module_name = llvm::StringRef()) {
-  // Print the whole module after each pass, which requires disabling
-  // multi-threading as well.
-  pm->getContext()->disableMultithreading();
-  pm->enableIRPrinting(std::make_unique<::tensorflow::DataDumperLoggerConfig>(
-      [module_name](const std::string &pass_tag_name, mlir::Operation *op) {
-        return DEBUG_DATA_DUMPER()->GetDumpFilename(
-            module_name.str(), kDebugGroupBridgePhase1Clustering,
-            pass_tag_name);
-      },
-      "",
-      /*print_module_scope=*/true));
-  pm->enableTiming();
-}
-
 void CreateTPUBridgePipelineV1(OpPassManager &pm) {
   pm.addPass(mlir::tf2xla::internal::CreateInferenceMetricsPass());
 
@@ -95,14 +79,8 @@ void CreateTPUBridgePipelineV1(OpPassManager &pm) {
   pm.addPass(mlir::tf_executor::CreateTFExecutorTPUV1IslandOutliningPass());
   OpPassManager &nested_module = pm.nest<ModuleOp>();
   internal::AddBridgeClusteringPipelinePasses(nested_module);
-
-  pm.addPass(mlir::tf_executor::CreateTFExecutorTPUV1IslandInliningPass());
-  // There are cases where we don't consume all compilation and replication
-  // attributes like we do for the V2 pipeline, so we need to convert them
-  // from unified to legacy attributes before they get exposed to outside of
-  // the bridge.
-  pm.addNestedPass<FuncOp>(
-      mlir::TFTPU::CreateConvertToLegacyCompileAndReplicateAttributesPass());
+  tensorflow::tfrt_compiler::AddTPULowerClusterToRuntimeOpsPassPipeline(
+      nested_module);
 }
 
 // Run the TF XLA Bridge based on the input pipeline, which can be either TPU
@@ -110,7 +88,8 @@ void CreateTPUBridgePipelineV1(OpPassManager &pm) {
 tensorflow::Status RunTFXLABridge(
     ModuleOp module,
     llvm::function_ref<void(OpPassManager &pm)> pipeline_builder,
-    llvm::StringRef module_name = llvm::StringRef()) {
+    llvm::StringRef module_name = llvm::StringRef(),
+    llvm::StringRef dump_prefix = "tf_xla_bridge_v1") {
   // Explicitly check that the TensorFlow dialect can constant fold ops.
   // Constant folding is essential for the bridge. Without this check, the
   // bridge may fail with an error that is difficult to understand and not
@@ -134,16 +113,17 @@ tensorflow::Status RunTFXLABridge(
 
   if (VLOG_IS_ON(1) ||
       DEBUG_DATA_DUMPER()->ShouldDump(module_name.str(), kDebugGroupMain)) {
-    ::tensorflow::DumpMlirOpToFile(
-        DEBUG_DATA_DUMPER()->GetDumpFilename(module_name.str(), kDebugGroupMain,
-                                             "tf_xla_bridge_before"),
-        module, llvm::StringRef(), &bridge);
+    ::tensorflow::DumpMlirOpToFile(DEBUG_DATA_DUMPER()->GetDumpFilename(
+                                       module_name.str(), kDebugGroupMain,
+                                       "_" + dump_prefix.str() + "_before"),
+                                   module, llvm::StringRef(), &bridge);
   }
 
   if (VLOG_IS_ON(2) ||
       DEBUG_DATA_DUMPER()->ShouldDump(module_name.str(),
                                       kDebugGroupBridgePhase1Clustering)) {
-    EnableDetailedLogging(&bridge, module_name);
+    internal::EnablePassIRPrinting(bridge, kDebugGroupBridgePhase1Clustering,
+                                   module_name);
   }
 
   LogicalResult result = bridge.run(module);
@@ -151,10 +131,10 @@ tensorflow::Status RunTFXLABridge(
 
   if (VLOG_IS_ON(1) ||
       DEBUG_DATA_DUMPER()->ShouldDump(module_name.str(), kDebugGroupMain)) {
-    ::tensorflow::DumpMlirOpToFile(
-        DEBUG_DATA_DUMPER()->GetDumpFilename(module_name.str(), kDebugGroupMain,
-                                             "tf_xla_bridge_after"),
-        module, llvm::StringRef(), &bridge);
+    ::tensorflow::DumpMlirOpToFile(DEBUG_DATA_DUMPER()->GetDumpFilename(
+                                       module_name.str(), kDebugGroupMain,
+                                       "_" + dump_prefix.str() + "_after"),
+                                   module, llvm::StringRef(), &bridge);
   }
 
   return diag_handler.ConsumeStatus();
@@ -170,7 +150,8 @@ tensorflow::Status RunSessionTf2xlaClusteringBridge(ModuleOp module) {
 
   bool fallback_enabled = false;
   Status bridge_status = RunTFXLABridge(
-      module, [](OpPassManager &pm) { CreateTPUBridgePipelineV1(pm); });
+      module, [](OpPassManager &pm) { CreateTPUBridgePipelineV1(pm); },
+      /*module_name=*/"", /*dump_prefix=*/"tf_xla_bridge_v1");
 
   tensorflow::metrics::UpdateTfMlirBridgeFirstPhaseCounter(
       "tpu", "v1", fallback_enabled,
@@ -181,6 +162,31 @@ tensorflow::Status RunSessionTf2xlaClusteringBridge(ModuleOp module) {
                             bridge_status.ToString())
         .IgnoreError();
     return bridge_status;
+  }
+
+  Status export_preparation_status = RunTFXLABridge(
+      module,
+      [](OpPassManager &pm) {
+        pm.addPass(
+            mlir::tf_executor::CreateTFExecutorTPUV1IslandInliningPass());
+        // There are cases where we don't consume all compilation and
+        // replication attributes like we do for the V2 pipeline, so we need to
+        // convert them from unified to legacy attributes before they get
+        // exposed to outside of the bridge.
+        pm.addNestedPass<FuncOp>(
+            mlir::TFTPU::
+                CreateConvertToLegacyCompileAndReplicateAttributesPass());
+      },
+      /*module_name=*/"",
+      /*dump_prefix=*/"tf_xla_bridge_v1_export_preparation");
+  if (!export_preparation_status.ok()) {
+    VLOG(2) << "V1 Clustering Bridge Export preparation failed: "
+            << export_preparation_status;
+    tsl::error_logging::Log(kBridgeComponent,
+                            "TFXLA_PHASE_ONE_MLIR_TPU_V1_COMPAT_BRIDGE",
+                            export_preparation_status.ToString())
+        .IgnoreError();
+    return export_preparation_status;
   }
 
   return tensorflow::tf2xla::v1::ExportFromTensorflowDialectToExecutor(module);
