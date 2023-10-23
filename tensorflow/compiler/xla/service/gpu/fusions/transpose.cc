@@ -46,9 +46,9 @@ llvm::GlobalVariable* AllocateShared(
 void MaybeEmitFenceForAMDGPU(llvm::IRBuilder<>* builder,
                              IrEmitterContext& ir_emitter_context) {
   auto* module = builder->GetInsertBlock()->getModule();
-  if (IsAMDGPU(module) &&
-      ir_emitter_context.rocm_compute_capability().gcn_arch_name().substr(
-          0, 6) == "gfx90a") {
+  auto gfx_target =
+      ir_emitter_context.rocm_compute_capability().gcn_arch_name().substr(0, 6);
+  if (IsAMDGPU(module) && gfx_target != "gfx900" && gfx_target != "gfx906") {
     builder->CreateFence(
         llvm::AtomicOrdering::SequentiallyConsistent,
         builder->getContext().getOrInsertSyncScopeID("workgroup"));
