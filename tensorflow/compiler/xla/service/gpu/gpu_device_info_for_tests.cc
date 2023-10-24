@@ -17,6 +17,10 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/service/gpu/gpu_device_info.h"
 
+#if TENSORFLOW_USE_ROCM
+#include "rocm/rocm_config.h"
+#endif
+
 namespace xla {
 namespace gpu {
 
@@ -41,6 +45,11 @@ GpuDeviceInfo TestGpuDeviceInfo::RTXA6000DeviceInfo() {
   return info;
 }
 
+#if TF_ROCM_VERSION >= 50700
+#define BLOCK_DIM_LIMIT_YZ 65536
+#else
+#define BLOCK_DIM_LIMIT_YZ 2'147'483'647
+#endif
 GpuDeviceInfo TestGpuDeviceInfo::AMDMI210DeviceInfo() {
   GpuDeviceInfo info;
   info.name = "AMD Instinct MI210";
@@ -53,8 +62,8 @@ GpuDeviceInfo TestGpuDeviceInfo::AMDMI210DeviceInfo() {
   info.core_count = 104;
   info.fpus_per_core = 0;
   info.block_dim_limit_x = 2'147'483'647;
-  info.block_dim_limit_y = 2'147'483'647;
-  info.block_dim_limit_z = 2'147'483'647;
+  info.block_dim_limit_y = BLOCK_DIM_LIMIT_YZ;
+  info.block_dim_limit_z = BLOCK_DIM_LIMIT_YZ;
   info.memory_bandwidth = 1'638'400'000'000;
   info.l2_cache_size = 8 * 1024 * 1024;
   info.clock_rate_ghz = 1.7;
