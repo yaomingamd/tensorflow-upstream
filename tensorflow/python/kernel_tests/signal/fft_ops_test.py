@@ -550,10 +550,7 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
   # So for ROCm, call rfft and use its output as the input for testing irfft
   def _generate_valid_irfft_input(self, c2r, np_ctype, r2c, np_rtype, rank,
                                   fft_length):
-    if test.is_built_with_rocm():
-      return self._np_fft(r2c.astype(np_rtype), rank, fft_length)
-    else:
-      return c2r.astype(np_ctype)
+    return c2r.astype(np_ctype)
 
   @parameterized.parameters(itertools.product(
       VALID_FFT_RANKS, range(3), (np.float32, np.float64)))
@@ -614,7 +611,6 @@ class RFFTOpsTest(BaseFFTOpsTest, parameterized.TestCase):
   )
   @test_util.run_gpu_only
   def testFftLength_rfftn(self, dims, size, np_rtype):
-    self.skipTest("Test fails on ROCm...fix me")
     inner_dim = size // 2 + 1
     np_ctype = np.complex64 if np_rtype == np.float32 else np.complex128
     tol = 1e-4 if np_ctype == np.complex64 else 1e-8
