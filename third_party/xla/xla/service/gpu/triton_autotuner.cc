@@ -55,11 +55,11 @@ limitations under the License.
 #include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/gpu/buffer_comparator.h"
 #include "xla/service/gpu/gemm_rewriter.h"
-#include "xla/service/gpu/gemm_rewriter_triton.h"
 #include "xla/service/gpu/gpu_float_support.h"
 #include "xla/service/gpu/gpu_fusible.h"
 #include "xla/service/gpu/instruction_fusion.h"
 #include "xla/service/gpu/ir_emission_utils.h"
+#include "xla/service/gpu/split_k_gemm_rewriter.h"
 #include "xla/service/gpu/stream_executor_util.h"
 #include "xla/service/hlo_module_config.h"
 #include "xla/service/shaped_buffer.h"
@@ -344,7 +344,7 @@ StatusOr<std::unique_ptr<HloModule>> TritonGemmAutotuneExtractor(
       AutotunerUtil::ExtractInstructionIntoNewModule(*fusion);
   // Reduce memory usage during compilation by disabling GPU runtime.
   debug_opts.set_xla_gpu_enable_xla_runtime_executable(false);
-  new_module->config().set_debug_options(debug_opts);
+  new_module->mutable_config().set_debug_options(debug_opts);
 
   HloComputation* entry_computation = new_module->entry_computation();
   HloInstruction* cloned_dot_fusion = entry_computation->root_instruction();
@@ -386,7 +386,7 @@ StatusOr<std::unique_ptr<HloModule>> CublasGemmAutotuneExtractor(
       fusion->called_computations().at(0);
   std::unique_ptr<HloModule> new_module =
       AutotunerUtil::ExtractComputationIntoNewModule(*fusion_computation);
-  new_module->config().set_debug_options(debug_opts);
+  new_module->mutable_config().set_debug_options(debug_opts);
 
   GemmRewriter rewriter(config.GetCudaComputeCapability());
   GpuInstructionFusion fusion_pass(
@@ -510,7 +510,11 @@ CompileMany(const AutotuneConfig& config, AutotunerCompileUtil& util,
            gemm_config_set.configs) {
         thread_pool->Schedule([&, fusion] {
           StatusOr<bool> has_executable = compile(fusion, conf);
-          TF_CHECK_OK(has_executable.status());
+          TF_CHECK_OK(has_executable.status())
+              << "Failure occured when compiling fusion " << fusion->name()
+              << " with config '" << conf.ShortDebugString()
+              << "'\nFused HLO computation:\n"
+              << fusion->fused_instructions_computation()->ToString();
           log(has_executable.value());
           counter.DecrementCount();
         });
@@ -697,7 +701,8 @@ StatusOr<AutotuneResult> Execute(const AutotuneConfig& config,
       AutotuneResult best_triton,
       PickBestResult(results, root.ToString(), root.GetModule()->config()));
 
-  if (debug_opts.xla_gpu_cublas_fallback()) {
+  if (debug_opts.xla_gpu_cublas_fallback() &&
+      !debug_opts.xla_gpu_deterministic_ops()) {
     const absl::Duration best_triton_duration =
         tsl::proto_utils::FromDurationProto(best_triton.run_time());
     VLOG(2) << fusion->name() << ": time with cuBLAS: " << cublas_duration

@@ -77,6 +77,7 @@ limitations under the License.
 #include "xla/stream_executor/gpu/asm_compiler.h"
 #include "xla/stream_executor/gpu/gpu_driver.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/stream_executor/stream_executor_internal.h"
 #include "xla/util.h"
 #include "xla/xla.pb.h"
 #include "tsl/platform/path.h"
@@ -307,36 +308,6 @@ Status NVPTXCompiler::AddTritonGemmAutotuningPasses(
     HloPassPipeline* pipeline, HloModule* hlo_module,
     AutotuneConfig& autotune_config, tsl::thread::ThreadPool* thread_pool) {
   pipeline->AddPass<TritonAutotuner>(autotune_config, thread_pool);
-  return OkStatus();
-}
-
-Status NVPTXCompiler::LoadAutotuneResultsFromFile(
-    const DebugOptions& debug_options) {
-  // We are doing this before the timer is started.
-  if (absl::string_view file_path =
-          debug_options.xla_gpu_load_autotune_results_from();
-      !file_path.empty()) {
-    static absl::once_flag once;
-    Status status = OkStatus();
-    absl::call_once(once, [&file_path, &status] {
-      status = AutotunerUtil::LoadAutotuneResultsFromFile(file_path);
-    });
-    TF_RETURN_IF_ERROR(status);
-  }
-  return OkStatus();
-}
-
-Status NVPTXCompiler::SerializeAutotuneResultsToFile(
-    const DebugOptions& debug_options) {
-  // We are doing this after the timer is finished.
-  if (absl::string_view file_path =
-          debug_options.xla_gpu_dump_autotune_results_to();
-      !file_path.empty()) {
-    // Warning: This writes the autotune results at every compilation, possibly
-    // multiple times per process.
-    TF_RETURN_IF_ERROR(
-        AutotunerUtil::SerializeAutotuneResultsToFile(file_path));
-  }
   return OkStatus();
 }
 
@@ -742,7 +713,7 @@ StatusOr<std::vector<uint8_t>> NVPTXCompiler::LinkModules(
     images.push_back({"", std::move(module)});
   }
   auto context = static_cast<se::gpu::GpuContext*>(
-      stream_exec->implementation()->GpuContextHack());
+      stream_exec->platform_specific_handle().context);
 
   TF_ASSIGN_OR_RETURN(LinkingMethod linking_method,
                       ChooseLinkingMethod(ptxas_config.preferred_cuda_dir));

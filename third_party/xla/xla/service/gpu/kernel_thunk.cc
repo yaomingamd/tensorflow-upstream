@@ -72,8 +72,8 @@ std::string KernelThunk::ToStringExtra(int indent) const {
                          launch_dimensions_.ToString());
 }
 
-Status KernelThunk::Initialize(const GpuExecutable& executable,
-                               se::StreamExecutor* executor) {
+Status KernelThunk::Initialize(se::StreamExecutor* executor,
+                               ExecutableSource src) {
   absl::MutexLock lock(&mutex_);
 
   // Load the kernel into the device if necessary.
@@ -83,10 +83,9 @@ Status KernelThunk::Initialize(const GpuExecutable& executable,
   // profiles.
   auto it = kernel_cache_.find(executor);
   if (kernel_cache_.end() == it) {
-    TF_ASSIGN_OR_RETURN(
-        std::unique_ptr<se::KernelBase> kernel,
-        CreateKernel(kernel_name_, args_.size(), executable.text(),
-                     executable.binary(), executor, shmem_bytes_));
+    TF_ASSIGN_OR_RETURN(std::unique_ptr<se::KernelBase> kernel,
+                        CreateKernel(kernel_name_, args_.size(), src.text,
+                                     src.binary, executor, shmem_bytes_));
 
     kernel_cache_.emplace(executor, std::move(kernel));
   }
@@ -100,7 +99,7 @@ static void PrintBufferContents(
   for (const se::DeviceMemoryBase& buf : buffer_args) {
     auto host_buffer = std::make_unique<char[]>(buf.size());
     CHECK(stream->ThenMemcpy(host_buffer.get(), buf, buf.size()).ok());
-    CHECK(stream->BlockHostUntilDone().ok());
+    CHECK_OK(stream->BlockHostUntilDone());
 
     std::string buffer_contents;
     for (int i = 0; i < buf.size(); i++) {

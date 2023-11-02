@@ -112,7 +112,6 @@ limitations under the License.
 #include "xla/mlir_hlo/transforms/passes.h"
 #include "xla/runtime/custom_call_registry.h"
 #include "xla/runtime/executable.h"
-#include "xla/runtime/ffi.h"
 #include "xla/runtime/jit_executable.h"
 #include "xla/service/algebraic_simplifier.h"
 #include "xla/service/all_gather_decomposer.h"
@@ -141,7 +140,6 @@ limitations under the License.
 #include "xla/service/cpu/cpu_instruction_fusion.h"
 #include "xla/service/cpu/cpu_layout_assignment.h"
 #include "xla/service/cpu/cpu_options.h"
-#include "xla/service/cpu/cpu_shape_verifier.h"
 #include "xla/service/cpu/dot_op_emitter.h"
 #include "xla/service/cpu/hlo_xla_runtime_pipeline.h"
 #include "xla/service/cpu/ir_emitter.h"
@@ -155,6 +153,7 @@ limitations under the License.
 #include "xla/service/cpu/simple_orc_jit.h"
 #include "xla/service/cpu/target_machine_features.h"
 #include "xla/service/cpu/xla_framework.h"
+#include "xla/service/cpu_gpu_shape_verifier.h"
 #include "xla/service/dot_decomposer.h"
 #include "xla/service/dump.h"
 #include "xla/service/dynamic_dimension_inference.h"
@@ -411,22 +410,21 @@ runtime::JitExecutable::Options GetXlaRuntimeJitExecutableOptions(
         PopulateXlaCpuRngCall(registry);
         PopulateXlaXfeedCall(registry);
       });
-  opts.compiler
-      .create_compilation_pipeline = [&module, copts](
-                                         xla::runtime::PassManager& passes) {
-    HloXlaRuntimePipelineOptions options = GetHloXlaRuntimePipelineOptions(
-        llvm::Triple(llvm::sys::getProcessTriple()),
-        llvm::sys::getHostCPUName());
-    options.xla_cpu_sparse_cuda_threads =
-        GetDebugOptionsFromFlags().xla_cpu_sparse_cuda_threads();
+  opts.compiler.create_compilation_pipeline =
+      [copts](xla::runtime::PassManager& passes) {
+        HloXlaRuntimePipelineOptions options = GetHloXlaRuntimePipelineOptions(
+            llvm::Triple(llvm::sys::getProcessTriple()),
+            llvm::sys::getHostCPUName());
+        options.xla_cpu_sparse_cuda_threads =
+            GetDebugOptionsFromFlags().xla_cpu_sparse_cuda_threads();
 
-    Status status = CreateHloXlaRuntimePipeline(passes, options);
-    if (!status.ok()) {
-      LOG(FATAL) << "HLO-XLA Runtime pipeline failed with: "
-                 << status.message();
-    }
-    runtime::CreateDefaultXlaCpuRuntimeCompilationPipeline(passes, copts);
-  };
+        Status status = CreateHloXlaRuntimePipeline(passes, options);
+        if (!status.ok()) {
+          LOG(FATAL) << "HLO-XLA Runtime pipeline failed with: "
+                     << status.message();
+        }
+        runtime::CreateDefaultXlaCpuRuntimeCompilationPipeline(passes, copts);
+      };
   opts.compiler.calling_convention = runtime::ResultsToOutsCallingConvention(
       FlattenTuplesAndBufferizeTypeConverter());
   return opts;
@@ -603,7 +601,8 @@ void AddHloVerifier(HloPassPipeline* pipeline, bool allow_sparse_shapes,
     verifier_metadata =
         std::make_unique<DefaultVerifierMetadata>(std::move(opts));
   } else {
-    verifier_metadata = std::make_unique<CpuVerifierMetadata>(std::move(opts));
+    verifier_metadata =
+        std::make_unique<CpuGpuVerifierMetadata>(std::move(opts));
   }
   if (debug_only) {
     pipeline->AddInvariantCheckerDebug<HloVerifier>(
@@ -1482,15 +1481,9 @@ StatusOr<std::unique_ptr<XlaRuntimeCpuExecutable>> GetXlaRuntimeCpuExecutable(
                          jit_executable.status().message());
   }
 
-  // Instantiate state for all registered FFI modules.
-  auto ffi_modules_state = runtime::ffi::FfiModulesState::Instantiate();
-  if (!ffi_modules_state.ok())
-    return InternalError("Failed to instantiate FFI modules state: %s",
-                         ffi_modules_state.status().message());
-
   return std::make_unique<XlaRuntimeCpuExecutable>(
       std::make_unique<runtime::JitExecutable>(std::move(*jit_executable)),
-      xla_framework_mapping, std::move(*ffi_modules_state));
+      xla_framework_mapping);
 }
 }  // namespace
 
