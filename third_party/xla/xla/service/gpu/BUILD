@@ -4,7 +4,7 @@
 load("//xla/tests:build_defs.bzl", "xla_test")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
-load("//xla:xla.bzl", "xla_cc_test", "xla_export_hlo_deps")
+load("//xla:xla.bzl", "xla_cc_test", "xla_export_hlo_deps", "xla_nvml_deps")
 load(
     "//xla/stream_executor:build_defs.bzl",
     "if_gpu_is_configured",
@@ -361,9 +361,9 @@ cc_library(
         "@local_tsl//tsl/protobuf:dnn_proto_cc",
     ] + if_gpu_is_configured([
         ":triangular_solve_thunk",
-        ":cholesky_thunk",
         ":cublas_lt_matmul_thunk",
         ":ir_emitter_triton",
+        "//xla/service/gpu/runtime3:cholesky_thunk",
     ]),
 )
 
@@ -1021,8 +1021,8 @@ cc_library(
         "@local_tsl//tsl/profiler/lib:scoped_annotation",
         "@local_tsl//tsl/profiler/lib:traceme",
     ] + if_gpu_is_configured([
-        ":cholesky_thunk",
         ":precompiled_kernels",
+        "//xla/service/gpu/runtime3:cholesky_thunk",
         ":triangular_solve_thunk",
     ]) + if_cuda_is_configured([
         "//xla/stream_executor/cuda:cublas_plugin",
@@ -1113,33 +1113,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@local_tsl//tsl/platform:statusor",
     ],
-)
-
-# TODO(ezhulenev): Extract `RunCholesky` into a separate library.
-cc_library(
-    name = "cholesky_thunk",
-    srcs = if_gpu_is_configured(["cholesky_thunk.cc"]),
-    hdrs = if_gpu_is_configured(["cholesky_thunk.h"]),
-    visibility = ["//visibility:public"],
-    deps = if_gpu_is_configured([
-        ":buffer_allocations",
-        ":cusolver_context",
-        ":precompiled_kernels",
-        ":thunk",
-        "@com_google_absl//absl/base",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/types:optional",
-        "//xla:types",
-        "//xla:util",
-        "//xla:xla_data_proto_cc",
-        "//xla/service:buffer_assignment",
-        "//xla/hlo/ir:hlo",
-        "@local_tsl//tsl/platform:logging",
-        "//xla/stream_executor",
-        "//xla/stream_executor:device_memory",
-        "//xla/stream_executor/gpu:gpu_asm_opts",
-    ]) + ["@local_tsl//tsl/platform:status"],
 )
 
 # TODO(ezhulenev): Extract `RunTriangularSolve` into a separate library.
@@ -2069,6 +2042,53 @@ xla_cc_test(
 )
 
 cc_library(
+    name = "analytical_latency_estimator",
+    srcs = ["analytical_latency_estimator.cc"],
+    hdrs = ["analytical_latency_estimator.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gpu_hlo_cost_analysis",
+        ":gpu_performance_model",
+        "//xla:xla_proto_cc",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/utils:hlo_query",
+        "//xla/service:hlo_cost_analysis",
+        "//xla/service:latency_hiding_scheduler",
+        "//xla/stream_executor:device_description",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+xla_test(
+    name = "analytical_latency_estimator_test",
+    srcs = ["analytical_latency_estimator_test.cc"],
+    backend_tags = {"gpu": [
+        "requires-gpu-sm70",
+    ]},
+    backends = [
+        "gpu",
+    ],
+    deps = [
+        ":analytical_latency_estimator",
+        "//xla:shape_util",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/utils:hlo_matchers",
+        "//xla/service:hlo_cost_analysis",
+        "//xla/service:hlo_module_config",
+        "//xla/service:hlo_parser",
+        "//xla/service:latency_hiding_scheduler",
+        "//xla/service/gpu/tests:gpu_codegen_test",
+        "//xla/stream_executor:device_description",
+        "//xla/tests:xla_internal_test_main",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "@local_tsl//tsl/platform:statusor",
+        "@local_tsl//tsl/platform:test",
+    ],
+)
+
+cc_library(
     name = "gpu_sanitize_constant_names",
     srcs = ["gpu_sanitize_constant_names.cc"],
     hdrs = ["gpu_sanitize_constant_names.h"],
@@ -2526,11 +2546,13 @@ cc_library(
     hdrs = ["command_buffer_scheduling.h"],
     visibility = ["//visibility:public"],
     deps = [
+        "//xla:shape_util",
         "//xla:statusor",
         "//xla:util",
         "//xla/hlo/ir:hlo",
         "//xla/service:hlo_pass",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@local_tsl//tsl/platform:errors",
@@ -2544,9 +2566,11 @@ xla_cc_test(
     deps = [
         ":command_buffer_scheduling",
         "//xla/hlo/ir:hlo",
+        "//xla/service:hlo_parser",
         "//xla/tests:filecheck",
         "//xla/tests:hlo_test_base",
         "//xla/tests:verified_hlo_module",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_googletest//:gtest_main",
         "@local_tsl//tsl/platform:status",
         "@local_tsl//tsl/platform:statusor",
@@ -3192,6 +3216,7 @@ cc_library(
     hdrs = ["gpu_hlo_schedule.h"],
     visibility = ["//visibility:public"],
     deps = [
+        ":analytical_latency_estimator",
         ":backend_configs_cc",
         ":cublas_cudnn",
         "//xla/hlo/ir:hlo",
@@ -3305,10 +3330,13 @@ cc_library(
         ":backend_configs_cc",
         ":cublas_cudnn",
         ":hlo_op_profile_proto_cc",
+        "//xla:shape_util",
         "//xla:util",
         "//xla/hlo/ir:hlo",
+        "//xla/service:collective_ops_utils",
         "//xla/service:elemental_ir_emitter",
         "//xla/service:hlo_cost_analysis",
+        "//xla/service:hlo_module_config",
         "//xla/stream_executor:device_description",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
@@ -3361,6 +3389,7 @@ cc_library(
     name = "gpu_performance_model",
     srcs = ["gpu_performance_model.cc"],
     hdrs = ["gpu_performance_model.h"],
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]),
     visibility = ["//visibility:public"],
     deps = [
         ":backend_configs_cc",
@@ -3368,11 +3397,13 @@ cc_library(
         ":gpu_hlo_cost_analysis",
         ":hlo_fusion_analysis",
         ":hlo_traversal",
+        "//xla:shape_util",
         "//xla/hlo/ir:hlo",
+        "//xla/service:hlo_dataflow_analysis",
         "//xla/stream_executor:device_description",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/time",
-    ],
+    ] + if_cuda_is_configured(xla_nvml_deps()),
 )
 
 xla_cc_test(

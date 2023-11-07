@@ -113,6 +113,8 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_all_gather_combine_threshold_bytes(kDefaultThreshold);
   opts.set_xla_gpu_reduce_scatter_combine_threshold_bytes(kDefaultThreshold);
 
+  opts.set_xla_gpu_enable_all_gather_combine_by_dim(true);
+
   opts.set_xla_gpu_enable_async_collectives(false);
   opts.set_xla_gpu_enable_async_all_reduce(true);
   opts.set_xla_gpu_enable_async_all_gather(false);
@@ -145,6 +147,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_dump_latency_hiding_schedule(false);
   opts.set_xla_gpu_enable_latency_hiding_scheduler(false);
   opts.set_xla_gpu_lhs_enable_gpu_async_tracker(true);
+  opts.set_xla_gpu_enable_analytical_latency_estimator(false);
   opts.set_xla_gpu_pgle_profile_file_or_directory_path("");
   opts.set_xla_gpu_enable_highest_priority_async_stream(true);
 
@@ -859,6 +862,13 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_reduce_scatter_combine_threshold_bytes(),
       "Size threshold (in bytes) for the GPU reduce-scatter combiner."));
   flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_all_gather_combine_by_dim",
+      bool_setter_for(
+          &DebugOptions::set_xla_gpu_enable_all_gather_combine_by_dim),
+      debug_options->xla_gpu_enable_all_gather_combine_by_dim(),
+      "Combine all-gather ops with the same gather dimension or irrespective "
+      "of their dimension."));
+  flag_list->push_back(tsl::Flag(
       "xla_gpu_all_reduce_contiguous",
       bool_setter_for(&DebugOptions::set_xla_gpu_all_reduce_contiguous),
       debug_options->xla_gpu_all_reduce_contiguous(),
@@ -1094,6 +1104,13 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
                     &DebugOptions::set_xla_gpu_enable_latency_hiding_scheduler),
                 debug_options->xla_gpu_enable_latency_hiding_scheduler(),
                 "Enable latency-hiding scheduler for XLA:GPU"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_analytical_latency_estimator",
+      bool_setter_for(
+          &DebugOptions::set_xla_gpu_enable_analytical_latency_estimator),
+      debug_options->xla_gpu_enable_analytical_latency_estimator(),
+      "Enable analytical latency estimator for latency-hiding scheduler for "
+      "XLA:GPU"));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_pgle_profile_file_or_directory_path",
       string_setter_for(

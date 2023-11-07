@@ -39,8 +39,8 @@ cc_library(
         "//xla/runtime:custom_call_registry",
         "//xla/runtime:executable",
         "//xla/service:executable",
-        "//xla/service/gpu:cholesky_thunk",
         "//xla/service/gpu:gpu_asm_opts_util",
+        "//xla/service/gpu/runtime3:cholesky_thunk",
     ],
 )
 
@@ -306,7 +306,9 @@ cuda_library(
     name = "topk_kernel_cuda",
     srcs = if_cuda_is_configured(
         [
-            "topk_kernel.cu.cc",
+            "topk_kernel_bfloat16.cu.cc",
+            "topk_kernel_float.cu.cc",
+            "topk_kernel.cu.h",
         ],
     ),
     hdrs = if_cuda_is_configured(["topk_kernel_common.h"]),
