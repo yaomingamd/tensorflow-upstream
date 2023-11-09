@@ -94,6 +94,12 @@ TEST(DeviceInfoTest, DeviceInfoIsCorrect) {
                              /*device_memory_size=*/17'066'622'976));
   }
 #if TF_ROCM_VERSION >= 50500
+
+#if TF_ROCM_VERSION >= 50700
+#define BLOCK_DIM_LIMIT_YZ 65536
+#else
+#define BLOCK_DIM_LIMIT_YZ 2'147'483'647
+#endif
   else if (name == "AMD Instinct MI210") {  // NOLINT
     xla::gpu::GpuDeviceInfo test_info =
         xla::gpu::TestGpuDeviceInfo::AMDMI210DeviceInfo();
@@ -119,13 +125,14 @@ TEST(DeviceInfoTest, DeviceInfoIsCorrect) {
             /*shared_memory_per_core=*/64 * 1024,
             /*threads_per_core_limit=*/2560, /*core_count=*/120,
             /*fpus_per_core=*/0, /*block_dim_limit_x=*/2'147'483'647,
-            /*block_dim_limit_y=*/2'147'483'647,
-            /*block_dim_limit_z=*/2'147'483'647,
+            /*block_dim_limit_y=*/BLOCK_DIM_LIMIT_YZ,
+            /*block_dim_limit_z=*/BLOCK_DIM_LIMIT_YZ,
             /*memory_bandwidth=*/1228800000000,
             /*l2_cache_size=*/8 * 1024 * 1024,
             /*clock_rate_ghz=*/::testing::Ge(1.5),
             /*device_memory_size=*/33'806'090'240));
-  } else if (name == "AMD Instinct MI50/MI60") {
+  } else if (name == "AMD Instinct MI50/MI60" ||
+             name == "AMD Radeon Graphics") {
     EXPECT_THAT(
         dev_info,
         ::testing::FieldsAre(
@@ -133,14 +140,14 @@ TEST(DeviceInfoTest, DeviceInfoIsCorrect) {
             /*threads_per_warp=*/64, /*shared_memory_per_block=*/64 * 1024,
             /*shared_memory_per_block_optin=*/0,
             /*shared_memory_per_core=*/64 * 1024,
-            /*threads_per_core_limit=*/2560, /*core_count=*/60,
+            /*threads_per_core_limit=*/2560, /*core_count=*/64,
             /*fpus_per_core=*/0, /*block_dim_limit_x=*/2'147'483'647,
-            /*block_dim_limit_y=*/2'147'483'647,
-            /*block_dim_limit_z=*/2'147'483'647,
-            /*memory_bandwidth=*/256000000000,
+            /*block_dim_limit_y=*/BLOCK_DIM_LIMIT_YZ,
+            /*block_dim_limit_z=*/BLOCK_DIM_LIMIT_YZ,
+            /*memory_bandwidth=*/1024000000000,
             /*l2_cache_size=*/8 * 1024 * 1024,
             /*clock_rate_ghz=*/::testing::Ge(1.7),
-            /*device_memory_size=*/17'163'091'968));
+            /*device_memory_size=*/34'342'961'152));
   }
 #endif    // TF_ROCM_VERSION >= 50500
   else {  // NOLINT

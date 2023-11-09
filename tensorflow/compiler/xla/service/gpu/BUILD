@@ -256,7 +256,9 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         ":gpu_device_info",
-    ],
+    ] + if_rocm_is_configured([
+        "@local_config_rocm//rocm:rocm_headers",
+    ]),
 )
 
 tf_cc_test(
