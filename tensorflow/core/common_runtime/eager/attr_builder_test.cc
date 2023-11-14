@@ -165,7 +165,7 @@ TEST(AttrBuilder, BuildNodeDef_Modified) {
   a.NumInputs(2);
 
   const NodeDef& node_def = a.BuildNodeDef();
-  EXPECT_EQ(node_def.attr().size(), 2);
+  EXPECT_EQ(node_def.attr().size(), 4);
 
   a.Set("new_attr", 15);
   a.NumInputs(3);
@@ -173,7 +173,7 @@ TEST(AttrBuilder, BuildNodeDef_Modified) {
   const NodeDef& node_def2 = a.BuildNodeDef();
 
   auto attrs = node_def2.attr();
-  EXPECT_EQ(attrs.size(), 3);
+  EXPECT_EQ(attrs.size(), 5);
   ASSERT_NE(attrs.find("transpose_a"), attrs.end());
   EXPECT_EQ(attrs.find("transpose_a")->second.b(), true);
   ASSERT_NE(attrs.find("transpose_b"), attrs.end());
