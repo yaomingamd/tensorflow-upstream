@@ -271,7 +271,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "hlo_slicer_test",
     srcs = ["hlo_slicer_test.cc"],
     deps = [

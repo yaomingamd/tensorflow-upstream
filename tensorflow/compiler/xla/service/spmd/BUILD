@@ -156,7 +156,7 @@ cc_library(
     ],
 )
 
-xla_cc_test(
+tf_cc_test(
     name = "spmd_prepare_test",
     srcs = ["spmd_prepare_test.cc"],
     deps = [
