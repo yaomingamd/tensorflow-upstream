@@ -38,7 +38,7 @@ limitations under the License.
 #include "../rocm/hipblaslt_wrapper.h"
 namespace stream_executor {
 hipblasDatatype_t AsHipblasDataType(blas::DataType type);
-hipblasLtComputeType_t AsHipblasComputeType(blas::ComputationType type);
+hipblasComputeType_t AsHipblasComputeType(blas::ComputationType type);
 hipblasOperation_t AsHipblasOperation(blas::Transpose trans);
 };
 #endif
