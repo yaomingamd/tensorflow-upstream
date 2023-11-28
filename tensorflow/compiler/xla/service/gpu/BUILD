@@ -1467,7 +1467,7 @@ cc_library(
         "//tensorflow/compiler/xla/stream_executor:scratch_allocator",
     ]) + if_rocm_is_configured([
         "//tensorflow/compiler/xla/stream_executor/rocm:hipblas_lt_header",
-        "//tensorflow/compiler/xla/stream_executor/rocm:hipblaslt_plugin",
+        "//tensorflow/compiler/xla/stream_executor/rocm:amdhipblaslt_plugin",
         "//tensorflow/compiler/xla/stream_executor:host_or_device_scalar",
         "//tensorflow/compiler/xla/stream_executor:scratch_allocator",
         "//tensorflow/compiler/xla/stream_executor/platform:dso_loader",
