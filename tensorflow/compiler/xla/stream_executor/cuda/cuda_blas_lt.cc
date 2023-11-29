@@ -224,7 +224,7 @@ cublasComputeType_t BlasLt::MatmulDesc::compute_type() const {
       GetAttr<int32_t>(handle_.get(), CUBLASLT_MATMUL_DESC_COMPUTE_TYPE)
           .value());
 #else
-  return HIPBLASLT_COMPUTE_F32;
+  return HIPBLAS_COMPUTE_32F;
 #endif
 }
 

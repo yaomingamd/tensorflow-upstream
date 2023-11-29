@@ -817,23 +817,13 @@ StatusOr<se::gpu::BlasLt::MatrixLayout> AsBlasLtMatrixLayout(
 }
 
 #if TF_HIPBLASLT
-#if TF_ROCM_VERSION < 60000
-using cudaDataType_t = hipblasDatatype_t;
-#define CUDA_R_16BF HIPBLAS_R_16B
-#define CUDA_R_16F HIPBLAS_R_16F
-#define CUDA_R_32F HIPBLAS_R_32F
-#define CUDA_R_64F HIPBLAS_R_64F
-#define CUDA_C_32F HIPBLAS_C_32F
-#define CUDA_C_64F HIPBLAS_C_64F
-#else
-using cudaDataType_t = hipblasltDatatype_t;
-#define CUDA_R_16BF HIPBLASLT_R_16B
-#define CUDA_R_16F HIPBLASLT_R_16F
-#define CUDA_R_32F HIPBLASLT_R_32F
-#define CUDA_R_64F HIPBLASLT_R_64F
-#define CUDA_C_32F HIPBLASLT_C_32F
-#define CUDA_C_64F HIPBLASLT_C_64F
-#endif
+using cudaDataType_t = hipDataType;
+#define CUDA_R_16BF HIP_R_16BF
+#define CUDA_R_16F HIP_R_16F
+#define CUDA_R_32F HIP_R_32F
+#define CUDA_R_64F HIP_R_64F
+#define CUDA_C_32F HIP_C_32F
+#define CUDA_C_64F HIP_C_64F
 #endif
 
 template <cudaDataType_t CudaT>
