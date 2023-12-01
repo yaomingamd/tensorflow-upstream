@@ -406,7 +406,7 @@ xla::XlaOp Einsum(xla::XlaOp x, absl::Span<const int64_t> x_config,
     if (output_diagonal_labels) {
       return EinsumInverseDiagonal(
           Einsum(x, x_config, y, y_config, output_diagonal_labels->at(0),
-                 precision, preferred_element_type, grad_x, grad_y);
+                 precision, preferred_element_type, grad_x, grad_y),
           output_config);
     }
 

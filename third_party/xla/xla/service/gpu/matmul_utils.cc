@@ -425,7 +425,7 @@ StatusOr<bool> CanFoldTransposeOperandIntoDot(const HloInstruction& dot,
       algorithm,
       compute_precision,
       grad_x,
-      grad_y,
+      grad_y
   };
 }
 

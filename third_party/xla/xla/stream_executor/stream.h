@@ -925,7 +925,8 @@ class Stream {
                               DeviceMemorySlice<float> b, int ldb, float beta,
                               DeviceMemorySlice<float> c, int ldc,
                               int batch_count,
-                              const NumericOptions &numeric_options);
+                              const NumericOptions &numeric_options,
+			      blas::CallContext context);
   Stream &ThenBlasGemmBatched(blas::Transpose transa, blas::Transpose transb,
                               uint64_t m, uint64 n, uint64_t k,
                               std::complex<float> alpha,

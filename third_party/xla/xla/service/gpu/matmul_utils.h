@@ -178,6 +178,7 @@ struct GemmConfig {
   double beta;
   std::optional<int64_t> algorithm;
   int64_t compute_precision;
+  bool grad_x, grad_y;
 };
 
 StatusOr<se::blas::ComputationType> GetBlasComputationType(
