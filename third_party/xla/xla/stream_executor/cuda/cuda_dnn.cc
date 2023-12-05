@@ -8648,7 +8648,8 @@ bool CudnnSupport::DoMatMul(Stream* stream,
     if (!stream
              ->ThenBlasGemm(blas::Transpose::kNoTranspose,
                             blas::Transpose::kNoTranspose, m, n, k, weights, m,
-                            input_data, k, output_data, m, NumericOptions{})
+                            input_data, k, output_data, m, NumericOptions{},
+                            blas::CallContext::kNone)
              .ok()) {
       return false;
     }
@@ -8731,7 +8732,8 @@ bool CudnnSupport::DoMatMul(Stream* stream,
     stream->ThenBlasGemmBatched(blas::Transpose::kNoTranspose,
                                 blas::Transpose::kNoTranspose, m, n, k, alpha,
                                 toPtrs(a), lda, toPtrs(b), ldb, beta, toPtrs(c),
-                                ldc, batch_count, NumericOptions{});
+                                ldc, batch_count, NumericOptions{},
+                                blas::CallContext::kNone);
   }
 
   return stream->ok();
