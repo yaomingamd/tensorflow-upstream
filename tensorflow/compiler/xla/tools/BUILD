@@ -7,10 +7,12 @@ load(
     "if_cuda_or_rocm",
 )
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
+
 load(
     "//tensorflow/tsl/platform/default:cuda_build_defs.bzl",
     "if_cuda_is_configured",
 )
+load("@local_config_rocm//rocm:build_defs.bzl", "if_rocm")
 load(
     "@local_config_rocm//rocm:build_defs.bzl",
     "if_rocm_is_configured",
@@ -265,7 +267,7 @@ cc_library(
     ],
 )
 
-xla_cc_binary(
+tf_cc_binary(
     name = "interactive_graphviz",
     srcs = ["interactive_graphviz.cc"],
     deps = [
@@ -292,6 +294,8 @@ xla_cc_binary(
         "//tensorflow/compiler/xla/service:gpu_plugin",
     ]) + if_cuda([
         "//tensorflow/compiler/xla/stream_executor:cuda_platform",
+    ]) + if_rocm([
+        "//tensorflow/compiler/xla/stream_executor:rocm_platform",
     ]),
 )
 
@@ -405,7 +409,7 @@ cc_library(
     ],
 )
 
-xla_cc_binary(
+tf_cc_binary(
     name = "run_hlo_module",
     testonly = True,
     srcs = ["run_hlo_module_main.cc"],
@@ -430,6 +434,8 @@ xla_cc_binary(
         "//tensorflow/compiler/xla/service:gpu_plugin",
     ]) + if_cuda([
         "//tensorflow/compiler/xla/stream_executor:cuda_platform",
+    ]) + if_rocm([
+        "//tensorflow/compiler/xla/stream_executor:rocm_platform",
     ]),
 )
 

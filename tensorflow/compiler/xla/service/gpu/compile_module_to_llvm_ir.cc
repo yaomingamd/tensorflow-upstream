@@ -275,7 +275,7 @@ Status CompileModuleToLlvmIrImpl(
   VLOG(1) << "Buffer Assignment Stats for " << hlo_module->name() << "\n"
           << results->buffer_assignment->GetStats().ToString();
   DumpHloModuleIfEnabled(*hlo_module, *results->buffer_assignment,
-                         absl::StrCat("sm_", cuda_compute_capability.ToString(),
+                         absl::StrCat(rocm_compute_capability.gfx_version(),
                                       "_gpu_", kAfterOptimizationsDumpName));
 
   VLOG(1) << "After optimization module fingerprint for " << hlo_module->name()
