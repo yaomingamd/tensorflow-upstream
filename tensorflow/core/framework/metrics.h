@@ -16,6 +16,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_METRICS_H_
 
 #include <cstdint>
+#include <string>
 
 #include "tensorflow/core/framework/dataset_options.pb.h"
 #include "tensorflow/core/lib/monitoring/counter.h"
@@ -180,8 +181,12 @@ void RecordTFDataServiceCrossTrainerCacheQuery(bool cache_hit);
 // Records tf.data service cross-trainer cache memory usage in bytes.
 void RecordTFDataServiceCrossTrainerCacheSizeBytes(size_t bytes);
 
-// Records distributed tf.data snapshot bytes committed.
+// Records tf.data distributed snapshot bytes committed.
 void RecordTFDataServiceSnapshotBytesCommitted(int64_t bytes);
+
+// Records tf.data distributed snapshot save/load ops.
+void RecordTFDataServiceSnapshotOp(const std::string& path,
+                                   const std::string& op);
 
 // Records the current estimated optimal number of tf.data service workers.
 void RecordTFDataServiceOptimalNumberOfWorkers(int64_t number_of_workers);
@@ -237,6 +242,10 @@ void UpdateGraphPendingQueueLength(uint64 len);
 
 // Records that one output of an op of type `op_name` was unused.
 void RecordUnusedOutput(const string& op_name);
+
+// Records the pipeline processing time in microseconds
+void RecordPipelineProcessingTime(const string& id,
+                                  double pipeline_processing_time_usec);
 
 // Updates the metrics stored about time spent building graphs.
 //

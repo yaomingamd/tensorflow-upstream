@@ -28,6 +28,9 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "mlir/IR/BuiltinOps.h"  // from @llvm-project
+#include "mlir/IR/MLIRContext.h"  // from @llvm-project
+#include "mlir/IR/OwningOpRef.h"  // from @llvm-project
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
 #include "tensorflow/cc/saved_model/constants.h"
 #include "tensorflow/compiler/jit/device_compilation_cluster_signature.h"
@@ -37,15 +40,16 @@ limitations under the License.
 #include "tensorflow/compiler/jit/xla_platform_info.h"
 #include "tensorflow/compiler/mlir/tensorflow/translate/tf_mlir_translate.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/serialize_mlir_module_utils.h"
+#include "tensorflow/compiler/mlir/tfrt/transforms/mlrt/import_model.h"
 #include "tensorflow/compiler/mlir/tfrt/transforms/tfrt_pipeline_options.h"
 #include "tensorflow/compiler/mlir/tfrt/translate/import_model.h"
+#include "tensorflow/compiler/mlir/tfrt/translate/tfrt_compile_options.h"
 #include "tensorflow/compiler/tf2xla/xla_compiler.h"
 #include "xla/pjrt/gpu/se_gpu_pjrt_client.h"
 #include "xla/pjrt/gpu/se_gpu_pjrt_compiler.h"
 #include "xla/pjrt/pjrt_compiler.h"
 #include "xla/pjrt/pjrt_executable.h"
 #include "xla/service/compiler.h"
-#include "xla/service/gpu/gpu_target_config.h"
 #include "xla/stream_executor/cuda/cuda_platform_id.h"
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/framework/function.pb.h"
@@ -59,9 +63,10 @@ limitations under the License.
 #include "tensorflow/core/tfrt/graph_executor/export_mlir.h"
 #include "tensorflow/core/tfrt/graph_executor/graph_execution_options.h"
 #include "tensorflow/core/tfrt/graph_executor/graph_executor.h"
+#include "tensorflow/core/tfrt/mlrt/bytecode/bytecode.h"
 #include "tensorflow/core/tfrt/runtime/runtime.h"
 #include "tensorflow/core/tfrt/saved_model/saved_model_util.h"
-#include "tensorflow/core/tfrt/saved_model/utils/serialize_bef_utils.h"
+#include "tensorflow/core/tfrt/saved_model/utils/serialize_utils.h"
 #include "tensorflow/core/tfrt/utils/utils.h"
 #include "tensorflow/core/tpu/virtual_device.h"
 #include "tsl/platform/casts.h"
@@ -190,85 +195,6 @@ void ConstructFunctionAndArgs(const std::string& name,
 
 AotOptions::AotOptions() : graph_execution_options(nullptr) {}
 
-Status AotCompileSavedModelAndSaveResult(absl::string_view input_model_dir,
-                                         AotOptions aot_options,
-                                         absl::string_view output_model_dir) {
-  // Create aot_packages directory.
-  Env* env = Env::Default();
-  const bool new_directory = !output_model_dir.empty();
-  std::string output_dir;
-  if (!new_directory) {
-    output_dir = std::string(input_model_dir);
-  } else {
-    // TODO(chrisminge) modify to copy everything in input directory
-    output_dir = std::string(output_model_dir);
-    TF_RETURN_IF_ERROR(env->RecursivelyCreateDir(output_dir, {}));
-  }
-  const std::string aot_directory =
-      io::JoinPath(output_dir, kAoTPackagesDirectory);
-  TF_RETURN_IF_ERROR(env->RecursivelyCreateDir(aot_directory));
-
-  if (aot_options.graph_execution_options == nullptr) {
-    // Since we are not going to actually run the model during AoT
-    // compilation and optimization, we choose a value of 4 inter_op_threads
-    // which is commonly used for testing.
-    SetGlobalRuntime(tfrt_stub::Runtime::Create(/*num_inter_op_threads=*/4));
-
-    GraphExecutionOptions graph_execution_options(GetGlobalRuntime());
-
-    graph_execution_options.enable_tfrt_gpu = true;
-    graph_execution_options.enable_grappler_function_optimizer = true;
-    graph_execution_options.compile_options.enable_grappler = true;
-    graph_execution_options.compile_options.device_target =
-        TfrtDeviceInfraTarget::kGpu;
-    graph_execution_options.compile_options.hoist_invariant_ops = true;
-    graph_execution_options.compile_options
-        .serialize_mlir_module_to_aot_packages = true;
-    graph_execution_options.compile_options.aot_mlir_module_file =
-        io::JoinPath(aot_directory, kMLIRModuleFilename);
-
-    aot_options.graph_execution_options =
-        std::make_shared<GraphExecutionOptions>(graph_execution_options);
-  }
-
-  if (aot_options.tags.empty()) {
-    aot_options.tags = {"serve", "gpu"};
-  }
-
-  TF_ASSIGN_OR_RETURN(AotResult result,
-                      AotCompileSavedModel(input_model_dir, aot_options));
-
-  const std::string warmup_requests_path = io::JoinPath(
-      input_model_dir, "assets.extra", "tf_serving_warmup_requests");
-  TF_RETURN_IF_ERROR(env->FileExists(warmup_requests_path));
-
-  const std::string saved_model_pb_path =
-      io::JoinPath(input_model_dir, kSavedModelFilenamePb);
-  const std::string saved_model_pbtxt_path =
-      io::JoinPath(input_model_dir, kSavedModelFilenamePbTxt);
-  bool pb_found = env->FileExists(saved_model_pb_path).ok();
-  bool pbtxt_found = env->FileExists(saved_model_pbtxt_path).ok();
-  if (!pb_found && !pbtxt_found) {
-    return absl::NotFoundError(absl::StrCat(
-        "saved_model not found in input directory: ", input_model_dir));
-  }
-
-  // Serialize BEF buffer to a file under aot_packages
-  const std::string serialized_bef_path =
-      io::JoinPath(aot_directory, kBefBufferFilenameMLIRBEF);
-  TF_RETURN_IF_ERROR(SerializeBEF(result.bef, serialized_bef_path));
-
-  if (pb_found) {
-    const std::string output_file_directory =
-        io::JoinPath(std::string(output_model_dir), kSavedModelFilenamePb);
-    return env->CopyFile(saved_model_pb_path, output_file_directory);
-  } else {
-    const std::string output_file_directory =
-        io::JoinPath(std::string(output_model_dir), kSavedModelFilenamePbTxt);
-    return env->CopyFile(saved_model_pbtxt_path, output_file_directory);
-  }
-}
-
 StatusOr<AotResult> AotCompileSavedModel(absl::string_view input_model_dir,
                                          AotOptions aot_options) {
   TF_ASSIGN_OR_RETURN(tensorflow::MetaGraphDef meta_graph_def,
@@ -323,11 +249,30 @@ StatusOr<AotResult> AotCompileSavedModel(absl::string_view input_model_dir,
 
   tfrt::BefBuffer bef;
   std::vector<std::string> xla_function_names;
-  RETURN_IF_ERROR_IN_COMPILE(tensorflow::ConvertTfMlirToBef(
-      aot_options.graph_execution_options->compile_options, mlir_module.get(),
-      &bef, model_context, fallback_state.get(), &xla_function_names));
-  if (bef.empty()) {
-    return absl::InternalError("BefBuffer is empty.");
+
+  mlrt::bc::Buffer bytecode_buffer;
+  if (aot_options.graph_execution_options->enable_mlrt) {
+    mlir::OwningOpRef<mlir::ModuleOp> module_with_op_keys;
+
+    ASSIGN_OR_RETURN_IN_COMPILE(
+        bytecode_buffer,
+        tensorflow::mlrt_compiler::ConvertTfMlirToBytecode(
+            aot_options.graph_execution_options->compile_options,
+            *fallback_state, mlir_module.get(), model_context,
+            &module_with_op_keys, &xla_function_names));
+
+    if (bytecode_buffer.empty()) {
+      LOG(ERROR) << "MLRT byte buffer is empty.";
+      return absl::InternalError("bytecode_buffer is empty.");
+    }
+  } else {
+    RETURN_IF_ERROR_IN_COMPILE(tensorflow::ConvertTfMlirToBef(
+        aot_options.graph_execution_options->compile_options, mlir_module.get(),
+        &bef, model_context, fallback_state.get(), &xla_function_names));
+    if (bef.empty()) {
+      LOG(ERROR) << "BEF byte buffer is empty.";
+      return absl::InternalError("BefBuffer is empty.");
+    }
   }
 
   const FunctionLibraryDefinition& flib_def = fallback_state->func_lib_def();
@@ -341,7 +286,9 @@ StatusOr<AotResult> AotCompileSavedModel(absl::string_view input_model_dir,
     }
     xla_functions.push_back(*xla_func_def);
   }
-
+  if (aot_options.graph_execution_options->enable_mlrt) {
+    return AotResult{std::move(bytecode_buffer), std::move(xla_functions)};
+  }
   return AotResult{std::move(bef), std::move(xla_functions)};
 }
 
@@ -356,13 +303,14 @@ StatusOr<std::unique_ptr<xla::PjRtExecutable>> AotCompileToGpuPjRtExecutable(
       flib_def, function, graph_def_version, args, has_ref_vars,
       may_alias_resource_update, &options, compilation_result));
 
-  xla::gpu::GpuTargetConfig gpu_config(gpu_target_config);
-  xla::StreamExecutorGpuCompiler pjrt_gpu_compiler(gpu_config);
+  xla::Compiler::TargetConfig gpu_config(gpu_target_config);
+  xla::StreamExecutorGpuCompiler pjrt_gpu_compiler;
   // Create a trivial topology, which won't be used.
   xla::StreamExecutorGpuTopologyDescription topology(
       xla::CudaId(), xla::CudaName(), "fake_device", {0});
-  const xla::CompileOptions pjrt_options =
+  xla::CompileOptions pjrt_options =
       GetPjRtCompileOptions(options, **compilation_result);
+  pjrt_options.target_config = gpu_config;
   return pjrt_gpu_compiler.Compile(
       pjrt_options, *((*compilation_result)->computation), topology, nullptr);
 }
@@ -372,9 +320,8 @@ StatusOr<std::string> AotCompileToGpuPjRtLoadedExecutableWithDevice(
     int graph_def_version, const std::vector<XlaCompiler::Argument>& args,
     bool has_ref_vars, bool may_alias_resource_update,
     XlaCompiler::CompilationResult** compilation_result) {
-  TF_ASSIGN_OR_RETURN(auto client, xla::GetStreamExecutorGpuClient(
-                                       true, /*allocator_config=*/{},
-                                       /*node_id=*/0));
+  TF_ASSIGN_OR_RETURN(auto client,
+                      xla::GetStreamExecutorGpuClient(xla::GpuClientOptions()));
   auto se_client = absl::WrapUnique(
       tensorflow::down_cast<xla::StreamExecutorGpuClient*>(client.release()));
 

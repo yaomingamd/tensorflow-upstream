@@ -30,8 +30,7 @@ cc_library(
     deps = [
         ":constants",
         "//xla:shape_util",
-        "//xla:status_macros",
-        "//xla:types",
+        "//xla:statusor",
         "//xla:xla_data_proto_cc",
         "//xla/client:xla_builder",
         "//xla/client:xla_computation",
@@ -209,6 +208,10 @@ cc_library(
 xla_test(
     name = "math_test",
     srcs = ["math_test.cc"],
+    backend_tags = {
+        # Times out.
+        "ghostfish_iss": ["noasan"],
+    },
     deps = [
         ":constants",
         ":math",
@@ -248,6 +251,7 @@ cc_library(
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@local_tsl//tsl/platform:errors",
     ],
 )
 
@@ -430,6 +434,9 @@ cc_library(
     deps = [
         ":arithmetic",
         ":constants",
+        "//xla:shape_util",
+        "//xla:status_macros",
+        "//xla:statusor",
         "//xla:types",
         "//xla:util",
         "//xla/client:xla_builder",

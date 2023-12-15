@@ -85,13 +85,11 @@ void SetChannelIdForNewCollective(HloInstruction* new_instr,
 
 Status PeelInstructionsForOddTripCount(HloModule* module,
                                        HloInstruction* while_instr) {
-  HloCloneContext context(module, "peeled_double_buffer");
-
+  std::string suffix = "peeled_double_buffer";
   absl::flat_hash_map<HloInstruction*, HloInstruction*> old_to_new_map;
   HloComputation* while_body = while_instr->while_body();
   HloInstruction* input_parameter = while_body->parameter_instruction(0);
   HloInstruction* input_tuple = while_instr->mutable_operand(0);
-  CHECK(input_tuple->opcode() == HloOpcode::kTuple);
 
   auto old_loop_roots = while_body->root_instruction()->mutable_operands();
   HloComputation* parent_comp = while_instr->parent();
@@ -108,7 +106,7 @@ Status PeelInstructionsForOddTripCount(HloModule* module,
     }
     HloInstruction* new_instr =
         parent_comp->AddInstruction(old_instr->CloneWithNewOperands(
-            old_instr->shape(), new_operands, &context));
+            old_instr->shape(), new_operands, suffix));
 
     SetChannelIdForNewCollective(new_instr, module);
     old_to_new_map[old_instr] = new_instr;
@@ -175,7 +173,6 @@ StatusOr<bool> LoopDoubleBufferTransformer::Run(
 
     HloComputation* while_body = while_instr->while_body();
 
-    CHECK(while_body->root_instruction()->opcode() == HloOpcode::kTuple);
     VLOG(2) << "Processing root " << while_body->root_instruction()->ToString();
 
     auto old_loop_roots = while_body->root_instruction()->mutable_operands();
@@ -190,7 +187,7 @@ StatusOr<bool> LoopDoubleBufferTransformer::Run(
       TF_RETURN_IF_ERROR(PeelInstructionsForOddTripCount(module, while_instr));
       exact_trip_count -= 1;
     }
-    HloCloneContext context(module, "double_buffer_clone");
+    std::string suffix = "double_buffer_clone";
     old_to_new_map[input_parameter] = while_body->root_instruction();
     for (HloInstruction* old_instr : while_body->MakeInstructionPostOrder()) {
       if (old_to_new_map.find(old_instr) != old_to_new_map.end()) {
@@ -203,7 +200,7 @@ StatusOr<bool> LoopDoubleBufferTransformer::Run(
       }
       HloInstruction* new_instr =
           while_body->AddInstruction(old_instr->CloneWithNewOperands(
-              old_instr->shape(), new_operands, &context));
+              old_instr->shape(), new_operands, suffix));
 
       // If an elementwise instruction with constant operand is present, we
       // won't inject control dependency at the end to allow more constant
@@ -243,12 +240,14 @@ StatusOr<bool> LoopDoubleBufferTransformer::Run(
     }
     for (HloInstruction* input_consumer : input_parameter->users()) {
       for (HloInstruction* old_input : input_consumer->users()) {
-        HloInstruction* new_input = old_to_new_map[old_input];
-        if (skip_control_dep_injection.find(old_input) ==
-                skip_control_dep_injection.end() &&
-            !IsCollective(old_input)) {
-          for (HloInstruction* old_root : old_loop_roots) {
-            TF_RETURN_IF_ERROR(old_root->AddControlDependencyTo(new_input));
+        if (old_to_new_map.find(old_input) != old_to_new_map.end()) {
+          HloInstruction* new_input = old_to_new_map[old_input];
+          if (skip_control_dep_injection.find(old_input) ==
+                  skip_control_dep_injection.end() &&
+              !IsCollective(old_input)) {
+            for (HloInstruction* old_root : old_loop_roots) {
+              TF_RETURN_IF_ERROR(old_root->AddControlDependencyTo(new_input));
+            }
           }
         }
       }

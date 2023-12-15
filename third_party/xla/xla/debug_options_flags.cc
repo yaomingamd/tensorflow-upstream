@@ -25,11 +25,16 @@ limitations under the License.
 #include "absl/base/call_once.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_map.h"
+#include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "xla/debug_options_parsers.h"
 #include "xla/parse_flags_from_env.h"
 #include "xla/xla.pb.h"
+#include "tsl/platform/protobuf.h"  // IWYU pragma: keep
 #include "tsl/util/command_line_flags.h"
 
 namespace xla {
@@ -93,9 +98,8 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   // flag.
   opts.set_xla_gpu_enable_cublaslt(false);
 
-  // TODO(b/258036887): Create separate flags for enabling cuBLAS, cuDNN, and
-  // NCCL in GPU graphs.
-  opts.set_xla_gpu_graph_level(1);
+  opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
+  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
   opts.set_xla_gpu_graph_num_runs_to_instantiate(-1);
   opts.set_xla_gpu_enable_persistent_temp_buffers(false);
   opts.set_xla_gpu_graph_min_graph_size(5);
@@ -132,6 +136,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_enable_dumping(true);
 
   opts.set_xla_gpu_enable_xla_runtime_executable(true);
+  opts.set_xla_gpu_enable_custom_fusions(false);
   opts.set_xla_gpu_nccl_termination_timeout_seconds(-1);
   opts.set_xla_gpu_enable_shared_constants(true);
 
@@ -150,6 +155,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_lhs_enable_gpu_async_tracker(true);
   opts.set_xla_gpu_enable_analytical_latency_estimator(false);
   opts.set_xla_gpu_pgle_profile_file_or_directory_path("");
+  opts.set_xla_gpu_memory_limit_slop_factor(95);
   opts.set_xla_gpu_enable_highest_priority_async_stream(true);
 
   opts.set_xla_gpu_enable_pipelined_collectives(false);
@@ -195,7 +201,6 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_collect_cost_model_stats(false);
   opts.set_xla_gpu_enable_split_k_autotuning(true);
 
-  opts.set_xla_gpu_single_wave_autotuning(true);
   opts.set_xla_gpu_enable_reduction_epilogue_fusion(true);
   opts.set_xla_gpu_enable_nccl_clique_optimization(false);
   opts.set_xla_gpu_cublas_fallback(true);
@@ -203,7 +208,10 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_ensure_minor_dot_contraction_dims(false);
   opts.set_xla_gpu_filter_kernels_spilling_registers_on_autotuning(true);
   opts.set_xla_gpu_llvm_verification_level(0);
-
+  opts.set_xla_gpu_target_config_filename("");
+  opts.set_xla_gpu_enable_cub_radix_sort(true);
+  opts.set_xla_gpu_enable_cudnn_layer_norm(false);
+  opts.set_xla_gpu_threshold_for_windowed_einsum_mib(100000);
   return opts;
 }
 
@@ -352,6 +360,46 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
           return false;
         }
         debug_options->set_xla_partitioning_algorithm(partitioning_algorithm);
+        return true;
+      };
+
+  // Custom "sub-parser" lambda for xla_gpu_graph_level.
+  auto setter_for_xla_gpu_graph_level = [debug_options](const int32_t level) {
+    debug_options->clear_xla_gpu_enable_command_buffer();
+    if (level >= 1) {
+      debug_options->add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
+    }
+    if (level >= 2) {
+      debug_options->add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
+    }
+    if (level >= 3) {
+      debug_options->add_xla_gpu_enable_command_buffer(DebugOptions::CUDNN);
+    }
+    return true;
+  };
+
+  auto command_types_to_string =
+      [](tsl::protobuf::RepeatedField<int> command_types) -> std::string {
+    struct Formatter {
+      void operator()(std::string* out, int type) const {
+        absl::StrAppend(out, DebugOptions::CommandBufferCmdType_Name(type));
+      }
+    };
+    return absl::StrJoin(command_types, ", ", Formatter());
+  };
+
+  // Custom "sub-parser" lambda for xla_gpu_enable_command_buffer.
+  auto setter_for_xla_gpu_enable_command_buffer =
+      [debug_options](const std::string& values) {
+        debug_options->clear_xla_gpu_enable_command_buffer();
+        for (const absl::string_view value : absl::StrSplit(values, ',')) {
+          DebugOptions::CommandBufferCmdType cmd_type;
+          if (!DebugOptions::CommandBufferCmdType_Parse(
+                  absl::AsciiStrToUpper(value), &cmd_type)) {
+            return false;
+          }
+          debug_options->add_xla_gpu_enable_command_buffer(cmd_type);
+        }
         return true;
       };
 
@@ -937,17 +985,25 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       bool_setter_for(&DebugOptions::set_xla_gpu_fused_attention_use_cudnn_rng),
       debug_options->xla_gpu_fused_attention_use_cudnn_rng(),
       "Use cudnn random number generator for fused attention kernel."));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_cudnn_layer_norm",
+      bool_setter_for(&DebugOptions::set_xla_gpu_enable_cudnn_layer_norm),
+      debug_options->xla_gpu_enable_cudnn_layer_norm(),
+      "Rewrite layer norm patterns into cuDNN library call."));
   flag_list->push_back(
       tsl::Flag("xla_gpu_enable_cublaslt",
                 bool_setter_for(&DebugOptions::set_xla_gpu_enable_cublaslt),
                 debug_options->xla_gpu_enable_cublaslt(),
                 "Use cuBLASLt for GEMMs when possible."));
   flag_list->push_back(tsl::Flag(
-      "xla_gpu_graph_level",
-      int32_setter_for(&DebugOptions::set_xla_gpu_graph_level),
-      debug_options->xla_gpu_graph_level(),
-      "Set GPU graph level. 0 = off; 1 = capture fusions and memcpys; 2 = "
-      "capture gemms; 3 = capture convolutions."));
+      "xla_gpu_graph_level", setter_for_xla_gpu_graph_level, 1,
+      "The legacy flag for setting GPU graph level. Use "
+      "xla_gpu_enable_command_buffer in new use cases. 0 = off; 1 = capture "
+      "fusions and memcpys; 2 = capture gemms; 3 = capture convolutions."));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_command_buffer", setter_for_xla_gpu_enable_command_buffer,
+      command_types_to_string(debug_options->xla_gpu_enable_command_buffer()),
+      "The types of the commands that are recorded into command buffers"));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_graph_num_runs_to_instantiate",
       int32_setter_for(
@@ -1010,6 +1066,18 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       bool_setter_for(&DebugOptions::set_xla_gpu_enable_xla_runtime_executable),
       debug_options->xla_gpu_enable_xla_runtime_executable(),
       "Whether to enable XLA runtime for XLA:GPU backend"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_custom_fusions",
+      bool_setter_for(&DebugOptions::set_xla_gpu_enable_custom_fusions),
+      debug_options->xla_gpu_enable_custom_fusions(),
+      "Whether to enable XLA custom fusions"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_custom_fusions_re",
+      string_setter_for(&DebugOptions::set_xla_gpu_enable_custom_fusions_re),
+      debug_options->xla_gpu_enable_custom_fusions_re(),
+      "Limits custom fusion only to fusions which match this regular "
+      "expression. Default is all custom fusions registerered in a current "
+      "process."));
   flag_list->push_back(
       tsl::Flag("xla_gpu_enable_gpu2_runtime",
                 bool_setter_for(&DebugOptions::set_xla_gpu_enable_gpu2_runtime),
@@ -1131,6 +1199,11 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       bool_setter_for(&DebugOptions::set_xla_gpu_lhs_enable_gpu_async_tracker),
       debug_options->xla_gpu_lhs_enable_gpu_async_tracker(),
       "Enable GPU async tracker for latency-hiding scheduler in XLA:GPU"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_memory_limit_slop_factor",
+      int32_setter_for(&DebugOptions::set_xla_gpu_memory_limit_slop_factor),
+      debug_options->xla_gpu_memory_limit_slop_factor(),
+      "Slop factor for memory limits in XLA:GPU"));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_enable_highest_priority_async_stream",
       bool_setter_for(
@@ -1280,13 +1353,6 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       bool_setter_for(&DebugOptions::set_xla_gpu_enable_split_k_autotuning),
       debug_options->xla_gpu_enable_split_k_autotuning(),
       "Enable split_k autotuning for triton gemms."));
-  flag_list->push_back(tsl::Flag(
-      "xla_gpu_single_wave_autotuning",
-      bool_setter_for(&DebugOptions::set_xla_gpu_single_wave_autotuning),
-      debug_options->xla_gpu_single_wave_autotuning(),
-      "Enable single \"wave\" autotuning. This uses more memory for "
-      "compilation, but utilizes CPU cores better, so compilation can be "
-      "faster."));
 
   flag_list->push_back(tsl::Flag(
       "xla_gpu_enable_reduction_epilogue_fusion",
@@ -1342,6 +1408,25 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_llvm_verification_level(),
       "Sets how often we verify the generated llvm modules. Higher "
       "levels mean more frequent verification. Currently supported: 0, 1."));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_target_config_filename",
+      string_setter_for(&DebugOptions::set_xla_gpu_target_config_filename),
+      debug_options->xla_gpu_target_config_filename(),
+      "Filename for GPU TargetConfig. Triggers devicless compilation: attached "
+      "device is "
+      "ignored, and the proto is queried instead"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_enable_cub_radix_sort",
+      bool_setter_for(&DebugOptions::set_xla_gpu_enable_cub_radix_sort),
+      debug_options->xla_gpu_enable_cub_radix_sort(),
+      "Enable radix sort using CUB for simple shapes"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_threshold_for_windowed_einsum_mib",
+      int64_setter_for(
+          &DebugOptions::set_xla_gpu_threshold_for_windowed_einsum_mib),
+      debug_options->xla_gpu_threshold_for_windowed_einsum_mib(),
+      "Threshold to enable windowed einsum (collective matmul) in MB."
+      "Default is 100000"));
 }  // NOLINT(readability/fn_size)
 
 // Allocates flag_values and flag_objects; this function must not be called more

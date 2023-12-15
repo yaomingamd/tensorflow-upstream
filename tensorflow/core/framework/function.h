@@ -451,6 +451,8 @@ class FunctionLibraryDefinition : public OpRegistryInterface {
   Status AddFunctionDef(const FunctionDef& fdef,
                         const StackTracesMap& stack_traces = {})
       TF_LOCKS_EXCLUDED(mu_);
+  Status AddFunctionDef(FunctionDef&& fdef, StackTracesMap&& stack_traces = {})
+      TF_LOCKS_EXCLUDED(mu_);
 
   // Adds gradient definition 'grad' to this function library.
   // This is a no-op if 'grad' already exists in this function library.
@@ -563,6 +565,8 @@ class FunctionLibraryDefinition : public OpRegistryInterface {
   // reachable from the nodes of `graph` or `func`.
   FunctionLibraryDefinition ReachableDefinitions(const GraphDef& graph) const;
   FunctionLibraryDefinition ReachableDefinitions(const FunctionDef& func) const;
+  StatusOr<FunctionLibraryDefinition> ReachableDefinitions(
+      const std::string& function_name) const;
 
   // Copies the function named `func` from `other` to this
   // FunctionLibraryDefinition.

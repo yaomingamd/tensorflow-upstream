@@ -2,24 +2,11 @@ load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 load("//tensorflow/core/platform:build_config.bzl", "tf_proto_library")
 load("//tensorflow/core/platform:rules_cc.bzl", "cc_library")
 
+# Please reach out to tf-bridge-team@ before using the TF2XLA bridge.
 package(
     # copybara:uncomment default_applicable_licenses = ["//tensorflow:license"],
     default_visibility = [
         ":__subpackages__",
-        ":tf2xla_users",
-    ],
-)
-
-# Please reach out to tf-bridge-team@ before using the TF2XLA bridge.
-package_group(
-    name = "tf2xla_users",
-    packages = [
-        "//tensorflow/compiler/mlir/quantization/stablehlo/...",
-        "//learning/serving/contrib/tfrt/mlir/saved_model_analysis",
-        "//tensorflow/compiler/mlir/tfrt",
-        "//tensorflow/compiler/tf2xla",
-        # Legacy due to where the bridge currently runs. This should go away.
-        "//tensorflow/compiler/mlir/tensorflow/transforms",
     ],
 )
 
@@ -27,6 +14,12 @@ cc_library(
     name = "legalize_tf",
     srcs = ["legalize_tf.cc"],
     hdrs = ["legalize_tf.h"],
+    visibility = [
+        "//learning/brain/google/xla:__pkg__",
+        "//learning/brain/mlir/bridge:__pkg__",
+        "//tensorflow/compiler/mlir/quantization/stablehlo:__pkg__",
+        "//tensorflow/compiler/mlir/tfrt/transforms/ifrt:__pkg__",
+    ],
     deps = [
         ":device_type_proto_cc",
         "//tensorflow/compiler/jit:flags_headers",
@@ -98,12 +91,22 @@ tf_proto_library(
     name = "device_type_proto",
     srcs = ["device_type.proto"],
     cc_api_version = 2,
+    visibility = [
+        "//learning/serving/contrib/tfrt/mlir/saved_model_analysis:__pkg__",
+    ],
 )
 
 cc_library(
     name = "cluster_tf",
     srcs = ["cluster_tf.cc"],
     hdrs = ["cluster_tf.h"],
+    visibility = [
+        "//learning/serving/contrib/tfrt/mlir/saved_model_analysis:__pkg__",
+        "//tensorflow/compiler/mlir/tensorflow/transforms:__pkg__",
+        "//tensorflow/compiler/mlir/tfrt:__pkg__",
+        "//tensorflow/compiler/mlir/tfrt/transforms/ifrt:__pkg__",
+        "//tensorflow/compiler/tf2xla:__pkg__",
+    ],
     deps = [
         ":device_type_proto_cc",
         ":tf_dialect_to_executor",
@@ -140,6 +143,7 @@ tf_cc_test(
     data = [
         "testdata/empty_func.mlir",
         "testdata/invalid_executor.mlir",
+        "testdata/outside_compilation.mlir",
     ],
     deps = [
         ":cluster_tf",
@@ -163,6 +167,12 @@ cc_library(
     name = "tf_dialect_to_executor",
     srcs = ["tf_dialect_to_executor.cc"],
     hdrs = ["tf_dialect_to_executor.h"],
+    visibility = [
+        "//learning/serving/contrib/tfrt/mlir/saved_model_analysis:__pkg__",
+        "//tensorflow/compiler/mlir/tensorflow/transforms:__pkg__",
+        "//tensorflow/compiler/mlir/tfrt:__pkg__",
+        "//tensorflow/compiler/tf2xla:__pkg__",
+    ],
     deps = [
         "//tensorflow/compiler/jit:flags_headers",
         "//tensorflow/compiler/mlir/tensorflow:bridge_logger",
@@ -170,7 +180,9 @@ cc_library(
         "//tensorflow/compiler/mlir/tensorflow/transforms:verify_no_outside_compilation_markers_pass",
         "//tensorflow/compiler/mlir/tf2xla/internal:logging_hooks",
         "//tensorflow/core:framework",
+        "//tensorflow/core/platform:error_payloads",
         "//tensorflow/core/platform:status",
+        "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncDialect",
@@ -179,6 +191,8 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:Transforms",
         "@local_tsl//tsl/lib/monitoring:counter",
+        "@local_tsl//tsl/platform:error_logging",
+        "@local_tsl//tsl/platform:errors",
         "@local_tsl//tsl/platform:status",
     ],
 )

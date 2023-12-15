@@ -70,6 +70,7 @@ limitations under the License.
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"  // from @llvm-project
 #include "mlir/Dialect/Linalg/IR/Linalg.h"  // from @llvm-project
+#include "mlir/Dialect/MemRef/Transforms/AllocationOpInterfaceImpl.h"  // from @llvm-project
 #include "mlir/Dialect/MemRef/Transforms/Passes.h"  // from @llvm-project
 #include "mlir/Dialect/SCF/IR/SCF.h"  // from @llvm-project
 #include "mlir/Dialect/Tensor/IR/Tensor.h"  // from @llvm-project
@@ -114,7 +115,6 @@ limitations under the License.
 #include "xla/runtime/executable.h"
 #include "xla/runtime/jit_executable.h"
 #include "xla/service/algebraic_simplifier.h"
-#include "xla/service/all_gather_decomposer.h"
 #include "xla/service/all_reduce_promotion.h"
 #include "xla/service/all_to_all_decomposer.h"
 #include "xla/service/batch_dot_simplification.h"
@@ -189,9 +189,9 @@ limitations under the License.
 #include "xla/service/map_inliner.h"
 #include "xla/service/operand_upcaster.h"
 #include "xla/service/optimization_barrier_expander.h"
+#include "xla/service/optimize_input_output_buffer_alias.h"
 #include "xla/service/qr_expander.h"
 #include "xla/service/reduce_decomposer.h"
-#include "xla/service/reduce_scatter_decomposer.h"
 #include "xla/service/reshape_decomposer.h"
 #include "xla/service/reshape_mover.h"
 #include "xla/service/result_caster.h"
@@ -205,6 +205,7 @@ limitations under the License.
 #include "xla/service/sort_simplifier.h"
 #include "xla/service/spmd/stateful_rng_spmd_partitioner.h"
 #include "xla/service/stochastic_convert_decomposer.h"
+#include "xla/service/sub_byte_normalization.h"
 #include "xla/service/topk_rewriter.h"
 #include "xla/service/transpose_folding.h"
 #include "xla/service/tree_reduction_rewriter.h"
@@ -253,22 +254,22 @@ void LoadMLIRDialects(mlir::MLIRContext& context) {
                       xla::runtime::RuntimeDialect>();
   mlir::registerBuiltinDialectTranslation(context);
   mlir::registerLLVMDialectTranslation(context);
+
+  mlir::DialectRegistry registry;
+  mlir::memref::registerAllocationOpInterfaceExternalModels(registry);
+  context.appendDialectRegistry(registry);
 }
 
 xla::cpu::HloXlaRuntimePipelineOptions GetHloXlaRuntimePipelineOptions(
     llvm::Triple target_triple, llvm::StringRef cpu_name) {
   xla::cpu::HloXlaRuntimePipelineOptions options;
-  options.enable_tiling_and_fusion =
-      xla::GetDebugOptionsFromFlags().xla_cpu_enable_mlir_tiling_and_fusion();
+  options.enable_tiling_and_fusion = false;
   if (xla::GetDebugOptionsFromFlags().xla_cpu_enable_custom_matmul_tiling()) {
     options.matmul_tile_sizes = {
         xla::GetDebugOptionsFromFlags().xla_cpu_matmul_tiling_m_dim(),
         xla::GetDebugOptionsFromFlags().xla_cpu_matmul_tiling_n_dim(),
         xla::GetDebugOptionsFromFlags().xla_cpu_matmul_tiling_k_dim()};
   }
-  options.experimental_deallocation =
-      xla::GetDebugOptionsFromFlags()
-          .xla_cpu_enable_experimental_deallocation();
   options.enable_avx2 = [&] {
     // Derive whether this is an x86 CPU with AVX2 enabled.
     if (!target_triple.isX86()) return false;
@@ -279,7 +280,6 @@ xla::cpu::HloXlaRuntimePipelineOptions GetHloXlaRuntimePipelineOptions(
   options.cpu_name = cpu_name;
   if (xla::GetDebugOptionsFromFlags().xla_cpu_enable_mlir_fusion_outlining()) {
     options.enable_fusion_outlining = true;
-    options.experimental_deallocation = true;
   }
   return options;
 }
@@ -434,7 +434,7 @@ runtime::JitExecutable::Options GetXlaRuntimeJitExecutableOptions(
 
 StatusOr<std::unique_ptr<Executable>>
 CpuXlaRuntimeAotCompilationResult::LoadExecutable(
-    Compiler* compiler, se::StreamExecutor* executor) const {
+    Compiler* compiler, se::StreamExecutor* executor) {
   XlaRuntimeExecutableProto xla_runtime_executable =
       xla_runtime_cpu_executable_.xla_runtime_executable();
   TF_ASSIGN_OR_RETURN(HloModuleConfig hlo_module_config,
@@ -648,6 +648,16 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
     TF_RETURN_IF_ERROR(sharding_removal_pipeline.Run(module).status());
   }
 
+  {
+    // Int4Packer must be run before the rest of the pipeline since it modifies
+    // the layout of the entry computation inputs/outputs, which is passed to
+    // LayoutAssignment.
+    HloPassPipeline int4_packer_pipeline("Int4Packer pipeline");
+    int4_packer_pipeline.AddPass<SubByteNormalization>(
+        SubByteNormalization::SET_ELEMENT_SIZE);
+    TF_RETURN_IF_ERROR(int4_packer_pipeline.Run(module).status());
+  }
+
   HloPassPipeline pipeline("HLO passes through layout assignment");
   AddHloVerifier(&pipeline, allow_sparse_shapes_);
 
@@ -674,9 +684,7 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
   pipeline.AddPass<QrExpander>();
   pipeline.AddPass<EighExpander>();
   pipeline.AddPass<TriangularSolveExpander>();
-  pipeline.AddPass<AllGatherDecomposer>();
   pipeline.AddPass<AllToAllDecomposer>();
-  pipeline.AddPass<ReduceScatterDecomposer>();
   pipeline.AddPass<StochasticConvertDecomposer>();
 
   // Inline computations with a single call site.
@@ -688,8 +696,7 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
 #if defined(INTEL_MKL) && defined(ENABLE_ONEDNN_V3)
   // AOT compiled code runs in single thread.
   if (!is_aot_compile) {
-    // Temporarily disabling oneDNN rewriter because it causes JAX regression.
-    // pipeline.AddPass<OneDnnRewriter>();
+    pipeline.AddPass<OneDnnRewriter>();
   }
 #endif  // INTEL_MKL && ENABLE_ONEDNN_V3
 
@@ -702,15 +709,15 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
   // BF16/F8 lowering for most ops.
   FloatSupport bf16_support(BF16);
   pipeline.AddPass<FloatNormalization>(&bf16_support);
-  FloatSupport f8e5m2_support(F8E5M2);
+  FloatSupport f8e5m2_support(F8E5M2, F16);
   pipeline.AddPass<FloatNormalization>(&f8e5m2_support);
-  FloatSupport f8e4m3fn_support(F8E4M3FN);
+  FloatSupport f8e4m3fn_support(F8E4M3FN, F16);
   pipeline.AddPass<FloatNormalization>(&f8e4m3fn_support);
-  FloatSupport f8e4m3b11fnuz_support(F8E4M3B11FNUZ);
+  FloatSupport f8e4m3b11fnuz_support(F8E4M3B11FNUZ, F16);
   pipeline.AddPass<FloatNormalization>(&f8e4m3b11fnuz_support);
-  FloatSupport f8e5m2fnuz_support(F8E5M2FNUZ);
+  FloatSupport f8e5m2fnuz_support(F8E5M2FNUZ, F16);
   pipeline.AddPass<FloatNormalization>(&f8e5m2fnuz_support);
-  FloatSupport f8e4m3fnuz_support(F8E4M3FNUZ);
+  FloatSupport f8e4m3fnuz_support(F8E4M3FNUZ, F16);
   pipeline.AddPass<FloatNormalization>(&f8e4m3fnuz_support);
   // After canonicalization, there may be more batch dots that can be
   // simplified.
@@ -742,8 +749,15 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
   pipeline.AddPass<ConditionalCanonicalizer>();
   pipeline.AddPass<DynamicDimensionSimplifier>();
   auto dynamic_padder_options = DynamicPadderOptions();
+  // TODO(pgavin): ShapeChecks were never implemented correctly by the dynamic
+  // padder.  The mode defaults to kIgnore, and it was not overridden for nested
+  // computations (such as while bodies or conditional branches), and so cases
+  // that could not be proven would still be accepted even with compile-time
+  // checks enabled.  Recent changes to the DynamicPadder correctly
+  // override the mode.  However, some models have started to rely on the check
+  // being ignored, and they would be broken if it is enforced.
   dynamic_padder_options.shape_check_mode =
-      DynamicDimensionInference::ShapeCheckMode::kCompileTime;
+      DynamicDimensionInference::ShapeCheckMode::kIgnore;
   pipeline.AddPass<DynamicPadder>(dynamic_padder_options);
   if (!is_mlir_compile) {
     pipeline.AddPass<SelectAndScatterExpander>();
@@ -840,6 +854,10 @@ Status CpuCompiler::RunHloPassesThroughLayoutAssn(
     pipeline.AddPass<CpuLayoutAssignment>(
         module->mutable_entry_computation_layout(), target_machine_features,
         &layout_constraints);
+    // Run SubByteNormalization because CpuLayoutAssignment may modify a
+    // Layout's element_size_in_bits field.
+    pipeline.AddPass<SubByteNormalization>(
+        SubByteNormalization::SET_ELEMENT_SIZE);
   }
 
   return pipeline.Run(module).status();
@@ -922,6 +940,7 @@ Status CpuCompiler::RunHloPassesAfterLayoutAssn(
   pipeline.AddPass<HloDCE>();
   pipeline.AddPass<CopyInsertion>();
   pipeline.AddPass<HloDCE>();
+  pipeline.AddPass<OptimizeInputOutputBufferAlias>(true);
   return pipeline.Run(module).status();
 }
 
