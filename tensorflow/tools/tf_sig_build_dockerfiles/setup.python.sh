@@ -100,5 +100,10 @@ python3 get-pip.py
 python3 -m pip install --no-cache-dir --upgrade pip
 python3 -m pip install -U setuptools
 
-# Disable the cache dir to save image space, and install packages
-python3 -m pip install --no-cache-dir -r $REQUIREMENTS -U
+if [[ $3 ]]; then
+    echo "Runtime mode"
+else
+    echo "Install Requirements"
+    # Disable the cache dir to save image space, and install packages
+    python3 -m pip install --no-cache-dir -r $REQUIREMENTS -U
+fi
