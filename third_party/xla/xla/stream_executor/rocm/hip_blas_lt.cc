@@ -149,7 +149,7 @@ tsl::Status BlasLt::Init() {
   return std::move(layout);
 }
 
-hipblasltDatatype_t BlasLt::MatrixLayout::type() const { return HIPBLASLT_R_32F; }
+hipDataType BlasLt::MatrixLayout::type() const { return HIP_R_32F; }
 
 /*static*/ tsl::StatusOr<BlasLt::MatmulDesc> BlasLt::MatmulDesc::Create(
     blas::ComputationType compute_type, blas::DataType scale_type,
@@ -175,12 +175,12 @@ hipblasltDatatype_t BlasLt::MatrixLayout::type() const { return HIPBLASLT_R_32F;
   return std::move(desc);
 }
 
-hipblasLtComputeType_t BlasLt::MatmulDesc::compute_type() const {
-  return HIPBLASLT_COMPUTE_F32;
+hipblasComputeType_t BlasLt::MatmulDesc::compute_type() const {
+  return HIPBLAS_COMPUTE_32F;
 }
 
-hipblasltDatatype_t BlasLt::MatmulDesc::scale_type() const {
-  return HIPBLASLT_R_32F;
+hipblasDatatype_t BlasLt::MatmulDesc::scale_type() const {
+  return HIP_R_32F;
 }
 
 hipblasPointerMode_t BlasLt::MatmulDesc::pointer_mode() const {

@@ -21,18 +21,6 @@ limitations under the License.
 #include "rocm/rocm_config.h"
 #if TF_HIPBLASLT
 
-#if TF_ROCM_VERSION < 60000
-#define hipblasltDatatype_t hipblasDatatype_t
-#define HIPBLASLT_R_16F HIPBLAS_R_16F
-#define HIPBLASLT_R_16B HIPBLAS_R_16B
-#define HIPBLASLT_R_32F HIPBLAS_R_32F
-#define HIPBLASLT_R_64F HIPBLAS_R_64F
-#define HIPBLASLT_R_8I HIPBLAS_R_8I
-#define HIPBLASLT_R_32I HIPBLAS_R_32I
-#define HIPBLASLT_C_32F HIPBLAS_R_32F
-#define HIPBLASLT_C_64F HIPBLAS_R_64F
-#endif
-
 #include "xla/status.h"
 #include "xla/stream_executor/rocm/hip_blas_utils.h"
 #include "xla/stream_executor/rocm/hipblaslt_wrapper.h"
@@ -66,7 +54,7 @@ class BlasLt {
         std::optional<int64_t> leading_dim_stride = std::nullopt,
         std::optional<int64_t> batch_stride = std::nullopt);
 
-    hipblasltDatatype_t type() const;
+    hipDataType type() const;
 
     hipblasLtMatrixLayout_t get() const { return handle_.get(); }
 
@@ -103,8 +91,8 @@ class BlasLt {
         Epilogue epilogue = Epilogue::kDefault,
         PointerMode pointer_mode = PointerMode::kHost);
 
-    hipblasLtComputeType_t compute_type() const;
-    hipblasltDatatype_t scale_type() const;
+    hipblasComputeType_t compute_type() const;
+    hipDataType scale_type() const;
     hipblasPointerMode_t pointer_mode() const;
 
     hipblasLtMatmulDesc_t get() const { return handle_.get(); }
