@@ -18,17 +18,6 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "xla/stream_executor/blas.h"
 #include "rocm/rocm_config.h"
-#if TF_ROCM_VERSION < 60000
-#define hipblasltDatatype_t hipblasDatatype_t
-#define HIPBLASLT_R_16F HIPBLAS_R_16F
-#define HIPBLASLT_R_16B HIPBLAS_R_16B
-#define HIPBLASLT_R_32F HIPBLAS_R_32F
-#define HIPBLASLT_R_64F HIPBLAS_R_64F
-#define HIPBLASLT_R_8I HIPBLAS_R_8I
-#define HIPBLASLT_R_32I HIPBLAS_R_32I
-#define HIPBLASLT_C_32F HIPBLAS_R_32F
-#define HIPBLASLT_C_64F HIPBLAS_R_64F
-#endif
 
 namespace stream_executor {
 namespace rocm {
@@ -42,36 +31,36 @@ tsl::Status ToStatus(hipblasStatus_t status, const char* prefix) {
   return tsl::OkStatus();
 }
 
-hipblasltDatatype_t AsHipblasDataType(blas::DataType type) {
+hipDataType AsHipblasDataType(blas::DataType type) {
   switch (type) {
     case blas::DataType::kF8E5M2:
     case blas::DataType::kF8E4M3FN:
       LOG(FATAL) << "hipblaslt does not support F8 yet";
     case blas::DataType::kHalf:
-      return HIPBLASLT_R_16F;
+      return HIP_R_16F;
     case blas::DataType::kBF16:
-      return HIPBLASLT_R_16B;
+      return HIP_R_16BF;
     case blas::DataType::kFloat:
-      return HIPBLASLT_R_32F;
+      return HIP_R_32F;
     case blas::DataType::kDouble:
-      return HIPBLASLT_R_64F;
+      return HIP_R_64F;
     case blas::DataType::kInt8:
-      return HIPBLASLT_R_8I;
+      return HIP_R_8I;
     case blas::DataType::kInt32:
-      return HIPBLASLT_R_32I;
+      return HIP_R_32I;
     case blas::DataType::kComplexFloat:
-      return HIPBLASLT_C_32F;
+      return HIP_C_32F;
     case blas::DataType::kComplexDouble:
-      return HIPBLASLT_C_64F;
+      return HIP_C_64F;
     default:
       LOG(FATAL) << "unknown data type";
   }
 }
 
-hipblasLtComputeType_t AsHipblasComputeType(blas::ComputationType type) {
+hipblasComputeType_t AsHipblasComputeType(blas::ComputationType type) {
   if (type == blas::ComputationType::kF32 ||
       type == blas::ComputationType::kTF32AsF32)
-    return HIPBLASLT_COMPUTE_F32;
+    return HIPBLAS_COMPUTE_32F;
   else
     LOG(FATAL) << "unsupported hipblaslt computation type";
 }
