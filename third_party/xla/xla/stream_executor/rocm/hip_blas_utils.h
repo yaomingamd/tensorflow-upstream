@@ -24,26 +24,24 @@ limitations under the License.
 #include "tsl/platform/status.h"
 
 #include "rocm/rocm_config.h"
-
 #if TF_HIPBLASLT
+/*
 
-#if TF_ROCM_VERSION < 60000
-#define hipDataType hipblasDatatype_t
-#define HIP_R_16F HIPBLAS_R_16F
-#define HIP_R_16BF HIPBLAS_R_16B
-#define HIP_R_32F HIPBLAS_R_32F
-#define HIP_R_64F HIPBLAS_R_64F
-#define HIP_R_8I HIPBLAS_R_8I
-#define HIP_R_32I HIPBLAS_R_32I
-#define HIP_C_32F HIPBLAS_C_32F
-#define HIP_C_64F HIPBLAS_C_64F
+#if TF_ROCM_VERSION == 60000
+#define hipblasLtComputeType_t hipblasComputeType_t
+#define hipblasltDatatype_t hipDataType
+#define HIPBLASLT_COMPUTE_F32 HIPBLAS_COMPUTE_32F
 
-#define hipblasComputeType_t hipblasLtComputeType_t
-#define HIPBLAS_COMPUTE_32F HIPBLASLT_COMPUTE_F32
-#define HIPBLAS_COMPUTE_64F HIPBLASLT_COMPUTE_F64
-#define HIPBLAS_COMPUTE_32I HIPBLASLT_COMPUTE_I32
+#define HIPBLASLT_R_16F HIP_R_16F
+#define HIPBLASLT_R_16B HIP_R_16BF
+#define HIPBLASLT_R_32F HIP_R_32F
+#define HIPBLASLT_R_64F HIP_R_64F
+#define HIPBLASLT_R_8I HIP_R_8I
+#define HIPBLASLT_R_32I HIP_R_32I
+#define HIPBLASLT_C_32F HIP_C_32F
+#define HIPBLASLT_C_64F HIP_C_64F
 #endif
-
+*/
 namespace stream_executor {
 namespace rocm {
 
@@ -51,8 +49,8 @@ namespace rocm {
   TF_RETURN_IF_ERROR(::stream_executor::rocm::ToStatus(expr, #expr))
 
 tsl::Status ToStatus(hipblasStatus_t status, const char* prefix);
-hipDataType AsHipblasDataType(blas::DataType type);
-hipblasComputeType_t AsHipblasComputeType(blas::ComputationType type);
+hipblasltDatatype_t AsHipblasDataType(blas::DataType type);
+hipblasLtComputeType_t AsHipblasComputeType(blas::ComputationType type);
 hipblasOperation_t AsHipblasOperation(blas::Transpose trans);
 
 }  // namespace rocm

@@ -143,6 +143,10 @@ tsl::Status BlasLt::Init() {
       *leading_dim_stride));
   // Wrap hipblas handle immediately, so it is cleaned up if an error occurs.
   BlasLt::MatrixLayout layout(hip_layout, hipblas_data_type_);
+  layout.num_rows_ = m.num_rows;
+  layout.num_cols_ = m.num_cols;
+  layout.batch_size_ = m.batch_size;
+  layout.type_ = type;
   if (m.order != gpu::MatrixLayout::Order::kColumnMajor)
     return tsl::errors::Internal(
         "HipblasLT does not support row-major matrices");
@@ -158,7 +162,7 @@ tsl::Status BlasLt::Init() {
           << " batch_size: " << m.batch_size
           << " leading_dim_stride: " << *leading_dim_stride
           << " batch_stride: " << *batch_stride;
-
+  layout.batch_stride_ = *batch_stride;
   TF_RETURN_IF_ERROR(SetAttr(
       hip_layout, HIPBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, *batch_stride));
   return std::move(layout);
@@ -167,7 +171,7 @@ tsl::Status BlasLt::Init() {
 /*static*/ tsl::StatusOr<BlasLt::MatmulDesc> BlasLt::MatmulDesc::Create(
     blas::ComputationType compute_type, blas::DataType scale_type,
     blas::Transpose trans_a, blas::Transpose trans_b, Epilogue epilogue,
-    PointerMode pointer_mode) {
+    PointerMode pointer_mode, int f8_flags) {
   hipblasLtMatmulDesc_t hip_desc;
   VLOG(2) << "BlasLt::MatmulDesc::Create compute_type: " << int(compute_type)
           << " scale_type: " << int(scale_type)
@@ -180,6 +184,8 @@ tsl::Status BlasLt::Init() {
       &hip_desc, hip_compute_type, hip_scale_type));
   // Wrap hipblas handle immediately, so it is cleaned up if an error occurs.
   BlasLt::MatmulDesc desc(hip_desc, hip_compute_type, hip_scale_type);
+  desc.trans_a_ = trans_a;
+  desc.trans_b_ = trans_b;
   if (pointer_mode != PointerMode::kHost) {
     return tsl::errors::Internal("hipblaslt does not support device pointers");
   }
@@ -190,6 +196,7 @@ tsl::Status BlasLt::Init() {
                              AsHipblasOperation(trans_b)));
   TF_ASSIGN_OR_RETURN(hipblasLtEpilogue_t epi, AsHipblasLtEpilogue(epilogue));
   TF_RETURN_IF_ERROR(SetAttr(hip_desc, HIPBLASLT_MATMUL_DESC_EPILOGUE, epi));
+  desc.f8_flags_ = f8_flags;
   return std::move(desc);
 }
 
@@ -370,9 +377,7 @@ tsl::Status BlasLt::MatmulPlan::DoMatmul(
     DeviceMemoryBase b_scale, DeviceMemoryBase c_scale,
     DeviceMemoryBase d_scale, DeviceMemoryBase d_amax,
     blas::ProfileResult* profile_result) const {
-  TF_ASSIGN_OR_RETURN(
-      std::optional<gpu::GpuTimer> timer,
-      gpu::GpuTimer::CreateIfNeeded(gpu::AsGpuStream(stream), profile_result));
+  std::optional<gpu::GpuTimer> timer;
 
   void* workspace = nullptr;
   if (algorithm.workspace_size > 0) {
@@ -408,6 +413,12 @@ tsl::Status BlasLt::MatmulPlan::DoMatmul(
     }
 
     gpu::ScopedActivateExecutorContext sac{blas_lt_ref_.parent_};
+    auto timer_or_status = gpu::GpuTimer::Create(gpu::AsGpuStream(stream));
+    if (!timer_or_status.ok()) {
+      LOG(ERROR) << "Failed to create timer";
+      return tsl::errors::Internal("Failed to create timer");
+    }
+    timer.emplace(std::move(*timer_or_status));
 
     if (palgo != nullptr) {
       SE_HIPBLAS_RETURN_IF_ERROR(wrap::hipblasLtMatmul(
@@ -420,10 +431,26 @@ tsl::Status BlasLt::MatmulPlan::DoMatmul(
     }
   }
 
+  TF_ASSIGN_OR_RETURN(absl::Duration elapsed,
+                      timer->GetElapsedDuration());
+  double t = absl::ToDoubleMilliseconds(elapsed);
+
+  uint64_t batch=1;
+  if(a_desc_.batch_size_ > 1)
+    batch = a_desc_.batch_size_;
+  if(b_desc_.batch_size_ > 1)
+    batch = b_desc_.batch_size_;
+
+  uint64_t M = (op_desc_.trans_a_ == blas::Transpose::kNoTranspose) ? a_desc_.num_rows_ : a_desc_.num_cols_;
+  uint64_t N = (op_desc_.trans_b_ == blas::Transpose::kNoTranspose) ? b_desc_.num_cols_ : b_desc_.num_rows_;
+  uint64_t K = a_desc_.num_rows_ * a_desc_.num_cols_ / M;
+
+  std::string report_string = "F16 matmulLt M " + std::to_string(M)
+    + " N " + std::to_string(N) + " K " + std::to_string(K) 
+    + ((op_desc_.trans_a_ == blas::Transpose::kNoTranspose) ? "N" : "T")
+    + ((op_desc_.trans_b_ == blas::Transpose::kNoTranspose) ? "N" : "T");
+
   if (profile_result != nullptr) {
-    TF_ASSIGN_OR_RETURN(absl::Duration elapsed, timer->GetElapsedDuration());
-    // set algorithm ID to be unique (otherwise it gets kDefaultAlgorithm ID)
-    profile_result->set_algorithm(reinterpret_cast<blas::AlgorithmType>(palgo));
     profile_result->set_is_valid(true);
     profile_result->set_elapsed_time_in_ms(absl::ToDoubleMilliseconds(elapsed));
   }
