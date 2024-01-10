@@ -101,6 +101,8 @@ python3 -m pip install --no-cache-dir --upgrade pip
 
 if [[ $3 ]]; then
     echo "Runtime mode"
+    # Install some base needs for TF tests
+    python3 -m pip install --no-cache-dir portpicker numpy==1.24.3 scipy -U
 else
     echo "Install Requirements"
     # Disable the cache dir to save image space, and install packages
