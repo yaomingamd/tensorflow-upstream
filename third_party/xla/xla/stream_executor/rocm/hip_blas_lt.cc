@@ -179,7 +179,7 @@ hipblasComputeType_t BlasLt::MatmulDesc::compute_type() const {
   return HIPBLAS_COMPUTE_32F;
 }
 
-hipblasDatatype_t BlasLt::MatmulDesc::scale_type() const {
+hipDataType BlasLt::MatmulDesc::scale_type() const {
   return HIP_R_32F;
 }
 
