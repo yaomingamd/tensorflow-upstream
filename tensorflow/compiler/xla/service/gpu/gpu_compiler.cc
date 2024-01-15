@@ -873,11 +873,11 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
         compute_capability.IsAtLeast(se::CudaComputeCapability::VOLTA)) {
       pipeline.AddPass<GemmRewriterTriton>(compute_capability);
     }
+#endif
     pipeline.AddPass<GemmRewriter>(compute_capability);
-
     // Rewrite GEMMs with broadcasted inputs as strided GEMMs.
     pipeline.AddPass<GemmBroadcastFoldingRewriter>();
-#endif
+    
     if (debug_options.xla_gpu_normalize_layouts()) {
       pipeline.AddPass<LayoutNormalization>(&NormalizeLayoutForGpuCustomCalls);
       pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
