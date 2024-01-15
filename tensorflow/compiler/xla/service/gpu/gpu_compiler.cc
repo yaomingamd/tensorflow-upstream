@@ -877,7 +877,6 @@ Status GpuCompiler::OptimizeHloPostLayoutAssignment(
     pipeline.AddPass<GemmRewriter>(compute_capability);
     // Rewrite GEMMs with broadcasted inputs as strided GEMMs.
     pipeline.AddPass<GemmBroadcastFoldingRewriter>();
-
     if (debug_options.xla_gpu_normalize_layouts()) {
       pipeline.AddPass<LayoutNormalization>(&NormalizeLayoutForGpuCustomCalls);
       pipeline.AddPass<HloPassFix<AlgebraicSimplifier>>(options);
