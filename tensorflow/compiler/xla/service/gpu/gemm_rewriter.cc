@@ -660,6 +660,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
                                     bool b_mult_scale,
                                     std::vector<HloInstruction *> a_unary_ops,
                                     std::vector<HloInstruction *> b_unary_ops) {
+#if GOOGLE_CUDA
     auto cuda_compute_capability =
           std::get<se::CudaComputeCapability>(gpu_version_);
 
@@ -673,7 +674,7 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     // FP8 GEMM kernels are only available with CUDA 11.8 and above
     VLOG(1) << "FP8 Custom Calls require CUDA 11.8 or newer.";
     return false;
-#endif
+#endif  // CUDA_VERSION
 
     // cuBLASLt FP8 GEMM kernels require one of the two operands to be in
     // F8E4M3FN format.
@@ -913,6 +914,9 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     TF_RETURN_IF_ERROR(
         ReplaceInstruction(instr, slice ? slice : new_custom_call));
     return true;
+#else // TENSORFLOW_USE_ROCM
+  return false;
+#endif
   }
 
   Status F8ConvertD(HloInstruction *instr, HloInstruction *existing_gemm,
@@ -1530,6 +1534,11 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
   StatusOr<bool> GemmIsSupportedByCublasLt(
       const HloInstruction &instr,
       const GemmBackendConfig &gemm_backend_config) const {
+    
+    // hipblas-lt is available since r2.14 (r2.13 and r2.12 don't have).
+    if (std::holds_alternative<se::RocmComputeCapability>(gpu_version_)) 
+      return false;
+
     const HloInstruction *lhs = instr.operand(0);
     const HloInstruction *rhs = instr.operand(1);
     const Shape &output_shape = instr.shape();
@@ -1562,16 +1571,6 @@ class GemmRewriterVisitor : public DfsHloRewriteVisitor {
     constexpr int kMaxDimensionSize{4194240};
     if (output_shape.element_type() != C64) {
       // Does not match type in unsupported case.
-      return true;
-    }
-
-    auto cuda_compute_capability =
-          std::get<se::CudaComputeCapability>(gpu_version_);
-    if (cuda_compute_capability.IsAtLeast(se::CudaComputeCapability::AMPERE)) {
-      // cuBlasLt has an implementation for complex data with compute type
-      // 32F_FAST_32TF that uses tensor cores and that is free from the
-      // restriction. This implementation only works on Ampere
-      // architecture though (where TF32 was introduced).
       return true;
     }
 
