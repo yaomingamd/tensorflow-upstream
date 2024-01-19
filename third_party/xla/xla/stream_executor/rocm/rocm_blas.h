@@ -203,6 +203,9 @@ class ROCMBlas : public blas::BlasSupport {
 
   ROCMBlas(const ROCMBlas &) = delete;
   void operator=(const ROCMBlas &) = delete;
+
+  bool has_mfma_ = false;
+  bool use_hgemm_alt_impl_ = false;
 };
 
 }  // namespace gpu
