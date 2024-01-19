@@ -110,6 +110,25 @@ bool ROCMBlas::Init() {
     return false;
   }
 #endif
+
+  int dev = 0;
+  hipError_t result = hipGetDevice(&dev);
+  hipDeviceProp_t props;
+  result = hipGetDeviceProperties(&props, dev);
+  if (result == hipSuccess) {
+    std::string gcnArchName = props.gcnArchName;
+    auto pos = gcnArchName.find(":");
+    if (pos != string::npos) gcnArchName = gcnArchName.substr(0, pos);
+    pos = gcnArchName.find("gfx");
+    if (pos != string::npos) gcnArchName = gcnArchName.substr(pos + 3);
+    if ((gcnArchName == "908") || 
+        (gcnArchName == "90a") || (gcnArchName == "940") ||
+        (gcnArchName == "941") || (gcnArchName == "942"))
+      has_mfma_ = true;
+    if(gcnArchName == "90a")
+      use_hgemm_alt_impl_ = true;
+  }
+
   return true;
 }
 
@@ -462,17 +481,15 @@ tsl::Status ROCMBlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
 
   switch (dtype) {
     case blas::DataType::kHalf: {
-      tsl::StatusOr<bool> maybe_hasXDLOPS = GpuDriver::GetMFMASupport();
-      if (maybe_hasXDLOPS.ok() && maybe_hasXDLOPS.value()) {
+      if (has_mfma_) {
         VLOG(1) << "Using rocblas_gemm_ex";
-        bool is_backprop = (context == blas::CallContext::kBackpropInput1) ||
-                           (context == blas::CallContext::kBackpropInput2);
-
         uint32_t flags = rocblas_gemm_flags_none;
 #if TF_ROCM_VERSION >= 50000
-        if (is_backprop) {
+        bool is_backprop =
+            (context == blas::CallContext::kBackpropInput1) ||
+            (context == blas::CallContext::kBackpropInput2);
+        if (is_backprop && use_hgemm_alt_impl_)
           flags = rocblas_gemm_flags_fp16_alt_impl;
-        }
 #endif
         return DoBlasInternalStatus(
             wrap::rocblas_gemm_ex, stream, /* pointer_mode_host = */ true,
@@ -870,6 +887,53 @@ tsl::Status ROCMBlas::DoBlasGemmBatchedInternal(
   return tsl::OkStatus();
 }
 
+class rocblas_hgemm_strided_batched_mfma {
+  int ALT_;
+public:
+  rocblas_hgemm_strided_batched_mfma(int ALT) : ALT_(ALT) {}
+  std::string kName = "rocblas_hgemm_strided_batched_mfma";
+  rocblas_status operator()(rocblas_handle      handle,
+                                                  rocblas_operation   transA,
+                                                  rocblas_operation   transB,
+                                                  rocblas_int         m,
+                                                  rocblas_int         n,
+                                                  rocblas_int         k,
+                                                  const rocblas_half* alpha,
+                                                  const rocblas_half* A,
+                                                  rocblas_int         lda,
+                                                  rocblas_stride      stride_a,
+                                                  const rocblas_half* B,
+                                                  rocblas_int         ldb,
+                                                  rocblas_stride      stride_b,
+                                                  const rocblas_half* beta,
+                                                  rocblas_half*       C,
+                                                  rocblas_int         ldc,
+                                                  rocblas_stride      stride_c,
+                                                  rocblas_int         batch_count) {
+  float alpha32 = float(*(const __half*)alpha);
+  float beta32 = float(*(const __half*)beta);
+  uint32_t flags = rocblas_gemm_flags_none;
+#if TF_ROCM_VERSION >= 50000  
+  if(ALT_)
+    flags = rocblas_gemm_flags_fp16_alt_impl;
+#endif
+  return wrap::rocblas_gemm_strided_batched_ex(handle,
+      transA, transB,
+      m, n, k,
+      &alpha32, 
+      A, rocblas_datatype_f16_r, lda, stride_a,
+      B, rocblas_datatype_f16_r, ldb, stride_b,
+      &beta32,
+      C, rocblas_datatype_f16_r, ldc, stride_c,
+      C, rocblas_datatype_f16_r, ldc, stride_c,
+      batch_count,
+      rocblas_datatype_f32_r,
+      rocblas_gemm_algo_standard,
+      0,
+      flags);
+}
+};
+
 bool ROCMBlas::DoBlasGemmBatched(
     Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64_t m,
     uint64_t n, uint64 k, float alpha, DeviceMemorySlice<Eigen::half> a,
@@ -880,11 +944,25 @@ bool ROCMBlas::DoBlasGemmBatched(
   blas_log("DoBlasGemmBatched");
   const Eigen::half alpha_half(alpha);
   const Eigen::half beta_half(beta);
-
-  tsl::Status status = DoBlasGemmBatchedInternal(
-      wrap::rocblas_hgemm_strided_batched, stream, transa, transb, m, n, k,
+  tsl::Status status;
+  auto func = wrap::rocblas_hgemm_strided_batched;
+  if (has_mfma_) {
+    bool is_backprop =
+        (context == blas::CallContext::kBackpropInput1) ||
+        (context == blas::CallContext::kBackpropInput2);
+    status = DoBlasGemmBatchedInternal(
+        rocblas_hgemm_strided_batched_mfma(is_backprop && use_hgemm_alt_impl_),
+        stream, transa, transb, m, n, k,
+        alpha_half, a, lda, b, ldb, beta_half, c, ldc, batch_count,
+        scratch_allocator);
+  } else {
+    status = DoBlasGemmBatchedInternal(
+      wrap::rocblas_hgemm_strided_batched, 
+      stream, transa, transb, m, n, k,
       alpha_half, a, lda, b, ldb, beta_half, c, ldc, batch_count,
       scratch_allocator);
+  }
+
   if (!status.ok()) {
     LOG(ERROR) << status;
   }
@@ -1118,16 +1196,35 @@ tsl::Status ROCMBlas::DoBlasGemmStridedBatched(
     case blas::DataType::kHalf: {
       const Eigen::half alpha_half(*static_cast<const float *>(alpha));
       const Eigen::half beta_half(*static_cast<const float *>(beta));
-      return DoBlasInternalStatus(
-          wrap::rocblas_hgemm_strided_batched, stream,
+      if (has_mfma_) {
+        bool is_backprop =
+            (context == blas::CallContext::kBackpropInput1) ||
+            (context == blas::CallContext::kBackpropInput2);
+        uint32_t flags = rocblas_gemm_flags_none;
+
+        if (is_backprop && use_hgemm_alt_impl_)
+          flags = rocblas_gemm_flags_fp16_alt_impl;
+        return DoBlasInternalStatus(
+          wrap::rocblas_gemm_strided_batched_ex, stream,
           false, /* pointer_mode_host */
-          ROCMBlasTranspose(transa), ROCMBlasTranspose(transb), m, n, k,
-          reinterpret_cast<const rocblas_half *>(&alpha_half),
-          reinterpret_cast<const rocblas_half *>(a.opaque()), lda, stride_a,
-          reinterpret_cast<const rocblas_half *>(b.opaque()), ldb, stride_b,
-          reinterpret_cast<const rocblas_half *>(&beta_half),
-          reinterpret_cast<rocblas_half *>(c->opaque()), ldc, stride_c,
-          batch_count);
+          ROCMBlasTranspose(transa), ROCMBlasTranspose(transb), m, n, k, alpha,
+          a.opaque(), rocblas_datatype_f16_r, lda, stride_a, b.opaque(),
+          rocblas_datatype_f16_r, ldb, stride_b, beta, c->opaque(),
+          rocblas_datatype_f16_r, ldc, stride_c, c->opaque(),
+          rocblas_datatype_f16_r, ldc, stride_c, batch_count,
+          rocblas_datatype_f32_r, rocblas_gemm_algo_standard, 0, flags);
+      } else {
+        return DoBlasInternalStatus(
+            wrap::rocblas_hgemm_strided_batched, stream,
+            false, /* pointer_mode_host */
+            ROCMBlasTranspose(transa), ROCMBlasTranspose(transb), m, n, k,
+            reinterpret_cast<const rocblas_half *>(&alpha_half),
+            reinterpret_cast<const rocblas_half *>(a.opaque()), lda, stride_a,
+            reinterpret_cast<const rocblas_half *>(b.opaque()), ldb, stride_b,
+            reinterpret_cast<const rocblas_half *>(&beta_half),
+            reinterpret_cast<rocblas_half *>(c->opaque()), ldc, stride_c,
+            batch_count);
+      }
     }
     case blas::DataType::kBF16:
       return DoBlasInternalStatus(
