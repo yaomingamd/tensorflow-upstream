@@ -314,6 +314,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
   int num_threads = hlo_module->config()
                         .debug_options()
                         .xla_gpu_force_compilation_parallelism();
+#if !TENSORFLOW_USE_ROCM
   // If an external thread pool is provided or single-threaded operation is
   // requested do not create a thread pool.
   if (thread_pool == nullptr && num_threads != 1) {
@@ -324,7 +325,7 @@ Status GpuCompiler::OptimizeHloModule(HloModule* hlo_module,
     overriding_thread_pool.emplace(tsl::Env::Default(), "", num_threads);
     thread_pool = &*overriding_thread_pool;
   }
-
+#endif
   AlgebraicSimplifierOptions layout_insensitive_algsimp_opts({},
                                                              ConvIsLowerable);
 
