@@ -46,6 +46,7 @@ cc_library(
         ":categorical_op",
         ":cholesky_op",
         ":clip_by_value_op",
+        ":collective_gather_op",
         ":concat_op",
         ":const_op",
         ":conv_op_helpers",
@@ -1731,6 +1732,34 @@ tf_kernel_library(
 tf_kernel_library(
     name = "all_reduce_op",
     srcs = ["all_reduce_op.cc"],
+    deps = [
+        ":case_op",
+        ":if_op",
+        ":while_op",
+        ":xla_call_module_op",
+        "//tensorflow/compiler/tf2xla:common",
+        "//tensorflow/compiler/tf2xla:mlir_xla_op_kernel",
+        "//tensorflow/compiler/tf2xla:xla_compilation_device",
+        "//tensorflow/compiler/tf2xla:xla_compiler",
+        "//tensorflow/compiler/tf2xla:xla_context",
+        "//tensorflow/compiler/tf2xla:xla_helpers",
+        "//tensorflow/compiler/tf2xla:xla_op_registry",
+        "//tensorflow/compiler/tf2xla:xla_resource",
+        "//tensorflow/compiler/tf2xla/ops:xla_ops",
+        "//tensorflow/core:framework",
+        "@local_xla//xla:util",
+        "@local_xla//xla/client:xla_builder",
+        "@local_xla//xla/client/lib:constants",
+        "@local_xla//xla/client/lib:math",
+    ] + if_cuda_or_rocm(
+        if_false = [],
+        if_true = [":light_outside_compilation"],
+    ),
+)
+
+tf_kernel_library(
+    name = "collective_gather_op",
+    srcs = ["collective_gather_op.cc"],
     deps = [
         ":case_op",
         ":if_op",
