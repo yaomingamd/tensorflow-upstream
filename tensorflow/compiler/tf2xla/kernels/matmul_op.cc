@@ -59,6 +59,7 @@ class MatMulOp : public XlaOpKernel {
       OP_REQUIRES_OK(ctx, ctx->GetAttr("a_is_sparse", &dummy_is_sparse));
       OP_REQUIRES_OK(ctx, ctx->GetAttr("b_is_sparse", &dummy_is_sparse));
     }
+    numeric_flags_ = ctx->GetNumericFlags(true);
   }
 
   ~MatMulOp() override = default;
@@ -103,7 +104,10 @@ class MatMulOp : public XlaOpKernel {
         tsl::tensor_float_32_execution_enabled()
             ? xla::PrecisionConfig::DEFAULT
             : xla::PrecisionConfig::HIGHEST;
-    ctx->SetOutput(0, xla::BatchDot(a, transpose_a_, b, transpose_b_, precision,
+    xla::PrecisionConfig precision_config;
+    SetXlaPrecisionConfigNumericFlags(precision_config, precision, numeric_flags_);
+    ctx->SetOutput(0, xla::BatchDot(a, transpose_a_, b, transpose_b_, 
+                                    precision_config,
                                     std::nullopt, grad_a_, grad_b_));
   }
 
@@ -115,6 +119,7 @@ class MatMulOp : public XlaOpKernel {
   bool grad_b_;
   DataType a_type_;
   DataType b_type_;
+  int numeric_flags_;
 };
 
 REGISTER_XLA_OP(Name("MatMul").TypeConstraint("T", kMatmulTypes), MatMulOp);

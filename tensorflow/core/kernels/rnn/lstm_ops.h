@@ -179,7 +179,7 @@ struct LSTMBlockCellFprop : public LSTMBlockCell {
                   typename TTypes<T>::Matrix f, typename TTypes<T>::Matrix o,
                   typename TTypes<T>::Matrix ci, typename TTypes<T>::Matrix co,
                   typename TTypes<T>::Matrix gates,
-                  typename TTypes<T>::Matrix h);
+                  typename TTypes<T>::Matrix h, int flags=0);
 };
 
 // See lstm_ops.cc for CPUDevice implementation and lstm_ops_gpu.cu.cc for
@@ -206,7 +206,8 @@ struct LSTMBlockCellBprop : public LSTMBlockCell {
       typename TTypes<T>::Matrix df, typename TTypes<T>::Matrix di,
       typename TTypes<T>::Matrix dgates,
       typename TTypes<T>::Matrix cs_prev_grad, typename TTypes<T>::Vec wci_grad,
-      typename TTypes<T>::Vec wcf_grad, typename TTypes<T>::Vec wco_grad);
+      typename TTypes<T>::Vec wcf_grad, typename TTypes<T>::Vec wco_grad, 
+      int flags = 0);
 };
 
 template <typename Device, typename T, bool USE_CUBLAS, GateLayout gate_layout>
@@ -236,7 +237,7 @@ struct BlockLSTMBprop : public LSTMBlockCell {
       typename TTypes<T>::Matrix xh_grad, typename TTypes<T>::Matrix x_grad,
       typename TTypes<T>::Matrix w_grad, typename TTypes<T>::Vec wci_grad,
       typename TTypes<T>::Vec wcf_grad, typename TTypes<T>::Vec wco_grad,
-      typename TTypes<T>::Vec b_grad) {
+      typename TTypes<T>::Vec b_grad, int flags = 0) {
     // do[t] = sigm'(o[t]) .* dh[t] .* co[t]
     do_.device(d) = o * (o.constant(T(1)) - o) * h_grad * co;
 

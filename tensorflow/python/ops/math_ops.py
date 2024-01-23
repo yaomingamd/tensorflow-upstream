@@ -3626,6 +3626,8 @@ def matmul(
           transpose_b=transpose_b,
           a_is_sparse=a_is_sparse,
           b_is_sparse=b_is_sparse,
+          grad_a=grad_a,
+          grad_b=grad_b,
           name=name)
       # sparse_matmul always returns float32, even with
       # bfloat16 inputs. This prevents us from configuring bfloat16 training.

@@ -312,9 +312,13 @@ bool IsConvertPairNoOp(const HloInstruction* convert) {
 }
 
 PrecisionConfig SwapOperandsInDotPrecisionConfig(PrecisionConfig config) {
-  CHECK_EQ(config.operand_precision_size(), 2);
+  CHECK(config.operand_precision_size() == 2 
+    || config.operand_precision_size() == 4);
   std::swap(config.mutable_operand_precision()->at(0),
             config.mutable_operand_precision()->at(1));
+  if(config.operand_precision_size() == 4)
+      std::swap(config.mutable_operand_precision()->at(2),
+            config.mutable_operand_precision()->at(3));
   return config;
 }
 

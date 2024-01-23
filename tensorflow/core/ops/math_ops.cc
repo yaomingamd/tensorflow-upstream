@@ -1117,6 +1117,8 @@ REGISTER_OP("SparseMatMul")
     .Attr("b_is_sparse: bool = false")
     .Attr("Ta: {float, bfloat16} = DT_FLOAT")
     .Attr("Tb: {float, bfloat16} = DT_FLOAT")
+    .Attr("grad_a: bool = false")
+    .Attr("grad_b: bool = false")
     .SetShapeFn(shape_inference::MatMulShape);
 
 REGISTER_OP("_FusedMatMul")

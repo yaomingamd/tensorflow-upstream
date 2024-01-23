@@ -162,8 +162,7 @@ void LaunchConv2DBackpropInputOpGpuImpl(
 
     OP_REQUIRES_OK(
         ctx, stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr, k,
-                                  a_ptr, k, &c_ptr, n, GetNumericOptions(),
-                                  se::blas::CallContext::kNone));
+                                  a_ptr, k, &c_ptr, n, GetNumericOptions(2)));
     return;
   } else if (dims.spatial_dims[0].filter_size ==
                  dims.spatial_dims[0].input_size &&
@@ -190,8 +189,7 @@ void LaunchConv2DBackpropInputOpGpuImpl(
 
     OP_REQUIRES_OK(
         ctx, stream->ThenBlasGemm(transpose, no_transpose, n, m, k, b_ptr, k,
-                                  a_ptr, k, &c_ptr, n, GetNumericOptions(),
-                                  se::blas::CallContext::kNone));
+                                  a_ptr, k, &c_ptr, n, GetNumericOptions(2)));
     return;
   }
 

@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/protobuf/autotuning.pb.h"
 #include "tensorflow/core/util/proto/proto_utils.h"
 #include "tensorflow/core/util/use_cudnn.h"
+#include "tensorflow/core/kernels/numeric_options_utils.h"
 
 #if GOOGLE_CUDA
 #include "third_party/gpus/cudnn/cudnn.h"
@@ -28,7 +29,6 @@ limitations under the License.
 #include "xla/stream_executor/gpu/redzone_allocator.h"
 #include "xla/stream_executor/integrations/tf_allocator_adapter.h"
 #include "tensorflow/core/kernels/autotune_conv_impl.h"
-#include "tensorflow/core/kernels/numeric_options_utils.h"
 #include "tensorflow/core/platform/tensor_float_32_utils.h"
 #endif  // GOOGLE_CUDA
 
@@ -353,7 +353,7 @@ StatusOr<AutotuneEntry<se::dnn::ConvOp>> AutotuneUnfusedConv(
     if (!stream->parent()->GetMIOpenConvolveAlgorithms(
             kind, se::dnn::ToDataType<T>::value, stream, input_desc, input_ptr,
             filter_desc, filter_ptr, output_desc, output_ptr, conv_desc,
-            &scratch_allocator, &algorithms)) {
+            &scratch_allocator, GetNumericOptions(), &algorithms)) {
       return errors::Unknown(
           "Failed to get convolution algorithm. This is probably "
           "because MIOpen failed to initialize, so try looking to "

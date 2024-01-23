@@ -41,7 +41,7 @@ void TensorCuBlasGemm<T>::operator()(OpKernelContext* ctx, bool transa,
                                      bool transb, uint64 m, uint64 n, uint64 k,
                                      float alpha, const T* a, int lda,
                                      const T* b, int ldb, float beta, T* c,
-                                     int ldc) {
+                                     int ldc, int numeric_flags) {
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   se::blas::Transpose trans[] = {se::blas::Transpose::kNoTranspose,
                                  se::blas::Transpose::kTranspose};
@@ -54,7 +54,7 @@ void TensorCuBlasGemm<T>::operator()(OpKernelContext* ctx, bool transa,
       ctx, ctx->op_device_context()->stream()->ThenBlasGemm(
                trans[transa], trans[transb], m, n, k, static_cast<T>(alpha),
                a_ptr, lda, b_ptr, ldb, static_cast<T>(beta), &c_ptr, ldc,
-               GetNumericOptions(), se::blas::CallContext::kNone));
+               GetNumericOptions(numeric_flags)));
 #else
   ctx->SetStatus(errors::InvalidArgument("CuBlasGemm needs CUDA."));
 #endif

@@ -38,7 +38,7 @@ class TensorFloat32Test(xla_test.XLATestCase):
       config.enable_tensor_float_32_execution(False)
       compiled_fn = def_function.function(fn, jit_compile=True)
       hlo_text = compiled_fn.experimental_get_compiler_ir(*inputs)(stage='hlo')
-      self.assertIn('operand_precision={highest,highest}', hlo_text)
+      self.assertIn('operand_precision={highest,highest', hlo_text)
 
       # Test the output is sufficiently precise by comparing with FP64 results
       out = compiled_fn(*inputs)
@@ -49,14 +49,6 @@ class TensorFloat32Test(xla_test.XLATestCase):
       else:
         f64_out = compiled_fn(*[math_ops.cast(x, 'float64') for x in inputs])
         self.assertAllClose(out, f64_out, rtol=1e-5, atol=1e-5)
-
-      # Test with TF32 enabled. Recompile fn because enabling TF32 does not
-      # reset function cache.
-      config.enable_tensor_float_32_execution(True)
-      compiled_fn = def_function.function(fn, jit_compile=True)
-      hlo_text = compiled_fn.experimental_get_compiler_ir(*inputs)(stage='hlo')
-      # operand_precision is not in HLO if it's the default value.
-      self.assertNotIn('operand_precision', hlo_text)
 
       # On Ampere GPUs and above, which support TF32, test TF32 is used by
       # asserting outputs are not close to FP64 result

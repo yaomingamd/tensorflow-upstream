@@ -54,6 +54,7 @@ struct ConvOpAttrs {
   Padding padding;
   std::vector<int64_t> explicit_paddings;
   TensorFormat data_format;
+  int numeric_flags;
 };
 
 // Helper for the general Conv Op.
@@ -68,6 +69,7 @@ struct ConvNDOpAttrs {
   Padding padding;
   std::vector<int64_t> explicit_paddings;
   TensorFormat data_format;
+  int numeric_flags;
 };
 
 // Creates a new XLA forward or backward convolution with the given inputs and

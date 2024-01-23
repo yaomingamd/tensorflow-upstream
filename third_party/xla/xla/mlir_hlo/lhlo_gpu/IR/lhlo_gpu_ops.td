@@ -43,7 +43,8 @@ def I32Buffer : MemRefOf<[I32]>;
 class GpuConvolutionAttributes<dag extraAttribs> {
   dag attributes = !con(
     MHLO_ConvolutionAttributes.attributes,
-    (ins F64Attr:$result_scale),
+    (ins F64Attr:$result_scale,
+        OptionalAttr<I64Attr>:$grad_flags),
     extraAttribs,
     (ins ConvolutionBackendConfigAttr:$backend_config));
 }

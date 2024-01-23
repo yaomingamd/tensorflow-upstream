@@ -27,7 +27,11 @@ typedef Eigen::GpuDevice GPUDevice;
 template <typename Device, typename T, bool USE_CUBLAS>
 class GRUCellBlockOp : public OpKernel {
  public:
-  explicit GRUCellBlockOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
+  explicit GRUCellBlockOp(OpKernelConstruction* ctx) : OpKernel(ctx) 
+  {
+    numeric_flags_ = ctx->GetNumericFlags();
+  }
+
   // TODO(gitegaurav) Replace the input checks with some smarter function.
   void Compute(OpKernelContext* ctx) override {
     // Grab the input tensors.
@@ -161,8 +165,10 @@ class GRUCellBlockOp : public OpKernel {
         b_ru_tensor->vec<T>(), b_c_tensor->vec<T>(), r_u_bar_tensor.matrix<T>(),
         r_tensor->matrix<T>(), u_tensor->matrix<T>(), c_tensor->matrix<T>(),
         h_tensor->matrix<T>(), x_h_prev_tensor.matrix<T>(),
-        x_h_prevr_tensor.matrix<T>());
+        x_h_prevr_tensor.matrix<T>(), numeric_flags_);
   }
+private:
+    int numeric_flags_;
 };
 
 // Register the Block GRU cell kernel for CPU.
@@ -419,7 +425,7 @@ namespace functor {
       typename TTypes<T>::Matrix r, typename TTypes<T>::Matrix u,             \
       typename TTypes<T>::Matrix c, typename TTypes<T>::Matrix h,             \
       typename TTypes<T>::Matrix x_h_prev,                                    \
-      typename TTypes<T>::Matrix x_h_prevr);                                  \
+      typename TTypes<T>::Matrix x_h_prevr, int flags);                       \
   extern template struct GRUBlockCellFprop<GPUDevice, T, true>;
 
 DECLARE_GPU_SPEC(float);
@@ -452,7 +458,7 @@ namespace functor {
       typename TTypes<T>::Matrix d_r_bar, typename TTypes<T>::Matrix d_u_bar,  \
       typename TTypes<T>::Matrix d_h_prevr,                                    \
       typename TTypes<T>::Matrix d_x_comp1_h_prev_comp1,                       \
-      typename TTypes<T>::Matrix d_x_comp2_and_h_prevr);                       \
+      typename TTypes<T>::Matrix d_x_comp2_and_h_prevr, int flags);            \
   extern template struct GRUBlockCellBprop<GPUDevice, T, true>;
 
 DECLARE_GPU_SPEC(float);

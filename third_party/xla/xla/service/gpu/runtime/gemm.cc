@@ -129,6 +129,18 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
   se::Stream* stream = run_options->stream();
   Shape output_shape = ToShape(out);
 
+  int grad_flags = 0, grad_count = 0;
+  for (auto value : precision) {
+    if(value>=PrecisionConfig::ACTIVATION && value<=PrecisionConfig::GRADIENT)
+    {
+      if(grad_count<2 && value == PrecisionConfig::GRADIENT)
+        grad_flags |= 1 << grad_count;
+      grad_count++;
+    }
+  }
+  if(grad_count==2)
+    grad_flags |= 256;
+
   // Get the gemm config from the state.
   TF_ASSIGN_OR_RETURN(GemmConfig * gemm_config, state.GetOrCreate([&] {
     StatusOr<GemmConfig> gemm_config =
@@ -136,7 +148,9 @@ static absl::Status GemmImpl(const ServiceExecutableRunOptions* run_options,
                       dot_dims.lhs_batch, dot_dims.lhs_contract,
                       dot_dims.rhs_batch, dot_dims.rhs_contract,
                       precision.empty() ? se::blas::kDefaultComputePrecision
-                                        : *absl::c_max_element(precision));
+                                        : *absl::c_max_element(precision),
+                                        std::nullopt, std::nullopt,
+                                        grad_flags);
     return ToAbsl(gemm_config);
   }));
 

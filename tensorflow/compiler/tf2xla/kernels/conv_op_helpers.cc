@@ -50,7 +50,7 @@ limitations under the License.
 namespace tensorflow {
 namespace {
 
-xla::PrecisionConfig GetPrecisionConfig() {
+xla::PrecisionConfig GetPrecisionConfig(int flags) {
   xla::PrecisionConfig::Precision precision =
       tsl::tensor_float_32_execution_enabled() ? xla::PrecisionConfig::DEFAULT
                                                : xla::PrecisionConfig::HIGHEST;
@@ -60,6 +60,7 @@ xla::PrecisionConfig GetPrecisionConfig() {
   for (int i = 0; i < num_inputs; ++i) {
     config.add_operand_precision(precision);
   }
+  SetXlaPrecisionConfigNumericFlags(config, flags);
   return config;
 }
 
@@ -326,7 +327,7 @@ StatusOr<xla::XlaOp> MakeXlaForwardConvOp(StringPiece /*type_string*/,
         rhs_dilation[i], window_strides[i], attrs.padding, &unused_output_size,
         &padding[i].first, &padding[i].second));
   }
-  xla::PrecisionConfig precision_config = GetPrecisionConfig();
+  xla::PrecisionConfig precision_config = GetPrecisionConfig(attrs.numeric_flags);
 
   if (padding_type != xla::PaddingType::PADDING_INVALID) {
     return xla::DynamicConvForward(
@@ -419,7 +420,7 @@ StatusOr<xla::XlaOp> MakeXlaBackpropInputConvOp(StringPiece type_string,
     lhs_dilation[i] = dims.spatial_dims[i].stride;
     rhs_dilation[i] = attrs.dilations[dim];
   }
-  xla::PrecisionConfig precision_config = GetPrecisionConfig();
+  xla::PrecisionConfig precision_config = GetPrecisionConfig(attrs.numeric_flags);
 
   if (feature_group_count != 1 && !attrs.depthwise) {
     filter = TransposeFilterForGroupConvolutionBackpropInput(
@@ -573,7 +574,7 @@ StatusOr<xla::XlaOp> MakeXlaBackpropFilterConvOp(StringPiece type_string,
                                            : 0;
     padding[i] = {pad_before, pad_total - pad_before};
   }
-  xla::PrecisionConfig precision_config = GetPrecisionConfig();
+  xla::PrecisionConfig precision_config = GetPrecisionConfig(attrs.numeric_flags);
 
   // Besides padding the input, we will also expand output_rows to
   //    expanded_out_rows = (output_rows - 1) * stride + 1

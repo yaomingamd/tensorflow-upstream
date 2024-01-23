@@ -725,8 +725,6 @@ void SetMatmulAttributes(OpT op, const xla::gpu::GemmBackendConfig& config,
   }
   op.setPrecisionConfigAttr(
       xla::ConvertPrecisionConfig(&config.precision_config(), &builder));
-  op.setGradXAttr(builder.getBoolAttr(config.grad_x()));
-  op.setGradYAttr(builder.getBoolAttr(config.grad_y()));
 }
 
 tsl::StatusOr<lmhlo_gpu::CublasLtMatmulEpilogue> AsLhloEpilogue(
@@ -1050,6 +1048,8 @@ tsl::StatusOr<Operation*> LhloDialectEmitter::EmitDnnConvolution(
                                           &builder_));
     attrs.set(op.getResultScaleAttrName(),
               builder_.getF64FloatAttr(backend_config.conv_result_scale()));
+    attrs.set(op.getGradFlagsAttrName(), 
+              builder_.getI64IntegerAttr(backend_config.grad_conv_backend_flags()));
 
     const auto& algorithm = backend_config.algorithm();
     std::vector<int64_t> knob_ids;

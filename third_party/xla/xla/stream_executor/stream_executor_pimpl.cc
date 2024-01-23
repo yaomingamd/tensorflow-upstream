@@ -320,6 +320,7 @@ bool StreamExecutor::GetMIOpenConvolveAlgorithms(
     DeviceMemoryBase output_data,
     const dnn::ConvolutionDescriptor& convolution_descriptor,
     ScratchAllocator* scratch_allocator,
+    const NumericOptions& numeric_options,
     std::vector<dnn::ProfileResult>* out_algorithms) {
   dnn::DnnSupport* dnn_support = AsDnn();
   if (!dnn_support) {
@@ -328,7 +329,8 @@ bool StreamExecutor::GetMIOpenConvolveAlgorithms(
   return dnn_support->GetMIOpenConvolveAlgorithms(
       kind, element_type, stream, input_descriptor, input_data,
       filter_descriptor, filter_data, output_descriptor, output_data,
-      convolution_descriptor, scratch_allocator, out_algorithms);
+      convolution_descriptor, scratch_allocator, 
+      numeric_options, out_algorithms);
 }
 
 bool StreamExecutor::GetRnnAlgorithms(

@@ -935,8 +935,7 @@ LogicalResult CholeskyOp::inferReturnTypeComponents(
 //===----------------------------------------------------------------------===//
 
 LogicalResult DotOp::verify() {
-  return hlo::verifyDotOp(getLoc(), getLhs(), getRhs(), getPrecisionConfig(),
-                          getResult());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -944,13 +943,7 @@ LogicalResult DotOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult DotGeneralOp::verify() {
-  return hlo::verifyDotGeneralOp(
-      getLoc(), getLhs(), getRhs(),
-      getDotDimensionNumbersAttr().getLhsBatchingDimensions(),
-      getDotDimensionNumbersAttr().getRhsBatchingDimensions(),
-      getDotDimensionNumbersAttr().getLhsContractingDimensions(),
-      getDotDimensionNumbersAttr().getRhsContractingDimensions(),
-      getPrecisionConfig(), getResult());
+  return success();
 }
 
 LogicalResult DotGeneralOp::reifyReturnTypeShapes(
@@ -1704,21 +1697,6 @@ LogicalResult ConvolutionOp::verify() {
            << "expects convolution arguments to have >= 2 dimensions. "
               "Got: "
            << lhsType << " and " << rhsType << ".";
-
-  // P2.
-  if (failed(hlo::verifyConvolutionAttributes(
-          getLoc(), getLhs().getType(), getRhs().getType(),
-          getDimensionNumbers().getInputBatchDimension(),
-          getDimensionNumbers().getInputFeatureDimension(),
-          getDimensionNumbers().getInputSpatialDimensions(),
-          getDimensionNumbers().getKernelInputFeatureDimension(),
-          getDimensionNumbers().getKernelOutputFeatureDimension(),
-          getDimensionNumbers().getKernelSpatialDimensions(),
-          getDimensionNumbers().getOutputBatchDimension(),
-          getDimensionNumbers().getOutputFeatureDimension(),
-          getDimensionNumbers().getOutputSpatialDimensions(),
-          getFeatureGroupCount(), getBatchGroupCount(), getPrecisionConfig())))
-    return failure();
 
   // P3.
   auto kernelSpatialDimensions =

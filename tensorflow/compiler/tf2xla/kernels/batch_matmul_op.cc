@@ -43,6 +43,7 @@ class BatchMatMulOp : public XlaOpKernel {
       OP_REQUIRES_OK(ctx, DataTypeToPrimitiveType(output_type, &xla_type));
       preferred_element_type_.emplace(xla_type);
     }
+    numeric_flags_ = ctx->GetNumericFlags(true);
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
@@ -50,10 +51,13 @@ class BatchMatMulOp : public XlaOpKernel {
         tsl::tensor_float_32_execution_enabled()
             ? xla::PrecisionConfig::DEFAULT
             : xla::PrecisionConfig::HIGHEST;
+    xla::PrecisionConfig precision_config;
+    SetXlaPrecisionConfigNumericFlags(precision_config, precision, numeric_flags_);
     auto result =
         xla::BatchDot(MaybeConjugate(ctx->Input(0), adj_x_), adj_x_,
-                      MaybeConjugate(ctx->Input(1), adj_y_), adj_y_, precision,
-                      preferred_element_type_, grad_x_, grad_y_);
+                      MaybeConjugate(ctx->Input(1), adj_y_), adj_y_, 
+                      precision_config, preferred_element_type_, grad_x_, grad_y_);
+
     ctx->SetOutput(0, result);
   }
 
@@ -63,6 +67,7 @@ class BatchMatMulOp : public XlaOpKernel {
   bool grad_x_;
   bool grad_y_;
   std::optional<xla::PrimitiveType> preferred_element_type_;
+  int numeric_flags_;
 };
 
 REGISTER_XLA_OP(Name("BatchMatMul"), BatchMatMulOp);

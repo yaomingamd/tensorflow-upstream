@@ -53,6 +53,7 @@ class ConvOp : public XlaOpKernel {
         ConvOpAttrs::Create(num_spatial_dims, depthwise, ctx);
     OP_REQUIRES_OK(ctx, attrs.status());
     attrs_ = attrs.value();
+    attrs_.numeric_flags = ctx->GetNumericFlags();
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
@@ -177,6 +178,7 @@ class ConvBackpropInputOp : public XlaOpKernel {
         ConvOpAttrs::Create(num_spatial_dims, depthwise, ctx);
     OP_REQUIRES_OK(ctx, attrs.status());
     attrs_ = attrs.value();
+    attrs_.numeric_flags = ctx->GetNumericFlags();
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
@@ -243,6 +245,7 @@ class ConvBackpropFilterOp : public XlaOpKernel {
         ConvOpAttrs::Create(num_spatial_dims, depthwise, ctx);
     OP_REQUIRES_OK(ctx, attrs.status());
     attrs_ = attrs.value();
+    attrs_.numeric_flags = ctx->GetNumericFlags();
   }
 
   void Compile(XlaOpKernelContext* ctx) override {

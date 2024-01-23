@@ -700,6 +700,10 @@ class ConvolutionDescriptor {
     return AsInt64Slice(proto_.paddings());
   }
 
+  int grad_flags() { return proto_.grad_flags(); }
+
+  ConvolutionDescriptor& set_grad_flags(int x) { proto_.set_grad_flags(x); return *this; }
+
   std::string name() const { return proto_.name(); }
 
  private:
@@ -1713,6 +1717,7 @@ class DnnSupport {
       DeviceMemoryBase output_data,
       const dnn::ConvolutionDescriptor& convolution_descriptor,
       ScratchAllocator* scratch_allocator,
+      const NumericOptions& numeric_options,
       std::vector<ProfileResult>* out_algorithms);
 
   // Returns a list of supported rnn algorithms.

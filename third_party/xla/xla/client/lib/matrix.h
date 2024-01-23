@@ -92,13 +92,33 @@ XlaOp Symmetrize(XlaOp x, bool lower);
 //     output[..., :, :] = matrix(x[..., :, :]) * matrix(y[..., :, :])
 xla::XlaOp BatchDot(
     xla::XlaOp x, xla::XlaOp y,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
+    xla::PrecisionConfig precision,
     std::optional<PrimitiveType> preferred_element_type = std::nullopt);
 xla::XlaOp BatchDot(
     xla::XlaOp x, bool transpose_x, xla::XlaOp y, bool transpose_y,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
+    xla::PrecisionConfig precision,
     std::optional<PrimitiveType> preferred_element_type = std::nullopt,
     bool grad_x = false, bool grad_y = false);
+
+inline xla::XlaOp BatchDot(
+    xla::XlaOp x, xla::XlaOp y,
+    xla::PrecisionConfig::Precision precision,
+    std::optional<PrimitiveType> preferred_element_type = std::nullopt) {
+  PrecisionConfig cfg; 
+  cfg.add_operand_precision(precision);
+  cfg.add_operand_precision(precision);
+  return BatchDot(x, y, cfg, preferred_element_type);
+}
+
+inline xla::XlaOp BatchDot(
+    xla::XlaOp x, bool transpose_x, xla::XlaOp y, bool transpose_y,
+    xla::PrecisionConfig::Precision precision,
+    std::optional<PrimitiveType> preferred_element_type = std::nullopt) {
+  PrecisionConfig cfg; 
+  cfg.add_operand_precision(precision);
+  cfg.add_operand_precision(precision);
+  return BatchDot(x, transpose_x, y, transpose_y, cfg, preferred_element_type);
+}
 
 // Parse an einsum string into dimension numbers:
 //   "ab,cb->ac"
@@ -128,12 +148,12 @@ std::string NormalizeEinsumString(absl::string_view einsum_config);
 // Supports two operand einsum notation like "ab,cb->ac".
 xla::XlaOp Einsum(
     xla::XlaOp x, xla::XlaOp y, absl::string_view einsum_config,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
+    xla::PrecisionConfig precision = xla::PrecisionConfigDEFAULT(),
     std::optional<PrimitiveType> preferred_element_type = std::nullopt,
     bool grad_x = false, bool grad_y = false);
 xla::XlaOp Einsum(
     xla::XlaOp x, absl::string_view einsum_config,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT);
+    xla::PrecisionConfig precision);
 
 // Same as above but supporting numeric labels on dimensions. So "ab,cb->ac"
 // becomes:
@@ -143,7 +163,7 @@ xla::XlaOp Einsum(
 xla::XlaOp Einsum(
     xla::XlaOp x, absl::Span<const int64_t> x_config, xla::XlaOp y,
     absl::Span<const int64_t> y_config, absl::Span<const int64_t> output_config,
-    xla::PrecisionConfig::Precision precision = xla::PrecisionConfig::DEFAULT,
+    xla::PrecisionConfig precision,
     std::optional<PrimitiveType> preferred_element_type = std::nullopt,
     bool grad_x = false, bool grad_y = false);
 

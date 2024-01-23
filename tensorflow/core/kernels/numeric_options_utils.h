@@ -22,10 +22,10 @@ limitations under the License.
 
 namespace tensorflow {
 
-inline stream_executor::NumericOptions GetNumericOptions() {
+inline stream_executor::NumericOptions GetNumericOptions(int flags = 0) {
   return stream_executor::NumericOptions{
       /*require_determinism=*/tsl::OpDeterminismRequired(),
-      /*allow_tf32=*/tsl::tensor_float_32_execution_enabled()};
+      /*allow_tf32=*/tsl::tensor_float_32_execution_enabled(), flags};
 }
 
 }  // namespace tensorflow

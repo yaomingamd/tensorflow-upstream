@@ -742,8 +742,7 @@ void LaunchConvBackpropInputOpImpl(
 
     OP_REQUIRES_OK(context, stream->ThenBlasGemm(transpose, no_transpose, n, m,
                                                  k, b_ptr, k, a_ptr, k, &c_ptr,
-                                                 n, GetNumericOptions(),
-                                                 se::blas::CallContext::kNone));
+                                                 n, GetNumericOptions(2)));
     return;
   } else if (!is_grouped_convolution &&
              dims.filter_size(0) == dims.input_size(0) &&
@@ -767,8 +766,7 @@ void LaunchConvBackpropInputOpImpl(
 
     OP_REQUIRES_OK(context, stream->ThenBlasGemm(transpose, no_transpose, n, m,
                                                  k, b_ptr, k, a_ptr, k, &c_ptr,
-                                                 n, GetNumericOptions(),
-                                                 se::blas::CallContext::kNone));
+                                                 n, GetNumericOptions(2)));
     return;
   }
 

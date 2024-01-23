@@ -423,7 +423,7 @@ void LSTMBlockCellBpropWithCUDA(
       typename TTypes<T>::Matrix i, typename TTypes<T>::Matrix cs,            \
       typename TTypes<T>::Matrix f, typename TTypes<T>::Matrix o,             \
       typename TTypes<T>::Matrix ci, typename TTypes<T>::Matrix co,           \
-      typename TTypes<T>::Matrix gates, typename TTypes<T>::Matrix h) {       \
+      typename TTypes<T>::Matrix gates, typename TTypes<T>::Matrix h, int flags) {       \
     LSTMBlockCellFpropWithCUDA<T, GATE_LAYOUT>(                               \
         ctx, d, forget_bias, cell_clip, use_peephole, x, cs_prev, h_prev, w,  \
         wci, wcf, wco, b, xh, i, cs, f, o, ci, co, gates, h, batch_size_,     \
@@ -449,7 +449,7 @@ void LSTMBlockCellBpropWithCUDA(
       typename TTypes<T>::Matrix dgates,                                      \
       typename TTypes<T>::Matrix cs_prev_grad,                                \
       typename TTypes<T>::Vec wci_grad, typename TTypes<T>::Vec wcf_grad,     \
-      typename TTypes<T>::Vec wco_grad) {                                     \
+      typename TTypes<T>::Vec wco_grad, int flags) {                          \
     LSTMBlockCellBpropWithCUDA<T, GATE_LAYOUT>(                               \
         ctx, d, x, cs_prev, h_prev, w, wci, wcf, wco, b, i, cs, f, o, ci, co, \
         cs_grad, h_grad, do_, dcs, dci, df, di, dgates, cs_prev_grad,         \
