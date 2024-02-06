@@ -54,6 +54,7 @@ else
 fi
 wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -;
 echo "deb [arch=amd64 trusted=yes] http://apt.llvm.org/focal/ llvm-toolchain-focal-17 main" > /etc/apt/sources.list.d/llvm.list
+echo "deb [arch=amd64] https://repo.radeon.com/amdgpu/6.0/ubuntu focal $ROCM_BUILD_NUM" > /etc/apt/sources.list.d/amdgpu.list
 
 GPU_DEVICE_TARGETS=${GPU_DEVICE_TARGETS:-"gfx900 gfx906 gfx908 gfx90a gfx940 gfx941 gfx942 gfx1030 gfx1100"}
 
